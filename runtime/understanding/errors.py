@@ -1,4 +1,4 @@
-"""M3-IU1 internal Understanding foundation errors."""
+"""M3 Understanding internal errors."""
 
 
 class UnderstandingFoundationError(RuntimeError):
@@ -15,3 +15,19 @@ class InvalidUnderstandingEvidenceError(UnderstandingFoundationError):
 
 class InvalidUnderstandingCandidateError(UnderstandingFoundationError):
     """Raised when an internal M3 candidate object is structurally invalid."""
+
+
+class DeterministicUnderstandingError(UnderstandingFoundationError):
+    """Base error for deterministic M3 rule parsing."""
+
+
+class InvalidDeterministicRuleError(DeterministicUnderstandingError):
+    """Raised when an injected deterministic rule is malformed."""
+
+
+class DeterministicRuleExecutionError(DeterministicUnderstandingError):
+    """Raised when a deterministic rule cannot be evaluated safely."""
+
+
+class DeterministicUnderstandingConflictError(DeterministicUnderstandingError):
+    """Raised when matched deterministic rules produce incompatible facts."""

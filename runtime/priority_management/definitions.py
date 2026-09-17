@@ -84,6 +84,7 @@ class PreemptionRule:
     relation: PriorityRelation
     interrupt: bool
     disposition: IncomingDisposition
+    when_not_interruptible: IncomingDisposition | None = None
     on_interrupt: str | None = None
     cleanup_policy: CleanupPolicy = CleanupPolicy.NONE
     resume_policy: ResumePolicy = ResumePolicy.NO_RESUME
@@ -95,6 +96,14 @@ class PreemptionRule:
             raise ValueError("incoming_kind must not be blank")
         if self.interrupt and self.disposition is not IncomingDisposition.PROCESS_NOW:
             raise ValueError("interrupt=True requires PROCESS_NOW disposition")
+        if self.interrupt and self.when_not_interruptible is None:
+            raise ValueError(
+                "interrupt=True requires explicit when_not_interruptible disposition"
+            )
+        if not self.interrupt and self.when_not_interruptible is not None:
+            raise ValueError(
+                "when_not_interruptible is only valid when interrupt=True"
+            )
         if not self.interrupt and self.on_interrupt is not None:
             raise ValueError("on_interrupt is only valid when interrupt=True")
 

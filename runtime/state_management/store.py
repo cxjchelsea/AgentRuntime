@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Hashable
+from threading import Lock
 
 from runtime.state_management.definitions import RuntimeStateSnapshot
 from runtime.state_management.errors import StateRevisionConflictError
@@ -41,10 +41,10 @@ class InMemoryRuntimeStateStore(RuntimeStateStore):
 
     def __init__(self) -> None:
         self._items: dict[Hashable, RuntimeStateSnapshot] = {}
-        self._lock = asyncio.Lock()
+        self._lock = Lock()
 
     async def load(self, scope_key: Hashable) -> RuntimeStateSnapshot | None:
-        async with self._lock:
+        with self._lock:
             return self._items.get(scope_key)
 
     async def compare_and_set(
@@ -54,7 +54,7 @@ class InMemoryRuntimeStateStore(RuntimeStateStore):
         expected_revision: int | None,
         snapshot: RuntimeStateSnapshot,
     ) -> None:
-        async with self._lock:
+        with self._lock:
             current = self._items.get(scope_key)
             current_revision = None if current is None else current.revision
             if current_revision != expected_revision:

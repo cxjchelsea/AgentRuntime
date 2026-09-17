@@ -38,8 +38,8 @@ from runtime.orchestration import RuntimeOrchestrator, StageExecutionError
 from tests.orchestration_stubs import (
     CallRecorder,
     StubExecutionEngine,
-    StubPlanValidator,
     StubPlanner,
+    StubPlanValidator,
     StubPolicyEngine,
     StubPolicyRechecker,
     StubResponseGenerator,
@@ -247,7 +247,9 @@ def test_m1_real_chain_preserves_input_to_context_continuity() -> None:
     )
     assert understanding.seen_context.safety_context is not None
     assert understanding.seen_context.safety_context.current_risk_state == "NONE"
-    assert [event.stage_name for event in outcome.trace.stage_events] == EXPECTED_CALL_ORDER
+    assert [
+        event.stage_name for event in outcome.trace.stage_events
+    ] == EXPECTED_CALL_ORDER
 
 
 def test_m1_default_context_does_not_infer_memory_or_domain_state() -> None:
@@ -262,9 +264,7 @@ def test_m1_default_context_does_not_infer_memory_or_domain_state() -> None:
     )
 
     asyncio.run(
-        orchestrator.run(
-            _input(text="请记住这句话，并进入一个并不存在的领域状态")
-        )
+        orchestrator.run(_input(text="请记住这句话，并进入一个并不存在的领域状态"))
     )
 
     assert understanding.seen_context is not None
@@ -275,9 +275,7 @@ def test_m1_default_context_does_not_infer_memory_or_domain_state() -> None:
 def test_m1_missing_unavailable_and_empty_memory_remain_distinct() -> None:
     processed = asyncio.run(DefaultInputProcessor().process(_input()))
     early_safety = _safety(processed, SafetyPhase.EARLY)
-    selector = CoreContextSelector(
-        {InputTriggerType.USER_TEXT: (ContextKind.MEMORY,)}
-    )
+    selector = CoreContextSelector({InputTriggerType.USER_TEXT: (ContextKind.MEMORY,)})
 
     missing_builder = DefaultContextBuilder(
         runtime_state_provider=GateRuntimeStateProvider(),
@@ -326,7 +324,7 @@ def test_m1_missing_unavailable_and_empty_memory_remain_distinct() -> None:
             {"result_ref": "result-1"},
         ),
         (
-            InputSource.SYSTEM,
+            InputSource.DEVICE,
             InputTriggerType.DEVICE_EVENT,
             {"device_event": "TEST_EVENT"},
         ),
@@ -350,9 +348,9 @@ def test_m1_core_trigger_families_build_runtime_context(
         )
     )
     context = asyncio.run(
-        DefaultContextBuilder(
-            runtime_state_provider=GateRuntimeStateProvider()
-        ).build(processed, _safety(processed, SafetyPhase.EARLY))
+        DefaultContextBuilder(runtime_state_provider=GateRuntimeStateProvider()).build(
+            processed, _safety(processed, SafetyPhase.EARLY)
+        )
     )
 
     assert context.session_context.session_id == processed.session_id
@@ -381,7 +379,7 @@ def test_m1_critical_context_failure_stops_runtime_at_context_stage() -> None:
         "SAFETY_EARLY",
         "CONTEXT",
     ]
-    assert recorder.calls == ["SAFETY_EARLY"]
+    assert recorder.entries == ["SAFETY_EARLY"]
 
 
 def test_m1_two_turns_keep_session_identity_without_trace_cross_contamination() -> None:

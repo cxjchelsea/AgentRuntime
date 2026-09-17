@@ -17,6 +17,7 @@ from runtime.context_building import (
     DefaultContextBuilder,
 )
 from runtime.contracts import InputTriggerType, RuntimeContext, RuntimeInput
+from runtime.contracts.context import RuntimeStateContext
 from runtime.input_processing import DefaultInputProcessor
 from runtime.interfaces import ContextBuilder, InputProcessor
 
@@ -54,6 +55,7 @@ def test_m1_canonical_contract_surface_was_not_expanded() -> None:
     }.issubset(RuntimeContext.model_fields)
     assert "relationship_context" not in RuntimeContext.model_fields
     assert "current_business" not in RuntimeContext.model_fields
+    assert "current_business" not in RuntimeStateContext.model_fields
 
 
 def test_default_selector_never_auto_loads_memory_or_domain_extensions() -> None:

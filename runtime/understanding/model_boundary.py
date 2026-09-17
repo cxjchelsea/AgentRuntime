@@ -7,9 +7,10 @@ state-mutation authority to a model.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
 from runtime.contracts import RuntimeContext, RuntimeInput
 from runtime.understanding.deterministic import RuleParseResult
@@ -96,13 +97,18 @@ class DefaultModelContextSelector:
         memory = runtime_context.memory_context
 
         recent_turns: tuple[dict[str, Any], ...] = ()
-        if conversation is not None and conversation.recent_turns:
+        if (
+            self._policy.max_recent_turns > 0
+            and conversation is not None
+            and conversation.recent_turns
+        ):
             selected_turns = conversation.recent_turns[-self._policy.max_recent_turns :]
             recent_turns = tuple(deepcopy(selected_turn) for selected_turn in selected_turns)
 
         relevant_memories: tuple[dict[str, Any], ...] = ()
         if (
             self._policy.include_memory
+            and self._policy.max_memories > 0
             and memory is not None
             and memory.retrieved_memories
         ):

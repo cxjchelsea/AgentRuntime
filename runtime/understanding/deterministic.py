@@ -8,9 +8,10 @@ SafetyDecision. Concrete lexical/domain rules are injected by configuration.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from runtime.contracts import IntentResult, RuntimeContext, RuntimeInput
 from runtime.contracts.enums import IntentEvidenceSource, SpeechAct
@@ -23,6 +24,8 @@ from runtime.understanding.errors import (
     DeterministicUnderstandingConflictError,
     InvalidDeterministicRuleError,
 )
+
+UniqueType = TypeVar("UniqueType")
 
 
 class TextMatchMode(str, Enum):
@@ -172,7 +175,11 @@ class ConfiguredTextRule:
         if self._definition.match_mode is TextMatchMode.EXACT:
             candidate = text if self._definition.case_sensitive else text.casefold()
             for pattern in self._definition.patterns:
-                expected = pattern if self._definition.case_sensitive else pattern.casefold()
+                expected = (
+                    pattern
+                    if self._definition.case_sensitive
+                    else pattern.casefold()
+                )
                 if candidate == expected:
                     return text
             return None
@@ -384,10 +391,10 @@ def _merge_optional_text(
     return next(iter(values)) if values else None
 
 
-def _stable_unique[T](values: object) -> tuple[T, ...]:
-    result: list[T] = []
-    seen: set[T] = set()
-    for value in values:  # type: ignore[union-attr]
+def _stable_unique(values: Iterable[UniqueType]) -> tuple[UniqueType, ...]:
+    result: list[UniqueType] = []
+    seen: set[UniqueType] = set()
+    for value in values:
         if value not in seen:
             seen.add(value)
             result.append(value)

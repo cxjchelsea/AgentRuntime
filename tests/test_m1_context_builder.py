@@ -292,12 +292,18 @@ def test_mismatched_request_id_is_rejected() -> None:
 
 def test_runtime_state_is_critical_and_failure_is_not_fabricated() -> None:
     with pytest.raises(CriticalContextUnavailableError, match="runtime_state_context"):
-        _build(DefaultContextBuilder(runtime_state_provider=FailingRuntimeStateProvider()))
+        _build(
+            DefaultContextBuilder(runtime_state_provider=FailingRuntimeStateProvider())
+        )
 
 
 def test_unexpected_runtime_state_provider_error_is_not_hidden_as_unavailable() -> None:
     with pytest.raises(ValueError, match="provider bug"):
-        _build(DefaultContextBuilder(runtime_state_provider=ExplodingRuntimeStateProvider()))
+        _build(
+            DefaultContextBuilder(
+                runtime_state_provider=ExplodingRuntimeStateProvider()
+            )
+        )
 
 
 def test_default_selector_loads_only_core_relevant_optional_contexts() -> None:
@@ -537,14 +543,19 @@ def test_real_input_and_context_can_replace_first_two_m0_stubs() -> None:
     assert understanding_engine.seen_context.session_context.session_id == (
         "session-integration"
     )
-    assert understanding_engine.seen_context.identity_context.subject_id == "subject-001"
+    assert (
+        understanding_engine.seen_context.identity_context.subject_id == "subject-001"
+    )
     assert understanding_engine.seen_context.safety_context is not None
     assert (
         understanding_engine.seen_context.safety_context.current_risk_state
         == SafetyRiskLevel.NONE.value
     )
     assert understanding_engine.seen_context.time_context is not None
-    assert understanding_engine.seen_context.time_context.current_datetime == _input().timestamp
+    assert (
+        understanding_engine.seen_context.time_context.current_datetime
+        == _input().timestamp
+    )
     assert [event.stage_name for event in outcome.trace.stage_events] == [
         "INPUT",
         "SAFETY_EARLY",

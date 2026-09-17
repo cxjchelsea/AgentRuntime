@@ -209,16 +209,8 @@ class RiskSignalNormalizer:
         signal_confidences: list[float] = []
         evidence_ids: list[str] = []
 
-        deterministic_evidence_ids = {
-            item.evidence_id
-            for item in route.deterministic_result.evidence
-            if item.source_type is UnderstandingEvidenceSource.RULE_MATCH
-        }
-        if signal_ids:
-            evidence_ids.extend(sorted(deterministic_evidence_ids))
-            if route.deterministic_result.confidence is not None:
-                signal_confidences.append(route.deterministic_result.confidence)
-
+        # RuleParseResult does not preserve per-risk evidence linkage. Do not invent
+        # one by attaching every rule evidence item or the overall parse confidence.
         known_evidence_ids = {item.evidence_id for item in evidence}
         if model_result is not None:
             for payload in model_result.risk_signals:

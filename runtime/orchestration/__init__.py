@@ -1,4 +1,4 @@
-"""Runtime Orchestrator Skeleton 对外导出。"""
+"""Runtime Orchestrator exports."""
 
 from runtime.orchestration.context import RuntimeTurnOutcome, TurnExecutionContext
 from runtime.orchestration.errors import (
@@ -14,6 +14,14 @@ from runtime.orchestration.logging import (
     RuntimeLogHook,
     StdlibStructuredLogHook,
 )
+from runtime.orchestration.m2_control import (
+    AlternatePathRequiredError,
+    PreemptionEffectRequiredError,
+    PrioritySubjectResolver,
+    ResolvedPrioritySubjects,
+    RuntimeControlBlockedError,
+)
+from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
 from runtime.orchestration.runtime import RuntimeOrchestrator
 from runtime.orchestration.trace import (
     StageEventStatus,
@@ -23,11 +31,17 @@ from runtime.orchestration.trace import (
 )
 
 __all__ = [
+    "AlternatePathRequiredError",
     "ContractValidationError",
     "DependencyMissingError",
+    "M2RuntimeOrchestrator",
     "NullLogHook",
     "OrchestrationInvariantError",
+    "PreemptionEffectRequiredError",
+    "PrioritySubjectResolver",
     "RecordingLogHook",
+    "ResolvedPrioritySubjects",
+    "RuntimeControlBlockedError",
     "RuntimeLogHook",
     "RuntimeOrchestrationError",
     "RuntimeOrchestrator",

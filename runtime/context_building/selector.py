@@ -5,8 +5,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 
-from runtime.contracts import InputTriggerType, RuntimeInput
 from runtime.context_building.providers import ContextKind
+from runtime.contracts import InputTriggerType, RuntimeInput
 
 
 class ContextSelector(ABC):
@@ -15,7 +15,7 @@ class ContextSelector(ABC):
     @abstractmethod
     def select(self, runtime_input: RuntimeInput) -> tuple[ContextKind, ...]:
         """返回按优先级排列的可选 ContextKind。"""
-        raise NotImplementedError
+        ...
 
 
 _DEFAULT_ROUTES: dict[InputTriggerType, tuple[ContextKind, ...]] = {

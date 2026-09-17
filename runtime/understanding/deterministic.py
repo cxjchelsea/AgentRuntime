@@ -176,9 +176,7 @@ class ConfiguredTextRule:
             candidate = text if self._definition.case_sensitive else text.casefold()
             for pattern in self._definition.patterns:
                 expected = (
-                    pattern
-                    if self._definition.case_sensitive
-                    else pattern.casefold()
+                    pattern if self._definition.case_sensitive else pattern.casefold()
                 )
                 if candidate == expected:
                     return text

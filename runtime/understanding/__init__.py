@@ -1,8 +1,8 @@
 """M3 Understanding implementation building blocks.
 
 The package exposes structural foundation types, deterministic rule parsing, path
-routing, and a provider-neutral model boundary. It still does not provide a full
-UnderstandingEngine or Understanding Orchestrator.
+routing, a provider-neutral model boundary, and IU4 postprocessing. It still does
+not provide a full UnderstandingEngine or Understanding Orchestrator.
 """
 
 from runtime.understanding.catalog import (
@@ -31,18 +31,23 @@ from runtime.understanding.deterministic import (
     TextMatchMode,
 )
 from runtime.understanding.errors import (
+    CandidateExtractionError,
     DeterministicRuleExecutionError,
     DeterministicUnderstandingConflictError,
     DeterministicUnderstandingError,
     InvalidDeterministicRuleError,
+    InvalidModelEvidenceError,
+    InvalidModelUncertaintyError,
     InvalidUnderstandingCandidateError,
     InvalidUnderstandingDefinitionError,
     InvalidUnderstandingEvidenceError,
     InvalidUnderstandingRoutingPolicyError,
+    MissingDeepUnderstandingResultError,
     ModelBoundaryError,
     ModelInputBoundaryError,
     ModelOutputBoundaryError,
     UnderstandingFoundationError,
+    UnderstandingPostprocessingError,
     UnderstandingRoutingError,
 )
 from runtime.understanding.model_boundary import (
@@ -55,6 +60,16 @@ from runtime.understanding.model_boundary import (
     SelectedModelContext,
     StructuredUnderstandingModel,
 )
+from runtime.understanding.postprocessing import (
+    CandidateExtractionPipeline,
+    CandidateExtractionResult,
+    EvidenceNormalizer,
+    RiskSignalNormalizer,
+    UnderstandingCandidateExtractor,
+    UnderstandingPostprocessResult,
+    UnderstandingPostprocessor,
+    UncertaintyNormalizer,
+)
 from runtime.understanding.routing import (
     UnderstandingPathRouter,
     UnderstandingRouteDecision,
@@ -65,6 +80,9 @@ __all__ = [
     "CandidateAction",
     "CandidateActionCatalog",
     "CandidateActionDefinition",
+    "CandidateExtractionError",
+    "CandidateExtractionPipeline",
+    "CandidateExtractionResult",
     "ConfiguredTextRule",
     "DeepUnderstandingRequest",
     "DeepUnderstandingRequestBuilder",
@@ -76,14 +94,18 @@ __all__ = [
     "DeterministicUnderstandingConflictError",
     "DeterministicUnderstandingError",
     "DeterministicUnderstandingRule",
+    "EvidenceNormalizer",
     "IntentCatalog",
     "IntentDefinition",
     "InvalidDeterministicRuleError",
+    "InvalidModelEvidenceError",
+    "InvalidModelUncertaintyError",
     "InvalidUnderstandingCandidateError",
     "InvalidUnderstandingDefinitionError",
     "InvalidUnderstandingEvidenceError",
     "InvalidUnderstandingRoutingPolicyError",
     "MemoryCandidate",
+    "MissingDeepUnderstandingResultError",
     "ModelBoundaryError",
     "ModelContextSelectionPolicy",
     "ModelInputBoundaryError",
@@ -93,15 +115,21 @@ __all__ = [
     "NeedCatalog",
     "NeedDefinition",
     "NeedResult",
+    "RiskSignalNormalizer",
     "RiskSignalSet",
     "RuleParseResult",
     "SelectedModelContext",
     "StructuredUnderstandingModel",
     "TextMatchMode",
+    "UncertaintyNormalizer",
+    "UnderstandingCandidateExtractor",
     "UnderstandingEvidence",
     "UnderstandingEvidenceSource",
     "UnderstandingFoundationError",
     "UnderstandingPathRouter",
+    "UnderstandingPostprocessResult",
+    "UnderstandingPostprocessingError",
+    "UnderstandingPostprocessor",
     "UnderstandingRouteDecision",
     "UnderstandingRoutingError",
     "UnderstandingRoutingPolicy",

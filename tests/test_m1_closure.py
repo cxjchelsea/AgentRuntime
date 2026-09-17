@@ -9,7 +9,13 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 
-from runtime.context_building import ContextKind, CoreContextSelector, DefaultContextBuilder
+import runtime.context_building as context_building_module
+import runtime.input_processing as input_processing_module
+from runtime.context_building import (
+    ContextKind,
+    CoreContextSelector,
+    DefaultContextBuilder,
+)
 from runtime.contracts import InputTriggerType, RuntimeContext, RuntimeInput
 from runtime.input_processing import DefaultInputProcessor
 from runtime.interfaces import ContextBuilder, InputProcessor
@@ -78,11 +84,9 @@ def test_m1_runtime_packages_do_not_hardcode_real_domain_values() -> None:
 
 def test_m1_closure_does_not_claim_store_backed_capabilities() -> None:
     """真实 Store/Adapter 生命周期能力未实现时，不应在 runtime M1 包中伪造类型。"""
-    exported_names = {
-        name
-        for module in (__import__("runtime.input_processing", fromlist=["*"]),)
-        for name in dir(module)
-    }
+    exported_names = set(dir(input_processing_module)) | set(
+        dir(context_building_module)
+    )
     assert "RawInputAdapter" not in exported_names
     assert "SessionStore" not in exported_names
     assert "ConversationStore" not in exported_names

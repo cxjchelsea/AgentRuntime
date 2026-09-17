@@ -18,8 +18,8 @@ from tests.orchestration_stubs import (
     CallRecorder,
     StubContextBuilder,
     StubExecutionEngine,
-    StubPlanValidator,
     StubPlanner,
+    StubPlanValidator,
     StubPolicyEngine,
     StubPolicyRechecker,
     StubResponseGenerator,
@@ -140,9 +140,7 @@ def test_identifiers_use_the_same_internal_whitespace_rule(field_name: str) -> N
 
 
 def test_optional_blank_identifiers_become_none() -> None:
-    processed = _process(
-        _input(actor_id=" ", device_id="  ", tenant_id=" tenant-1 ")
-    )
+    processed = _process(_input(actor_id=" ", device_id="  ", tenant_id=" tenant-1 "))
 
     assert processed.actor_id is None
     assert processed.device_id is None
@@ -227,7 +225,8 @@ def test_timeout_trigger_is_meaningful_without_fabricated_payload() -> None:
     assert processed.text is None
 
 
-def test_payload_metadata_and_segments_are_preserved_without_domain_interpretation() -> None:
+def test_payload_metadata_and_segments_are_preserved_without_domain_interpretation(
+) -> None:
     payload = {"domain_event": "TEST_EVENT", "value": {"x": 1}}
     metadata = {"opaque_domain_key": "opaque-value"}
     segments = [{"start": 0.0, "end": 0.4, "text": "hello"}]

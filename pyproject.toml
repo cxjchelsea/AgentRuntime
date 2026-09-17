@@ -1,0 +1,17 @@
+[project]
+name = "agent-runtime"
+version = "0.1.0"
+description = "Reusable Agent Runtime Core Contracts (M0-IU1)"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0,<3",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

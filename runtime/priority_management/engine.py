@@ -1,0 +1,170 @@
+"""M2-IU3 deterministic Priority / Preemption Engines."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+from runtime.priority_management.definitions import (
+    CleanupPolicy,
+    IncomingDisposition,
+    PreemptionDecision,
+    PreemptionRule,
+    PriorityDecision,
+    PriorityRelation,
+    PrioritySubject,
+    ResumePolicy,
+)
+from runtime.priority_management.errors import (
+    AmbiguousPreemptionRuleError,
+    DuplicatePreemptionRuleError,
+    MissingPreemptionRuleError,
+)
+
+
+class PriorityEngine:
+    """Compare resolved numeric priorities without inventing Domain priority values."""
+
+    @staticmethod
+    def evaluate(
+        *,
+        current: PrioritySubject | None,
+        incoming: PrioritySubject,
+    ) -> PriorityDecision:
+        if current is None:
+            return PriorityDecision(
+                current_priority=None,
+                incoming_priority=incoming.priority,
+                relation=PriorityRelation.HIGHER,
+                higher_than_current=True,
+                reason_codes=("NO_CURRENT_ACTIVITY",),
+            )
+        if incoming.priority > current.priority:
+            relation = PriorityRelation.HIGHER
+            reason = "INCOMING_PRIORITY_HIGHER"
+        elif incoming.priority == current.priority:
+            relation = PriorityRelation.EQUAL
+            reason = "INCOMING_PRIORITY_EQUAL"
+        else:
+            relation = PriorityRelation.LOWER
+            reason = "INCOMING_PRIORITY_LOWER"
+        return PriorityDecision(
+            current_priority=current.priority,
+            incoming_priority=incoming.priority,
+            relation=relation,
+            higher_than_current=relation is PriorityRelation.HIGHER,
+            reason_codes=(reason,),
+        )
+
+
+class PreemptionEngine:
+    """Evaluate interruption using explicit injected rules.
+
+    This engine is pure: it does not cancel tasks, mutate RuntimeState, enqueue events,
+    or perform Safety / Policy decisions.
+    """
+
+    def __init__(self, rules: Iterable[PreemptionRule]) -> None:
+        self._rules = tuple(rules)
+        seen: set[tuple[str, str, PriorityRelation]] = set()
+        for rule in self._rules:
+            key = (rule.current_kind, rule.incoming_kind, rule.relation)
+            if key in seen:
+                raise DuplicatePreemptionRuleError(
+                    "duplicate preemption rule for current/incoming/relation"
+                )
+            seen.add(key)
+
+    def evaluate(
+        self,
+        *,
+        current: PrioritySubject | None,
+        incoming: PrioritySubject,
+        current_interruptible: bool,
+        priority_decision: PriorityDecision,
+    ) -> PreemptionDecision:
+        if current is None:
+            return PreemptionDecision(
+                current_subject_id=None,
+                incoming_subject_id=incoming.subject_id,
+                interrupt=False,
+                can_interrupt=False,
+                disposition=IncomingDisposition.PROCESS_NOW,
+                on_interrupt=None,
+                cleanup_policy=CleanupPolicy.NONE,
+                resume_policy=ResumePolicy.NO_RESUME,
+                priority_decision=priority_decision,
+                reason_codes=("NO_CURRENT_ACTIVITY",),
+            )
+
+        rule = self._select_rule(
+            current_kind=current.kind,
+            incoming_kind=incoming.kind,
+            relation=priority_decision.relation,
+        )
+        can_interrupt = current_interruptible and rule.interrupt
+
+        if rule.interrupt and not current_interruptible:
+            return PreemptionDecision(
+                current_subject_id=current.subject_id,
+                incoming_subject_id=incoming.subject_id,
+                interrupt=False,
+                can_interrupt=False,
+                disposition=IncomingDisposition.DEFER,
+                on_interrupt=None,
+                cleanup_policy=CleanupPolicy.NONE,
+                resume_policy=ResumePolicy.NO_RESUME,
+                priority_decision=priority_decision,
+                reason_codes=("CURRENT_ACTIVITY_NOT_INTERRUPTIBLE",),
+            )
+
+        return PreemptionDecision(
+            current_subject_id=current.subject_id,
+            incoming_subject_id=incoming.subject_id,
+            interrupt=rule.interrupt,
+            can_interrupt=can_interrupt,
+            disposition=rule.disposition,
+            on_interrupt=rule.on_interrupt,
+            cleanup_policy=rule.cleanup_policy,
+            resume_policy=rule.resume_policy,
+            priority_decision=priority_decision,
+            reason_codes=(
+                "PREEMPT_CURRENT_ACTIVITY"
+                if rule.interrupt
+                else f"INCOMING_{rule.disposition.value}"
+            ,),
+        )
+
+    def _select_rule(
+        self,
+        *,
+        current_kind: str,
+        incoming_kind: str,
+        relation: PriorityRelation,
+    ) -> PreemptionRule:
+        exact = [
+            rule
+            for rule in self._rules
+            if rule.current_kind == current_kind
+            and rule.incoming_kind == incoming_kind
+            and rule.relation is relation
+        ]
+        if len(exact) > 1:
+            raise AmbiguousPreemptionRuleError("multiple exact preemption rules matched")
+        if exact:
+            return exact[0]
+
+        fallback = [
+            rule
+            for rule in self._rules
+            if rule.current_kind == current_kind
+            and rule.incoming_kind == incoming_kind
+            and rule.relation is PriorityRelation.ANY
+        ]
+        if len(fallback) > 1:
+            raise AmbiguousPreemptionRuleError("multiple fallback preemption rules matched")
+        if fallback:
+            return fallback[0]
+
+        raise MissingPreemptionRuleError(
+            "no explicit preemption rule matched current/incoming/relation"
+        )

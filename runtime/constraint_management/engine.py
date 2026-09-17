@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from runtime.constraint_management.definitions import (
+    RuntimeConstraint,
+    StateConstraintDecision,
+)
+from runtime.constraint_management.errors import RuntimeConstraintInvariantError
 from runtime.contracts import (
     RuntimeContext,
     SafetyPhase,
@@ -14,11 +19,6 @@ from runtime.priority_management import (
     PriorityEngine,
     PrioritySubject,
 )
-from runtime.constraint_management.definitions import (
-    RuntimeConstraint,
-    StateConstraintDecision,
-)
-from runtime.constraint_management.errors import RuntimeConstraintInvariantError
 
 
 class RuntimeConstraintEvaluator:
@@ -82,7 +82,7 @@ class RuntimeConstraintEvaluator:
             interruptible=state.interruptible,
             active_task_id=state.active_task_id,
             active_workflow_id=state.active_workflow_id,
-            reason_codes=("RUNTIME_STATE_CONTEXT_VALID",),
+            reason_codes=("RUNTIME_STATE_CONTEXT_OBSERVED",),
         )
 
     @staticmethod

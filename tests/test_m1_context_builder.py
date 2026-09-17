@@ -37,6 +37,7 @@ from runtime.contracts import (
     SafetyPhase,
     SafetyResult,
     SafetyRiskLevel,
+    UnderstandingState,
 )
 from runtime.contracts.context import (
     ConversationContext,
@@ -50,8 +51,8 @@ from runtime.orchestration import RuntimeOrchestrator
 from tests.orchestration_stubs import (
     CallRecorder,
     StubExecutionEngine,
-    StubPlanValidator,
     StubPlanner,
+    StubPlanValidator,
     StubPolicyEngine,
     StubPolicyRechecker,
     StubResponseGenerator,
@@ -470,7 +471,7 @@ def test_real_input_and_context_can_replace_first_two_m0_stubs() -> None:
             self,
             runtime_input: RuntimeInput,
             runtime_context: RuntimeContext,
-            understanding_state,
+            understanding_state: UnderstandingState,
             early_safety: SafetyResult,
         ) -> SafetyResult:
             self._call_recorder.record("SAFETY_DEEP")
@@ -489,7 +490,7 @@ def test_real_input_and_context_can_replace_first_two_m0_stubs() -> None:
             self,
             runtime_input: RuntimeInput,
             runtime_context: RuntimeContext,
-        ):
+        ) -> UnderstandingState:
             self.seen_input = runtime_input
             self.seen_context = runtime_context
             return await super().understand(runtime_input, runtime_context)

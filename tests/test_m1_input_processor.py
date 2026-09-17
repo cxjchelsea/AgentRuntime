@@ -1,7 +1,7 @@
-"""M1-IU1: real Input Processor tests.
+"""M1-IU1：真实 Input Processor 测试。
 
-Only node ① is real in these tests.  No Understanding, Policy, Domain, LLM,
-Tool, Store, or Context implementation is introduced here.
+本文件只把节点①替换为真实实现，其余 M2-M8 继续使用 M0 Stub。
+不引入 Understanding、Policy、Domain、LLM、Tool、Store 或 Context 真实实现。
 """
 
 from __future__ import annotations
@@ -76,6 +76,13 @@ def test_raw_text_can_be_source_when_text_is_absent() -> None:
     assert processed.raw_text == "  raw   only  "
 
 
+def test_blank_text_falls_back_to_meaningful_raw_text() -> None:
+    processed = _process(_input(text="   ", raw_text=" hello from raw "))
+
+    assert processed.text == "hello from raw"
+    assert processed.raw_text == " hello from raw "
+
+
 def test_normalizes_timestamp_to_utc() -> None:
     plus_eight = timezone(timedelta(hours=8))
     processed = _process(
@@ -87,8 +94,9 @@ def test_normalizes_timestamp_to_utc() -> None:
 
 
 def test_rejects_naive_timestamp_instead_of_guessing_timezone() -> None:
+    naive_timestamp = datetime(2026, 9, 17, 8, 30, tzinfo=UTC).replace(tzinfo=None)
     with pytest.raises(InputNormalizationError, match="timezone-aware"):
-        _process(_input(timestamp=datetime(2026, 9, 17, 8, 30)))
+        _process(_input(timestamp=naive_timestamp))
 
 
 @pytest.mark.parametrize("confidence", [-0.01, 1.01, float("nan"), float("inf")])
@@ -125,6 +133,12 @@ def test_blank_required_identifier_is_rejected() -> None:
         _process(_input(subject_id="   "))
 
 
+@pytest.mark.parametrize("field_name", ["request_id", "actor_id"])
+def test_identifiers_use_the_same_internal_whitespace_rule(field_name: str) -> None:
+    with pytest.raises(InputNormalizationError, match="whitespace"):
+        _process(_input(**{field_name: "id with space"}))
+
+
 def test_optional_blank_identifiers_become_none() -> None:
     processed = _process(
         _input(actor_id=" ", device_id="  ", tenant_id=" tenant-1 ")
@@ -138,6 +152,23 @@ def test_optional_blank_identifiers_become_none() -> None:
 def test_empty_user_input_is_rejected() -> None:
     with pytest.raises(InputNormalizationError, match="user-originated input"):
         _process(_input(text="   ", raw_text=None, input_payload=None, segments=None))
+
+
+def test_zero_width_raw_text_cannot_bypass_empty_input_check() -> None:
+    with pytest.raises(InputNormalizationError, match="user-originated input"):
+        _process(
+            _input(
+                text=None,
+                raw_text="\u200b\ufeff",
+                input_payload=None,
+                segments=None,
+            )
+        )
+
+
+def test_empty_payload_and_segments_are_explicitly_treated_as_no_content() -> None:
+    with pytest.raises(InputNormalizationError, match="user-originated input"):
+        _process(_input(text=None, raw_text=None, input_payload={}, segments=[]))
 
 
 def test_user_input_without_text_can_use_payload_or_segments() -> None:
@@ -231,9 +262,24 @@ def test_processing_is_idempotent() -> None:
 
 def test_real_input_processor_can_replace_m0_stub_in_full_runtime() -> None:
     recorder = CallRecorder()
+
+    class CapturingSafetyGuard(StubSafetyGuard):
+        def __init__(self, call_recorder: CallRecorder) -> None:
+            super().__init__(call_recorder)
+            self.early_input: RuntimeInput | None = None
+
+        async def evaluate_early(
+            self,
+            runtime_input: RuntimeInput,
+            runtime_context=None,
+        ):
+            self.early_input = runtime_input
+            return await super().evaluate_early(runtime_input, runtime_context)
+
+    safety_guard = CapturingSafetyGuard(recorder)
     orchestrator = RuntimeOrchestrator(
         input_processor=DefaultInputProcessor(),
-        safety_guard=StubSafetyGuard(recorder),
+        safety_guard=safety_guard,
         context_builder=StubContextBuilder(recorder),
         understanding_engine=StubUnderstandingEngine(recorder),
         policy_engine=StubPolicyEngine(recorder),
@@ -252,5 +298,24 @@ def test_real_input_processor_can_replace_m0_stub_in_full_runtime() -> None:
 
     assert outcome.runtime_response is not None
     assert outcome.update_result is not None
-    assert [event.stage_name for event in outcome.trace.stage_events][0] == "INPUT"
+    assert safety_guard.early_input is not None
+    assert safety_guard.early_input.text == "hello runtime"
+    assert safety_guard.early_input.raw_text == "  hello   runtime "
+    assert [event.stage_name for event in outcome.trace.stage_events] == [
+        "INPUT",
+        "SAFETY_EARLY",
+        "CONTEXT",
+        "UNDERSTANDING",
+        "SAFETY_DEEP",
+        "POLICY",
+        "PLAN",
+        "PLAN_VALIDATE",
+        "POLICY_RECHECK",
+        "EXECUTE",
+        "RESULT_VALIDATE",
+        "RESPONSE_PLAN",
+        "RESPONSE_GENERATE",
+        "RESPONSE_VALIDATE",
+        "UPDATE",
+    ]
     assert outcome.trace.stage_events[0].output_contract_type == "RuntimeInput"

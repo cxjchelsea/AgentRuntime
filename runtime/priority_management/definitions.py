@@ -68,6 +68,8 @@ class PrioritySubject:
 class PriorityDecision:
     """Deterministic comparison only; it does not itself perform preemption."""
 
+    current_subject_id: str | None
+    incoming_subject_id: str
     current_priority: int | None
     incoming_priority: int
     relation: PriorityRelation

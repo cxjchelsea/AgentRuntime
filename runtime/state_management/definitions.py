@@ -14,7 +14,11 @@ from runtime.contracts import RuntimeControlState
 
 @dataclass(frozen=True, slots=True)
 class RuntimeStateDefinition:
-    """一个 Core RuntimeControlState 的确定性约束。"""
+    """一个 Core RuntimeControlState 的确定性约束。
+
+    ``allowed_transitions`` 必须由 Runtime 装配层显式提供。M2-IU2 不自行发明
+    某个项目的完整状态迁移图。
+    """
 
     state: RuntimeControlState
     interruptible: bool
@@ -60,114 +64,3 @@ class StateTransitionDecision:
     no_op: bool
     reason_codes: tuple[str, ...]
     expected_revision: int
-
-
-def core_runtime_state_definitions() -> tuple[RuntimeStateDefinition, ...]:
-    """返回 Core RuntimeControlState 的默认生命周期图。
-
-    这里只描述通用 Runtime 生命周期，不包含任何 Domain 业务状态或优先级。
-    Domain 若需要更窄的边界，应显式注入自己的 Core 状态配置，而不是扩展枚举。
-    """
-
-    return (
-        RuntimeStateDefinition(
-            RuntimeControlState.STARTING,
-            interruptible=False,
-            allowed_transitions=(
-                RuntimeControlState.IDLE,
-                RuntimeControlState.FAILED,
-                RuntimeControlState.ENDED,
-            ),
-        ),
-        RuntimeStateDefinition(
-            RuntimeControlState.IDLE,
-            interruptible=True,
-            allowed_transitions=(
-                RuntimeControlState.LISTENING,
-                RuntimeControlState.PROCESSING,
-                RuntimeControlState.ENDED,
-                RuntimeControlState.FAILED,
-            ),
-        ),
-        RuntimeStateDefinition(
-            RuntimeControlState.LISTENING,
-            interruptible=True,
-            allowed_transitions=(
-                RuntimeControlState.PROCESSING,
-                RuntimeControlState.IDLE,
-                RuntimeControlState.ENDED,
-                RuntimeControlState.FAILED,
-            ),
-        ),
-        RuntimeStateDefinition(
-            RuntimeControlState.PROCESSING,
-            interruptible=True,
-            allowed_transitions=(
-                RuntimeControlState.RESPONDING,
-                RuntimeControlState.WAITING_USER,
-                RuntimeControlState.WAITING_EXTERNAL,
-                RuntimeControlState.INTERRUPTED,
-                RuntimeControlState.IDLE,
-                RuntimeControlState.ENDED,
-                RuntimeControlState.FAILED,
-            ),
-        ),
-        RuntimeStateDefinition(
-            RuntimeControlState.RESPONDING,
-            interruptible=True,
-            allowed_transitions=(
-                RuntimeControlState.LISTENING,
-                RuntimeControlState.IDLE,
-                RuntimeControlState.WAITING_USER,
-                RuntimeControlState.INTERRUPTED,
-                RuntimeControlState.ENDED,
-                RuntimeControlState.FAILED,
-            ),
-        ),
-        RuntimeStateDefinition(
-            RuntimeControlState.WAITING_USER,
-            interruptible=True,
-            allowed_transitions=(
-                RuntimeControlState.PROCESSING,
-                RuntimeControlState.IDLE,
-                RuntimeControlState.INTERRUPTED,
-                RuntimeControlState.ENDED,
-                RuntimeControlState.FAILED,
-            ),
-        ),
-        RuntimeStateDefinition(
-            RuntimeControlState.WAITING_EXTERNAL,
-            interruptible=True,
-            allowed_transitions=(
-                RuntimeControlState.PROCESSING,
-                RuntimeControlState.IDLE,
-                RuntimeControlState.INTERRUPTED,
-                RuntimeControlState.ENDED,
-                RuntimeControlState.FAILED,
-            ),
-        ),
-        RuntimeStateDefinition(
-            RuntimeControlState.INTERRUPTED,
-            interruptible=False,
-            allowed_transitions=(
-                RuntimeControlState.PROCESSING,
-                RuntimeControlState.LISTENING,
-                RuntimeControlState.IDLE,
-                RuntimeControlState.ENDED,
-                RuntimeControlState.FAILED,
-            ),
-        ),
-        RuntimeStateDefinition(
-            RuntimeControlState.ENDED,
-            interruptible=False,
-            allowed_transitions=(),
-        ),
-        RuntimeStateDefinition(
-            RuntimeControlState.FAILED,
-            interruptible=False,
-            allowed_transitions=(
-                RuntimeControlState.IDLE,
-                RuntimeControlState.ENDED,
-            ),
-        ),
-    )

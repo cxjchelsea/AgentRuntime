@@ -148,6 +148,38 @@ def test_user_input_without_text_can_use_payload_or_segments() -> None:
     assert segment_input.segments == [{"text": "segment"}]
 
 
+@pytest.mark.parametrize(
+    ("source", "trigger_type", "payload"),
+    [
+        (InputSource.USER, InputTriggerType.USER_VOICE, {"audio_ref": "a-1"}),
+        (InputSource.SCHEDULER, InputTriggerType.SCHEDULER_EVENT, {"event": "TEST"}),
+        (InputSource.SYSTEM, InputTriggerType.SYSTEM_EVENT, {"event": "TEST"}),
+        (InputSource.TOOL, InputTriggerType.TOOL_CALLBACK, {"result_ref": "r-1"}),
+        (InputSource.SYSTEM, InputTriggerType.TIMEOUT, None),
+        (InputSource.EXTERNAL, InputTriggerType.NETWORK_EVENT, {"status": "TEST"}),
+    ],
+)
+def test_major_core_input_sources_remain_valid_runtime_inputs(
+    source: InputSource,
+    trigger_type: InputTriggerType,
+    payload: dict[str, object] | None,
+) -> None:
+    processed = _process(
+        _input(
+            source=source,
+            trigger_type=trigger_type,
+            text=None,
+            raw_text=None,
+            input_payload=payload,
+            segments=None,
+        )
+    )
+
+    assert processed.source is source
+    assert processed.trigger_type is trigger_type
+    assert processed.input_payload == payload
+
+
 def test_timeout_trigger_is_meaningful_without_fabricated_payload() -> None:
     processed = _process(
         _input(

@@ -54,13 +54,13 @@ class DefaultPolicyRechecker(PolicyRechecker):
 
     @staticmethod
     def _validate_policy(policy_decision: PolicyDecision) -> None:
-        if policy_decision.blocked or not policy_decision.allowed:
-            raise PlanPolicyViolationError(
-                "active PolicyDecision does not allow plan approval"
-            )
         if policy_decision.allowed and policy_decision.blocked:
             raise PolicyRecheckInvariantError(
                 "PolicyDecision cannot be both allowed and blocked"
+            )
+        if policy_decision.blocked or not policy_decision.allowed:
+            raise PlanPolicyViolationError(
+                "active PolicyDecision does not allow plan approval"
             )
 
     @classmethod
@@ -134,7 +134,10 @@ class DefaultPolicyRechecker(PolicyRechecker):
         action_plan_draft: ActionPlanDraft,
         policy_decision: PolicyDecision,
     ) -> None:
-        if policy_decision.confirmation_required is True and not action_plan_draft.confirmation_plan:
+        if (
+            policy_decision.confirmation_required is True
+            and not action_plan_draft.confirmation_plan
+        ):
             raise PlanPolicyViolationError(
                 "policy requires confirmation but plan has no confirmation_plan"
             )

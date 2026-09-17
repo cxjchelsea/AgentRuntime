@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import TypeVar
 
 from runtime.contracts import RuntimeContext, RuntimeInput, SafetyPhase, SafetyResult
 from runtime.contracts.context import (
@@ -37,7 +38,9 @@ from runtime.context_building.providers import (
 from runtime.context_building.selector import ContextSelector, CoreContextSelector
 from runtime.interfaces.context import ContextBuilder
 
-_EXPECTED_PROVIDER_TYPES: dict[ContextKind, type[ContextValue]] = {
+ContextType = TypeVar("ContextType")
+
+_EXPECTED_PROVIDER_TYPES: dict[ContextKind, type[object]] = {
     ContextKind.CONVERSATION: ConversationContext,
     ContextKind.TASK: TaskContext,
     ContextKind.MEMORY: MemoryContext,
@@ -269,8 +272,8 @@ class DefaultContextBuilder(ContextBuilder):
     def _value(
         values: dict[ContextKind, ContextValue],
         kind: ContextKind,
-        expected_type: type[ContextValue],
-    ) -> ContextValue | None:
+        expected_type: type[ContextType],
+    ) -> ContextType | None:
         value = values.get(kind)
         if value is None:
             return None

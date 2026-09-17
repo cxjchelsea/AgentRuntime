@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
+from runtime.contracts import RuntimeControlState
+from runtime.contracts.context import RuntimeStateContext
 from runtime.priority_management import (
     CleanupPolicy,
     DuplicatePreemptionRuleError,
@@ -12,6 +16,7 @@ from runtime.priority_management import (
     MissingPreemptionRuleError,
     PreemptionEngine,
     PreemptionRule,
+    PriorityDecisionMismatchError,
     PriorityEngine,
     PriorityRelation,
     PrioritySubject,
@@ -137,6 +142,40 @@ def test_noninterruptible_current_uses_explicit_blocked_disposition() -> None:
     assert decision.reason_codes == ("CURRENT_ACTIVITY_NOT_INTERRUPTIBLE",)
 
 
+def test_runtime_state_interruptible_flag_can_drive_preemption_boundary() -> None:
+    state_context = RuntimeStateContext(
+        current_state=RuntimeControlState.INTERRUPTED,
+        previous_state=RuntimeControlState.PROCESSING,
+        interruptible=False,
+        entered_at=datetime(2026, 9, 17, 13, 0, tzinfo=UTC),
+    )
+    current = _subject("current", "TEST_CURRENT", 20)
+    incoming = _subject("incoming", "TEST_INCOMING", 100)
+    priority = PriorityEngine.evaluate(current=current, incoming=incoming)
+    engine = PreemptionEngine(
+        rules=[
+            PreemptionRule(
+                current_kind="TEST_CURRENT",
+                incoming_kind="TEST_INCOMING",
+                relation=PriorityRelation.HIGHER,
+                interrupt=True,
+                disposition=IncomingDisposition.PROCESS_NOW,
+                when_not_interruptible=IncomingDisposition.DROP,
+            )
+        ]
+    )
+
+    decision = engine.evaluate(
+        current=current,
+        incoming=incoming,
+        current_interruptible=state_context.interruptible,
+        priority_decision=priority,
+    )
+
+    assert decision.interrupt is False
+    assert decision.disposition is IncomingDisposition.DROP
+
+
 def test_lower_priority_can_be_deferred_by_explicit_rule() -> None:
     current = _subject("current", "TEST_CURRENT", 80)
     incoming = _subject("incoming", "TEST_INCOMING", 10)
@@ -210,6 +249,21 @@ def test_any_relation_rule_is_fallback_but_exact_rule_wins() -> None:
         priority_decision=priority,
     )
     assert decision.interrupt is True
+
+
+def test_priority_decision_must_belong_to_same_subjects() -> None:
+    current = _subject("current", "TEST_CURRENT", 20)
+    incoming = _subject("incoming", "TEST_INCOMING", 100)
+    other_incoming = _subject("other", "TEST_INCOMING", 100)
+    stale = PriorityEngine.evaluate(current=current, incoming=other_incoming)
+
+    with pytest.raises(PriorityDecisionMismatchError):
+        PreemptionEngine(rules=[]).evaluate(
+            current=current,
+            incoming=incoming,
+            current_interruptible=True,
+            priority_decision=stale,
+        )
 
 
 def test_duplicate_rule_key_is_rejected() -> None:

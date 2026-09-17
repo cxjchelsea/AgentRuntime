@@ -17,6 +17,10 @@ class InvalidStateTransitionError(RuntimeStateError):
     """请求的 Core 状态迁移不合法。"""
 
 
+class StateNotInitializedError(RuntimeStateError):
+    """当前 scope 尚未建立 RuntimeStateSnapshot。"""
+
+
 class StateStoreUnavailableError(RuntimeStateError):
     """状态存储明确不可用。"""
 

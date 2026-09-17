@@ -187,7 +187,9 @@ class DefaultSafetyGuard(SafetyGuard):
         risk_levels = [finding.risk_level for finding in findings]
         if inherited is not None:
             risk_levels.append(inherited.risk_level)
-        risk_level = max(risk_levels, key=_RISK_ORDER.__getitem__, default=SafetyRiskLevel.NONE)
+        risk_level = max(
+            risk_levels, key=_RISK_ORDER.__getitem__, default=SafetyRiskLevel.NONE
+        )
 
         reason_codes = self._dedupe(
             ([*inherited.reason_codes] if inherited is not None else [])
@@ -206,15 +208,15 @@ class DefaultSafetyGuard(SafetyGuard):
         )
         restricted_actions = self._dedupe(
             ([*(inherited.restricted_actions or [])] if inherited is not None else [])
-            + [
-                action
-                for finding in findings
-                for action in finding.restricted_actions
-            ]
+            + [action for finding in findings for action in finding.restricted_actions]
         )
 
         force_workflows = self._dedupe(
-            ([inherited.force_workflow] if inherited and inherited.force_workflow else [])
+            (
+                [inherited.force_workflow]
+                if inherited and inherited.force_workflow
+                else []
+            )
             + [
                 finding.force_workflow
                 for finding in findings
@@ -235,17 +237,13 @@ class DefaultSafetyGuard(SafetyGuard):
                 evidence[finding.rule_id] = finding.evidence
 
         confidence_values = [
-            finding.confidence
-            for finding in findings
-            if finding.confidence is not None
+            finding.confidence for finding in findings if finding.confidence is not None
         ]
         if inherited is not None and inherited.confidence is not None:
             confidence_values.append(inherited.confidence)
 
         inherited_allowed = (
-            inherited.allowed_to_continue_normal_flow
-            if inherited is not None
-            else True
+            inherited.allowed_to_continue_normal_flow if inherited is not None else True
         )
         allowed_to_continue = inherited_allowed and all(
             finding.allowed_to_continue_normal_flow for finding in findings
@@ -256,7 +254,9 @@ class DefaultSafetyGuard(SafetyGuard):
             request_id=runtime_input.request_id,
             phase=phase,
             risk_detected=(inherited.risk_detected if inherited is not None else False)
-            or any(finding.risk_level is not SafetyRiskLevel.NONE for finding in findings),
+            or any(
+                finding.risk_level is not SafetyRiskLevel.NONE for finding in findings
+            ),
             risk_level=risk_level,
             interrupt_current_task=(
                 inherited.interrupt_current_task if inherited is not None else False

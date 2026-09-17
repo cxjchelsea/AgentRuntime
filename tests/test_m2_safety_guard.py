@@ -36,8 +36,8 @@ from runtime.safety import (
 from tests.orchestration_stubs import (
     CallRecorder,
     StubExecutionEngine,
-    StubPlanValidator,
     StubPlanner,
+    StubPlanValidator,
     StubPolicyEngine,
     StubPolicyRechecker,
     StubResponseGenerator,
@@ -96,7 +96,9 @@ class DeepCriticalRule(BaseTestRule):
         understanding_state: UnderstandingState,
         early_safety: SafetyResult,
     ) -> SafetyFinding | None:
-        if not understanding_state.risk or not understanding_state.risk.get("test_flag"):
+        if not understanding_state.risk or not understanding_state.risk.get(
+            "test_flag"
+        ):
             return None
         return SafetyFinding(
             rule_id=self.rule_id,
@@ -109,6 +111,41 @@ class DeepCriticalRule(BaseTestRule):
             safety_lock_required=True,
             force_workflow="TEST_SAFETY_WORKFLOW",
             requires_immediate_action=True,
+        )
+
+
+class EarlyLowAllowRule(BaseTestRule):
+    """较低风险且允许继续，用于验证最严格聚合。"""
+
+    async def evaluate_early(
+        self,
+        runtime_input: RuntimeInput,
+        runtime_context: RuntimeContext | None,
+    ) -> SafetyFinding | None:
+        return SafetyFinding(
+            rule_id=self.rule_id,
+            risk_level=SafetyRiskLevel.LOW,
+            reason_codes=("TEST_LOW",),
+            allowed_to_continue_normal_flow=True,
+            restricted_actions=("TEST_LOW_RESTRICTED",),
+        )
+
+
+class EarlyHighDenyRule(BaseTestRule):
+    """较高风险且禁止继续，用于验证最严格聚合。"""
+
+    async def evaluate_early(
+        self,
+        runtime_input: RuntimeInput,
+        runtime_context: RuntimeContext | None,
+    ) -> SafetyFinding | None:
+        return SafetyFinding(
+            rule_id=self.rule_id,
+            risk_level=SafetyRiskLevel.HIGH,
+            reason_codes=("TEST_HIGH",),
+            interrupt_current_task=True,
+            allowed_to_continue_normal_flow=False,
+            restricted_actions=("TEST_HIGH_RESTRICTED",),
         )
 
 
@@ -257,6 +294,22 @@ def test_deep_no_match_still_preserves_early_high_risk() -> None:
     assert deep.force_workflow == "TEST_SAFETY_WORKFLOW"
 
 
+def test_multiple_early_rules_use_strictest_constraint_aggregation() -> None:
+    result = asyncio.run(
+        _guard(
+            EarlyLowAllowRule("TEST_LOW_RULE"),
+            EarlyHighDenyRule("TEST_HIGH_RULE"),
+        ).evaluate_early(build_runtime_input(text="hello"))
+    )
+
+    assert result.risk_level is SafetyRiskLevel.HIGH
+    assert result.allowed_to_continue_normal_flow is False
+    assert result.interrupt_current_task is True
+    assert result.reason_codes == ["TEST_LOW", "TEST_HIGH"]
+    assert result.restricted_actions == ["TEST_LOW_RESTRICTED", "TEST_HIGH_RESTRICTED"]
+    assert result.matched_rules == ["TEST_LOW_RULE", "TEST_HIGH_RULE"]
+
+
 def test_conflicting_forced_workflows_fail_instead_of_arbitrarily_picking_one() -> None:
     guard = _guard(
         ConflictingWorkflowRule("TEST_RULE_A", "TEST_WORKFLOW_A"),
@@ -333,7 +386,9 @@ def test_deep_requires_understanding_for_same_request() -> None:
         }
     )
 
-    with pytest.raises(SafetyGuardInvariantError, match="UnderstandingState request_id"):
+    with pytest.raises(
+        SafetyGuardInvariantError, match="UnderstandingState request_id"
+    ):
         asyncio.run(
             guard.evaluate_deep(
                 runtime_input,
@@ -346,6 +401,21 @@ def test_deep_requires_understanding_for_same_request() -> None:
 
 def test_real_safety_guard_can_replace_m0_safety_stub_in_full_runtime() -> None:
     recorder = CallRecorder()
+
+    class CapturingUnderstandingEngine(StubUnderstandingEngine):
+        def __init__(self, call_recorder: CallRecorder) -> None:
+            super().__init__(call_recorder)
+            self.seen_context: RuntimeContext | None = None
+
+        async def understand(
+            self,
+            runtime_input: RuntimeInput,
+            runtime_context: RuntimeContext,
+        ) -> UnderstandingState:
+            self.seen_context = runtime_context
+            return await super().understand(runtime_input, runtime_context)
+
+    understanding = CapturingUnderstandingEngine(recorder)
     safety_guard = _guard(EarlyHighRule("TEST_EARLY_RULE"))
     orchestrator = RuntimeOrchestrator(
         input_processor=DefaultInputProcessor(),
@@ -353,7 +423,7 @@ def test_real_safety_guard_can_replace_m0_safety_stub_in_full_runtime() -> None:
         context_builder=DefaultContextBuilder(
             runtime_state_provider=GateRuntimeStateProvider()
         ),
-        understanding_engine=StubUnderstandingEngine(recorder),
+        understanding_engine=understanding,
         policy_engine=StubPolicyEngine(recorder),
         planner=StubPlanner(recorder),
         plan_validator=StubPlanValidator(recorder),
@@ -366,12 +436,14 @@ def test_real_safety_guard_can_replace_m0_safety_stub_in_full_runtime() -> None:
         state_memory_updater=StubStateMemoryUpdater(recorder),
     )
 
-    outcome = asyncio.run(
-        orchestrator.run(build_runtime_input(text="  TEST_RISK  "))
-    )
+    outcome = asyncio.run(orchestrator.run(build_runtime_input(text="  TEST_RISK  ")))
 
     assert outcome.runtime_response is not None
     assert outcome.update_result is not None
+    assert understanding.seen_context is not None
+    assert understanding.seen_context.safety_context is not None
+    assert understanding.seen_context.safety_context.current_risk_state == "HIGH"
+    assert understanding.seen_context.safety_context.safety_lock is True
     assert [event.stage_name for event in outcome.trace.stage_events] == [
         "INPUT",
         "SAFETY_EARLY",
@@ -413,7 +485,7 @@ def test_rule_exception_is_wrapped_by_runtime_stage_error() -> None:
     )
 
     with pytest.raises(StageExecutionError) as exc_info:
-        asyncio.run(orchestrator.run(build_runtime_input()))
+        asyncio.run(orchestrator.run(build_runtime_input(text="hello")))
 
     assert exc_info.value.stage_name == "SAFETY_EARLY"
     assert isinstance(exc_info.value.cause, SafetyRuleExecutionError)

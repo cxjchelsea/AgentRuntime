@@ -16,6 +16,7 @@ from runtime.priority_management.errors import (
     DuplicatePreemptionRuleError,
     InvalidPrioritySubjectError,
     MissingPreemptionRuleError,
+    PriorityDecisionMismatchError,
     PriorityPreemptionError,
 )
 
@@ -30,6 +31,7 @@ __all__ = [
     "PreemptionEngine",
     "PreemptionRule",
     "PriorityDecision",
+    "PriorityDecisionMismatchError",
     "PriorityEngine",
     "PriorityPreemptionError",
     "PriorityRelation",

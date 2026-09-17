@@ -11,12 +11,12 @@ import pytest
 from runtime.contracts import (
     CoreControlIntent,
     IntentEvidenceSource,
-    ProcessingPath,
     QualityAssessment,
     UnderstandingMetadata,
     UnderstandingState,
 )
 from runtime.contracts.common import CanonicalModel, VersionedContract
+from runtime.contracts.enums import ProcessingPath
 from runtime.contracts.understanding import UncertaintyAssessment
 from runtime.interfaces import UnderstandingEngine
 from runtime.understanding import (
@@ -103,7 +103,9 @@ def test_m3_internal_types_are_not_canonical_contracts() -> None:
         assert not issubclass(internal_type, VersionedContract)
 
 
-def test_intent_catalog_accepts_domain_registered_values_without_core_enum_change() -> None:
+def test_intent_catalog_accepts_domain_registered_values_without_core_enum_change() -> (
+    None
+):
     catalog = IntentCatalog()
     definition = IntentDefinition(
         intent_id="DOMAIN_CUSTOM_INTENT",
@@ -158,12 +160,16 @@ def test_need_and_candidate_action_catalogs_are_metadata_only() -> None:
     need_catalog.register_definition(need)
     action_catalog.register_definition(action)
 
-    assert need_catalog.get(
-        "DOMAIN_NEED", "1.0.0", namespace="example-domain"
-    ).definition == need
-    assert action_catalog.get(
-        "DOMAIN_SEMANTIC_ACTION", "1.0.0", namespace="example-domain"
-    ).definition == action
+    assert (
+        need_catalog.get("DOMAIN_NEED", "1.0.0", namespace="example-domain").definition
+        == need
+    )
+    assert (
+        action_catalog.get(
+            "DOMAIN_SEMANTIC_ACTION", "1.0.0", namespace="example-domain"
+        ).definition
+        == action
+    )
 
 
 def test_evidence_and_candidates_project_into_frozen_dictionary_fields() -> None:

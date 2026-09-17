@@ -57,9 +57,7 @@ class IntentDefinition:
         _require_non_blank(
             self.intent_id, "intent_id", InvalidUnderstandingDefinitionError
         )
-        _require_non_blank(
-            self.version, "version", InvalidUnderstandingDefinitionError
-        )
+        _require_non_blank(self.version, "version", InvalidUnderstandingDefinitionError)
         _require_optional_non_blank(
             self.namespace, "namespace", InvalidUnderstandingDefinitionError
         )
@@ -86,12 +84,8 @@ class NeedDefinition:
     description: str | None = None
 
     def __post_init__(self) -> None:
-        _require_non_blank(
-            self.need_id, "need_id", InvalidUnderstandingDefinitionError
-        )
-        _require_non_blank(
-            self.version, "version", InvalidUnderstandingDefinitionError
-        )
+        _require_non_blank(self.need_id, "need_id", InvalidUnderstandingDefinitionError)
+        _require_non_blank(self.version, "version", InvalidUnderstandingDefinitionError)
         _require_optional_non_blank(
             self.namespace, "namespace", InvalidUnderstandingDefinitionError
         )
@@ -117,9 +111,7 @@ class CandidateActionDefinition:
         _require_non_blank(
             self.action_id, "action_id", InvalidUnderstandingDefinitionError
         )
-        _require_non_blank(
-            self.version, "version", InvalidUnderstandingDefinitionError
-        )
+        _require_non_blank(self.version, "version", InvalidUnderstandingDefinitionError)
         _require_optional_non_blank(
             self.namespace, "namespace", InvalidUnderstandingDefinitionError
         )
@@ -249,12 +241,8 @@ class MemoryCandidate:
         _require_non_blank(
             self.memory_type, "memory_type", InvalidUnderstandingCandidateError
         )
-        _require_non_blank(
-            self.content, "content", InvalidUnderstandingCandidateError
-        )
-        _require_non_blank(
-            self.source, "source", InvalidUnderstandingCandidateError
-        )
+        _require_non_blank(self.content, "content", InvalidUnderstandingCandidateError)
+        _require_non_blank(self.source, "source", InvalidUnderstandingCandidateError)
         _require_confidence(
             self.confidence, "confidence", InvalidUnderstandingCandidateError
         )
@@ -291,9 +279,7 @@ class CandidateAction:
     reason_code: str | None = None
 
     def __post_init__(self) -> None:
-        _require_non_blank(
-            self.action, "action", InvalidUnderstandingCandidateError
-        )
+        _require_non_blank(self.action, "action", InvalidUnderstandingCandidateError)
         _require_confidence(
             self.confidence, "confidence", InvalidUnderstandingCandidateError
         )

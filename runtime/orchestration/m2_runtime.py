@@ -125,10 +125,12 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
             ),
             PolicyDecision,
             input_contract_type="SafetyResult",
-            invariant_check=lambda decision: self._assert_runtime_constraint_allows_flow(
-                constraint_box,
-                processed_input.request_id,
-                decision,
+            invariant_check=lambda decision: (
+                self._assert_runtime_constraint_allows_flow(
+                    constraint_box,
+                    processed_input.request_id,
+                    decision,
+                )
             ),
         )
 

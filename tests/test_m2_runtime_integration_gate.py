@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
 
 import pytest
 
@@ -50,8 +49,8 @@ from runtime.state_management import (
 from tests.orchestration_stubs import (
     CallRecorder,
     StubExecutionEngine,
-    StubPlanValidator,
     StubPlanner,
+    StubPlanValidator,
     StubResponseGenerator,
     StubResponsePlanner,
     StubResponseValidator,
@@ -75,7 +74,9 @@ class RequestAwareUnderstandingEngine(UnderstandingEngine):
         del runtime_context
         self._recorder.record("UNDERSTANDING")
         base = build_understanding_state()
-        metadata = base.metadata.model_copy(update={"request_id": runtime_input.request_id})
+        metadata = base.metadata.model_copy(
+            update={"request_id": runtime_input.request_id}
+        )
         return base.model_copy(update={"metadata": metadata})
 
 
@@ -306,8 +307,10 @@ def test_high_safety_forced_workflow_stops_ordinary_planner_at_policy() -> None:
         assert captured.value.forced_workflow == "TEST_SAFETY_WORKFLOW"
         assert "PLAN" not in recorder.entries
         assert orchestrator.last_trace is not None
-        assert [event.stage_name for event in orchestrator.last_trace.stage_events][-1] == "POLICY"
-        assert orchestrator.last_trace.stage_events[-1].status.value == "ERROR"
+        last_policy_event = orchestrator.last_trace.stage_events[-1]
+        assert last_policy_event.stage_name == "POLICY"
+        assert last_policy_event.status is not None
+        assert last_policy_event.status.value == "ERROR"
 
     asyncio.run(scenario())
 
@@ -448,7 +451,9 @@ def test_cross_turn_draft_request_id_is_rejected_at_plan_boundary() -> None:
         assert captured.value.stage_name == "PLAN"
         assert "PLAN_VALIDATE" not in recorder.entries
         assert orchestrator.last_trace is not None
-        assert orchestrator.last_trace.stage_events[-1].stage_name == "PLAN"
-        assert orchestrator.last_trace.stage_events[-1].status.value == "ERROR"
+        last_plan_event = orchestrator.last_trace.stage_events[-1]
+        assert last_plan_event.stage_name == "PLAN"
+        assert last_plan_event.status is not None
+        assert last_plan_event.status.value == "ERROR"
 
     asyncio.run(scenario())

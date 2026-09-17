@@ -9,7 +9,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from runtime.contracts import RuntimeContext, RuntimeInput, SafetyResult, UnderstandingState
+from runtime.contracts import (
+    RuntimeContext,
+    RuntimeInput,
+    SafetyResult,
+    UnderstandingState,
+)
 from runtime.orchestration.errors import RuntimeOrchestrationError
 from runtime.priority_management import IncomingDisposition, PrioritySubject
 
@@ -38,7 +43,7 @@ class PrioritySubjectResolver(ABC):
         safety_result: SafetyResult,
     ) -> ResolvedPrioritySubjects:
         """Return current/incoming subjects for the current turn."""
-        raise NotImplementedError
+        ...
 
 
 class RuntimeControlBlockedError(RuntimeOrchestrationError):

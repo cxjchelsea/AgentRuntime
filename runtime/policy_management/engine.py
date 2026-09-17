@@ -181,13 +181,12 @@ class DefaultPolicyEngine(PolicyEngine):
         self,
         fragments: list[PolicyFragment],
     ) -> ValidationMode:
-        modes = [
+        modes = [self._default_validation_mode]
+        modes.extend(
             fragment.validation_mode
             for fragment in fragments
             if fragment.validation_mode is not None
-        ]
-        if not modes:
-            return self._default_validation_mode
+        )
         return max(modes, key=lambda mode: _VALIDATION_ORDER[mode])
 
     @staticmethod
@@ -196,11 +195,11 @@ class DefaultPolicyEngine(PolicyEngine):
         field_name: str,
         label: str,
     ) -> str | None:
-        values = {
-            value
-            for fragment in fragments
-            if (value := getattr(fragment, field_name)) is not None
-        }
+        values: set[str] = set()
+        for fragment in fragments:
+            value = getattr(fragment, field_name)
+            if value is not None:
+                values.add(value)
         if len(values) > 1:
             raise PolicyConflictError(f"conflicting {label} values")
         return next(iter(values), None)
@@ -300,8 +299,7 @@ class DefaultPolicyEngine(PolicyEngine):
     ) -> None:
         if safety_result.phase is not SafetyPhase.DEEP:
             raise PolicyInvariantError("PolicyEngine requires DEEP SafetyResult")
-        request_id = understanding_state.metadata.request_id
-        if request_id is not None and request_id != safety_result.request_id:
+        if understanding_state.metadata.request_id != safety_result.request_id:
             raise PolicyInvariantError(
                 "UnderstandingState and SafetyResult request_id must match"
             )

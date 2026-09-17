@@ -31,6 +31,7 @@ from runtime.contracts import (
     IdentityStatus,
     InputSource,
     InputTriggerType,
+    RuntimeContext,
     RuntimeControlState,
     RuntimeInput,
     SafetyPhase,
@@ -99,8 +100,10 @@ def _safety(**overrides: object) -> SafetyResult:
     return SafetyResult.model_validate(values)
 
 
-class StubRuntimeStateProvider(RuntimeStateProvider):
+class TestRuntimeStateProvider(RuntimeStateProvider):
     """测试用真实状态快照来源。"""
+
+    __test__ = False
 
     def __init__(self) -> None:
         self.calls = 0
@@ -120,9 +123,19 @@ class FailingRuntimeStateProvider(RuntimeStateProvider):
         raise ContextProviderUnavailable("state store unavailable")
 
 
+class ExplodingRuntimeStateProvider(RuntimeStateProvider):
+    async def load(self, runtime_input: RuntimeInput) -> RuntimeStateContext:
+        raise ValueError("provider bug")
+
+
 class BoundIdentityResolver(IdentityStatusResolver):
     async def resolve(self, runtime_input: RuntimeInput) -> IdentityStatus:
         return IdentityStatus.BOUND
+
+
+class UnboundIdentityResolver(IdentityStatusResolver):
+    async def resolve(self, runtime_input: RuntimeInput) -> IdentityStatus:
+        return IdentityStatus.UNBOUND
 
 
 class UnavailableIdentityResolver(IdentityStatusResolver):
@@ -177,7 +190,7 @@ def _build(
     builder: DefaultContextBuilder,
     runtime_input: RuntimeInput | None = None,
     safety_result: SafetyResult | None = None,
-):
+) -> RuntimeContext:
     return asyncio.run(
         builder.build(
             runtime_input or _input(),
@@ -187,7 +200,7 @@ def _build(
 
 
 def test_builds_required_context_from_observed_core_facts() -> None:
-    state_provider = StubRuntimeStateProvider()
+    state_provider = TestRuntimeStateProvider()
     builder = DefaultContextBuilder(runtime_state_provider=state_provider)
 
     context = _build(builder)
@@ -209,23 +222,30 @@ def test_builds_required_context_from_observed_core_facts() -> None:
 
 def test_identity_status_is_never_inferred_from_subject_id() -> None:
     unknown_context = _build(
-        DefaultContextBuilder(runtime_state_provider=StubRuntimeStateProvider())
+        DefaultContextBuilder(runtime_state_provider=TestRuntimeStateProvider())
     )
     bound_context = _build(
         DefaultContextBuilder(
-            runtime_state_provider=StubRuntimeStateProvider(),
+            runtime_state_provider=TestRuntimeStateProvider(),
             identity_status_resolver=BoundIdentityResolver(),
+        )
+    )
+    unbound_context = _build(
+        DefaultContextBuilder(
+            runtime_state_provider=TestRuntimeStateProvider(),
+            identity_status_resolver=UnboundIdentityResolver(),
         )
     )
 
     assert unknown_context.identity_context.identity_status is IdentityStatus.UNKNOWN
     assert bound_context.identity_context.identity_status is IdentityStatus.BOUND
+    assert unbound_context.identity_context.identity_status is IdentityStatus.UNBOUND
 
 
 def test_unavailable_identity_resolver_is_explicitly_missing() -> None:
     context = _build(
         DefaultContextBuilder(
-            runtime_state_provider=StubRuntimeStateProvider(),
+            runtime_state_provider=TestRuntimeStateProvider(),
             identity_status_resolver=UnavailableIdentityResolver(),
         )
     )
@@ -243,7 +263,7 @@ def test_early_safety_is_projected_without_new_risk_inference() -> None:
         restricted_actions=["TEST_RESTRICTED_ACTION"],
     )
     context = _build(
-        DefaultContextBuilder(runtime_state_provider=StubRuntimeStateProvider()),
+        DefaultContextBuilder(runtime_state_provider=TestRuntimeStateProvider()),
         safety_result=safety,
     )
 
@@ -256,7 +276,7 @@ def test_early_safety_is_projected_without_new_risk_inference() -> None:
 def test_deep_safety_cannot_enter_context_builder() -> None:
     with pytest.raises(ContextBuildInvariantError, match="EARLY"):
         _build(
-            DefaultContextBuilder(runtime_state_provider=StubRuntimeStateProvider()),
+            DefaultContextBuilder(runtime_state_provider=TestRuntimeStateProvider()),
             safety_result=_safety(phase=SafetyPhase.DEEP),
         )
 
@@ -264,7 +284,7 @@ def test_deep_safety_cannot_enter_context_builder() -> None:
 def test_mismatched_request_id_is_rejected() -> None:
     with pytest.raises(ContextBuildInvariantError, match="request_id"):
         _build(
-            DefaultContextBuilder(runtime_state_provider=StubRuntimeStateProvider()),
+            DefaultContextBuilder(runtime_state_provider=TestRuntimeStateProvider()),
             safety_result=_safety(request_id="another-request"),
         )
 
@@ -272,6 +292,11 @@ def test_mismatched_request_id_is_rejected() -> None:
 def test_runtime_state_is_critical_and_failure_is_not_fabricated() -> None:
     with pytest.raises(CriticalContextUnavailableError, match="runtime_state_context"):
         _build(DefaultContextBuilder(runtime_state_provider=FailingRuntimeStateProvider()))
+
+
+def test_unexpected_runtime_state_provider_error_is_not_hidden_as_unavailable() -> None:
+    with pytest.raises(ValueError, match="provider bug"):
+        _build(DefaultContextBuilder(runtime_state_provider=ExplodingRuntimeStateProvider()))
 
 
 def test_default_selector_loads_only_core_relevant_optional_contexts() -> None:
@@ -284,7 +309,7 @@ def test_default_selector_loads_only_core_relevant_optional_contexts() -> None:
         MemoryContext(retrieved_memories=[]),
     )
     builder = DefaultContextBuilder(
-        runtime_state_provider=StubRuntimeStateProvider(),
+        runtime_state_provider=TestRuntimeStateProvider(),
         providers=[conversation, memory],
     )
 
@@ -298,7 +323,7 @@ def test_default_selector_loads_only_core_relevant_optional_contexts() -> None:
 
 def test_unregistered_selected_context_is_explicitly_missing() -> None:
     context = _build(
-        DefaultContextBuilder(runtime_state_provider=StubRuntimeStateProvider())
+        DefaultContextBuilder(runtime_state_provider=TestRuntimeStateProvider())
     )
 
     assert context.missing_context == [
@@ -310,9 +335,7 @@ def test_unregistered_selected_context_is_explicitly_missing() -> None:
 
 
 def test_provider_unavailable_is_distinct_from_empty_context() -> None:
-    selector = CoreContextSelector(
-        {InputTriggerType.USER_TEXT: (ContextKind.MEMORY,)}
-    )
+    selector = CoreContextSelector({InputTriggerType.USER_TEXT: (ContextKind.MEMORY,)})
     unavailable = FixedContextProvider(
         ContextKind.MEMORY,
         None,
@@ -320,7 +343,7 @@ def test_provider_unavailable_is_distinct_from_empty_context() -> None:
     )
     unavailable_context = _build(
         DefaultContextBuilder(
-            runtime_state_provider=StubRuntimeStateProvider(),
+            runtime_state_provider=TestRuntimeStateProvider(),
             providers=[unavailable],
             selector=selector,
         )
@@ -332,7 +355,7 @@ def test_provider_unavailable_is_distinct_from_empty_context() -> None:
     )
     empty_context = _build(
         DefaultContextBuilder(
-            runtime_state_provider=StubRuntimeStateProvider(),
+            runtime_state_provider=TestRuntimeStateProvider(),
             providers=[empty],
             selector=selector,
         )
@@ -358,7 +381,7 @@ def test_domain_extension_only_enters_canonical_mount_point() -> None:
     )
     context = _build(
         DefaultContextBuilder(
-            runtime_state_provider=StubRuntimeStateProvider(),
+            runtime_state_provider=TestRuntimeStateProvider(),
             providers=[provider],
             selector=selector,
         )
@@ -366,7 +389,7 @@ def test_domain_extension_only_enters_canonical_mount_point() -> None:
 
     assert context.domain_extensions is not None
     assert context.domain_extensions.domain_id == "TEST_DOMAIN"
-    assert "current_business" not in RuntimeStateContext.model_fields
+    assert "current_business" not in context.runtime_state_context.model_fields
 
 
 def test_wrong_provider_result_type_fails_fast() -> None:
@@ -374,7 +397,7 @@ def test_wrong_provider_result_type_fails_fast() -> None:
         {InputTriggerType.USER_TEXT: (ContextKind.CONVERSATION,)}
     )
     builder = DefaultContextBuilder(
-        runtime_state_provider=StubRuntimeStateProvider(),
+        runtime_state_provider=TestRuntimeStateProvider(),
         providers=[InvalidConversationProvider()],
         selector=selector,
     )
@@ -395,7 +418,7 @@ def test_duplicate_provider_kind_is_rejected() -> None:
 
     with pytest.raises(DuplicateContextProviderError, match="task_context"):
         DefaultContextBuilder(
-            runtime_state_provider=StubRuntimeStateProvider(),
+            runtime_state_provider=TestRuntimeStateProvider(),
             providers=[provider_a, provider_b],
         )
 
@@ -412,7 +435,7 @@ def test_tool_callback_selector_does_not_load_unrelated_context() -> None:
     )
     context = _build(
         DefaultContextBuilder(
-            runtime_state_provider=StubRuntimeStateProvider(),
+            runtime_state_provider=TestRuntimeStateProvider(),
             providers=[task, tool, conversation],
         ),
         runtime_input=_input(
@@ -433,14 +456,54 @@ def test_tool_callback_selector_does_not_load_unrelated_context() -> None:
 
 def test_real_input_and_context_can_replace_first_two_m0_stubs() -> None:
     recorder = CallRecorder()
+
+    class RequestAwareSafetyGuard(StubSafetyGuard):
+        async def evaluate_early(
+            self,
+            runtime_input: RuntimeInput,
+            runtime_context: RuntimeContext | None = None,
+        ) -> SafetyResult:
+            self._call_recorder.record("SAFETY_EARLY")
+            return _safety(request_id=runtime_input.request_id)
+
+        async def evaluate_deep(
+            self,
+            runtime_input: RuntimeInput,
+            runtime_context: RuntimeContext,
+            understanding_state,
+            early_safety: SafetyResult,
+        ) -> SafetyResult:
+            self._call_recorder.record("SAFETY_DEEP")
+            return _safety(
+                request_id=runtime_input.request_id,
+                phase=SafetyPhase.DEEP,
+            )
+
+    class CapturingUnderstandingEngine(StubUnderstandingEngine):
+        def __init__(self, call_recorder: CallRecorder) -> None:
+            super().__init__(call_recorder)
+            self.seen_input: RuntimeInput | None = None
+            self.seen_context: RuntimeContext | None = None
+
+        async def understand(
+            self,
+            runtime_input: RuntimeInput,
+            runtime_context: RuntimeContext,
+        ):
+            self.seen_input = runtime_input
+            self.seen_context = runtime_context
+            return await super().understand(runtime_input, runtime_context)
+
+    safety_guard = RequestAwareSafetyGuard(recorder)
+    understanding_engine = CapturingUnderstandingEngine(recorder)
     context_builder = DefaultContextBuilder(
-        runtime_state_provider=StubRuntimeStateProvider()
+        runtime_state_provider=TestRuntimeStateProvider()
     )
     orchestrator = RuntimeOrchestrator(
         input_processor=DefaultInputProcessor(),
-        safety_guard=StubSafetyGuard(recorder),
+        safety_guard=safety_guard,
         context_builder=context_builder,
-        understanding_engine=StubUnderstandingEngine(recorder),
+        understanding_engine=understanding_engine,
         policy_engine=StubPolicyEngine(recorder),
         planner=StubPlanner(recorder),
         plan_validator=StubPlanValidator(recorder),
@@ -453,10 +516,34 @@ def test_real_input_and_context_can_replace_first_two_m0_stubs() -> None:
         state_memory_updater=StubStateMemoryUpdater(recorder),
     )
 
-    outcome = asyncio.run(orchestrator.run(_input(text="  hello   context ")))
+    outcome = asyncio.run(
+        orchestrator.run(
+            _input(
+                request_id="request-integration",
+                session_id="session-integration",
+                text="  hello   context ",
+            )
+        )
+    )
 
     assert outcome.runtime_response is not None
     assert outcome.update_result is not None
+    assert understanding_engine.seen_input is not None
+    assert understanding_engine.seen_input.request_id == "request-integration"
+    assert understanding_engine.seen_input.text == "hello context"
+    assert understanding_engine.seen_input.raw_text == "  hello   context "
+    assert understanding_engine.seen_context is not None
+    assert understanding_engine.seen_context.session_context.session_id == (
+        "session-integration"
+    )
+    assert understanding_engine.seen_context.identity_context.subject_id == "subject-001"
+    assert understanding_engine.seen_context.safety_context is not None
+    assert (
+        understanding_engine.seen_context.safety_context.current_risk_state
+        == SafetyRiskLevel.NONE.value
+    )
+    assert understanding_engine.seen_context.time_context is not None
+    assert understanding_engine.seen_context.time_context.current_datetime == _input().timestamp
     assert [event.stage_name for event in outcome.trace.stage_events] == [
         "INPUT",
         "SAFETY_EARLY",

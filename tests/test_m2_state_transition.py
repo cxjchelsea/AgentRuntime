@@ -8,10 +8,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from runtime.context_building import DefaultContextBuilder
-from runtime.contracts import (
-    RuntimeControlState,
-    RuntimeInput,
-)
+from runtime.contracts import RuntimeContext, RuntimeControlState, UnderstandingState
 from runtime.input_processing import DefaultInputProcessor
 from runtime.orchestration import RuntimeOrchestrator
 from runtime.safety import DefaultSafetyGuard
@@ -19,17 +16,17 @@ from runtime.state_management import (
     EngineRuntimeStateProvider,
     InMemoryRuntimeStateStore,
     InvalidStateTransitionError,
+    MissingStateDefinitionError,
     RuntimeStateDefinition,
     RuntimeStateEngine,
+    StateNotInitializedError,
     StateRevisionConflictError,
-    StateStoreUnavailableError,
-    core_runtime_state_definitions,
 )
 from tests.orchestration_stubs import (
     CallRecorder,
     StubExecutionEngine,
-    StubPlanValidator,
     StubPlanner,
+    StubPlanValidator,
     StubPolicyEngine,
     StubPolicyRechecker,
     StubResponseGenerator,
@@ -46,14 +43,70 @@ def _now() -> datetime:
     return datetime(2026, 9, 17, 12, 30, tzinfo=UTC)
 
 
+def _definitions() -> tuple[RuntimeStateDefinition, ...]:
+    """测试专用 Core 状态图；不声明为平台默认业务流程。"""
+    return (
+        RuntimeStateDefinition(
+            state=RuntimeControlState.STARTING,
+            interruptible=False,
+            allowed_transitions=(RuntimeControlState.IDLE,),
+        ),
+        RuntimeStateDefinition(
+            state=RuntimeControlState.IDLE,
+            interruptible=True,
+            allowed_transitions=(
+                RuntimeControlState.PROCESSING,
+                RuntimeControlState.ENDED,
+            ),
+        ),
+        RuntimeStateDefinition(
+            state=RuntimeControlState.PROCESSING,
+            interruptible=True,
+            allowed_transitions=(RuntimeControlState.RESPONDING,),
+        ),
+        RuntimeStateDefinition(
+            state=RuntimeControlState.RESPONDING,
+            interruptible=True,
+            allowed_transitions=(RuntimeControlState.IDLE,),
+        ),
+        RuntimeStateDefinition(
+            state=RuntimeControlState.WAITING_USER,
+            interruptible=True,
+            allowed_transitions=(),
+        ),
+        RuntimeStateDefinition(
+            state=RuntimeControlState.ENDED,
+            interruptible=False,
+            allowed_transitions=(),
+        ),
+    )
+
+
 def _engine() -> RuntimeStateEngine:
-    return RuntimeStateEngine(store=InMemoryRuntimeStateStore())
+    return RuntimeStateEngine(
+        store=InMemoryRuntimeStateStore(),
+        definitions=_definitions(),
+    )
 
 
-def test_default_definitions_cover_every_core_runtime_state() -> None:
-    definitions = core_runtime_state_definitions()
-    assert {definition.state for definition in definitions} == set(RuntimeControlState)
-    assert len(definitions) == len(RuntimeControlState)
+def test_engine_requires_explicit_state_definitions() -> None:
+    with pytest.raises(MissingStateDefinitionError, match="at least one"):
+        RuntimeStateEngine(store=InMemoryRuntimeStateStore(), definitions=())
+
+
+def test_definition_graph_cannot_reference_undefined_core_state() -> None:
+    definitions = (
+        RuntimeStateDefinition(
+            state=RuntimeControlState.IDLE,
+            interruptible=True,
+            allowed_transitions=(RuntimeControlState.PROCESSING,),
+        ),
+    )
+    with pytest.raises(MissingStateDefinitionError, match="PROCESSING"):
+        RuntimeStateEngine(
+            store=InMemoryRuntimeStateStore(),
+            definitions=definitions,
+        )
 
 
 def test_initialize_requires_explicit_state_and_preserves_snapshot() -> None:
@@ -82,7 +135,7 @@ def test_initialize_requires_explicit_state_and_preserves_snapshot() -> None:
 
 
 def test_missing_scope_is_not_fabricated() -> None:
-    with pytest.raises(StateStoreUnavailableError, match="not initialized"):
+    with pytest.raises(StateNotInitializedError, match="not initialized"):
         asyncio.run(_engine().load(("scope-missing", "session-missing")))
 
 
@@ -162,7 +215,7 @@ def test_same_state_transition_is_noop_without_revision_change() -> None:
     assert committed == snapshot
 
 
-def test_ended_is_terminal_in_default_core_graph() -> None:
+def test_terminal_state_behavior_comes_from_injected_definition() -> None:
     engine = _engine()
     key = ("scope-1", "session-1")
     snapshot = asyncio.run(
@@ -175,6 +228,7 @@ def test_ended_is_terminal_in_default_core_graph() -> None:
 
     decision = engine.evaluate_transition(snapshot, RuntimeControlState.IDLE)
     assert decision.allowed is False
+    assert decision.reason_codes == ("TRANSITION_NOT_ALLOWED",)
 
 
 def test_expected_revision_rejects_stale_caller() -> None:
@@ -233,7 +287,7 @@ def test_state_scope_is_isolated_by_identity_and_session() -> None:
     )
 
 
-def test_custom_definition_can_narrow_core_transition_graph() -> None:
+def test_definition_can_narrow_allowed_core_transitions() -> None:
     engine = RuntimeStateEngine(
         store=InMemoryRuntimeStateStore(),
         definitions=[
@@ -282,6 +336,19 @@ def test_engine_provider_projects_real_snapshot_to_runtime_context() -> None:
     assert context.entered_at == _now()
 
 
+def test_uninitialized_engine_provider_remains_missing_context_not_default_state() -> None:
+    builder = DefaultContextBuilder(
+        runtime_state_provider=EngineRuntimeStateProvider(_engine())
+    )
+    runtime_input = build_runtime_input(text="hello")
+    safety = asyncio.run(DefaultSafetyGuard().evaluate_early(runtime_input))
+
+    from runtime.context_building import CriticalContextUnavailableError
+
+    with pytest.raises(CriticalContextUnavailableError):
+        asyncio.run(builder.build(runtime_input, safety))
+
+
 def test_real_state_provider_integrates_with_m1_context_and_runtime_chain() -> None:
     recorder = CallRecorder()
     engine = _engine()
@@ -303,11 +370,25 @@ def test_real_state_provider_integrates_with_m1_context_and_runtime_chain() -> N
         runtime_state_provider=EngineRuntimeStateProvider(engine)
     )
 
+    class CapturingUnderstandingEngine(StubUnderstandingEngine):
+        def __init__(self, call_recorder: CallRecorder) -> None:
+            super().__init__(call_recorder)
+            self.seen_context: RuntimeContext | None = None
+
+        async def understand(
+            self,
+            runtime_input,
+            runtime_context: RuntimeContext,
+        ) -> UnderstandingState:
+            self.seen_context = runtime_context
+            return await super().understand(runtime_input, runtime_context)
+
+    understanding = CapturingUnderstandingEngine(recorder)
     orchestrator = RuntimeOrchestrator(
         input_processor=DefaultInputProcessor(),
-        safety_guard=DefaultSafetyGuard(rules=[]),
+        safety_guard=DefaultSafetyGuard(),
         context_builder=context_builder,
-        understanding_engine=StubUnderstandingEngine(recorder),
+        understanding_engine=understanding,
         policy_engine=StubPolicyEngine(recorder),
         planner=StubPlanner(recorder),
         plan_validator=StubPlanValidator(recorder),
@@ -322,6 +403,10 @@ def test_real_state_provider_integrates_with_m1_context_and_runtime_chain() -> N
 
     outcome = asyncio.run(orchestrator.run(raw_input))
 
+    assert understanding.seen_context is not None
+    assert understanding.seen_context.runtime_state_context.current_state is (
+        RuntimeControlState.PROCESSING
+    )
     assert outcome.runtime_response is not None
     assert outcome.update_result is not None
     assert [event.stage_name for event in outcome.trace.stage_events] == [

@@ -44,7 +44,9 @@ class RuntimeStateEngine:
                 )
             self._definitions[definition.state] = definition
         if not self._definitions:
-            raise MissingStateDefinitionError("at least one state definition is required")
+            raise MissingStateDefinitionError(
+                "at least one state definition is required"
+            )
         self._validate_definition_graph()
 
     @staticmethod

@@ -344,7 +344,9 @@ def test_engine_provider_projects_real_snapshot_to_runtime_context() -> None:
     assert context.entered_at == _now()
 
 
-def test_uninitialized_engine_provider_remains_missing_context_not_default_state() -> None:
+def test_uninitialized_engine_provider_remains_missing_context_not_default_state() -> (
+    None
+):
     builder = DefaultContextBuilder(
         runtime_state_provider=EngineRuntimeStateProvider(_engine())
     )
@@ -387,7 +389,16 @@ def test_real_state_provider_integrates_with_m1_context_and_runtime_chain() -> N
             runtime_context: RuntimeContext,
         ) -> UnderstandingState:
             self.seen_context = runtime_context
-            return await super().understand(runtime_input, runtime_context)
+            understanding = await super().understand(runtime_input, runtime_context)
+            # 真实 Deep Safety 要求 Understanding.request_id 与当前输入一致，
+            # 不能沿用 Stub 写死的 request-001。
+            return understanding.model_copy(
+                update={
+                    "metadata": understanding.metadata.model_copy(
+                        update={"request_id": runtime_input.request_id}
+                    )
+                }
+            )
 
     understanding = CapturingUnderstandingEngine(recorder)
     orchestrator = RuntimeOrchestrator(

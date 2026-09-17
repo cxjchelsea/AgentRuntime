@@ -104,12 +104,14 @@ class PreemptionEngine:
         can_interrupt = current_interruptible and rule.interrupt
 
         if rule.interrupt and not current_interruptible:
+            if rule.when_not_interruptible is None:
+                raise AssertionError("validated rule missing when_not_interruptible")
             return PreemptionDecision(
                 current_subject_id=current.subject_id,
                 incoming_subject_id=incoming.subject_id,
                 interrupt=False,
                 can_interrupt=False,
-                disposition=IncomingDisposition.DEFER,
+                disposition=rule.when_not_interruptible,
                 on_interrupt=None,
                 cleanup_policy=CleanupPolicy.NONE,
                 resume_policy=ResumePolicy.NO_RESUME,
@@ -117,6 +119,11 @@ class PreemptionEngine:
                 reason_codes=("CURRENT_ACTIVITY_NOT_INTERRUPTIBLE",),
             )
 
+        reason = (
+            "PREEMPT_CURRENT_ACTIVITY"
+            if rule.interrupt
+            else f"INCOMING_{rule.disposition.value}"
+        )
         return PreemptionDecision(
             current_subject_id=current.subject_id,
             incoming_subject_id=incoming.subject_id,
@@ -127,11 +134,7 @@ class PreemptionEngine:
             cleanup_policy=rule.cleanup_policy,
             resume_policy=rule.resume_policy,
             priority_decision=priority_decision,
-            reason_codes=(
-                "PREEMPT_CURRENT_ACTIVITY"
-                if rule.interrupt
-                else f"INCOMING_{rule.disposition.value}"
-            ,),
+            reason_codes=(reason,),
         )
 
     def _select_rule(

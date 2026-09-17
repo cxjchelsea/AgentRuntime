@@ -1,7 +1,7 @@
-"""M3 Understanding foundation.
+"""M3 Understanding implementation building blocks.
 
-Only structural vocabulary/evidence/candidate types are exported here. No real
-UnderstandingEngine implementation is introduced by M3-IU1.
+The package currently exposes structural foundation types plus deterministic rule
+parsing. It still does not provide a full UnderstandingEngine or LLM path.
 """
 
 from runtime.understanding.catalog import (
@@ -20,7 +20,20 @@ from runtime.understanding.definitions import (
     UnderstandingEvidence,
     UnderstandingEvidenceSource,
 )
+from runtime.understanding.deterministic import (
+    ConfiguredTextRule,
+    DeterministicRuleDefinition,
+    DeterministicRuleFinding,
+    DeterministicRuleParser,
+    DeterministicUnderstandingRule,
+    RuleParseResult,
+    TextMatchMode,
+)
 from runtime.understanding.errors import (
+    DeterministicRuleExecutionError,
+    DeterministicUnderstandingConflictError,
+    DeterministicUnderstandingError,
+    InvalidDeterministicRuleError,
     InvalidUnderstandingCandidateError,
     InvalidUnderstandingDefinitionError,
     InvalidUnderstandingEvidenceError,
@@ -31,8 +44,17 @@ __all__ = [
     "CandidateAction",
     "CandidateActionCatalog",
     "CandidateActionDefinition",
+    "ConfiguredTextRule",
+    "DeterministicRuleDefinition",
+    "DeterministicRuleExecutionError",
+    "DeterministicRuleFinding",
+    "DeterministicRuleParser",
+    "DeterministicUnderstandingConflictError",
+    "DeterministicUnderstandingError",
+    "DeterministicUnderstandingRule",
     "IntentCatalog",
     "IntentDefinition",
+    "InvalidDeterministicRuleError",
     "InvalidUnderstandingCandidateError",
     "InvalidUnderstandingDefinitionError",
     "InvalidUnderstandingEvidenceError",
@@ -41,6 +63,8 @@ __all__ = [
     "NeedDefinition",
     "NeedResult",
     "RiskSignalSet",
+    "RuleParseResult",
+    "TextMatchMode",
     "UnderstandingEvidence",
     "UnderstandingEvidenceSource",
     "UnderstandingFoundationError",

@@ -137,7 +137,9 @@ def test_m2_orchestrator_keeps_turn_continuity_checks_at_plan_boundaries() -> No
 
 
 def test_m2_closure_does_not_claim_deferred_effect_components() -> None:
-    orchestration_exports = set(__import__("runtime.orchestration", fromlist=["*"]).__all__)
+    orchestration_exports = set(
+        __import__("runtime.orchestration", fromlist=["*"]).__all__
+    )
     assert "TaskCanceller" not in orchestration_exports
     assert "CheckpointExecutor" not in orchestration_exports
     assert "ResumeExecutor" not in orchestration_exports

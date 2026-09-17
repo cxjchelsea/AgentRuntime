@@ -121,9 +121,7 @@ class DefaultPolicyEngine(PolicyEngine):
             allowed = False
 
         priorities = [
-            fragment.priority
-            for fragment in fragments
-            if fragment.priority is not None
+            fragment.priority for fragment in fragments if fragment.priority is not None
         ]
         priority = max(priorities, default=self._default_priority)
         interrupt_current_task = any(

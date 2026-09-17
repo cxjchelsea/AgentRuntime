@@ -39,7 +39,7 @@ from runtime.priority_management import IncomingDisposition
 
 
 class M2RuntimeOrchestrator(RuntimeOrchestrator):
-    """RuntimeOrchestrator with explicit M2 control integration.
+    """RuntimeOrchestrator with explicit M2 post-understanding control integration.
 
     The base M0 orchestrator remains unchanged for regression compatibility. This
     integrated runtime path requires an explicit PrioritySubjectResolver and
@@ -58,7 +58,7 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
         self.priority_subject_resolver = priority_subject_resolver
 
     async def run(self, runtime_input: RuntimeInput) -> RuntimeTurnOutcome:
-        """Execute one turn with M2 controls inside existing frozen call points."""
+        """Execute one turn with M2 control evaluated inside the POLICY call point."""
         turn_context = self._open_turn(runtime_input)
 
         processed_input = await self._run_stage(
@@ -75,7 +75,9 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
             self.safety_guard.evaluate_early(processed_input),
             SafetyResult,
             input_contract_type="RuntimeInput",
-            invariant_check=self._assert_early_safety_allows_agent_flow,
+            invariant_check=lambda safety_result: self._assert_safety_phase(
+                safety_result, SafetyPhase.EARLY, "SAFETY_EARLY"
+            ),
         )
 
         runtime_context = await self._run_stage(
@@ -260,23 +262,6 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
         )
         constraint_box.append(constraint)
         return constraint.policy_decision
-
-    def _assert_early_safety_allows_agent_flow(
-        self,
-        safety_result: SafetyResult,
-    ) -> None:
-        self._assert_safety_phase(safety_result, SafetyPhase.EARLY, "SAFETY_EARLY")
-        if safety_result.allowed_to_continue_normal_flow:
-            return
-        if safety_result.force_workflow is not None:
-            raise AlternatePathRequiredError(
-                safety_result.force_workflow,
-                stage_name="SAFETY_EARLY",
-            )
-        raise RuntimeControlBlockedError(
-            "EARLY_SAFETY_BLOCKED",
-            stage_name="SAFETY_EARLY",
-        )
 
     @staticmethod
     def _assert_runtime_constraint_allows_flow(

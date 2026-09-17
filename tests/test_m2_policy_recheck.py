@@ -16,6 +16,7 @@ from runtime.contracts import (
     RuntimeControlState,
     RuntimeInput,
     RuntimeStateContext,
+    UnderstandingState,
 )
 from runtime.input_processing import DefaultInputProcessor
 from runtime.interfaces.understanding import UnderstandingEngine
@@ -23,6 +24,7 @@ from runtime.orchestration import RuntimeOrchestrator
 from runtime.policy_enforcement import (
     DefaultPolicyRechecker,
     PlanPolicyViolationError,
+    PolicyRecheckInvariantError,
 )
 from runtime.policy_management import DefaultPolicyEngine
 from runtime.safety import DefaultSafetyGuard
@@ -69,7 +71,7 @@ class RequestAwareUnderstandingEngine(UnderstandingEngine):
         self,
         runtime_input: RuntimeInput,
         runtime_context: RuntimeContext,
-    ):
+    ) -> UnderstandingState:
         del runtime_context
         self._recorder.record("UNDERSTANDING")
         base = build_understanding_state()
@@ -117,10 +119,19 @@ def test_blocked_or_not_allowed_policy_cannot_approve() -> None:
     for policy in (
         _policy(allowed=False, blocked=True),
         _policy(allowed=False, blocked=False),
-        _policy(allowed=True, blocked=True),
     ):
         with pytest.raises(PlanPolicyViolationError):
             asyncio.run(rechecker.recheck(_draft(), policy))
+
+
+def test_inconsistent_policy_decision_fails_as_invariant_error() -> None:
+    with pytest.raises(PolicyRecheckInvariantError):
+        asyncio.run(
+            DefaultPolicyRechecker().recheck(
+                _draft(),
+                _policy(allowed=True, blocked=True),
+            )
+        )
 
 
 def test_forbidden_action_skill_and_tool_are_rejected() -> None:

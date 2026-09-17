@@ -42,18 +42,19 @@ class PrioritySubjectResolver(ABC):
 
 
 class RuntimeControlBlockedError(RuntimeOrchestrationError):
-    """Ordinary Agent flow must not continue under the evaluated RuntimeConstraint."""
+    """Ordinary Agent flow must not continue under an M2 hard control decision."""
 
     def __init__(
         self,
         reason_code: str,
         *,
         disposition: IncomingDisposition | None = None,
+        stage_name: str = "POLICY",
     ) -> None:
         super().__init__(
             "M2 runtime control gate blocked ordinary Agent flow",
             error_code="RUNTIME_CONTROL_BLOCKED",
-            stage_name="POLICY",
+            stage_name=stage_name,
         )
         self.reason_code = reason_code
         self.disposition = disposition
@@ -62,11 +63,11 @@ class RuntimeControlBlockedError(RuntimeOrchestrationError):
 class AlternatePathRequiredError(RuntimeOrchestrationError):
     """A forced workflow is required, but the ordinary Planner path is not allowed."""
 
-    def __init__(self, forced_workflow: str) -> None:
+    def __init__(self, forced_workflow: str, *, stage_name: str = "POLICY") -> None:
         super().__init__(
             "M2 requires a forced alternate workflow path",
             error_code="ALTERNATE_PATH_REQUIRED",
-            stage_name="POLICY",
+            stage_name=stage_name,
         )
         self.forced_workflow = forced_workflow
 

@@ -4,7 +4,6 @@ from runtime.state_management.definitions import (
     RuntimeStateDefinition,
     RuntimeStateSnapshot,
     StateTransitionDecision,
-    core_runtime_state_definitions,
 )
 from runtime.state_management.engine import RuntimeStateEngine
 from runtime.state_management.errors import (
@@ -12,6 +11,7 @@ from runtime.state_management.errors import (
     InvalidStateTransitionError,
     MissingStateDefinitionError,
     RuntimeStateError,
+    StateNotInitializedError,
     StateRevisionConflictError,
     StateStoreUnavailableError,
 )
@@ -29,8 +29,8 @@ __all__ = [
     "RuntimeStateError",
     "RuntimeStateSnapshot",
     "RuntimeStateStore",
+    "StateNotInitializedError",
     "StateRevisionConflictError",
     "StateStoreUnavailableError",
     "StateTransitionDecision",
-    "core_runtime_state_definitions",
 ]

@@ -56,7 +56,7 @@ class RuntimeStateProvider(ABC):
     @abstractmethod
     async def load(self, runtime_input: RuntimeInput) -> RuntimeStateContext:
         """读取当前 Runtime 状态；不得根据用户文本猜测状态。"""
-        raise NotImplementedError
+        ...
 
 
 class IdentityStatusResolver(ABC):
@@ -65,7 +65,7 @@ class IdentityStatusResolver(ABC):
     @abstractmethod
     async def resolve(self, runtime_input: RuntimeInput) -> IdentityStatus:
         """返回当前主体的绑定状态，不得猜测 Domain 角色。"""
-        raise NotImplementedError
+        ...
 
 
 class ContextProvider(ABC):
@@ -75,7 +75,7 @@ class ContextProvider(ABC):
     @abstractmethod
     def kind(self) -> ContextKind:
         """声明此 Provider 负责的唯一 ContextKind。"""
-        raise NotImplementedError
+        ...
 
     @abstractmethod
     async def load(
@@ -84,4 +84,4 @@ class ContextProvider(ABC):
         safety_result: SafetyResult,
     ) -> ContextValue | None:
         """返回已观察到的上下文；无结果返回 None，不得伪造默认事实。"""
-        raise NotImplementedError
+        ...

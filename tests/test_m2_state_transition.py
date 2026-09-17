@@ -7,8 +7,16 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from runtime.context_building import DefaultContextBuilder
-from runtime.contracts import RuntimeContext, RuntimeControlState, UnderstandingState
+from runtime.context_building import (
+    CriticalContextUnavailableError,
+    DefaultContextBuilder,
+)
+from runtime.contracts import (
+    RuntimeContext,
+    RuntimeControlState,
+    RuntimeInput,
+    UnderstandingState,
+)
 from runtime.input_processing import DefaultInputProcessor
 from runtime.orchestration import RuntimeOrchestrator
 from runtime.safety import DefaultSafetyGuard
@@ -343,8 +351,6 @@ def test_uninitialized_engine_provider_remains_missing_context_not_default_state
     runtime_input = build_runtime_input(text="hello")
     safety = asyncio.run(DefaultSafetyGuard().evaluate_early(runtime_input))
 
-    from runtime.context_building import CriticalContextUnavailableError
-
     with pytest.raises(CriticalContextUnavailableError):
         asyncio.run(builder.build(runtime_input, safety))
 
@@ -377,7 +383,7 @@ def test_real_state_provider_integrates_with_m1_context_and_runtime_chain() -> N
 
         async def understand(
             self,
-            runtime_input,
+            runtime_input: RuntimeInput,
             runtime_context: RuntimeContext,
         ) -> UnderstandingState:
             self.seen_context = runtime_context

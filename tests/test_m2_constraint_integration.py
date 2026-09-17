@@ -79,7 +79,9 @@ def test_constraint_evaluator_aggregates_explicit_m2_decisions() -> None:
     assert result.incoming_disposition is IncomingDisposition.PROCESS_NOW
 
 
-def test_runtime_state_interruptibility_drives_preemption_inside_constraint_chain() -> None:
+def test_runtime_state_interruptibility_drives_preemption_inside_constraint_chain() -> (
+    None
+):
     context = build_runtime_context()
     state = context.runtime_state_context.model_copy(update={"interruptible": False})
     context = context.model_copy(update={"runtime_state_context": state})

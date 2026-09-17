@@ -31,8 +31,8 @@ from runtime.safety import DefaultSafetyGuard
 from tests.orchestration_stubs import (
     CallRecorder,
     StubExecutionEngine,
-    StubPlanValidator,
     StubPlanner,
+    StubPlanValidator,
     StubResponseGenerator,
     StubResponsePlanner,
     StubResponseValidator,
@@ -75,7 +75,9 @@ class RequestAwareUnderstandingEngine(UnderstandingEngine):
         del runtime_context
         self._recorder.record("UNDERSTANDING")
         base = build_understanding_state()
-        metadata = base.metadata.model_copy(update={"request_id": runtime_input.request_id})
+        metadata = base.metadata.model_copy(
+            update={"request_id": runtime_input.request_id}
+        )
         return base.model_copy(update={"metadata": metadata})
 
 

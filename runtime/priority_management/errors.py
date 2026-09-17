@@ -9,6 +9,10 @@ class InvalidPrioritySubjectError(PriorityPreemptionError):
     """A priority subject is structurally invalid."""
 
 
+class MissingPriorityAssignmentError(PriorityPreemptionError):
+    """No configured numeric priority exists for a supplied kind."""
+
+
 class PriorityDecisionMismatchError(PriorityPreemptionError):
     """A PriorityDecision does not belong to the supplied subjects."""
 

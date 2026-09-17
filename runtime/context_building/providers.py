@@ -9,18 +9,17 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum
 
-from runtime.contracts import (
+from runtime.contracts import RuntimeInput, SafetyResult
+from runtime.contracts.context import (
+    ConversationContext,
     DomainExtensions,
     EnvironmentContext,
     InteractionContext,
     MemoryContext,
-    RuntimeInput,
     RuntimeStateContext,
-    SafetyResult,
     TaskContext,
     ToolContext,
 )
-from runtime.contracts.context import ConversationContext
 from runtime.contracts.enums import IdentityStatus
 
 

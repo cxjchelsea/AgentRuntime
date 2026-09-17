@@ -31,3 +31,23 @@ class DeterministicRuleExecutionError(DeterministicUnderstandingError):
 
 class DeterministicUnderstandingConflictError(DeterministicUnderstandingError):
     """Raised when matched deterministic rules produce incompatible facts."""
+
+
+class UnderstandingRoutingError(UnderstandingFoundationError):
+    """Base error for M3 path-routing decisions."""
+
+
+class InvalidUnderstandingRoutingPolicyError(UnderstandingRoutingError):
+    """Raised when a routing policy is structurally invalid."""
+
+
+class ModelBoundaryError(UnderstandingFoundationError):
+    """Base error for the deep-understanding model boundary."""
+
+
+class ModelInputBoundaryError(ModelBoundaryError):
+    """Raised when a model request would expose disallowed runtime data."""
+
+
+class ModelOutputBoundaryError(ModelBoundaryError):
+    """Raised when model output crosses the Understanding-only boundary."""

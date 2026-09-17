@@ -3,8 +3,23 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TypeVar
+from typing import TypeVar, cast
 
+from runtime.context_building.errors import (
+    ContextBuildInvariantError,
+    CriticalContextUnavailableError,
+    DuplicateContextProviderError,
+    InvalidContextProviderResultError,
+)
+from runtime.context_building.providers import (
+    ContextKind,
+    ContextProvider,
+    ContextProviderUnavailable,
+    ContextValue,
+    IdentityStatusResolver,
+    RuntimeStateProvider,
+)
+from runtime.context_building.selector import ContextSelector, CoreContextSelector
 from runtime.contracts import RuntimeContext, RuntimeInput, SafetyPhase, SafetyResult
 from runtime.contracts.context import (
     ConversationContext,
@@ -21,21 +36,6 @@ from runtime.contracts.context import (
     ToolContext,
 )
 from runtime.contracts.enums import IdentityStatus
-from runtime.context_building.errors import (
-    ContextBuildInvariantError,
-    CriticalContextUnavailableError,
-    DuplicateContextProviderError,
-    InvalidContextProviderResultError,
-)
-from runtime.context_building.providers import (
-    ContextKind,
-    ContextProvider,
-    ContextProviderUnavailable,
-    ContextValue,
-    IdentityStatusResolver,
-    RuntimeStateProvider,
-)
-from runtime.context_building.selector import ContextSelector, CoreContextSelector
 from runtime.interfaces.context import ContextBuilder
 
 ContextType = TypeVar("ContextType")
@@ -218,7 +218,7 @@ class DefaultContextBuilder(ContextBuilder):
     ) -> RuntimeStateContext:
         try:
             state = await self._runtime_state_provider.load(runtime_input)
-        except Exception as error:
+        except ContextProviderUnavailable as error:
             raise CriticalContextUnavailableError(
                 "runtime_state_context",
                 type(error).__name__,
@@ -264,7 +264,7 @@ class DefaultContextBuilder(ContextBuilder):
                     expected_type.__name__,
                     type(value).__name__,
                 )
-            loaded[kind] = value
+            loaded[kind] = cast(ContextValue, value)
 
         return loaded
 
@@ -279,7 +279,5 @@ class DefaultContextBuilder(ContextBuilder):
             return None
         if not isinstance(value, expected_type):
             # 正常路径已在 Provider 边界校验；此处只保护内部不变量。
-            raise ContextBuildInvariantError(
-                f"{kind.value} 内部类型不变量被破坏"
-            )
+            raise ContextBuildInvariantError(f"{kind.value} 内部类型不变量被破坏")
         return value

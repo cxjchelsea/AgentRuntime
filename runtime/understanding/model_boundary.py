@@ -103,7 +103,9 @@ class DefaultModelContextSelector:
             and conversation.recent_turns
         ):
             selected_turns = conversation.recent_turns[-self._policy.max_recent_turns :]
-            recent_turns = tuple(deepcopy(selected_turn) for selected_turn in selected_turns)
+            recent_turns = tuple(
+                deepcopy(selected_turn) for selected_turn in selected_turns
+            )
 
         relevant_memories: tuple[dict[str, Any], ...] = ()
         if (
@@ -263,7 +265,9 @@ class StructuredUnderstandingModel(Protocol):
         ...
 
 
-def _optional_dict(payload: Mapping[str, Any], field_name: str) -> dict[str, Any] | None:
+def _optional_dict(
+    payload: Mapping[str, Any], field_name: str
+) -> dict[str, Any] | None:
     value = payload.get(field_name)
     if value is None:
         return None

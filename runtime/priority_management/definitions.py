@@ -103,9 +103,7 @@ class PreemptionRule:
                 "interrupt=True requires explicit when_not_interruptible disposition"
             )
         if not self.interrupt and self.when_not_interruptible is not None:
-            raise ValueError(
-                "when_not_interruptible is only valid when interrupt=True"
-            )
+            raise ValueError("when_not_interruptible is only valid when interrupt=True")
         if not self.interrupt and self.on_interrupt is not None:
             raise ValueError("on_interrupt is only valid when interrupt=True")
 

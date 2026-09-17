@@ -184,7 +184,9 @@ class PreemptionEngine:
             and rule.relation is relation
         ]
         if len(exact) > 1:
-            raise AmbiguousPreemptionRuleError("multiple exact preemption rules matched")
+            raise AmbiguousPreemptionRuleError(
+                "multiple exact preemption rules matched"
+            )
         if exact:
             return exact[0]
 
@@ -196,7 +198,9 @@ class PreemptionEngine:
             and rule.relation is PriorityRelation.ANY
         ]
         if len(fallback) > 1:
-            raise AmbiguousPreemptionRuleError("multiple fallback preemption rules matched")
+            raise AmbiguousPreemptionRuleError(
+                "multiple fallback preemption rules matched"
+            )
         if fallback:
             return fallback[0]
 

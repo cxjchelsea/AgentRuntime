@@ -18,6 +18,7 @@ from runtime.understanding.errors import (
     InvalidUnderstandingCandidateError,
     InvalidUnderstandingDefinitionError,
     InvalidUnderstandingEvidenceError,
+    UnderstandingFoundationError,
 )
 
 
@@ -53,10 +54,18 @@ class IntentDefinition:
     core_control_intent: CoreControlIntent | None = None
 
     def __post_init__(self) -> None:
-        _require_non_blank(self.intent_id, "intent_id")
-        _require_non_blank(self.version, "version")
-        _require_optional_non_blank(self.namespace, "namespace")
-        _require_optional_non_blank(self.description, "description")
+        _require_non_blank(
+            self.intent_id, "intent_id", InvalidUnderstandingDefinitionError
+        )
+        _require_non_blank(
+            self.version, "version", InvalidUnderstandingDefinitionError
+        )
+        _require_optional_non_blank(
+            self.namespace, "namespace", InvalidUnderstandingDefinitionError
+        )
+        _require_optional_non_blank(
+            self.description, "description", InvalidUnderstandingDefinitionError
+        )
 
         if self.core_control_intent is not None and (
             self.intent_id != self.core_control_intent.value
@@ -77,10 +86,18 @@ class NeedDefinition:
     description: str | None = None
 
     def __post_init__(self) -> None:
-        _require_non_blank(self.need_id, "need_id")
-        _require_non_blank(self.version, "version")
-        _require_optional_non_blank(self.namespace, "namespace")
-        _require_optional_non_blank(self.description, "description")
+        _require_non_blank(
+            self.need_id, "need_id", InvalidUnderstandingDefinitionError
+        )
+        _require_non_blank(
+            self.version, "version", InvalidUnderstandingDefinitionError
+        )
+        _require_optional_non_blank(
+            self.namespace, "namespace", InvalidUnderstandingDefinitionError
+        )
+        _require_optional_non_blank(
+            self.description, "description", InvalidUnderstandingDefinitionError
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,10 +114,18 @@ class CandidateActionDefinition:
     description: str | None = None
 
     def __post_init__(self) -> None:
-        _require_non_blank(self.action_id, "action_id")
-        _require_non_blank(self.version, "version")
-        _require_optional_non_blank(self.namespace, "namespace")
-        _require_optional_non_blank(self.description, "description")
+        _require_non_blank(
+            self.action_id, "action_id", InvalidUnderstandingDefinitionError
+        )
+        _require_non_blank(
+            self.version, "version", InvalidUnderstandingDefinitionError
+        )
+        _require_optional_non_blank(
+            self.namespace, "namespace", InvalidUnderstandingDefinitionError
+        )
+        _require_optional_non_blank(
+            self.description, "description", InvalidUnderstandingDefinitionError
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,11 +140,21 @@ class UnderstandingEvidence:
     strength: float
 
     def __post_init__(self) -> None:
-        _require_non_blank(self.evidence_id, "evidence_id")
-        _require_optional_non_blank(self.source_ref, "source_ref")
-        _require_non_blank(self.text_or_value, "text_or_value")
-        _require_non_blank(self.supports_field, "supports_field")
-        _require_confidence(self.strength, "strength", evidence=True)
+        _require_non_blank(
+            self.evidence_id, "evidence_id", InvalidUnderstandingEvidenceError
+        )
+        _require_optional_non_blank(
+            self.source_ref, "source_ref", InvalidUnderstandingEvidenceError
+        )
+        _require_non_blank(
+            self.text_or_value, "text_or_value", InvalidUnderstandingEvidenceError
+        )
+        _require_non_blank(
+            self.supports_field, "supports_field", InvalidUnderstandingEvidenceError
+        )
+        _require_confidence(
+            self.strength, "strength", InvalidUnderstandingEvidenceError
+        )
 
     def to_payload(self) -> dict[str, Any]:
         """Project into frozen ``UnderstandingState.evidence`` dictionary shape."""
@@ -143,9 +178,15 @@ class NeedResult:
     evidence_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        _require_non_blank(self.need_type, "need_type")
-        _require_confidence(self.confidence, "confidence", candidate=True)
-        _require_non_blank_tuple(self.evidence_ids, "evidence_ids")
+        _require_non_blank(
+            self.need_type, "need_type", InvalidUnderstandingCandidateError
+        )
+        _require_confidence(
+            self.confidence, "confidence", InvalidUnderstandingCandidateError
+        )
+        _require_non_blank_tuple(
+            self.evidence_ids, "evidence_ids", InvalidUnderstandingCandidateError
+        )
 
     def to_payload(self) -> dict[str, Any]:
         """Project into frozen ``UnderstandingState.needs`` dictionary shape."""
@@ -167,10 +208,16 @@ class RiskSignalSet:
     evidence_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        _require_non_blank_tuple(self.signals, "signals")
-        _require_non_blank_tuple(self.evidence_ids, "evidence_ids")
+        _require_non_blank_tuple(
+            self.signals, "signals", InvalidUnderstandingCandidateError
+        )
+        _require_non_blank_tuple(
+            self.evidence_ids, "evidence_ids", InvalidUnderstandingCandidateError
+        )
         if self.confidence is not None:
-            _require_confidence(self.confidence, "confidence", candidate=True)
+            _require_confidence(
+                self.confidence, "confidence", InvalidUnderstandingCandidateError
+            )
 
     def to_payload(self) -> dict[str, Any]:
         """Project into frozen ``UnderstandingState.risk`` dictionary shape."""
@@ -196,13 +243,29 @@ class MemoryCandidate:
     sensitivity: str | None = None
 
     def __post_init__(self) -> None:
-        _require_non_blank(self.candidate_id, "candidate_id")
-        _require_non_blank(self.memory_type, "memory_type")
-        _require_non_blank(self.content, "content")
-        _require_non_blank(self.source, "source")
-        _require_confidence(self.confidence, "confidence", candidate=True)
-        _require_optional_non_blank(self.suggested_scope, "suggested_scope")
-        _require_optional_non_blank(self.sensitivity, "sensitivity")
+        _require_non_blank(
+            self.candidate_id, "candidate_id", InvalidUnderstandingCandidateError
+        )
+        _require_non_blank(
+            self.memory_type, "memory_type", InvalidUnderstandingCandidateError
+        )
+        _require_non_blank(
+            self.content, "content", InvalidUnderstandingCandidateError
+        )
+        _require_non_blank(
+            self.source, "source", InvalidUnderstandingCandidateError
+        )
+        _require_confidence(
+            self.confidence, "confidence", InvalidUnderstandingCandidateError
+        )
+        _require_optional_non_blank(
+            self.suggested_scope,
+            "suggested_scope",
+            InvalidUnderstandingCandidateError,
+        )
+        _require_optional_non_blank(
+            self.sensitivity, "sensitivity", InvalidUnderstandingCandidateError
+        )
 
     def to_payload(self) -> dict[str, Any]:
         """Project into frozen ``UnderstandingState.memory_candidates`` shape."""
@@ -228,10 +291,18 @@ class CandidateAction:
     reason_code: str | None = None
 
     def __post_init__(self) -> None:
-        _require_non_blank(self.action, "action")
-        _require_confidence(self.confidence, "confidence", candidate=True)
-        _require_optional_non_blank(self.target, "target")
-        _require_optional_non_blank(self.reason_code, "reason_code")
+        _require_non_blank(
+            self.action, "action", InvalidUnderstandingCandidateError
+        )
+        _require_confidence(
+            self.confidence, "confidence", InvalidUnderstandingCandidateError
+        )
+        _require_optional_non_blank(
+            self.target, "target", InvalidUnderstandingCandidateError
+        )
+        _require_optional_non_blank(
+            self.reason_code, "reason_code", InvalidUnderstandingCandidateError
+        )
 
     def to_payload(self) -> dict[str, Any]:
         """Project into frozen ``UnderstandingState.candidate_actions`` shape."""
@@ -243,36 +314,37 @@ class CandidateAction:
         }
 
 
-def _require_non_blank(value: str, field_name: str) -> None:
+def _require_non_blank(
+    value: str,
+    field_name: str,
+    error_type: type[UnderstandingFoundationError],
+) -> None:
     if not value.strip():
-        raise InvalidUnderstandingDefinitionError(f"{field_name} must not be blank")
+        raise error_type(f"{field_name} must not be blank")
 
 
-def _require_optional_non_blank(value: str | None, field_name: str) -> None:
+def _require_optional_non_blank(
+    value: str | None,
+    field_name: str,
+    error_type: type[UnderstandingFoundationError],
+) -> None:
     if value is not None and not value.strip():
-        raise InvalidUnderstandingDefinitionError(f"{field_name} must not be blank")
+        raise error_type(f"{field_name} must not be blank")
 
 
-def _require_non_blank_tuple(values: tuple[str, ...], field_name: str) -> None:
+def _require_non_blank_tuple(
+    values: tuple[str, ...],
+    field_name: str,
+    error_type: type[UnderstandingFoundationError],
+) -> None:
     if any(not value.strip() for value in values):
-        raise InvalidUnderstandingCandidateError(
-            f"{field_name} must not contain blank values"
-        )
+        raise error_type(f"{field_name} must not contain blank values")
 
 
 def _require_confidence(
     value: float,
     field_name: str,
-    *,
-    evidence: bool = False,
-    candidate: bool = False,
+    error_type: type[UnderstandingFoundationError],
 ) -> None:
-    if 0.0 <= value <= 1.0:
-        return
-    if evidence:
-        error_type = InvalidUnderstandingEvidenceError
-    elif candidate:
-        error_type = InvalidUnderstandingCandidateError
-    else:
-        error_type = InvalidUnderstandingDefinitionError
-    raise error_type(f"{field_name} must be within [0, 1]")
+    if not 0.0 <= value <= 1.0:
+        raise error_type(f"{field_name} must be within [0, 1]")

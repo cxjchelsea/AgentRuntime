@@ -18,6 +18,7 @@ from runtime.priority_management.errors import (
     AmbiguousPreemptionRuleError,
     DuplicatePreemptionRuleError,
     MissingPreemptionRuleError,
+    PriorityDecisionMismatchError,
 )
 
 
@@ -32,6 +33,8 @@ class PriorityEngine:
     ) -> PriorityDecision:
         if current is None:
             return PriorityDecision(
+                current_subject_id=None,
+                incoming_subject_id=incoming.subject_id,
                 current_priority=None,
                 incoming_priority=incoming.priority,
                 relation=PriorityRelation.HIGHER,
@@ -48,6 +51,8 @@ class PriorityEngine:
             relation = PriorityRelation.LOWER
             reason = "INCOMING_PRIORITY_LOWER"
         return PriorityDecision(
+            current_subject_id=current.subject_id,
+            incoming_subject_id=incoming.subject_id,
             current_priority=current.priority,
             incoming_priority=incoming.priority,
             relation=relation,
@@ -82,6 +87,8 @@ class PreemptionEngine:
         current_interruptible: bool,
         priority_decision: PriorityDecision,
     ) -> PreemptionDecision:
+        self._validate_priority_decision(current, incoming, priority_decision)
+
         if current is None:
             return PreemptionDecision(
                 current_subject_id=None,
@@ -136,6 +143,31 @@ class PreemptionEngine:
             priority_decision=priority_decision,
             reason_codes=(reason,),
         )
+
+    @staticmethod
+    def _validate_priority_decision(
+        current: PrioritySubject | None,
+        incoming: PrioritySubject,
+        decision: PriorityDecision,
+    ) -> None:
+        current_id = None if current is None else current.subject_id
+        current_priority = None if current is None else current.priority
+        if decision.current_subject_id != current_id:
+            raise PriorityDecisionMismatchError(
+                "PriorityDecision current_subject_id does not match current activity"
+            )
+        if decision.incoming_subject_id != incoming.subject_id:
+            raise PriorityDecisionMismatchError(
+                "PriorityDecision incoming_subject_id does not match incoming event"
+            )
+        if decision.current_priority != current_priority:
+            raise PriorityDecisionMismatchError(
+                "PriorityDecision current_priority does not match current activity"
+            )
+        if decision.incoming_priority != incoming.priority:
+            raise PriorityDecisionMismatchError(
+                "PriorityDecision incoming_priority does not match incoming event"
+            )
 
     def _select_rule(
         self,

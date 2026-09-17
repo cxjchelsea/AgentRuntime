@@ -9,6 +9,10 @@ class InvalidPrioritySubjectError(PriorityPreemptionError):
     """A priority subject is structurally invalid."""
 
 
+class PriorityDecisionMismatchError(PriorityPreemptionError):
+    """A PriorityDecision does not belong to the supplied subjects."""
+
+
 class DuplicatePreemptionRuleError(PriorityPreemptionError):
     """The same preemption rule key was registered more than once."""
 

@@ -11,6 +11,13 @@ from runtime.contracts.common import (
     VersionedContract,
 )
 from runtime.contracts.enums import PlanApprovalStatus, PlanningMode
+from runtime.contracts.knowledge_planning import (
+    EvidenceRequirement,
+    KnowledgeRequirement,
+    RetrievalPlan,
+)
+
+PLANNING_SCHEMA_VERSION = "1.1.0"
 
 
 class PlanningGoal(CanonicalModel):
@@ -52,6 +59,7 @@ class StrategySelection(CanonicalModel):
 class ActionPlanDraft(VersionedContract):
     """Planner 内部输出，approval_status 必须为 DRAFT。不得进入 M5。"""
 
+    schema_version: str = PLANNING_SCHEMA_VERSION
     plan_id: str
     request_id: str
     approval_status: Literal[PlanApprovalStatus.DRAFT] = PlanApprovalStatus.DRAFT
@@ -60,6 +68,9 @@ class ActionPlanDraft(VersionedContract):
     steps: list[ActionStep]
     quality: QualityAssessment
     strategy: StrategySelection | None = None
+    knowledge_requirement: KnowledgeRequirement | None = None
+    retrieval_plan: RetrievalPlan | None = None
+    evidence_requirement: EvidenceRequirement | None = None
     memory_usage: dict[str, Any] | None = None
     capability_plan: dict[str, Any] | None = None
     tool_plan: dict[str, Any] | None = None
@@ -84,6 +95,7 @@ class ActionPlanDraft(VersionedContract):
 class ApprovedActionPlan(VersionedContract):
     """M5 唯一合法规划输入，approval_status 必须为 APPROVED。"""
 
+    schema_version: str = PLANNING_SCHEMA_VERSION
     plan_id: str
     request_id: str
     approval_status: Literal[PlanApprovalStatus.APPROVED] = PlanApprovalStatus.APPROVED
@@ -93,6 +105,9 @@ class ApprovedActionPlan(VersionedContract):
     policy_snapshot: dict[str, Any]
     quality: QualityAssessment
     strategy: StrategySelection | None = None
+    knowledge_requirement: KnowledgeRequirement | None = None
+    retrieval_plan: RetrievalPlan | None = None
+    evidence_requirement: EvidenceRequirement | None = None
     memory_usage: dict[str, Any] | None = None
     capability_plan: dict[str, Any] | None = None
     tool_plan: dict[str, Any] | None = None

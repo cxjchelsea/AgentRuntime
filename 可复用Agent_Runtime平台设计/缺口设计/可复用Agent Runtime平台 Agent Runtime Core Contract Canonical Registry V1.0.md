@@ -4,7 +4,8 @@
 > **Phase 0 Fix 正式冻结文件**  
 > 本文是首批 Core Contract 的**唯一正式来源**。  
 > 自本文冻结起，任何阶段文档、Schema Registry 旧表、Frozen 子设计中与本文冲突的名称、字段、枚举、Owner 定义**立即失效**，不得再作为实现依据。  
-> 本文不重新设计 Runtime 架构，不修改 10 节点主链，不修改 Truth Boundary，不修改 M0–M8 职责边界。
+> 本文不重新设计 Runtime 架构，不修改 10 节点主链，不修改 Truth Boundary，不修改 M0–M8 职责边界。  
+> **M4-CA1 向后兼容修订**：ActionPlanDraft / ApprovedActionPlan 的 Planning Contract surface 从 `1.0.0` 扩展到 `1.1.0`，仅新增 Knowledge Planning optional fields；旧 `1.0.0` payload 仍必须可解析。
 
 > **文档优先级（本轮已执行对齐）**  
 > Runtime Invariants > 本文（首批 Contract 唯一来源）> Core Schema Registry（其余对象）> Frozen 子设计 > 阶段详细实现方案。
@@ -588,7 +589,7 @@ M8 主链终点 **只能**是 `UpdateResult`。
 - producer: Input Normalizer
 - consumer: M2 Early Safety Guard, M3 Understanding, Trace
 - lifecycle: Turn
-- schema_version: `1.0.0`
+- schema_version: `1.1.0`（兼容读取 `1.0.0`）
 - 主链对象: 是
 - 内部中间对象: 否
 
@@ -904,7 +905,7 @@ forbidden_skills       保留为 optional，与 allowed_skills 成对
 - producer: Planner
 - consumer: Plan Validator, M2 Policy Re-check
 - lifecycle: Turn
-- schema_version: `1.0.0`
+- schema_version: `1.1.0`（兼容读取 `1.0.0`）
 - 主链对象: 否
 - 内部中间对象: 是
 
@@ -925,6 +926,9 @@ quality
 
 ```text
 strategy
+knowledge_requirement
+retrieval_plan
+evidence_requirement
 memory_usage
 capability_plan
 tool_plan
@@ -980,6 +984,48 @@ Planner 发明未注册 Action / Skill / Workflow / Tool
 ```
 
 `steps[].action` 只能是 Core Control Action 或 Domain 已注册 Action。
+
+## 13.4 M4-CA1 Knowledge Planning optional subcontracts
+
+```text
+KnowledgeRequirement
+RetrievalPlan
+EvidenceRequirement
+```
+
+三者 Owner 均为 M4，作为 Planning Semantics 随 Draft / Approved Plan 跨阶段传递。
+
+```text
+KnowledgeRequirement.required = false
+→ retrieval_plan / evidence_requirement 可为空
+
+KnowledgeRequirement.required = true
+→ 后续 M4 Planner / PlanValidator 必须要求
+  RetrievalPlan + EvidenceRequirement
+```
+
+注意：上面的条件必填属于 Runtime validation invariant，不通过把 optional 字段改成 schema required 来实现。
+
+正式边界：
+
+```text
+RetrievalPlan != Retrieval Execution
+EvidenceRequirement != EvidenceItem / EvidencePack
+EvidencePack != VerifiedFact
+```
+
+RetrievalMode 为跨 Domain infrastructure control enum：
+
+```text
+VECTOR
+KEYWORD
+HYBRID
+STRUCTURED_LOOKUP
+EXTERNAL_API
+NONE
+```
+
+KnowledgeDomain / KnowledgeType / SourcePolicy / Population / Scenario / SafetyLevel 继续使用 Domain 注入字符串，不进入 Core frozen business enum。
 
 ---
 

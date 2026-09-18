@@ -498,8 +498,7 @@ def test_non_agent_mode_never_falls_through_to_model_for_ambiguous_strategies() 
                     _candidate("DOMAIN_ACTION_B"),
                 ),
                 policy_decision=build_policy_decision(),
-                planning_mode=PlanningMode.AGENT_PLANNED,
-        available_capability_ids=frozenset(),
+                available_capability_ids=frozenset(),
             )
         )
 
@@ -523,7 +522,6 @@ def test_agent_mode_requires_model_when_rules_cannot_resolve_multiple_strategies
                     _candidate("DOMAIN_ACTION_B"),
                 ),
                 policy_decision=build_policy_decision(),
-                planning_mode=PlanningMode.AGENT_PLANNED,
-        available_capability_ids=frozenset(),
+                available_capability_ids=frozenset(),
             )
         )

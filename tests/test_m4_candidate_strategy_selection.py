@@ -18,6 +18,7 @@ from runtime.planning import (
     InvalidActionCandidateError,
     InvalidStrategySelectionError,
     LegalActionCandidateBuilder,
+    GoalResolutionResult,
     PlanningActionCandidate,
     StrategyModelOutputError,
     StrategyModelRequest,
@@ -105,7 +106,7 @@ def _goals(
     *,
     context: RuntimeContext | None = None,
     policy: PolicyDecision | None = None,
-):
+) -> GoalResolutionResult:
     return GoalResolver().resolve(
         context or build_runtime_context(),
         understanding,
@@ -138,6 +139,7 @@ def test_candidate_builder_uses_registered_m3_candidate_and_strategy_defaults() 
         understanding,
         _goals(understanding),
         build_policy_decision(),
+        planning_mode=PlanningMode.AGENT_PLANNED,
         available_capability_ids=frozenset(),
     )
 
@@ -176,6 +178,7 @@ def test_policy_filters_candidate_before_soft_selection() -> None:
         understanding,
         _goals(understanding, policy=policy),
         policy,
+        planning_mode=PlanningMode.AGENT_PLANNED,
         available_capability_ids=frozenset(),
     )
 
@@ -207,6 +210,7 @@ def test_unavailable_required_capability_removes_candidate() -> None:
         understanding,
         _goals(understanding),
         build_policy_decision(),
+        planning_mode=PlanningMode.AGENT_PLANNED,
         available_capability_ids=frozenset(),
     )
     available = builder.build(
@@ -214,6 +218,7 @@ def test_unavailable_required_capability_removes_candidate() -> None:
         understanding,
         _goals(understanding),
         build_policy_decision(),
+        planning_mode=PlanningMode.AGENT_PLANNED,
         available_capability_ids=frozenset({"DOMAIN_CAPABILITY"}),
     )
 
@@ -235,7 +240,8 @@ def test_unregistered_m3_candidate_fails_closed() -> None:
             understanding,
             _goals(understanding),
             build_policy_decision(),
-            available_capability_ids=frozenset(),
+            planning_mode=PlanningMode.AGENT_PLANNED,
+        available_capability_ids=frozenset(),
         )
 
 
@@ -256,7 +262,8 @@ def test_multiple_enabled_versions_for_same_action_id_fail_closed() -> None:
             understanding,
             _goals(understanding),
             build_policy_decision(),
-            available_capability_ids=frozenset(),
+            planning_mode=PlanningMode.AGENT_PLANNED,
+        available_capability_ids=frozenset(),
         )
 
 
@@ -364,7 +371,8 @@ def test_model_request_does_not_expose_full_context_or_recent_turns() -> None:
                 _candidate("DOMAIN_ACTION_B"),
             ),
             policy_decision=build_policy_decision(),
-            available_capability_ids=frozenset(),
+            planning_mode=PlanningMode.AGENT_PLANNED,
+        available_capability_ids=frozenset(),
         )
     )
 
@@ -400,7 +408,8 @@ def test_model_cannot_invent_strategy_or_action() -> None:
                     _candidate("DOMAIN_ACTION_B"),
                 ),
                 policy_decision=build_policy_decision(),
-                available_capability_ids=frozenset(),
+                planning_mode=PlanningMode.AGENT_PLANNED,
+        available_capability_ids=frozenset(),
             )
         )
 
@@ -458,7 +467,8 @@ def test_rule_selection_precedes_model_and_model_is_not_called() -> None:
                 _candidate("DOMAIN_ACTION_B"),
             ),
             policy_decision=build_policy_decision(),
-            available_capability_ids=frozenset(),
+            planning_mode=PlanningMode.AGENT_PLANNED,
+        available_capability_ids=frozenset(),
         )
     )
 
@@ -491,7 +501,8 @@ def test_non_agent_mode_never_falls_through_to_model_for_ambiguous_strategies() 
                     _candidate("DOMAIN_ACTION_B"),
                 ),
                 policy_decision=build_policy_decision(),
-                available_capability_ids=frozenset(),
+                planning_mode=PlanningMode.AGENT_PLANNED,
+        available_capability_ids=frozenset(),
             )
         )
 
@@ -515,6 +526,7 @@ def test_agent_mode_requires_model_when_rules_cannot_resolve_multiple_strategies
                     _candidate("DOMAIN_ACTION_B"),
                 ),
                 policy_decision=build_policy_decision(),
-                available_capability_ids=frozenset(),
+                planning_mode=PlanningMode.AGENT_PLANNED,
+        available_capability_ids=frozenset(),
             )
         )

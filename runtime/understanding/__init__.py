@@ -1,10 +1,10 @@
-"""M3 Understanding implementation building blocks.
+"""M3 Understanding implementation building blocks and composed IU5 engine.
 
-The package exposes structural foundation types, deterministic rule parsing, path
-routing, a provider-neutral model boundary, and IU4 postprocessing. It still does
-not provide a full UnderstandingEngine or Understanding Orchestrator.
+The package exposes structural types, deterministic parsing, routing, model
+boundaries, postprocessing, final assembly, and the composed RuntimeUnderstandingEngine.
 """
 
+from runtime.understanding.assembly import UnderstandingStateAssembler
 from runtime.understanding.catalog import (
     CandidateActionCatalog,
     IntentCatalog,
@@ -30,6 +30,7 @@ from runtime.understanding.deterministic import (
     RuleParseResult,
     TextMatchMode,
 )
+from runtime.understanding.engine import RuntimeUnderstandingEngine
 from runtime.understanding.errors import (
     CandidateExtractionError,
     DeterministicRuleExecutionError,
@@ -37,16 +38,21 @@ from runtime.understanding.errors import (
     DeterministicUnderstandingError,
     InvalidDeterministicRuleError,
     InvalidModelEvidenceError,
+    InvalidModelUnderstandingFragmentError,
     InvalidModelUncertaintyError,
     InvalidUnderstandingCandidateError,
     InvalidUnderstandingDefinitionError,
     InvalidUnderstandingEvidenceError,
     InvalidUnderstandingRoutingPolicyError,
     MissingDeepUnderstandingResultError,
+    MissingUnderstandingModelError,
     ModelBoundaryError,
     ModelInputBoundaryError,
     ModelOutputBoundaryError,
+    UnderstandingAssemblyError,
     UnderstandingFoundationError,
+    UnderstandingMergeConflictError,
+    UnderstandingModelExecutionError,
     UnderstandingPostprocessingError,
     UnderstandingRoutingError,
 )
@@ -99,6 +105,7 @@ __all__ = [
     "IntentDefinition",
     "InvalidDeterministicRuleError",
     "InvalidModelEvidenceError",
+    "InvalidModelUnderstandingFragmentError",
     "InvalidModelUncertaintyError",
     "InvalidUnderstandingCandidateError",
     "InvalidUnderstandingDefinitionError",
@@ -106,6 +113,7 @@ __all__ = [
     "InvalidUnderstandingRoutingPolicyError",
     "MemoryCandidate",
     "MissingDeepUnderstandingResultError",
+    "MissingUnderstandingModelError",
     "ModelBoundaryError",
     "ModelContextSelectionPolicy",
     "ModelInputBoundaryError",
@@ -118,14 +126,18 @@ __all__ = [
     "RiskSignalNormalizer",
     "RiskSignalSet",
     "RuleParseResult",
+    "RuntimeUnderstandingEngine",
     "SelectedModelContext",
     "StructuredUnderstandingModel",
     "TextMatchMode",
     "UncertaintyNormalizer",
+    "UnderstandingAssemblyError",
     "UnderstandingCandidateExtractor",
     "UnderstandingEvidence",
     "UnderstandingEvidenceSource",
     "UnderstandingFoundationError",
+    "UnderstandingMergeConflictError",
+    "UnderstandingModelExecutionError",
     "UnderstandingPathRouter",
     "UnderstandingPostprocessResult",
     "UnderstandingPostprocessingError",
@@ -133,4 +145,5 @@ __all__ = [
     "UnderstandingRouteDecision",
     "UnderstandingRoutingError",
     "UnderstandingRoutingPolicy",
+    "UnderstandingStateAssembler",
 ]

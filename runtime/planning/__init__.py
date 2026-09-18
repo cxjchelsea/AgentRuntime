@@ -36,6 +36,7 @@ from runtime.planning.goals import (
     GoalResolver,
     GoalSource,
 )
+from runtime.planning.knowledge_types import RetrievalQuery
 from runtime.planning.routing import (
     PlanningModeRouter,
     PlanningModeRule,
@@ -87,6 +88,7 @@ __all__ = [
     "PlanningRouteConflictError",
     "PlanningRouteDecision",
     "PlanningRouteSignal",
+    "RetrievalQuery",
     "PlanningUnderstandingSummary",
     "StrategyEligibilityRule",
     "StrategyModelBoundaryError",

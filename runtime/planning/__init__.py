@@ -82,6 +82,7 @@ __all__ = [
     "PlanningBlockedByPolicyError",
     "PlanningError",
     "PlanningModeRouter",
+    "PlanningModeRule",
     "PlanningModelContext",
     "PlanningRouteConflictError",
     "PlanningRouteDecision",

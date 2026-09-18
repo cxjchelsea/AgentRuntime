@@ -10,13 +10,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from runtime.contracts import (
-    PolicyDecision,
-    RuntimeContext,
-    StrategySelection,
-    UnderstandingState,
-)
+from runtime.contracts import PolicyDecision, RuntimeContext, UnderstandingState
 from runtime.contracts.enums import PlanningMode
+from runtime.contracts.planning import StrategySelection
 from runtime.planning.candidates import PlanningActionCandidate
 from runtime.planning.errors import (
     InvalidStrategySelectionError,
@@ -316,7 +312,7 @@ class HybridStrategySelector:
         rule_choices: list[StrategyRuleChoice] = []
         for rule in self._rules:
             try:
-                choice = rule.select(
+                rule_choice = rule.select(
                     runtime_context,
                     understanding_state,
                     goals,
@@ -330,14 +326,14 @@ class HybridStrategySelector:
                 raise StrategyRuleExecutionError(
                     "strategy selection rule execution failed"
                 ) from exc
-            if choice is not None:
+            if rule_choice is not None:
                 self._validate_choice(
-                    choice.strategy_id,
-                    choice.action_ids,
+                    rule_choice.strategy_id,
+                    rule_choice.action_ids,
                     legal_strategy_ids=frozenset(legal_strategy_ids),
                     legal_action_ids=legal_action_ids,
                 )
-                rule_choices.append(choice)
+                rule_choices.append(rule_choice)
 
         if rule_choices:
             first = rule_choices[0]
@@ -398,18 +394,19 @@ class HybridStrategySelector:
                 "strategy model execution failed"
             ) from exc
 
-        choice = self._output_validator.validate(
+        # 模型选择与规则选择分变量保存，避免类型收窄冲突
+        model_choice = self._output_validator.validate(
             payload,
             legal_strategy_ids=frozenset(legal_strategy_ids),
             legal_action_ids=legal_action_ids,
         )
         return StrategySelectionResult(
             strategy=StrategySelection(
-                strategy_id=choice.strategy_id,
-                reason_code=choice.reason_code,
-                confidence=choice.confidence,
+                strategy_id=model_choice.strategy_id,
+                reason_code=model_choice.reason_code,
+                confidence=model_choice.confidence,
             ),
-            selected_action_ids=choice.action_ids,
+            selected_action_ids=model_choice.action_ids,
             selection_path="MODEL",
         )
 

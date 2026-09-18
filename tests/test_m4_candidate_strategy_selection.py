@@ -13,12 +13,12 @@ from runtime.contracts.enums import PlanningMode, ProcessingPath
 from runtime.contracts.understanding import GoalUnderstanding
 from runtime.planning import (
     ActionRegistryAmbiguityError,
+    GoalResolutionResult,
     GoalResolver,
     HybridStrategySelector,
     InvalidActionCandidateError,
     InvalidStrategySelectionError,
     LegalActionCandidateBuilder,
-    GoalResolutionResult,
     PlanningActionCandidate,
     StrategyModelOutputError,
     StrategyModelRequest,
@@ -182,9 +182,7 @@ def test_policy_filters_candidate_before_soft_selection() -> None:
         available_capability_ids=frozenset(),
     )
 
-    assert [candidate.action for candidate in candidates] == [
-        "ALLOWED_DOMAIN_ACTION"
-    ]
+    assert [candidate.action for candidate in candidates] == ["ALLOWED_DOMAIN_ACTION"]
     assert candidates[0].policy_allowed is True
 
 
@@ -241,7 +239,7 @@ def test_unregistered_m3_candidate_fails_closed() -> None:
             _goals(understanding),
             build_policy_decision(),
             planning_mode=PlanningMode.AGENT_PLANNED,
-        available_capability_ids=frozenset(),
+            available_capability_ids=frozenset(),
         )
 
 
@@ -263,7 +261,7 @@ def test_multiple_enabled_versions_for_same_action_id_fail_closed() -> None:
             _goals(understanding),
             build_policy_decision(),
             planning_mode=PlanningMode.AGENT_PLANNED,
-        available_capability_ids=frozenset(),
+            available_capability_ids=frozenset(),
         )
 
 
@@ -505,7 +503,9 @@ def test_non_agent_mode_never_falls_through_to_model_for_ambiguous_strategies() 
     assert model.requests == []
 
 
-def test_agent_mode_requires_model_when_rules_cannot_resolve_multiple_strategies() -> None:
+def test_agent_mode_requires_model_when_rules_cannot_resolve_multiple_strategies() -> (
+    None
+):
     understanding = _understanding()
 
     with pytest.raises(StrategyModelUnavailableError):

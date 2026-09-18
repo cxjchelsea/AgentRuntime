@@ -50,9 +50,7 @@ class PlanningActionCandidate:
         ):
             value = getattr(self, field_name)
             if value is not None and not 0.0 <= value <= 1.0:
-                raise InvalidActionCandidateError(
-                    f"{field_name} must be within [0, 1]"
-                )
+                raise InvalidActionCandidateError(f"{field_name} must be within [0, 1]")
         if not self.source_codes or any(not item.strip() for item in self.source_codes):
             raise InvalidActionCandidateError(
                 "candidate source_codes must contain non-blank values"
@@ -85,9 +83,7 @@ class CandidateContribution:
         ):
             value = getattr(self, field_name)
             if value is not None and not 0.0 <= value <= 1.0:
-                raise InvalidActionCandidateError(
-                    f"{field_name} must be within [0, 1]"
-                )
+                raise InvalidActionCandidateError(f"{field_name} must be within [0, 1]")
 
 
 class ActionCandidateProvider(Protocol):

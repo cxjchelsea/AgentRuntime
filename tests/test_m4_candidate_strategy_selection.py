@@ -371,8 +371,7 @@ def test_model_request_does_not_expose_full_context_or_recent_turns() -> None:
                 _candidate("DOMAIN_ACTION_B"),
             ),
             policy_decision=build_policy_decision(),
-            planning_mode=PlanningMode.AGENT_PLANNED,
-        available_capability_ids=frozenset(),
+            available_capability_ids=frozenset(),
         )
     )
 
@@ -408,8 +407,7 @@ def test_model_cannot_invent_strategy_or_action() -> None:
                     _candidate("DOMAIN_ACTION_B"),
                 ),
                 policy_decision=build_policy_decision(),
-                planning_mode=PlanningMode.AGENT_PLANNED,
-        available_capability_ids=frozenset(),
+                available_capability_ids=frozenset(),
             )
         )
 
@@ -467,8 +465,7 @@ def test_rule_selection_precedes_model_and_model_is_not_called() -> None:
                 _candidate("DOMAIN_ACTION_B"),
             ),
             policy_decision=build_policy_decision(),
-            planning_mode=PlanningMode.AGENT_PLANNED,
-        available_capability_ids=frozenset(),
+            available_capability_ids=frozenset(),
         )
     )
 

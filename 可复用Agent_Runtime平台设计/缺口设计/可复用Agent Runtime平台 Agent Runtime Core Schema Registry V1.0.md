@@ -4296,6 +4296,17 @@ AGENT_PLANNED
 DEGRADED
 ```
 
+## RetrievalMode
+
+```text
+VECTOR
+KEYWORD
+HYBRID
+STRUCTURED_LOOKUP
+EXTERNAL_API
+NONE
+```
+
 ## ValidationStatus
 
 ```text

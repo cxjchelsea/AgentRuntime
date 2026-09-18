@@ -1,15 +1,19 @@
 """Registry 基础设施对外导出。"""
 
+from runtime.registries.action import ActionRegistry
 from runtime.registries.base import BaseRegistry, RegistryKey, RegistryRecord
 from runtime.registries.capability import CapabilityDefinition, CapabilityRegistry
 from runtime.registries.definitions import (
+    ActionDefinition,
     DomainManifest,
+    IntrusivenessLevel,
     PolicyDefinition,
     PromptDefinition,
     PromptLayer,
     SchemaDefinition,
     SchemaScope,
     SkillDefinition,
+    StrategyDefinition,
     ToolDefinition,
     WorkflowDefinition,
 )
@@ -24,16 +28,20 @@ from runtime.registries.policy import PolicyRegistry
 from runtime.registries.prompt import PromptRegistry
 from runtime.registries.schema import SchemaRegistry
 from runtime.registries.skill import SkillRegistry
+from runtime.registries.strategy import StrategyRegistry
 from runtime.registries.tool import ToolRegistry
 from runtime.registries.workflow import WorkflowRegistry
 
 __all__ = [
+    "ActionDefinition",
+    "ActionRegistry",
     "BaseRegistry",
     "CapabilityDefinition",
     "CapabilityRegistry",
     "DomainManifest",
     "DomainRegistry",
     "DuplicateRegistrationError",
+    "IntrusivenessLevel",
     "InvalidRegistryItemError",
     "PolicyDefinition",
     "PolicyRegistry",
@@ -49,6 +57,8 @@ __all__ = [
     "SchemaScope",
     "SkillDefinition",
     "SkillRegistry",
+    "StrategyDefinition",
+    "StrategyRegistry",
     "ToolDefinition",
     "ToolRegistry",
     "WorkflowDefinition",

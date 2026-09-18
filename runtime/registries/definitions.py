@@ -1,12 +1,13 @@
 """Registry 定义对象。
 
 只描述可注册元数据，不包含执行逻辑。
-字段来自 M5 / M9 / 总体设计已冻结项。
+字段来自 M4 / M5 / M9 / 总体设计已冻结项。
 """
 
 from enum import Enum
 
 from runtime.contracts.common import CanonicalModel
+from runtime.contracts.enums import PlanningMode
 
 
 class PromptLayer(str, Enum):
@@ -23,6 +24,53 @@ class SchemaScope(str, Enum):
 
     CORE = "CORE"
     DOMAIN = "DOMAIN"
+
+
+class IntrusivenessLevel(str, Enum):
+    """M4 Action / Strategy 冻结的通用侵入性等级。"""
+
+    VERY_LOW = "VERY_LOW"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
+class ActionDefinition(CanonicalModel):
+    """M4 Action Registry 项。
+
+    Action 只定义“系统可以做什么”，不等于计划批准，也不包含执行逻辑。
+    具体业务 action_id / category 由 Domain Registry 注入。
+    """
+
+    action_id: str
+    version: str
+    category: str
+    description: str
+    intrusiveness_level: IntrusivenessLevel
+    requires_confirmation: bool
+    required_capability: str | None
+    allowed_planning_modes: list[PlanningMode]
+    enabled: bool = True
+
+
+class StrategyDefinition(CanonicalModel):
+    """M4 Strategy Registry 项。
+
+    Strategy 描述合法 Action 如何组合/选择，不重新做 M3 Understanding，也不绕过 M2。
+    具体 strategy_id / goal / need / emotion 值由 Domain Package 注入。
+    """
+
+    strategy_id: str
+    version: str
+    description: str
+    preferred_goals: list[str]
+    preferred_needs: list[str]
+    compatible_emotions: list[str]
+    required_conditions: list[str]
+    avoid_conditions: list[str]
+    default_actions: list[str]
+    intrusiveness_level: IntrusivenessLevel
+    enabled: bool = True
 
 
 class SkillDefinition(CanonicalModel):

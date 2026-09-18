@@ -335,7 +335,9 @@ def test_m3_risk_signal_alone_does_not_self_authorize_a_safety_block() -> None:
         assert len(model.requests) == 1
         assert "PLAN" in recorder.entries
         deep_event = next(
-            event for event in outcome.trace.stage_events if event.stage_name == "SAFETY_DEEP"
+            event
+            for event in outcome.trace.stage_events
+            if event.stage_name == "SAFETY_DEEP"
         )
         assert deep_event.status is not None
         assert deep_event.status.value == "SUCCESS"
@@ -370,7 +372,9 @@ def test_m2_deep_safety_can_escalate_m3_risk_and_preempt_ordinary_planning() -> 
         assert "DOMAIN_RISK_SIGNAL" in deep_rule.received_understanding.risk["signals"]
         assert "PLAN" not in recorder.entries
         assert orchestrator.last_trace is not None
-        assert [event.stage_name for event in orchestrator.last_trace.stage_events][-3:] == [
+        assert [event.stage_name for event in orchestrator.last_trace.stage_events][
+            -3:
+        ] == [
             "UNDERSTANDING",
             "SAFETY_DEEP",
             "POLICY",

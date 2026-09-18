@@ -34,20 +34,40 @@ class DeterministicUnderstandingConflictError(DeterministicUnderstandingError):
 
 
 class UnderstandingRoutingError(UnderstandingFoundationError):
-    """Base error for M3 path-routing decisions."""
+    """Base error for M3 understanding-path routing."""
 
 
 class InvalidUnderstandingRoutingPolicyError(UnderstandingRoutingError):
-    """Raised when a routing policy is structurally invalid."""
+    """Raised when generic routing configuration is malformed."""
 
 
 class ModelBoundaryError(UnderstandingFoundationError):
-    """Base error for the deep-understanding model boundary."""
+    """Base error for deep-understanding model boundary failures."""
 
 
 class ModelInputBoundaryError(ModelBoundaryError):
-    """Raised when a model request would expose disallowed runtime data."""
+    """Raised when data cannot safely cross into the model boundary."""
 
 
 class ModelOutputBoundaryError(ModelBoundaryError):
     """Raised when model output crosses the Understanding-only boundary."""
+
+
+class UnderstandingPostprocessingError(UnderstandingFoundationError):
+    """Base error for M3 evidence/uncertainty/candidate postprocessing."""
+
+
+class InvalidModelEvidenceError(UnderstandingPostprocessingError):
+    """Raised when model-provided interpretation evidence is malformed."""
+
+
+class InvalidModelUncertaintyError(UnderstandingPostprocessingError):
+    """Raised when model-provided uncertainty data is malformed."""
+
+
+class CandidateExtractionError(UnderstandingPostprocessingError):
+    """Raised when an injected candidate extractor fails or conflicts."""
+
+
+class MissingDeepUnderstandingResultError(UnderstandingPostprocessingError):
+    """Raised when a model-required route reaches postprocessing without a result."""

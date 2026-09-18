@@ -71,3 +71,23 @@ class CandidateExtractionError(UnderstandingPostprocessingError):
 
 class MissingDeepUnderstandingResultError(UnderstandingPostprocessingError):
     """Raised when a model-required route reaches postprocessing without a result."""
+
+
+class UnderstandingAssemblyError(UnderstandingFoundationError):
+    """Base error for IU5 final UnderstandingState assembly."""
+
+
+class InvalidModelUnderstandingFragmentError(UnderstandingAssemblyError):
+    """Raised when a model fragment cannot be mapped to the frozen Canonical shape."""
+
+
+class UnderstandingMergeConflictError(UnderstandingAssemblyError):
+    """Raised when deterministic/model understanding cannot be merged safely."""
+
+
+class MissingUnderstandingModelError(UnderstandingAssemblyError):
+    """Raised when a DEEP/HYBRID route has no configured model adapter."""
+
+
+class UnderstandingModelExecutionError(UnderstandingAssemblyError):
+    """Raised when the configured understanding model fails during inference."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -31,6 +32,7 @@ from runtime.understanding import (
     MissingUnderstandingModelError,
     ModelUnderstandingOutputValidator,
     RuntimeUnderstandingEngine,
+    StructuredUnderstandingModel,
     UnderstandingMergeConflictError,
     UnderstandingModelExecutionError,
     UnderstandingPathRouter,
@@ -75,7 +77,7 @@ def _runtime_context() -> RuntimeContext:
 def _engine(
     *,
     rules: tuple[ConfiguredTextRule, ...] = (),
-    model: object | None = None,
+    model: StructuredUnderstandingModel | None = None,
     routing_policy: UnderstandingRoutingPolicy | None = None,
 ) -> RuntimeUnderstandingEngine:
     return RuntimeUnderstandingEngine(
@@ -87,7 +89,7 @@ def _engine(
         output_validator=ModelUnderstandingOutputValidator(),
         postprocessor=UnderstandingPostprocessor(),
         assembler=UnderstandingStateAssembler(),
-        model=model,  # type: ignore[arg-type]
+        model=model,
     )
 
 
@@ -101,8 +103,7 @@ class RecordingModel:
         return self.payload
 
 
-@pytest.mark.asyncio
-async def test_fast_path_builds_final_state_without_calling_model() -> None:
+def test_fast_path_builds_final_state_without_calling_model() -> None:
     rule = ConfiguredTextRule(
         DeterministicRuleDefinition(
             rule_id="fast-rule",
@@ -117,7 +118,9 @@ async def test_fast_path_builds_final_state_without_calling_model() -> None:
     model = RecordingModel({"intents": [{"intent_id": "SHOULD_NOT_RUN"}]})
     engine = _engine(rules=(rule,), model=model)
 
-    result = await engine.understand(_runtime_input("FAST"), _runtime_context())
+    result = asyncio.run(
+        engine.understand(_runtime_input("FAST"), _runtime_context())
+    )
 
     assert isinstance(result, UnderstandingState)
     assert result.metadata.processing_path is ProcessingPath.FAST_PATH
@@ -131,8 +134,7 @@ async def test_fast_path_builds_final_state_without_calling_model() -> None:
     assert model.requests == []
 
 
-@pytest.mark.asyncio
-async def test_deep_path_calls_model_once_and_builds_canonical_state() -> None:
+def test_deep_path_calls_model_once_and_builds_canonical_state() -> None:
     model = RecordingModel(
         {
             "semantic": {
@@ -167,7 +169,9 @@ async def test_deep_path_calls_model_once_and_builds_canonical_state() -> None:
     )
     engine = _engine(model=model)
 
-    result = await engine.understand(_runtime_input("INPUT"), _runtime_context())
+    result = asyncio.run(
+        engine.understand(_runtime_input("INPUT"), _runtime_context())
+    )
 
     assert result.metadata.processing_path is ProcessingPath.DEEP_PATH
     assert len(model.requests) == 1
@@ -183,8 +187,7 @@ async def test_deep_path_calls_model_once_and_builds_canonical_state() -> None:
     assert result.evidence[0]["source_type"] == "MODEL_INFERENCE"
 
 
-@pytest.mark.asyncio
-async def test_hybrid_deterministic_intent_cannot_be_overwritten_by_model() -> None:
+def test_hybrid_deterministic_intent_cannot_be_overwritten_by_model() -> None:
     rule = ConfiguredTextRule(
         DeterministicRuleDefinition(
             rule_id="hybrid-rule",
@@ -210,7 +213,9 @@ async def test_hybrid_deterministic_intent_cannot_be_overwritten_by_model() -> N
     )
     engine = _engine(rules=(rule,), model=model)
 
-    result = await engine.understand(_runtime_input("HYBRID"), _runtime_context())
+    result = asyncio.run(
+        engine.understand(_runtime_input("HYBRID"), _runtime_context())
+    )
 
     assert result.metadata.processing_path is ProcessingPath.HYBRID_PATH
     by_id = {intent.intent_id: intent for intent in result.intents}
@@ -219,8 +224,7 @@ async def test_hybrid_deterministic_intent_cannot_be_overwritten_by_model() -> N
     assert by_id["MODEL_ADDED_INTENT"].source is IntentEvidenceSource.INFERRED
 
 
-@pytest.mark.asyncio
-async def test_deterministic_semantic_flags_override_model_values() -> None:
+def test_deterministic_semantic_flags_override_model_values() -> None:
     rule = ConfiguredTextRule(
         DeterministicRuleDefinition(
             rule_id="semantic-rule",
@@ -242,7 +246,9 @@ async def test_deterministic_semantic_flags_override_model_values() -> None:
     )
     engine = _engine(rules=(rule,), model=model)
 
-    result = await engine.understand(_runtime_input("FLAGS"), _runtime_context())
+    result = asyncio.run(
+        engine.understand(_runtime_input("FLAGS"), _runtime_context())
+    )
 
     assert result.semantic is not None
     assert result.semantic.negation is True
@@ -250,8 +256,7 @@ async def test_deterministic_semantic_flags_override_model_values() -> None:
     assert result.semantic.normalized_meaning == "model meaning"
 
 
-@pytest.mark.asyncio
-async def test_model_cannot_spoof_intent_source() -> None:
+def test_model_cannot_spoof_intent_source() -> None:
     model = RecordingModel(
         {
             "intents": [
@@ -265,14 +270,15 @@ async def test_model_cannot_spoof_intent_source() -> None:
     )
 
     with pytest.raises(InvalidModelUnderstandingFragmentError):
-        await _engine(model=model).understand(
-            _runtime_input("INPUT"),
-            _runtime_context(),
+        asyncio.run(
+            _engine(model=model).understand(
+                _runtime_input("INPUT"),
+                _runtime_context(),
+            )
         )
 
 
-@pytest.mark.asyncio
-async def test_model_intent_cannot_reference_unknown_evidence() -> None:
+def test_model_intent_cannot_reference_unknown_evidence() -> None:
     model = RecordingModel(
         {
             "intents": [
@@ -286,37 +292,43 @@ async def test_model_intent_cannot_reference_unknown_evidence() -> None:
     )
 
     with pytest.raises(InvalidModelUnderstandingFragmentError):
-        await _engine(model=model).understand(
-            _runtime_input("INPUT"),
-            _runtime_context(),
+        asyncio.run(
+            _engine(model=model).understand(
+                _runtime_input("INPUT"),
+                _runtime_context(),
+            )
         )
 
 
-@pytest.mark.asyncio
-async def test_deep_route_without_model_fails_closed() -> None:
+def test_deep_route_without_model_fails_closed() -> None:
     with pytest.raises(MissingUnderstandingModelError):
-        await _engine().understand(_runtime_input("INPUT"), _runtime_context())
+        asyncio.run(
+            _engine().understand(_runtime_input("INPUT"), _runtime_context())
+        )
 
 
-@pytest.mark.asyncio
-async def test_model_failure_is_sanitized_and_preserves_cause() -> None:
+def test_model_failure_is_sanitized_and_preserves_cause() -> None:
     class ExplodingModel:
-        async def infer(self, request: DeepUnderstandingRequest) -> dict[str, Any]:
+        async def infer(
+            self,
+            request: DeepUnderstandingRequest,
+        ) -> dict[str, Any]:
             del request
             raise RuntimeError("private provider failure")
 
     with pytest.raises(UnderstandingModelExecutionError) as exc_info:
-        await _engine(model=ExplodingModel()).understand(
-            _runtime_input("INPUT"),
-            _runtime_context(),
+        asyncio.run(
+            _engine(model=ExplodingModel()).understand(
+                _runtime_input("INPUT"),
+                _runtime_context(),
+            )
         )
 
     assert "private provider failure" not in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
-@pytest.mark.asyncio
-async def test_multiple_deterministic_speech_acts_fail_if_fast_cannot_represent_them() -> None:
+def test_multiple_deterministic_speech_acts_fail_if_fast_cannot_represent_them() -> None:
     rules = (
         ConfiguredTextRule(
             DeterministicRuleDefinition(
@@ -337,14 +349,15 @@ async def test_multiple_deterministic_speech_acts_fail_if_fast_cannot_represent_
     )
 
     with pytest.raises(UnderstandingMergeConflictError):
-        await _engine(rules=rules).understand(
-            _runtime_input("MULTI"),
-            _runtime_context(),
+        asyncio.run(
+            _engine(rules=rules).understand(
+                _runtime_input("MULTI"),
+                _runtime_context(),
+            )
         )
 
 
-@pytest.mark.asyncio
-async def test_hybrid_model_may_disambiguate_only_among_deterministic_speech_acts() -> None:
+def test_hybrid_model_may_disambiguate_only_among_deterministic_speech_acts() -> None:
     rules = (
         ConfiguredTextRule(
             DeterministicRuleDefinition(
@@ -367,9 +380,11 @@ async def test_hybrid_model_may_disambiguate_only_among_deterministic_speech_act
     )
     model = RecordingModel({"semantic": {"speech_act": "REQUEST"}})
 
-    result = await _engine(rules=rules, model=model).understand(
-        _runtime_input("MULTI"),
-        _runtime_context(),
+    result = asyncio.run(
+        _engine(rules=rules, model=model).understand(
+            _runtime_input("MULTI"),
+            _runtime_context(),
+        )
     )
 
     assert result.metadata.processing_path is ProcessingPath.HYBRID_PATH

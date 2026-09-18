@@ -1,7 +1,8 @@
 """M4-IU3 legal action candidate generation.
 
 Candidate generation is constrained by registered Action definitions, M2 PolicyDecision,
-available capability IDs, and injected eligibility rules. It never executes an action.
+available capability IDs, planning mode, and injected eligibility rules. It never
+executes an action.
 """
 
 from __future__ import annotations
@@ -10,10 +11,13 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from runtime.contracts import PolicyDecision, RuntimeContext, UnderstandingState
+from runtime.contracts.enums import PlanningMode
 from runtime.planning.errors import (
     ActionRegistryAmbiguityError,
     CandidateEligibilityError,
     InvalidActionCandidateError,
+    PlanningBlockedByPolicyError,
+    StrategyRegistryAmbiguityError,
 )
 from runtime.planning.goals import GoalResolutionResult
 from runtime.registries import ActionDefinition, ActionRegistry, IntrusivenessLevel
@@ -135,8 +139,14 @@ class LegalActionCandidateBuilder:
         goals: GoalResolutionResult,
         policy_decision: PolicyDecision,
         *,
+        planning_mode: PlanningMode,
         available_capability_ids: frozenset[str],
     ) -> tuple[PlanningActionCandidate, ...]:
+        if policy_decision.blocked or not policy_decision.allowed:
+            raise PlanningBlockedByPolicyError(
+                "M4 cannot generate candidates when M2 PolicyDecision blocks planning"
+            )
+
         definitions = self._enabled_action_definitions()
 
         contributions: list[CandidateContribution] = []
@@ -168,6 +178,8 @@ class LegalActionCandidateBuilder:
                 raise InvalidActionCandidateError(
                     "candidate references an unregistered or disabled action"
                 )
+            if planning_mode not in definition.allowed_planning_modes:
+                continue
             if not self._allowed_by_policy(contribution.action, policy_decision):
                 continue
             if (
@@ -224,7 +236,7 @@ class LegalActionCandidateBuilder:
             if not record.enabled or not definition.enabled:
                 continue
             if definition.strategy_id in seen_strategy_ids:
-                raise InvalidActionCandidateError(
+                raise StrategyRegistryAmbiguityError(
                     "multiple enabled versions exist for one strategy_id"
                 )
             seen_strategy_ids.add(definition.strategy_id)

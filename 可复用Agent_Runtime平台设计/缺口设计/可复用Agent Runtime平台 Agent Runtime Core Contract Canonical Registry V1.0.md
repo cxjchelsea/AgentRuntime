@@ -477,6 +477,19 @@ WAIT
 END
 ```
 
+## 4.22 RetrievalMode（M4-CA1）
+
+```text
+VECTOR
+KEYWORD
+HYBRID
+STRUCTURED_LOOKUP
+EXTERNAL_API
+NONE
+```
+
+该枚举只描述跨 Domain 的 Knowledge Infrastructure 检索控制模式，不冻结任何业务 KnowledgeDomain / KnowledgeType / SourcePolicy。
+
 ---
 
 # 5. Domain Registered Values

@@ -26,8 +26,8 @@ from runtime.understanding import (
     UnderstandingEvidence,
     UnderstandingPostprocessResult,
     UnderstandingStateAssembler,
+    model_boundary,
 )
-from runtime.understanding import model_boundary
 
 M3_PACKAGE_ROOT = Path("runtime/understanding")
 

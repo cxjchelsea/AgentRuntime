@@ -7,9 +7,10 @@ planning, safety, execution, response, or persistence authority.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
 from runtime.contracts.understanding import UncertaintyAssessment
 from runtime.understanding.definitions import (
@@ -295,19 +296,23 @@ class CandidateExtractionPipeline:
                     f"candidate extractor failed: {extractor.extractor_id}"
                 ) from exc
 
+            # 记忆与动作候选分别追踪，避免复用同一变量导致类型收窄冲突
             for memory in result.memory_candidates:
-                existing = memory_by_id.get(memory.candidate_id)
-                if existing is not None and existing != memory:
+                existing_memory = memory_by_id.get(memory.candidate_id)
+                if existing_memory is not None and existing_memory != memory:
                     raise CandidateExtractionError(
                         "conflicting memory candidates share the same candidate_id"
                     )
                 memory_by_id[memory.candidate_id] = memory
 
             for action in result.candidate_actions:
-                key = (action.action, action.target)
-                existing = action_by_key.get(key)
-                if existing is None or action.confidence > existing.confidence:
-                    action_by_key[key] = action
+                action_key = (action.action, action.target)
+                existing_action = action_by_key.get(action_key)
+                if (
+                    existing_action is None
+                    or action.confidence > existing_action.confidence
+                ):
+                    action_by_key[action_key] = action
 
         return CandidateExtractionResult(
             memory_candidates=tuple(memory_by_id.values()),
@@ -327,9 +332,7 @@ class UnderstandingPostprocessor:
         candidate_pipeline: CandidateExtractionPipeline | None = None,
     ) -> None:
         self._evidence_normalizer = evidence_normalizer or EvidenceNormalizer()
-        self._uncertainty_normalizer = (
-            uncertainty_normalizer or UncertaintyNormalizer()
-        )
+        self._uncertainty_normalizer = uncertainty_normalizer or UncertaintyNormalizer()
         self._risk_normalizer = risk_normalizer or RiskSignalNormalizer()
         self._candidate_pipeline = candidate_pipeline or CandidateExtractionPipeline()
 

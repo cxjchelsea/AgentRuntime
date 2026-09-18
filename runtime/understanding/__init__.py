@@ -65,10 +65,10 @@ from runtime.understanding.postprocessing import (
     CandidateExtractionResult,
     EvidenceNormalizer,
     RiskSignalNormalizer,
-    UnderstandingCandidateExtractor,
-    UnderstandingPostprocessResult,
-    UnderstandingPostprocessor,
     UncertaintyNormalizer,
+    UnderstandingCandidateExtractor,
+    UnderstandingPostprocessor,
+    UnderstandingPostprocessResult,
 )
 from runtime.understanding.routing import (
     UnderstandingPathRouter,

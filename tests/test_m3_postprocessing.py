@@ -21,11 +21,11 @@ from runtime.understanding import (
     ModelUnderstandingResult,
     RiskSignalNormalizer,
     RuleParseResult,
+    UncertaintyNormalizer,
     UnderstandingEvidence,
     UnderstandingEvidenceSource,
     UnderstandingPostprocessor,
     UnderstandingRouteDecision,
-    UncertaintyNormalizer,
 )
 
 

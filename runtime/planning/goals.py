@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
 
-from runtime.contracts import PlanningGoal, PolicyDecision, RuntimeContext, UnderstandingState
+from runtime.contracts import (
+    PlanningGoal,
+    PolicyDecision,
+    RuntimeContext,
+    UnderstandingState,
+)
 from runtime.contracts.enums import TaskStatus
 from runtime.planning.errors import (
     GoalProviderExecutionError,

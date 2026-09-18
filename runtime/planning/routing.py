@@ -81,10 +81,7 @@ class PlanningModeRouter:
                 forced_workflow=policy_decision.forced_workflow,
             )
 
-        if (
-            understanding_state.metadata.processing_path
-            is ProcessingPath.DEGRADED_PATH
-        ):
+        if understanding_state.metadata.processing_path is ProcessingPath.DEGRADED_PATH:
             return PlanningRouteDecision(
                 mode=PlanningMode.DEGRADED,
                 reason_codes=("UNDERSTANDING_DEGRADED",),

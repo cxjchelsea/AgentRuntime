@@ -83,9 +83,7 @@ def _engine(
     return RuntimeUnderstandingEngine(
         rule_parser=DeterministicRuleParser(rules),
         path_router=UnderstandingPathRouter(routing_policy),
-        request_builder=DeepUnderstandingRequestBuilder(
-            DefaultModelContextSelector()
-        ),
+        request_builder=DeepUnderstandingRequestBuilder(DefaultModelContextSelector()),
         output_validator=ModelUnderstandingOutputValidator(),
         postprocessor=UnderstandingPostprocessor(),
         assembler=UnderstandingStateAssembler(),
@@ -118,9 +116,7 @@ def test_fast_path_builds_final_state_without_calling_model() -> None:
     model = RecordingModel({"intents": [{"intent_id": "SHOULD_NOT_RUN"}]})
     engine = _engine(rules=(rule,), model=model)
 
-    result = asyncio.run(
-        engine.understand(_runtime_input("FAST"), _runtime_context())
-    )
+    result = asyncio.run(engine.understand(_runtime_input("FAST"), _runtime_context()))
 
     assert isinstance(result, UnderstandingState)
     assert result.metadata.processing_path is ProcessingPath.FAST_PATH
@@ -169,9 +165,7 @@ def test_deep_path_calls_model_once_and_builds_canonical_state() -> None:
     )
     engine = _engine(model=model)
 
-    result = asyncio.run(
-        engine.understand(_runtime_input("INPUT"), _runtime_context())
-    )
+    result = asyncio.run(engine.understand(_runtime_input("INPUT"), _runtime_context()))
 
     assert result.metadata.processing_path is ProcessingPath.DEEP_PATH
     assert len(model.requests) == 1
@@ -246,9 +240,7 @@ def test_deterministic_semantic_flags_override_model_values() -> None:
     )
     engine = _engine(rules=(rule,), model=model)
 
-    result = asyncio.run(
-        engine.understand(_runtime_input("FLAGS"), _runtime_context())
-    )
+    result = asyncio.run(engine.understand(_runtime_input("FLAGS"), _runtime_context()))
 
     assert result.semantic is not None
     assert result.semantic.negation is True
@@ -302,9 +294,7 @@ def test_model_intent_cannot_reference_unknown_evidence() -> None:
 
 def test_deep_route_without_model_fails_closed() -> None:
     with pytest.raises(MissingUnderstandingModelError):
-        asyncio.run(
-            _engine().understand(_runtime_input("INPUT"), _runtime_context())
-        )
+        asyncio.run(_engine().understand(_runtime_input("INPUT"), _runtime_context()))
 
 
 def test_model_failure_is_sanitized_and_preserves_cause() -> None:
@@ -328,7 +318,9 @@ def test_model_failure_is_sanitized_and_preserves_cause() -> None:
     assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
-def test_multiple_deterministic_speech_acts_fail_if_fast_cannot_represent_them() -> None:
+def test_multiple_deterministic_speech_acts_fail_if_fast_cannot_represent_them() -> (
+    None
+):
     rules = (
         ConfiguredTextRule(
             DeterministicRuleDefinition(

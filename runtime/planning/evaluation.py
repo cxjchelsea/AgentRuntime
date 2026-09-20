@@ -55,8 +55,9 @@ class PlanningEvalResult:
         for name, value in self.metrics.items():
             if not name.strip():
                 raise ValueError("metric name must not be blank")
+            # 指标值只接受数值类型，布尔值单独排除以免被当成 0/1
             if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise ValueError("metric values must be numeric")
+                raise TypeError("metric values must be numeric")
 
 
 class PlanningCaseEvaluator(Protocol):

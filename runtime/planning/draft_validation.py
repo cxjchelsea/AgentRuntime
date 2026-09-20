@@ -316,6 +316,7 @@ class PlanValidator:
         self._validate_tool_plan(draft, context)
         self._validate_confirmation(draft, context.action_registry)
         self._validate_fallback(draft, context.action_registry)
+        self._validate_response_strategy(draft)
         self._validate_stop_conditions(draft)
 
         codes = [
@@ -506,12 +507,41 @@ class PlanValidator:
             not in capabilities.freshness_capabilities
         ):
             raise PlanValidationError("freshness requirement is unsupported")
-        if retrieval.filters:
-            unsupported = set(retrieval.filters) - capabilities.supported_filters
+        filters = retrieval.filters or {}
+        if filters:
+            unsupported = set(filters) - capabilities.supported_filters
             if unsupported:
                 raise PlanValidationError(
                     "RetrievalPlan contains unsupported metadata filters"
                 )
+
+        expected_constraints: dict[str, object | None] = {
+            "domain": requirement.domain,
+            "population": requirement.population,
+            "scenario": requirement.scenario,
+            "safety_level": requirement.safety_level,
+        }
+        for key, value in expected_constraints.items():
+            if value is None or key not in capabilities.supported_filters:
+                continue
+            if filters.get(key) != value:
+                raise PlanValidationError(
+                    "RetrievalPlan silently changed a KnowledgeRequirement constraint"
+                )
+        if requirement.source_constraints:
+            if "source_constraints" not in capabilities.supported_filters:
+                raise PlanValidationError(
+                    "source_constraints are unsupported by current capabilities"
+                )
+            if filters.get("source_constraints") != requirement.source_constraints:
+                raise PlanValidationError(
+                    "RetrievalPlan silently changed source_constraints"
+                )
+        if retrieval.freshness_requirement != requirement.freshness_requirement:
+            raise PlanValidationError(
+                "RetrievalPlan freshness must match KnowledgeRequirement"
+            )
+
         if (
             evidence.minimum_count is not None
             and retrieval.minimum_evidence is not None
@@ -648,8 +678,14 @@ class PlanValidator:
         if tool_plan is None:
             raise PlanValidationError("IU6 Draft requires tool_plan")
         calls = tool_plan.get("tool_calls")
+        parallelizable = tool_plan.get("parallelizable")
+        required_success = tool_plan.get("required_success")
         if not isinstance(calls, list):
             raise PlanValidationError("tool_plan.tool_calls must be list")
+        if not isinstance(parallelizable, bool):
+            raise PlanValidationError("tool_plan.parallelizable must be bool")
+        if not isinstance(required_success, bool):
+            raise PlanValidationError("tool_plan.required_success must be bool")
 
         tools = self._enabled_definitions(
             context.tool_registry,
@@ -662,6 +698,9 @@ class PlanValidator:
             if not isinstance(call, dict):
                 raise PlanValidationError("tool call plan must be object")
             tool_id = call.get("tool_id")
+            required = call.get("required")
+            if not isinstance(required, bool):
+                raise PlanValidationError("tool call required must be bool")
             if not isinstance(tool_id, str) or tool_id not in tools:
                 raise PlanValidationError(
                     "tool plan references unavailable Tool"
@@ -682,6 +721,10 @@ class PlanValidator:
 
         capability = draft.capability_plan or {}
         selected_skills = capability.get("selected_skills", [])
+        if not set(required_by_skill) <= set(selected_skills):
+            raise PlanValidationError(
+                "tool required_by_skills references unselected Skill"
+            )
         skill_defs = self._enabled_definitions(
             context.skill_registry,
             "skill_id",
@@ -771,6 +814,40 @@ class PlanValidator:
         if not set(actions) <= set(action_defs):
             raise PlanValidationError(
                 "fallback references unregistered or disabled Action"
+            )
+
+    @staticmethod
+    def _validate_response_strategy(draft: ActionPlanDraft) -> None:
+        response_strategy = draft.response_strategy
+        if response_strategy is None:
+            return
+        allowed = {
+            "communicative_goal",
+            "tone",
+            "length",
+            "question_mode",
+            "memory_reference_mode",
+            "content_order",
+        }
+        if set(response_strategy) - allowed:
+            raise PlanValidationError(
+                "response_strategy contains unsupported IU6 fields"
+            )
+        for key in allowed - {"content_order"}:
+            value = response_strategy.get(key)
+            if value is not None and (
+                not isinstance(value, str) or not value.strip()
+            ):
+                raise PlanValidationError(
+                    "response_strategy text values must be non-blank strings"
+                )
+        content_order = response_strategy.get("content_order")
+        if not isinstance(content_order, list) or any(
+            not isinstance(item, str) or not item.strip()
+            for item in content_order
+        ):
+            raise PlanValidationError(
+                "response_strategy.content_order must be string list"
             )
 
     @staticmethod

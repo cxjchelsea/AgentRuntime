@@ -11,7 +11,7 @@
 > 平台固定边界：`Runtime Core` 尽量稳定；`Domain Extension` 插件化；`Business Package` 配置化；`Application` 负责产品装配。
 
 > 本版本基于 M4 V2.0 更新。  
-> V2.0 中的 Goal Resolution、Planning Mode、Action Space、Strategy Library、Memory Usage Decision、Capability Selection、Tool Planning、Active Planning、Clarification Planning、Fast / Agent Planning、Plan Validator、Policy Re-check、Eval、Gate、交付物等内容全部保留。
+> V2.0 中的 Goal Resolution、Planning Mode、Action Space、Strategy Library、Memory Usage Decision、Capability Selection、Tool Planning、Fast / Agent Planning、Plan Validator、Policy Re-check、Eval、Gate、交付物等主体内容保留。Active Planning / Clarification Planning 在 Closure Fix Pack Amendment V1.0 中收口为 Action / Strategy / Eligibility 机制，不再作为独立 Core Planner。
 >
 > V2.1 重点补强：
 >
@@ -24,7 +24,7 @@
 > RAG 与 M4/M5/M6/M7 的边界
 > Knowledge Retrieval Skill Contract
 > Knowledge-aware ActionPlan
-> Retrieve → Validate → Replan 支持
+> Retrieve → Validate → Replan 跨阶段入口合同（E2E 延后至 M5/M6）
 > ```
 >
 > 并明确：

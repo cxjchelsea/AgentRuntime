@@ -56,26 +56,6 @@ class ExecutionIdentifierFactory(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class CounterExecutionIdentifierFactory:
-    """Deterministic-process ID factory suitable for tests and non-distributed IU1."""
-
-    prefix: str = "execution"
-    _counter: int = 0
-
-    def new_execution_id(self) -> str:
-        # Frozen dataclass intentionally has no mutable counter. The default factory is
-        # only a protocol example; production/test callers should inject stable IDs.
-        raise ExecutionContextBuildError(
-            "CounterExecutionIdentifierFactory requires an injected implementation"
-        )
-
-    def new_step_execution_id(self, step_id: str) -> str:
-        raise ExecutionContextBuildError(
-            "CounterExecutionIdentifierFactory requires an injected implementation"
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class CallableExecutionIdentifierFactory:
     """Adapter for injected callables without imposing UUID policy on Core."""
 
@@ -387,9 +367,12 @@ class ExecutionLifecycleManager:
     ) -> PreparedExecution:
         if prepared.execution_record.status != "RUNNING":
             raise ExecutionLifecycleError("only RUNNING execution can finish")
-        if any(item.status is StepExecutionStatus.RUNNING for item in prepared.steps):
+        if any(
+            item.status in {StepExecutionStatus.PENDING, StepExecutionStatus.RUNNING}
+            for item in prepared.steps
+        ):
             raise ExecutionLifecycleError(
-                "execution cannot finish while a step is RUNNING"
+                "execution cannot finish while a step is non-terminal"
             )
         value = status.value
         if value not in self._TERMINAL_EXECUTION_STATUSES:
@@ -526,6 +509,13 @@ class ExecutionFoundation:
             approved_plan,
             execution_context,
         )
+        existing = await self._execution_store.load(
+            prepared.execution_record.execution_id
+        )
+        if existing is not None:
+            raise ExecutionLifecycleError(
+                "execution_id already exists in ExecutionStateStore"
+            )
         await self._execution_store.save(prepared.execution_record)
         return prepared
 
@@ -537,6 +527,15 @@ class InMemoryExecutionStateStore:
         self._records: dict[str, ExecutionRecord] = {}
 
     async def save(self, record: ExecutionRecord) -> None:
+        existing = self._records.get(record.execution_id)
+        if existing is not None and (
+            existing.plan_id != record.plan_id
+            or existing.request_id != record.request_id
+            or existing.identity_scope != record.identity_scope
+        ):
+            raise ExecutionLifecycleError(
+                "execution_id cannot be rebound to another plan/request/identity scope"
+            )
         self._records[record.execution_id] = record
 
     async def load(self, execution_id: str) -> ExecutionRecord | None:

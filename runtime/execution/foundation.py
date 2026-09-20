@@ -418,6 +418,55 @@ class ExecutionLifecycleManager:
             updated_at=at,
         )
 
+    def skip_step(
+        self,
+        prepared: PreparedExecution,
+        *,
+        step_id: str,
+        at: datetime,
+        reason: str,
+    ) -> PreparedExecution:
+        target = self._step(prepared, step_id)
+        if target.status is not StepExecutionStatus.PENDING:
+            raise ExecutionLifecycleError("only PENDING step can be skipped")
+        if prepared.execution_record.status != "RUNNING":
+            raise ExecutionLifecycleError("skip_step requires RUNNING execution")
+        if any(
+            item.status is StepExecutionStatus.RUNNING
+            for item in prepared.steps
+        ):
+            raise ExecutionLifecycleError(
+                "cannot skip a step while another step is RUNNING"
+            )
+        if prepared.started_at is None:
+            raise ExecutionLifecycleError(
+                "skip_step requires execution started_at"
+            )
+        if at < prepared.started_at:
+            raise ExecutionLifecycleError(
+                "step cannot be skipped before execution start time"
+            )
+        if not reason.strip():
+            raise ExecutionLifecycleError("skip reason must not be blank")
+
+        steps = tuple(
+            replace(
+                item,
+                status=StepExecutionStatus.SKIPPED,
+                error=reason,
+                finished_at=at,
+            )
+            if item.step_id == step_id
+            else item
+            for item in prepared.steps
+        )
+        return self._replace_steps(
+            prepared,
+            steps,
+            current_step=None,
+            updated_at=at,
+        )
+
     def finish_execution(
         self,
         prepared: PreparedExecution,
@@ -557,6 +606,23 @@ class ExecutionLifecycleService:
             error=error,
             tool_call_ids=tool_call_ids,
             retry_count=retry_count,
+        )
+        await self._persist(updated)
+        return updated
+
+    async def skip_step(
+        self,
+        prepared: PreparedExecution,
+        *,
+        step_id: str,
+        at: datetime,
+        reason: str,
+    ) -> PreparedExecution:
+        updated = self._lifecycle_manager.skip_step(
+            prepared,
+            step_id=step_id,
+            at=at,
+            reason=reason,
         )
         await self._persist(updated)
         return updated

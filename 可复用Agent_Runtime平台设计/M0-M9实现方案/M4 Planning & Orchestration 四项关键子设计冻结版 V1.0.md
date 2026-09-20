@@ -2916,8 +2916,35 @@ PlanValidator
 
 Policy Re-check
 
-独立 M4 Eval
+Clarification / Active Interaction
+通过 Action / Strategy / Eligibility 机制表达，不设独立 Core Planner
+
+独立 M4 Eval Harness
+真实 Golden Planning Set 由 Domain Package 提供
 ```
+
+---
+
+# 124.1 Closure Amendment
+
+根据《M4 Closure Fix Pack Amendment V1.0》：
+
+```text
+Gate M4-39 Retrieve → Validate → Replan
+= CROSS_STAGE_DEFERRED
+= NOT_APPLICABLE_FOR_M4_IMPLEMENTATION_CLOSURE
+```
+
+M4 仅冻结 ReplanEntryRequest 入口合同；真正 E2E 待 M5 / M6 完成后验证。
+
+同时：
+
+```text
+ClarificationPlanner
+ActiveInteractionPlanner
+```
+
+不再作为独立 Core Planner；相关行为必须投影为已注册 Action / Strategy，并通过现有 eligibility / strategy rule 进入统一决策面。
 
 ---
 

@@ -11,7 +11,7 @@
 > 平台固定边界：`Runtime Core` 尽量稳定；`Domain Extension` 插件化；`Business Package` 配置化；`Application` 负责产品装配。
 
 > 本版本基于 M4 V2.0 更新。  
-> V2.0 中的 Goal Resolution、Planning Mode、Action Space、Strategy Library、Memory Usage Decision、Capability Selection、Tool Planning、Active Planning、Clarification Planning、Fast / Agent Planning、Plan Validator、Policy Re-check、Eval、Gate、交付物等内容全部保留。
+> V2.0 中的 Goal Resolution、Planning Mode、Action Space、Strategy Library、Memory Usage Decision、Capability Selection、Tool Planning、Fast / Agent Planning、Plan Validator、Policy Re-check、Eval、Gate、交付物等主体内容保留。Active Planning / Clarification Planning 在 Closure Fix Pack Amendment V1.0 中收口为 Action / Strategy / Eligibility 机制，不再作为独立 Core Planner。
 >
 > V2.1 重点补强：
 >
@@ -24,7 +24,7 @@
 > RAG 与 M4/M5/M6/M7 的边界
 > Knowledge Retrieval Skill Contract
 > Knowledge-aware ActionPlan
-> Retrieve → Validate → Replan 支持
+> Retrieve → Validate → Replan 跨阶段入口合同（E2E 延后至 M5/M6）
 > ```
 >
 > 并明确：
@@ -1059,9 +1059,8 @@ ToolPlanner
 
 SequencePlanner
 
-ActiveInteractionPlanner
-
-ClarificationPlanner
+Clarification / Active Eligibility Projection
+（由 ActionCandidateProvider / CandidateEligibilityRule / StrategyEligibilityRule / StrategySelectionRule 实现，不设独立 Planner）
 
 FallbackPlanner
 
@@ -1119,7 +1118,7 @@ KnowledgeCapabilityContext
                   ↓
 ⑪ Memory Usage Decision
         ↓
-⑫ Clarification / Active Decision
+⑫ Clarification / Active Eligibility Projection
         ↓
 ⑬ Capability Selection
         ↓
@@ -1896,9 +1895,25 @@ Knowledge
 
 ---
 
-# Step 12：Clarification / Active Decision
+# Step 12：Clarification / Active Eligibility Projection
 
-继续原设计。
+根据 M4 Closure Fix Pack Amendment V1.0，本步骤不再实现独立的 ClarificationPlanner / ActiveInteractionPlanner。
+
+正式责任模型：
+
+```text
+M3 uncertainty / needs_clarification
++
+RuntimeContext
++
+PolicyDecision
++
+Domain injected candidate / eligibility / strategy rules
+        ↓
+进入既有合法 Action / Strategy 空间
+```
+
+Clarification / Active Interaction 必须被表达为 registered Action / Strategy，不建立第二套“下一步做什么”的决策器。
 
 如果 Query 本身缺关键条件：
 
@@ -3240,7 +3255,13 @@ M4 不直接读取 Vector DB。
 
 ## Gate M4-39
 
-系统支持：
+Gate 分类修订为：
+
+```text
+CROSS_STAGE_DEFERRED
+```
+
+目标路径仍为：
 
 ```text
 Retrieve
@@ -3248,7 +3269,23 @@ Retrieve
 → Replan
 ```
 
-路径。
+但该路径跨越 M5/K0、M6 与新一轮 M4，不能由 M4 Implementation Closure 单独证明。
+
+M4 Closure 要求仅为：
+
+```text
+ReplanEntryRequest 已定义
+M4 不直接执行 Retrieve / Validate
+```
+
+因此本 Gate 在 M4 Implementation Closure 中标记：
+
+```text
+NOT_APPLICABLE_FOR_M4_IMPLEMENTATION_CLOSURE
+DEFERRED_UNTIL_M5_M6
+```
+
+真正 E2E 在 M5 + M6 完成后验证。
 
 ---
 
@@ -3305,13 +3342,13 @@ M4-20 EvidenceRequirement规范
 
 M4-21 Memory Usage Decision规范
 
-M4-22 Active Interaction Planner规范
+M4-22 Active Interaction Eligibility规范
 
 M4-23 Capability Selection规范
 
 M4-24 Tool Planning规范
 
-M4-25 Clarification Planning规范
+M4-25 Clarification Eligibility规范
 
 M4-26 Sequence Planning规范
 

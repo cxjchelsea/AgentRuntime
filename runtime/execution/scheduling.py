@@ -126,6 +126,21 @@ class FailureDirectiveResolver:
         if status not in self._FAILURE_STATUSES:
             raise ValueError("failure directive requires failed terminal step status")
 
+        matches = [
+            item for item in prepared.steps if item.step_id == step.step_id
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                "failure step must resolve to exactly one prepared snapshot"
+            )
+        snapshot = matches[0]
+        if snapshot.action != step.action:
+            raise ValueError("failure step action drift detected")
+        if snapshot.status is not status:
+            raise ValueError(
+                "failure status must match authoritative prepared lifecycle state"
+            )
+
         if status in {
             StepExecutionStatus.CANCELLED,
             StepExecutionStatus.PREEMPTED,
@@ -273,7 +288,14 @@ class SequentialStepScheduler:
     ) -> None:
         if approved_plan.plan_id != prepared.execution_record.plan_id:
             raise ValueError("approved plan_id does not match prepared execution")
-        plan_step_ids = [step.step_id for step in approved_plan.steps]
-        prepared_step_ids = [step.step_id for step in prepared.steps]
-        if plan_step_ids != prepared_step_ids:
-            raise ValueError("prepared steps must preserve approved plan order exactly")
+        if approved_plan.request_id != prepared.execution_record.request_id:
+            raise ValueError("approved request_id does not match prepared execution")
+
+        plan_steps = [(step.step_id, step.action) for step in approved_plan.steps]
+        prepared_steps = [
+            (step.step_id, step.action) for step in prepared.steps
+        ]
+        if plan_steps != prepared_steps:
+            raise ValueError(
+                "prepared steps must preserve approved plan order/action exactly"
+            )

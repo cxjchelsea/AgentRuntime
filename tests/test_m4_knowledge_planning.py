@@ -32,8 +32,8 @@ from runtime.planning import (
     RetrievalPlanner,
     RetrievalPlanningError,
     RetrievalPolicyDecision,
-    RetrievalQueryBuildError,
     RetrievalQueryBuilder,
+    RetrievalQueryBuildError,
     StrategySelectionResult,
 )
 from runtime.planning.goals import GoalResolutionResult
@@ -292,9 +292,7 @@ def test_missing_domain_is_resolved_only_by_injected_domain_rule() -> None:
         required=True,
         query_target="domain query",
     )
-    router = KnowledgeDomainRouter(
-        rules=(StaticDomainRule("DOMAIN_KNOWLEDGE"),)
-    )
+    router = KnowledgeDomainRouter(rules=(StaticDomainRule("DOMAIN_KNOWLEDGE"),))
 
     routed = router.route(
         requirement,
@@ -372,9 +370,7 @@ def test_required_query_without_target_or_provider_fails_closed() -> None:
 def test_query_rewriter_requires_explicit_semantic_validator() -> None:
     with pytest.raises(RetrievalQueryBuildError):
         RetrievalQueryBuilder(
-            rewriter=RecordingRewriter(
-                {"normalized_query": "rewritten query"}
-            )
+            rewriter=RecordingRewriter({"normalized_query": "rewritten query"})
         )
 
 
@@ -418,9 +414,7 @@ def test_query_rewrite_is_allow_listed_and_goal_preservation_gated() -> None:
 def test_query_rewrite_fails_when_semantic_validator_rejects_change() -> None:
     understanding = _understanding()
     builder = RetrievalQueryBuilder(
-        rewriter=RecordingRewriter(
-            {"normalized_query": "changed goal"}
-        ),
+        rewriter=RecordingRewriter({"normalized_query": "changed goal"}),
         rewrite_validator=StaticRewriteValidator(False),
     )
 
@@ -594,9 +588,7 @@ def test_full_knowledge_planner_composes_steps_6_to_10_without_execution() -> No
         freshness_requirement="DOMAIN_FRESHNESS",
     )
     planner = KnowledgePlanner(
-        need_resolver=KnowledgeNeedResolver(
-            rules=(StaticNeedRule(requirement),)
-        ),
+        need_resolver=KnowledgeNeedResolver(rules=(StaticNeedRule(requirement),)),
         domain_router=KnowledgeDomainRouter(),
         query_builder=RetrievalQueryBuilder(),
         retrieval_planner=RetrievalPlanner(

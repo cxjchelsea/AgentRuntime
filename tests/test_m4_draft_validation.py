@@ -14,7 +14,7 @@ from runtime.contracts import (
     RetrievalPlan,
 )
 from runtime.contracts.enums import PlanningMode
-from runtime.contracts.planning import PlanningGoal, StrategySelection
+from runtime.contracts.planning import ActionStep, PlanningGoal, StrategySelection
 from runtime.planning import (
     ActionPlanDraftAssembler,
     CapabilityBinding,
@@ -28,7 +28,6 @@ from runtime.planning import (
     MemoryUsageDecision,
     PlanValidationContext,
     PlanValidationError,
-    PlanValidationRule,
     PlanValidator,
     ResponseStrategyBuilder,
     ResponseStrategyDecision,
@@ -175,10 +174,7 @@ def _preplanning() -> ExecutionPreplanningResult:
         ),
         sequence=SequencePlan(
             steps=(
-                __import__(
-                    "runtime.contracts.planning",
-                    fromlist=["ActionStep"],
-                ).ActionStep(
+                ActionStep(
                     step_id="step-1",
                     action="DOMAIN_ACTION",
                     skill_id="DOMAIN_SKILL",

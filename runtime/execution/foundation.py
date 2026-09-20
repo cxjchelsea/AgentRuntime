@@ -156,8 +156,20 @@ class ExecutionContextBuilder:
         self,
         *,
         identifier_factory: ExecutionIdentifierFactory,
+        deadline_resolver: Callable[
+            [ApprovedActionPlan, RuntimeContext],
+            datetime | None,
+        ]
+        | None = None,
+        trace_context_resolver: Callable[
+            [ApprovedActionPlan, RuntimeContext],
+            dict[str, Any] | None,
+        ]
+        | None = None,
     ) -> None:
         self._identifier_factory = identifier_factory
+        self._deadline_resolver = deadline_resolver
+        self._trace_context_resolver = trace_context_resolver
 
     def build(
         self,
@@ -178,8 +190,13 @@ class ExecutionContextBuilder:
             else None
         )
         deadline = (
-            runtime_context.task_context.timeout_at
-            if runtime_context.task_context is not None
+            self._deadline_resolver(approved_plan, runtime_context)
+            if self._deadline_resolver is not None
+            else None
+        )
+        trace_context = (
+            self._trace_context_resolver(approved_plan, runtime_context)
+            if self._trace_context_resolver is not None
             else None
         )
 
@@ -204,7 +221,7 @@ class ExecutionContextBuilder:
             tool_context=tool_context,
             deadline=deadline,
             cancellation_token=None,
-            trace_context=dict(approved_plan.trace) if approved_plan.trace else None,
+            trace_context=trace_context,
         )
 
 

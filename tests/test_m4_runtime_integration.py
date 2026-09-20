@@ -19,6 +19,7 @@ from runtime.contracts import (
     UnderstandingState,
 )
 from runtime.contracts.enums import PlanningMode, ProcessingPath
+from runtime.contracts.planning import StrategySelection
 from runtime.contracts.understanding import GoalUnderstanding
 from runtime.interfaces.understanding import UnderstandingEngine
 from runtime.orchestration import RuntimeOrchestrator
@@ -55,6 +56,7 @@ from runtime.planning import (
     SelectedActionResolver,
     SequencePlanner,
     StrategyRuleChoice,
+    StrategySelectionResult,
     ToolPlanner,
     ValidationReceiptError,
     ValidationReceiptLedger,
@@ -344,6 +346,100 @@ def test_concrete_m4_planner_composes_iu2_through_iu6_into_draft() -> None:
     assert draft.steps[0].skill_id == DOMAIN_SKILL
     assert draft.knowledge_requirement is not None
     assert draft.knowledge_requirement.required is False
+
+
+
+
+def test_single_legal_strategy_defaults_resolve_to_explicit_action() -> None:
+    _, strategies, _, _, _, _ = _registries()
+    result = SelectedActionResolver(strategies).resolve(
+        StrategySelectionResult(
+            strategy=StrategySelection(
+                strategy_id=DOMAIN_STRATEGY,
+                reason_code="ONLY_LEGAL_STRATEGY",
+            ),
+            selected_action_ids=(),
+            selection_path="SINGLE_LEGAL",
+        ),
+        candidate_action_ids=frozenset({DOMAIN_ACTION}),
+        policy_decision=build_policy_decision(),
+    )
+
+    assert result.selected_action_ids == (DOMAIN_ACTION,)
+
+
+def test_zero_action_strategy_is_not_an_implicit_noop_plan() -> None:
+    strategies = StrategyRegistry()
+    strategies.register(
+        StrategyDefinition(
+            strategy_id="EMPTY_STRATEGY",
+            version="1.0.0",
+            description="empty strategy",
+            preferred_goals=[],
+            preferred_needs=[],
+            compatible_emotions=[],
+            required_conditions=[],
+            avoid_conditions=[],
+            default_actions=[],
+            intrusiveness_level=IntrusivenessLevel.LOW,
+        )
+    )
+
+    with pytest.raises(SelectedActionResolutionError, match="zero actions"):
+        SelectedActionResolver(strategies).resolve(
+            StrategySelectionResult(
+                strategy=StrategySelection(
+                    strategy_id="EMPTY_STRATEGY",
+                    reason_code="ONLY_LEGAL_STRATEGY",
+                ),
+                selected_action_ids=(),
+                selection_path="SINGLE_LEGAL",
+            ),
+            candidate_action_ids=frozenset(),
+            policy_decision=build_policy_decision(),
+        )
+
+
+def test_m2_forced_action_enters_legal_candidate_space_without_domain_hint() -> None:
+    actions = ActionRegistry()
+    actions.register(
+        ActionDefinition(
+            action_id="FORCED_ACTION",
+            version="1.0.0",
+            category="DOMAIN_CATEGORY",
+            description="forced domain action",
+            intrusiveness_level=IntrusivenessLevel.LOW,
+            requires_confirmation=False,
+            required_capability=None,
+            allowed_planning_modes=[PlanningMode.FORCED],
+        )
+    )
+    strategies = StrategyRegistry()
+    builder = LegalActionCandidateBuilder(
+        action_registry=actions,
+        strategy_registry=strategies,
+    )
+    policy = build_policy_decision().model_copy(
+        update={"forced_action": "FORCED_ACTION"}
+    )
+    understanding = _understanding()
+    goals = GoalResolver().resolve(
+        build_runtime_context(),
+        understanding,
+        policy,
+    )
+
+    candidates = builder.build(
+        build_runtime_context(),
+        understanding,
+        goals,
+        policy,
+        planning_mode=PlanningMode.FORCED,
+        available_capability_ids=frozenset(),
+    )
+
+    assert [candidate.action for candidate in candidates] == ["FORCED_ACTION"]
+    assert candidates[0].source_codes == ("POLICY_FORCED_ACTION",)
 
 
 def test_runtime_validator_and_rechecker_bridge_exact_validated_draft() -> None:

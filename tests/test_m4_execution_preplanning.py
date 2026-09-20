@@ -17,6 +17,7 @@ from runtime.planning import (
     ExecutionPreplanner,
     FallbackDecision,
     FallbackPlanner,
+    FallbackPlanningError,
     MemoryUsageDecision,
     MemoryUsagePlanner,
     MemoryUsagePlanningError,
@@ -437,7 +438,7 @@ def test_fallback_defaults_fail_closed_and_validates_injected_actions() -> None:
     policy = build_policy_decision().model_copy(
         update={"forbidden_actions": ["DOMAIN_FALLBACK"]}
     )
-    with pytest.raises(Exception):
+    with pytest.raises(FallbackPlanningError):
         planner.plan((), empty_capability, empty_tool, policy)
 
 

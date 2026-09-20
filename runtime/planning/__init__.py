@@ -43,11 +43,10 @@ from runtime.planning.errors import (
     KnowledgePlanningError,
     MemoryUsagePlanningError,
     PlanIdGenerationError,
-    PlanValidationError,
-    SelectedActionResolutionError,
     PlanningBlockedByPolicyError,
     PlanningError,
     PlanningRouteConflictError,
+    PlanValidationError,
     PolicyApprovalIntegrationError,
     PolicySurfaceViolationError,
     QueryRewriteError,
@@ -56,6 +55,7 @@ from runtime.planning.errors import (
     RetrievalPlanningError,
     RetrievalQueryBuildError,
     RuntimePlanningIntegrationError,
+    SelectedActionResolutionError,
     SequencePlanningError,
     StrategyModelBoundaryError,
     StrategyModelExecutionError,
@@ -66,8 +66,7 @@ from runtime.planning.errors import (
     StrategySelectionError,
     ToolPlanningError,
     ValidationReceiptError,
-)
-from runtime.planning.execution_preplanning import (
+)from runtime.planning.execution_preplanning import (
     CapabilityBinding,
     CapabilityBindingRule,
     CapabilityPlanner,

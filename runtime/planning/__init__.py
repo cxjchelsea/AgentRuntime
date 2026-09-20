@@ -41,10 +41,10 @@ from runtime.planning.errors import (
     KnowledgeNeedRuleExecutionError,
     KnowledgePlanningError,
     MemoryUsagePlanningError,
-    PlanValidationError,
     PlanningBlockedByPolicyError,
     PlanningError,
     PlanningRouteConflictError,
+    PlanValidationError,
     PolicyApprovalIntegrationError,
     PolicySurfaceViolationError,
     QueryRewriteError,
@@ -61,7 +61,8 @@ from runtime.planning.errors import (
     StrategyRuleExecutionError,
     StrategySelectionError,
     ToolPlanningError,
-)from runtime.planning.execution_preplanning import (
+)
+from runtime.planning.execution_preplanning import (
     CapabilityBinding,
     CapabilityBindingRule,
     CapabilityPlanner,

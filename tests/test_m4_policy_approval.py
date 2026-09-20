@@ -35,7 +35,6 @@ from tests.orchestration_stubs import (
     build_policy_decision,
 )
 
-
 _REQUIRED_CODES = (
     "DRAFT_STRUCTURE_VALID",
     "REGISTRY_REFERENCES_VALID",
@@ -169,18 +168,16 @@ def test_iu7_requires_successful_iu6_validation_codes() -> None:
 
     with pytest.raises(ApprovalIntegrityError):
         asyncio.run(
-            PlanApprovalCoordinator(
-                policy_rechecker=DefaultPolicyRechecker()
-            ).approve(validated, _policy())
+            PlanApprovalCoordinator(policy_rechecker=DefaultPolicyRechecker()).approve(
+                validated, _policy()
+            )
         )
 
 
 def test_blocked_policy_still_fails_in_m2_rechecker() -> None:
     with pytest.raises(PlanPolicyViolationError):
         asyncio.run(
-            PlanApprovalCoordinator(
-                policy_rechecker=DefaultPolicyRechecker()
-            ).approve(
+            PlanApprovalCoordinator(policy_rechecker=DefaultPolicyRechecker()).approve(
                 _validated(),
                 _policy(allowed=False, blocked=True),
             )
@@ -228,9 +225,7 @@ def test_policy_surface_audit_catches_tool_hidden_outside_step_requirement() -> 
 
     with pytest.raises(PolicySurfaceViolationError, match="tool"):
         asyncio.run(
-            PlanApprovalCoordinator(
-                policy_rechecker=DefaultPolicyRechecker()
-            ).approve(
+            PlanApprovalCoordinator(policy_rechecker=DefaultPolicyRechecker()).approve(
                 _validated(draft),
                 _policy(forbidden_tools=["HIDDEN_TOOL"]),
             )
@@ -272,9 +267,7 @@ def test_policy_surface_audit_catches_skill_hidden_in_capability_plan() -> None:
 
     with pytest.raises(PolicySurfaceViolationError, match="skill"):
         asyncio.run(
-            PlanApprovalCoordinator(
-                policy_rechecker=DefaultPolicyRechecker()
-            ).approve(
+            PlanApprovalCoordinator(policy_rechecker=DefaultPolicyRechecker()).approve(
                 _validated(draft),
                 _policy(forbidden_skills=["HIDDEN_SKILL"]),
             )
@@ -316,9 +309,7 @@ def test_policy_surface_audit_catches_forbidden_fallback_action() -> None:
 
     with pytest.raises(PolicySurfaceViolationError, match="action"):
         asyncio.run(
-            PlanApprovalCoordinator(
-                policy_rechecker=DefaultPolicyRechecker()
-            ).approve(
+            PlanApprovalCoordinator(policy_rechecker=DefaultPolicyRechecker()).approve(
                 _validated(draft),
                 _policy(forbidden_actions=["FORBIDDEN_FALLBACK"]),
             )
@@ -360,9 +351,7 @@ def test_policy_confirmation_requires_required_true_not_merely_truthy_dict() -> 
 
     with pytest.raises(PolicySurfaceViolationError, match="required=true"):
         asyncio.run(
-            PlanApprovalCoordinator(
-                policy_rechecker=DefaultPolicyRechecker()
-            ).approve(
+            PlanApprovalCoordinator(policy_rechecker=DefaultPolicyRechecker()).approve(
                 _validated(draft),
                 _policy(confirmation_required=True),
             )
@@ -371,9 +360,7 @@ def test_policy_confirmation_requires_required_true_not_merely_truthy_dict() -> 
 
 def test_forced_workflow_cannot_be_bypassed_in_capability_subplan() -> None:
     base = build_action_plan_draft()
-    forced_step = base.steps[0].model_copy(
-        update={"workflow_id": "WF_FORCED"}
-    )
+    forced_step = base.steps[0].model_copy(update={"workflow_id": "WF_FORCED"})
     draft = base.model_copy(
         update={
             "steps": [forced_step],
@@ -408,9 +395,7 @@ def test_forced_workflow_cannot_be_bypassed_in_capability_subplan() -> None:
 
     with pytest.raises(PolicySurfaceViolationError, match="outside"):
         asyncio.run(
-            PlanApprovalCoordinator(
-                policy_rechecker=DefaultPolicyRechecker()
-            ).approve(
+            PlanApprovalCoordinator(policy_rechecker=DefaultPolicyRechecker()).approve(
                 _validated(draft),
                 _policy(forced_workflow="WF_FORCED"),
             )
@@ -434,9 +419,7 @@ class DomainApprovalRule:
 
 def test_injected_policy_rule_can_reject_or_add_audit_code_but_not_approve() -> None:
     draft = build_action_plan_draft()
-    auditor = M4PolicySurfaceAuditor(
-        rules=(DomainApprovalRule(),)
-    )
+    auditor = M4PolicySurfaceAuditor(rules=(DomainApprovalRule(),))
     result = asyncio.run(
         PlanApprovalCoordinator(
             policy_rechecker=DefaultPolicyRechecker(),
@@ -446,9 +429,7 @@ def test_injected_policy_rule_can_reject_or_add_audit_code_but_not_approve() -> 
     assert "DOMAIN_POLICY_SURFACE_VALID" in result.audit_codes
     assert result.approved_plan.approval_status is PlanApprovalStatus.APPROVED
 
-    rejecting = M4PolicySurfaceAuditor(
-        rules=(DomainApprovalRule(reject=True),)
-    )
+    rejecting = M4PolicySurfaceAuditor(rules=(DomainApprovalRule(reject=True),))
     with pytest.raises(PolicySurfaceViolationError):
         asyncio.run(
             PlanApprovalCoordinator(
@@ -508,7 +489,7 @@ class WrongSnapshotRechecker(PolicyRechecker):
 def test_approved_plan_must_snapshot_the_active_policy_decision() -> None:
     with pytest.raises(ApprovalIntegrityError, match="policy_snapshot"):
         asyncio.run(
-            PlanApprovalCoordinator(
-                policy_rechecker=WrongSnapshotRechecker()
-            ).approve(_validated(), _policy())
+            PlanApprovalCoordinator(policy_rechecker=WrongSnapshotRechecker()).approve(
+                _validated(), _policy()
+            )
         )

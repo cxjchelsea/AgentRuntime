@@ -130,9 +130,7 @@ class M4PolicySurfaceAuditor:
                 "capability selected_skills must be a string list"
             )
         if not isinstance(bindings, list):
-            raise PolicySurfaceViolationError(
-                "capability bindings must be a list"
-            )
+            raise PolicySurfaceViolationError("capability bindings must be a list")
         skill_ids.extend(selected)
         for binding in bindings:
             if not isinstance(binding, dict):
@@ -153,9 +151,7 @@ class M4PolicySurfaceAuditor:
             raise PolicySurfaceViolationError("tool_calls must be a list")
         for call in calls:
             if not isinstance(call, dict):
-                raise PolicySurfaceViolationError(
-                    "tool call plan must be an object"
-                )
+                raise PolicySurfaceViolationError("tool call plan must be an object")
             required_by = call.get("required_by_skills", [])
             if not isinstance(required_by, list) or any(
                 not isinstance(item, str) for item in required_by
@@ -190,14 +186,10 @@ class M4PolicySurfaceAuditor:
             raise PolicySurfaceViolationError("tool_calls must be a list")
         for call in calls:
             if not isinstance(call, dict):
-                raise PolicySurfaceViolationError(
-                    "tool call plan must be an object"
-                )
+                raise PolicySurfaceViolationError("tool call plan must be an object")
             tool_id = call.get("tool_id")
             if not isinstance(tool_id, str):
-                raise PolicySurfaceViolationError(
-                    "tool call tool_id must be text"
-                )
+                raise PolicySurfaceViolationError("tool call tool_id must be text")
             tool_ids.append(tool_id)
 
         for tool_id in dict.fromkeys(tool_ids):
@@ -218,9 +210,7 @@ class M4PolicySurfaceAuditor:
             return
 
         workflow_ids = {
-            step.workflow_id
-            for step in draft.steps
-            if step.workflow_id is not None
+            step.workflow_id for step in draft.steps if step.workflow_id is not None
         }
         capability = draft.capability_plan or {}
         selected = capability.get("selected_workflows", [])
@@ -232,9 +222,7 @@ class M4PolicySurfaceAuditor:
                 "capability selected_workflows must be a string list"
             )
         if not isinstance(bindings, list):
-            raise PolicySurfaceViolationError(
-                "capability bindings must be a list"
-            )
+            raise PolicySurfaceViolationError("capability bindings must be a list")
         workflow_ids.update(selected)
         for binding in bindings:
             if not isinstance(binding, dict):
@@ -289,9 +277,7 @@ class M4PolicySurfaceAuditor:
         label: str,
     ) -> None:
         if forbidden is not None and value in forbidden:
-            raise PolicySurfaceViolationError(
-                f"Draft uses forbidden {label}"
-            )
+            raise PolicySurfaceViolationError(f"Draft uses forbidden {label}")
         if allowed is not None and value not in allowed:
             raise PolicySurfaceViolationError(
                 f"Draft uses {label} outside M2 allowed set"
@@ -325,15 +311,9 @@ class PlanApprovalCoordinator:
     ) -> PolicyApprovalResult:
         draft = validated.draft
         if draft.approval_status is not PlanApprovalStatus.DRAFT:
-            raise ApprovalIntegrityError(
-                "IU7 accepts only validated ActionPlanDraft"
-            )
-        if not self._REQUIRED_VALIDATION_CODES <= set(
-            validated.validation_codes
-        ):
-            raise ApprovalIntegrityError(
-                "IU7 requires successful IU6 validation codes"
-            )
+            raise ApprovalIntegrityError("IU7 accepts only validated ActionPlanDraft")
+        if not self._REQUIRED_VALIDATION_CODES <= set(validated.validation_codes):
+            raise ApprovalIntegrityError("IU7 requires successful IU6 validation codes")
 
         audit_codes = self._surface_auditor.audit(draft, policy_decision)
         before_draft = draft.model_dump(mode="python")
@@ -345,13 +325,9 @@ class PlanApprovalCoordinator:
         )
 
         if draft.model_dump(mode="python") != before_draft:
-            raise ApprovalIntegrityError(
-                "PolicyRechecker mutated ActionPlanDraft"
-            )
+            raise ApprovalIntegrityError("PolicyRechecker mutated ActionPlanDraft")
         if policy_decision.model_dump(mode="python") != before_policy:
-            raise ApprovalIntegrityError(
-                "PolicyRechecker mutated PolicyDecision"
-            )
+            raise ApprovalIntegrityError("PolicyRechecker mutated PolicyDecision")
 
         self._validate_approved_integrity(
             draft,
@@ -382,9 +358,7 @@ class PlanApprovalCoordinator:
                 "PolicyRechecker must return ApprovedActionPlan"
             )
         if approved.approval_status is not PlanApprovalStatus.APPROVED:
-            raise ApprovalIntegrityError(
-                "PolicyRechecker output is not APPROVED"
-            )
+            raise ApprovalIntegrityError("PolicyRechecker output is not APPROVED")
 
         draft_semantics = draft.model_dump(
             mode="python",

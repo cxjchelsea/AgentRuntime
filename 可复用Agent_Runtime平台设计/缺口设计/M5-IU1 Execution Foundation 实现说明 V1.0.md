@@ -113,7 +113,7 @@ current_step = null
 所有 Step = PENDING
 ```
 
-`ExecutionCreationStore.create(...)` 必须提供原子创建语义。Execution ID 已存在时不得覆盖已有执行，即使两个初始化请求并发到达，也只能有一个创建成功。
+`ExecutionCreationStore.create(...)` 必须提供原子创建语义。Execution ID 已存在时不得覆盖已有执行，即使两个初始化请求并发到达，也只能有一个创建成功。IU1 将 `cancellation_token` 绑定为当前 `execution_id`，后续 Cancellation / Preemption Handler 以该执行身份关联动态控制信号。
 
 `InMemoryExecutionStateStore` 仅用于 IU1 机制测试，不代表生产持久化方案。
 

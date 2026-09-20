@@ -433,7 +433,9 @@ def test_validator_rejects_action_incompatible_with_planning_mode() -> None:
         PlanValidator().validate(invalid, _validation_context())
 
 
-def test_required_knowledge_needs_complete_plan_and_configured_knowledge_skill() -> None:
+def test_required_knowledge_needs_complete_plan_and_configured_knowledge_skill() -> (
+    None
+):
     draft = ActionPlanDraftAssembler().build(
         plan_id="plan-knowledge",
         request_id="request-iu6",
@@ -450,9 +452,7 @@ def test_required_knowledge_needs_complete_plan_and_configured_knowledge_skill()
 
     result = PlanValidator().validate(
         draft,
-        _validation_context(
-            knowledge_skill_ids=frozenset({"DOMAIN_SKILL"})
-        ),
+        _validation_context(knowledge_skill_ids=frozenset({"DOMAIN_SKILL"})),
     )
     assert "KNOWLEDGE_PLAN_VALID" in result.validation_codes
 
@@ -558,15 +558,15 @@ def test_injected_plan_validation_rule_can_reject_or_add_audit_code() -> None:
         response_strategy=None,
     )
 
-    passed = PlanValidator(
-        rules=(DomainValidationRule(),)
-    ).validate(draft, _validation_context())
+    passed = PlanValidator(rules=(DomainValidationRule(),)).validate(
+        draft, _validation_context()
+    )
     assert "DOMAIN_RULE_VALID" in passed.validation_codes
 
     with pytest.raises(PlanValidationError):
-        PlanValidator(
-            rules=(DomainValidationRule(reject=True),)
-        ).validate(draft, _validation_context())
+        PlanValidator(rules=(DomainValidationRule(reject=True),)).validate(
+            draft, _validation_context()
+        )
 
 
 def test_iu6_does_not_create_approved_action_plan() -> None:

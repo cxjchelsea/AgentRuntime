@@ -364,7 +364,9 @@ class PlanValidator:
             raise PlanValidationError("goal_id values must be unique")
         primary = [goal for goal in goals if goal.primary is True]
         if len(primary) != 1:
-            raise PlanValidationError("ActionPlanDraft must have exactly one primary goal")
+            raise PlanValidationError(
+                "ActionPlanDraft must have exactly one primary goal"
+            )
         if goals[0].goal_id != primary[0].goal_id:
             raise PlanValidationError("primary goal must be first in goals")
 
@@ -381,9 +383,7 @@ class PlanValidator:
             "Strategy",
         )
         if draft.strategy.strategy_id not in strategies:
-            raise PlanValidationError(
-                "Draft strategy is unregistered or disabled"
-            )
+            raise PlanValidationError("Draft strategy is unregistered or disabled")
 
     def _validate_steps(
         self,
@@ -429,24 +429,18 @@ class PlanValidator:
             if step.skill_id is not None:
                 skill = skill_defs.get(step.skill_id)
                 if skill is None:
-                    raise PlanValidationError(
-                        "ActionStep references unavailable Skill"
-                    )
+                    raise PlanValidationError("ActionStep references unavailable Skill")
                 if step.action not in (skill.supported_actions or ()):
                     raise PlanValidationError(
                         "ActionStep Skill does not support step Action"
                     )
             if step.workflow_id is not None and step.workflow_id not in workflow_defs:
-                raise PlanValidationError(
-                    "ActionStep references unavailable Workflow"
-                )
+                raise PlanValidationError("ActionStep references unavailable Workflow")
             if (
                 step.tool_requirement is not None
                 and step.tool_requirement not in tool_defs
             ):
-                raise PlanValidationError(
-                    "ActionStep references unavailable Tool"
-                )
+                raise PlanValidationError("ActionStep references unavailable Tool")
 
             for dependency in step.depends_on or ():
                 if dependency not in seen_steps:
@@ -503,9 +497,7 @@ class PlanValidator:
                 "required knowledge needs required=true retrieval/evidence plans"
             )
         if requirement.domain is None or retrieval.domain != requirement.domain:
-            raise PlanValidationError(
-                "knowledge and retrieval domains must match"
-            )
+            raise PlanValidationError("knowledge and retrieval domains must match")
         if requirement.domain not in capabilities.available_domains:
             raise PlanValidationError("knowledge domain is unavailable")
         if retrieval.retrieval_mode is None:
@@ -523,8 +515,7 @@ class PlanValidator:
         ):
             raise PlanValidationError("retrieval source_policy is unsupported")
         if requirement.freshness_requirement is not None and (
-            requirement.freshness_requirement
-            not in capabilities.freshness_capabilities
+            requirement.freshness_requirement not in capabilities.freshness_capabilities
         ):
             raise PlanValidationError("freshness requirement is unsupported")
         filters = retrieval.filters or {}
@@ -585,13 +576,9 @@ class PlanValidator:
         ):
             raise PlanValidationError("memory_usage.memory_ids must be string list")
         if not use_memory and memory_ids:
-            raise PlanValidationError(
-                "use_memory=false cannot carry memory_ids"
-            )
+            raise PlanValidationError("use_memory=false cannot carry memory_ids")
         if use_memory and not memory_ids:
-            raise PlanValidationError(
-                "use_memory=true requires memory_ids"
-            )
+            raise PlanValidationError("use_memory=true requires memory_ids")
 
     def _validate_capability_plan(
         self,
@@ -722,9 +709,7 @@ class PlanValidator:
             if not isinstance(required, bool):
                 raise PlanValidationError("tool call required must be bool")
             if not isinstance(tool_id, str) or tool_id not in tools:
-                raise PlanValidationError(
-                    "tool plan references unavailable Tool"
-                )
+                raise PlanValidationError("tool plan references unavailable Tool")
             if tool_id in seen:
                 raise PlanValidationError("tool plan must not duplicate tool_id")
             seen.add(tool_id)
@@ -767,9 +752,7 @@ class PlanValidator:
             skill = skill_defs[skill_id]
             required_tools = set(skill.required_tools or ())
             if not required_tools <= seen:
-                raise PlanValidationError(
-                    "tool plan omits a Skill required_tool"
-                )
+                raise PlanValidationError("tool plan omits a Skill required_tool")
             if not required_tools <= required_by_skill.get(skill_id, set()):
                 raise PlanValidationError(
                     "tool required_by_skills provenance is incomplete"
@@ -793,9 +776,7 @@ class PlanValidator:
             raise PlanValidationError("confirmation.action_ids must be string list")
         draft_actions = {step.action for step in draft.steps}
         if not set(action_ids) <= draft_actions:
-            raise PlanValidationError(
-                "confirmation actions must exist in Draft steps"
-            )
+            raise PlanValidationError("confirmation actions must exist in Draft steps")
         if required and not action_ids:
             raise PlanValidationError(
                 "required confirmation must identify at least one action"
@@ -835,9 +816,7 @@ class PlanValidator:
         if not isinstance(actions, list) or any(
             not isinstance(item, str) or not item.strip() for item in actions
         ):
-            raise PlanValidationError(
-                "fallback.allowed_actions must be string list"
-            )
+            raise PlanValidationError("fallback.allowed_actions must be string list")
 
         action_defs = self._enabled_definitions(
             action_registry,
@@ -873,16 +852,13 @@ class PlanValidator:
             )
         for key in allowed - {"content_order"}:
             value = response_strategy.get(key)
-            if value is not None and (
-                not isinstance(value, str) or not value.strip()
-            ):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise PlanValidationError(
                     "response_strategy text values must be non-blank strings"
                 )
         content_order = response_strategy.get("content_order")
         if not isinstance(content_order, list) or any(
-            not isinstance(item, str) or not item.strip()
-            for item in content_order
+            not isinstance(item, str) or not item.strip() for item in content_order
         ):
             raise PlanValidationError(
                 "response_strategy.content_order must be string list"
@@ -896,9 +872,7 @@ class PlanValidator:
             not isinstance(condition, str) or not condition.strip()
             for condition in draft.stop_conditions
         ):
-            raise PlanValidationError(
-                "stop_conditions must contain non-blank strings"
-            )
+            raise PlanValidationError("stop_conditions must contain non-blank strings")
         if len(set(draft.stop_conditions)) != len(draft.stop_conditions):
             raise PlanValidationError("stop_conditions must not contain duplicates")
 

@@ -444,8 +444,8 @@ class RetrievalPolicyDecision:
             value = getattr(self, field_name)
             if value is not None and value <= 0:
                 raise RetrievalPlanningError(f"{field_name} must be positive")
-        if self.minimum_evidence is not None and self.minimum_evidence < 0:
-            raise RetrievalPlanningError("minimum_evidence must be >= 0")
+        if self.minimum_evidence is not None and self.minimum_evidence < 1:
+            raise RetrievalPlanningError("minimum_evidence must be >= 1 when specified")
 
 
 class RetrievalModeRule(Protocol):
@@ -573,20 +573,29 @@ class RetrievalPlanner:
         requirement: KnowledgeRequirement,
         capability_context: KnowledgeCapabilityContext,
     ) -> dict[str, object]:
-        candidates: dict[str, object | None] = {
-            "domain": requirement.domain,
+        output: dict[str, object] = {}
+        if "domain" in capability_context.supported_filters:
+            output["domain"] = requirement.domain
+
+        constrained_fields: dict[str, object | None] = {
             "population": requirement.population,
             "scenario": requirement.scenario,
             "safety_level": requirement.safety_level,
         }
-        output: dict[str, object] = {}
-        for key, value in candidates.items():
-            if value is not None and key in capability_context.supported_filters:
-                output[key] = value
-        if (
-            requirement.source_constraints
-            and "source_constraints" in capability_context.supported_filters
-        ):
+        for key, value in constrained_fields.items():
+            if value is None:
+                continue
+            if key not in capability_context.supported_filters:
+                raise RetrievalPlanningError(
+                    "required metadata constraint is unsupported by current capabilities"
+                )
+            output[key] = value
+
+        if requirement.source_constraints:
+            if "source_constraints" not in capability_context.supported_filters:
+                raise RetrievalPlanningError(
+                    "source constraints cannot be represented by current capabilities"
+                )
             output["source_constraints"] = list(requirement.source_constraints)
         return output
 
@@ -642,6 +651,11 @@ class EvidenceRequirementPlanner:
                     "required knowledge cannot produce required=false evidence plan"
                 )
             return first
+
+        if requirement.evidence_level is not None:
+            raise EvidenceRequirementPlanningError(
+                "Domain evidence_level requires an injected evidence requirement rule"
+            )
 
         return EvidenceRequirement(
             required=True,

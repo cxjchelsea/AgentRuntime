@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import inspect
+from dataclasses import dataclass, fields
 
 import pytest
+
+import runtime.planning.evaluation as evaluation_module
 
 from runtime.planning import (
     M4EvalGate,
@@ -142,3 +145,21 @@ def test_replan_entry_rejects_non_validation_trigger() -> None:
             trigger_stage="EXECUTE",
             reason_codes=("TOOL_FAILED",),
         )
+
+
+def test_eval_harness_hardcodes_no_business_taxonomy() -> None:
+    source = inspect.getsource(evaluation_module)
+
+    for token in ("HEALTH", "WEATHER", "NEWS", "CONTENT", "MEDICAL"):
+        assert token not in source
+
+
+def test_replan_entry_contract_stores_only_cross_stage_references() -> None:
+    assert [field.name for field in fields(ReplanEntryRequest)] == [
+        "request_id",
+        "prior_plan_id",
+        "trigger_stage",
+        "reason_codes",
+        "evidence_refs",
+        "preserve_goal",
+    ]

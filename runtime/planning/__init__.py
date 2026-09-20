@@ -65,7 +65,8 @@ from runtime.planning.errors import (
     StrategySelectionError,
     ToolPlanningError,
     ValidationReceiptError,
-)from runtime.planning.execution_preplanning import (
+)
+from runtime.planning.execution_preplanning import (
     CapabilityBinding,
     CapabilityBindingRule,
     CapabilityPlanner,

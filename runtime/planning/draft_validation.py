@@ -144,6 +144,14 @@ class ActionPlanDraftAssembler:
         if len({goal.goal_id for goal in all_goals}) != len(all_goals):
             raise DraftAssemblyError("planning goals must have unique goal_id values")
 
+        step_actions = tuple(
+            step.action for step in execution_preplanning.sequence.steps
+        )
+        if strategy.selected_action_ids != step_actions:
+            raise DraftAssemblyError(
+                "strategy selected_action_ids must exactly match planned step actions"
+            )
+
         return ActionPlanDraft(
             plan_id=plan_id,
             request_id=request_id,
@@ -266,6 +274,18 @@ class PlanValidationContext:
     workflow_registry: WorkflowRegistry
     tool_registry: ToolRegistry
     knowledge_capabilities: KnowledgeCapabilityContext
+    knowledge_skill_ids: frozenset[str] = frozenset()
+
+
+class PlanValidationRule(Protocol):
+    """Injected Domain/config validation beyond generic Core invariants."""
+
+    def validate(
+        self,
+        draft: ActionPlanDraft,
+        context: PlanValidationContext,
+    ) -> str | None:
+        """Raise PlanValidationError to reject or return an audit code."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,6 +299,9 @@ class PlanValidationResult:
 class PlanValidator:
     """Validate ActionPlanDraft structure and references; never approve it."""
 
+    def __init__(self, rules: tuple[PlanValidationRule, ...] = ()) -> None:
+        self._rules = rules
+
     def validate(
         self,
         draft: ActionPlanDraft,
@@ -291,15 +314,34 @@ class PlanValidator:
         self._validate_memory(draft)
         self._validate_capability_plan(draft, context)
         self._validate_tool_plan(draft, context)
-        self._validate_confirmation(draft)
+        self._validate_confirmation(draft, context.action_registry)
         self._validate_fallback(draft, context.action_registry)
+        self._validate_stop_conditions(draft)
+
+        codes = [
+            "DRAFT_STRUCTURE_VALID",
+            "REGISTRY_REFERENCES_VALID",
+            "KNOWLEDGE_PLAN_VALID",
+        ]
+        for rule in self._rules:
+            try:
+                code = rule.validate(draft, context)
+            except Exception as exc:
+                if isinstance(exc, PlanValidationError):
+                    raise
+                raise PlanValidationError(
+                    "injected plan validation rule execution failed"
+                ) from exc
+            if code is not None:
+                if not code.strip():
+                    raise PlanValidationError(
+                        "plan validation rule audit code must not be blank"
+                    )
+                codes.append(code)
+
         return PlanValidationResult(
             draft=draft,
-            validation_codes=(
-                "DRAFT_STRUCTURE_VALID",
-                "REGISTRY_REFERENCES_VALID",
-                "KNOWLEDGE_PLAN_VALID",
-            ),
+            validation_codes=tuple(dict.fromkeys(codes)),
         )
 
     @staticmethod
@@ -354,9 +396,14 @@ class PlanValidator:
 
         seen_steps: set[str] = set()
         for step in draft.steps:
-            if step.action not in action_defs:
+            action_definition = action_defs.get(step.action)
+            if action_definition is None:
                 raise PlanValidationError(
                     "ActionStep references unregistered or disabled Action"
+                )
+            if draft.planning_mode not in action_definition.allowed_planning_modes:
+                raise PlanValidationError(
+                    "ActionStep Action is incompatible with Draft planning_mode"
                 )
             if step.skill_id is not None:
                 skill = skill_defs.get(step.skill_id)
@@ -386,6 +433,22 @@ class PlanValidator:
                         "ActionStep dependency must reference an earlier step"
                     )
             seen_steps.add(step.step_id)
+
+        if (
+            draft.knowledge_requirement is not None
+            and draft.knowledge_requirement.required
+        ):
+            if not context.knowledge_skill_ids:
+                raise PlanValidationError(
+                    "required knowledge needs configured knowledge_skill_ids"
+                )
+            used_skills = {
+                step.skill_id for step in draft.steps if step.skill_id is not None
+            }
+            if not (used_skills & context.knowledge_skill_ids):
+                raise PlanValidationError(
+                    "required knowledge plan must use a configured knowledge Skill"
+                )
 
     @staticmethod
     def _validate_knowledge(
@@ -490,8 +553,22 @@ class PlanValidator:
             raise PlanValidationError("IU6 Draft requires capability_plan")
 
         bindings = capability.get("bindings")
+        selected_skills = capability.get("selected_skills")
+        selected_workflows = capability.get("selected_workflows")
         if not isinstance(bindings, list):
             raise PlanValidationError("capability_plan.bindings must be list")
+        if not isinstance(selected_skills, list) or any(
+            not isinstance(item, str) for item in selected_skills
+        ):
+            raise PlanValidationError(
+                "capability_plan.selected_skills must be string list"
+            )
+        if not isinstance(selected_workflows, list) or any(
+            not isinstance(item, str) for item in selected_workflows
+        ):
+            raise PlanValidationError(
+                "capability_plan.selected_workflows must be string list"
+            )
 
         actions = {step.action for step in draft.steps}
         bound_actions: set[str] = set()
@@ -543,6 +620,25 @@ class PlanValidator:
                 "capability bindings must cover every Draft Action"
             )
 
+        bound_skills = {
+            binding.get("skill_id")
+            for binding in bindings
+            if binding.get("skill_id") is not None
+        }
+        bound_workflows = {
+            binding.get("workflow_id")
+            for binding in bindings
+            if binding.get("workflow_id") is not None
+        }
+        if set(selected_skills) != bound_skills:
+            raise PlanValidationError(
+                "selected_skills must exactly match capability bindings"
+            )
+        if set(selected_workflows) != bound_workflows:
+            raise PlanValidationError(
+                "selected_workflows must exactly match capability bindings"
+            )
+
     def _validate_tool_plan(
         self,
         draft: ActionPlanDraft,
@@ -561,6 +657,7 @@ class PlanValidator:
             "Tool",
         )
         seen: set[str] = set()
+        required_by_skill: dict[str, set[str]] = {}
         for call in calls:
             if not isinstance(call, dict):
                 raise PlanValidationError("tool call plan must be object")
@@ -573,8 +670,40 @@ class PlanValidator:
                 raise PlanValidationError("tool plan must not duplicate tool_id")
             seen.add(tool_id)
 
-    @staticmethod
-    def _validate_confirmation(draft: ActionPlanDraft) -> None:
+            required_by = call.get("required_by_skills")
+            if not isinstance(required_by, list) or any(
+                not isinstance(item, str) for item in required_by
+            ):
+                raise PlanValidationError(
+                    "tool call required_by_skills must be string list"
+                )
+            for skill_id in required_by:
+                required_by_skill.setdefault(skill_id, set()).add(tool_id)
+
+        capability = draft.capability_plan or {}
+        selected_skills = capability.get("selected_skills", [])
+        skill_defs = self._enabled_definitions(
+            context.skill_registry,
+            "skill_id",
+            "Skill",
+        )
+        for skill_id in selected_skills:
+            skill = skill_defs[skill_id]
+            required_tools = set(skill.required_tools or ())
+            if not required_tools <= seen:
+                raise PlanValidationError(
+                    "tool plan omits a Skill required_tool"
+                )
+            if not required_tools <= required_by_skill.get(skill_id, set()):
+                raise PlanValidationError(
+                    "tool required_by_skills provenance is incomplete"
+                )
+
+    def _validate_confirmation(
+        self,
+        draft: ActionPlanDraft,
+        action_registry: ActionRegistry,
+    ) -> None:
         confirmation = draft.confirmation_plan
         if confirmation is None:
             raise PlanValidationError("IU6 Draft requires confirmation_plan")
@@ -598,6 +727,21 @@ class PlanValidator:
         if not required and action_ids:
             raise PlanValidationError(
                 "non-required confirmation cannot carry action_ids"
+            )
+
+        action_defs = self._enabled_definitions(
+            action_registry,
+            "action_id",
+            "Action",
+        )
+        required_by_action = {
+            action_id
+            for action_id in draft_actions
+            if action_defs[action_id].requires_confirmation
+        }
+        if not required_by_action <= set(action_ids):
+            raise PlanValidationError(
+                "confirmation plan omits Action-required confirmation"
             )
 
     def _validate_fallback(
@@ -628,6 +772,20 @@ class PlanValidator:
             raise PlanValidationError(
                 "fallback references unregistered or disabled Action"
             )
+
+    @staticmethod
+    def _validate_stop_conditions(draft: ActionPlanDraft) -> None:
+        if draft.stop_conditions is None:
+            return
+        if any(
+            not isinstance(condition, str) or not condition.strip()
+            for condition in draft.stop_conditions
+        ):
+            raise PlanValidationError(
+                "stop_conditions must contain non-blank strings"
+            )
+        if len(set(draft.stop_conditions)) != len(draft.stop_conditions):
+            raise PlanValidationError("stop_conditions must not contain duplicates")
 
     @staticmethod
     def _enabled_definitions(

@@ -80,6 +80,16 @@ class StepEligibilityEvaluator(Protocol):
         """Resolve simple injected run conditions for the current approved step."""
 
 
+_STEP_FAILURE_STATUSES = frozenset(
+    {
+        StepExecutionStatus.FAILED,
+        StepExecutionStatus.TIMEOUT,
+        StepExecutionStatus.CANCELLED,
+        StepExecutionStatus.PREEMPTED,
+    }
+)
+
+
 class StepFailureDirective(str, Enum):
     CONTINUE = "CONTINUE"
     STOP_PLAN = "STOP_PLAN"
@@ -110,14 +120,7 @@ class ContinueIfSafeEvaluator(Protocol):
 class FailureDirectiveResolver:
     """Resolve one finished step failure without changing the approved plan."""
 
-    _FAILURE_STATUSES = frozenset(
-        {
-            StepExecutionStatus.FAILED,
-            StepExecutionStatus.TIMEOUT,
-            StepExecutionStatus.CANCELLED,
-            StepExecutionStatus.PREEMPTED,
-        }
-    )
+    _FAILURE_STATUSES = _STEP_FAILURE_STATUSES
     _KNOWN_DIRECTIVES = frozenset(
         {"STOP_PLAN", "RUN_FALLBACK", "CONTINUE_IF_SAFE"}
     )

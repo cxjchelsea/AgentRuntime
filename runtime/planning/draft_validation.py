@@ -28,6 +28,7 @@ from runtime.planning.strategy_selection import StrategySelectionResult
 from runtime.registries import (
     ActionRegistry,
     SkillRegistry,
+    StrategyRegistry,
     ToolRegistry,
     WorkflowRegistry,
 )
@@ -270,6 +271,7 @@ class PlanValidationContext:
     """Current registries/capabilities used to validate Draft references."""
 
     action_registry: ActionRegistry
+    strategy_registry: StrategyRegistry
     skill_registry: SkillRegistry
     workflow_registry: WorkflowRegistry
     tool_registry: ToolRegistry
@@ -309,6 +311,7 @@ class PlanValidator:
     ) -> PlanValidationResult:
         self._validate_identity_and_status(draft)
         self._validate_goals(draft.goals)
+        self._validate_strategy(draft, context.strategy_registry)
         self._validate_steps(draft, context)
         self._validate_knowledge(draft, context.knowledge_capabilities)
         self._validate_memory(draft)
@@ -364,6 +367,23 @@ class PlanValidator:
             raise PlanValidationError("ActionPlanDraft must have exactly one primary goal")
         if goals[0].goal_id != primary[0].goal_id:
             raise PlanValidationError("primary goal must be first in goals")
+
+    def _validate_strategy(
+        self,
+        draft: ActionPlanDraft,
+        strategy_registry: StrategyRegistry,
+    ) -> None:
+        if draft.strategy is None:
+            raise PlanValidationError("ActionPlanDraft requires StrategySelection")
+        strategies = self._enabled_definitions(
+            strategy_registry,
+            "strategy_id",
+            "Strategy",
+        )
+        if draft.strategy.strategy_id not in strategies:
+            raise PlanValidationError(
+                "Draft strategy is unregistered or disabled"
+            )
 
     def _validate_steps(
         self,
@@ -709,6 +729,19 @@ class PlanValidator:
                 raise PlanValidationError("tool plan must not duplicate tool_id")
             seen.add(tool_id)
 
+            definition = tools[tool_id]
+            metadata_pairs = {
+                "timeout_policy": definition.timeout_policy,
+                "retry_policy": definition.retry_policy,
+                "idempotency_mode": definition.idempotency_mode,
+                "side_effect_level": definition.side_effect_level,
+            }
+            for field_name, expected in metadata_pairs.items():
+                if call.get(field_name) != expected:
+                    raise PlanValidationError(
+                        "tool plan metadata does not match ToolRegistry definition"
+                    )
+
             required_by = call.get("required_by_skills")
             if not isinstance(required_by, list) or any(
                 not isinstance(item, str) for item in required_by
@@ -815,6 +848,11 @@ class PlanValidator:
             raise PlanValidationError(
                 "fallback references unregistered or disabled Action"
             )
+        for action_id in actions:
+            if draft.planning_mode not in action_defs[action_id].allowed_planning_modes:
+                raise PlanValidationError(
+                    "fallback Action is incompatible with Draft planning_mode"
+                )
 
     @staticmethod
     def _validate_response_strategy(draft: ActionPlanDraft) -> None:

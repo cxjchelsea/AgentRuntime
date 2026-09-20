@@ -18,11 +18,13 @@ ExecutionContextBuilder
         ↓
 ExecutionRecordFactory
         ↓
-ExecutionStateStore.save
+ExecutionCreationStore.create（原子创建）
         ↓
 PreparedExecution
         ↓
-ExecutionLifecycleManager
+ExecutionLifecycleManager（纯状态转换）
+        ↓
+ExecutionLifecycleService（统一持久化）
         ↓
 ExecutionResultProjector（仅终态投影）
 ```
@@ -40,6 +42,7 @@ ExecutionRecordFactory
 StepLifecycleSnapshot
 PreparedExecution
 ExecutionLifecycleManager
+ExecutionLifecycleService
 ExecutionResultProjector
 ExecutionFoundation
 InMemoryExecutionStateStore
@@ -78,7 +81,7 @@ identity_scope
 device_id
 current_state
 policy_snapshot
-step_state
+step_state（静态 Plan/Capability 投影，不承载动态生命周期状态）
 tool_context
 deadline
 cancellation_token
@@ -86,6 +89,16 @@ trace_context
 ```
 
 当前 `deadline` 与 `trace_context` 都只允许通过显式 resolver 注入；IU1 不默认把 `RuntimeContext.task_context.timeout_at` 或 M4 trace 当作执行层事实。ToolContext 只以其 Canonical 子上下文投影；Conversation / Memory 等完整上下文不进入 ExecutionContext。
+
+`ExecutionContext.step_state` 在 IU1 中只保存静态 Step 元数据（action / skill_id / workflow_id），**不保存 PENDING/RUNNING/SUCCESS 等动态状态**。动态执行状态的唯一权威来源是：
+
+```text
+PreparedExecution.steps
++
+ExecutionRecord.step_results
+```
+
+后续组件不得把 `ExecutionContext.step_state` 当作生命周期真值，避免同一个 Step 状态被多处独立维护。
 
 ## 5. Execution / Step ID Chain
 
@@ -132,6 +145,8 @@ PENDING
 第一版仍按 M5 V2.0 的顺序执行 baseline：一个 Execution 同时只允许一个 RUNNING Step。
 
 IU1 不负责 dependency scheduling；真正的依赖解析属于后续 StepScheduler IU。
+
+`ExecutionLifecycleManager` 仅负责纯状态转换；所有真正改变 Execution / Step 生命周期的运行时调用必须经过 `ExecutionLifecycleService`。该 Service 在每次 transition 后把新的 `ExecutionRecord` 写入 `ExecutionStateStore`，保证进程内 PreparedExecution 与持久化 observation 一致。
 
 生命周期必须满足时间单调性：Execution 不能在 `created_at` 之前开始；Step 不能在 Execution `started_at` 之前开始，也不能在自身 `started_at` 之前结束。`ExecutionResult.timing.started_at` 使用真实 Execution start time，而不是 record creation time。
 
@@ -206,10 +221,12 @@ Execution Event publisher
 4. Execution 初始化时原子持久化 CREATED + PENDING steps
 5. execution_id 不允许覆盖/并发重复创建/跨 identity_scope 重绑定
 6. Step 生命周期转换 deterministic + fail closed
-7. IU1 sequential baseline 同时最多一个 RUNNING Step
-8. 非终态 Execution 不能投影 ExecutionResult
-9. ExecutionResult 不伪造业务事实
-10. IU1 不调用 Skill / Workflow / Tool / M6 / K0 / Response / Update
+7. 动态 Step 状态只存在于 PreparedExecution / ExecutionRecord，ExecutionContext.step_state 不重复维护状态
+8. 所有 Lifecycle transition 通过 ExecutionLifecycleService 持久化最新 ExecutionRecord
+9. IU1 sequential baseline 同时最多一个 RUNNING Step
+10. 非终态 Execution 不能投影 ExecutionResult
+11. ExecutionResult 不伪造业务事实
+12. IU1 不调用 Skill / Workflow / Tool / M6 / K0 / Response / Update
 ```
 
 ## 11. Verification

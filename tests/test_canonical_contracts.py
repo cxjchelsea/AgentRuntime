@@ -60,7 +60,7 @@ from runtime.contracts import (
     ValidationMode,
     ValidationStatus,
 )
-from runtime.contracts.planning import ActionStep
+from runtime.contracts.planning import PLANNING_SCHEMA_VERSION, ActionStep
 from runtime.contracts.understanding import (
     ProcessingPath,
     QualityAssessment,
@@ -289,8 +289,9 @@ def test_fourteen_core_contracts_can_instantiate() -> None:
     assert _minimal_runtime_context().schema_version == SCHEMA_VERSION
     assert _minimal_understanding_state().schema_version == SCHEMA_VERSION
     assert _minimal_policy_decision().schema_version == SCHEMA_VERSION
-    assert _minimal_action_plan_draft().schema_version == SCHEMA_VERSION
-    assert _minimal_approved_action_plan().schema_version == SCHEMA_VERSION
+    # M4-CA1：Planning Contract 默认升到 1.1.0，全局 SCHEMA_VERSION 仍为 1.0.0
+    assert _minimal_action_plan_draft().schema_version == PLANNING_SCHEMA_VERSION
+    assert _minimal_approved_action_plan().schema_version == PLANNING_SCHEMA_VERSION
     assert _minimal_execution_result().schema_version == SCHEMA_VERSION
     assert _minimal_validated_result().schema_version == SCHEMA_VERSION
     assert _minimal_response_plan().schema_version == SCHEMA_VERSION

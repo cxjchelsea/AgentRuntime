@@ -50,7 +50,11 @@ from runtime.planning.strategy_selection import (
     HybridStrategySelector,
     StrategySelectionResult,
 )
-from runtime.registries import CapabilityRegistry, StrategyRegistry
+from runtime.registries import (
+    CapabilityRegistry,
+    StrategyDefinition,
+    StrategyRegistry,
+)
 
 
 class CapabilityIdResolver:
@@ -123,7 +127,7 @@ class SelectedActionResolver:
             selected_action_ids=tuple(selected),
         )
 
-    def _get_enabled_strategy(self, strategy_id: str):
+    def _get_enabled_strategy(self, strategy_id: str) -> StrategyDefinition:
         matches = [
             record.definition
             for record in self._strategy_registry.list()

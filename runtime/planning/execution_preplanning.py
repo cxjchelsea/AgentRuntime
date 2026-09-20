@@ -254,9 +254,7 @@ class CapabilityPlanner:
 
         selected_skills = tuple(
             dict.fromkeys(
-                binding.skill_id
-                for binding in bindings
-                if binding.skill_id is not None
+                binding.skill_id for binding in bindings if binding.skill_id is not None
             )
         )
         selected_workflows = tuple(
@@ -336,9 +334,7 @@ class CapabilityPlanner:
         if binding.skill_id is not None:
             definition = skills.get(binding.skill_id)
             if definition is None:
-                raise CapabilityPlanningError(
-                    "binding references unavailable skill"
-                )
+                raise CapabilityPlanningError("binding references unavailable skill")
             if binding.action_id not in (definition.supported_actions or ()):
                 raise CapabilityPlanningError(
                     "binding skill does not support selected action"
@@ -349,9 +345,7 @@ class CapabilityPlanner:
                 )
 
         if binding.workflow_id is not None and binding.workflow_id not in workflows:
-            raise CapabilityPlanningError(
-                "binding references unavailable workflow"
-            )
+            raise CapabilityPlanningError("binding references unavailable workflow")
 
     @staticmethod
     def _skill_allowed(skill_id: str, policy_decision: PolicyDecision) -> bool:
@@ -440,9 +434,7 @@ class ToolPlanner:
             except Exception as exc:
                 if isinstance(exc, ToolPlanningError):
                     raise
-                raise ToolPlanningError(
-                    "tool planning rule execution failed"
-                ) from exc
+                raise ToolPlanningError("tool planning rule execution failed") from exc
             for tool_id in chosen:
                 if tool_id not in optional_available:
                     raise ToolPlanningError(
@@ -618,7 +610,9 @@ class SequencePlanner:
         if len(set(selected_action_ids)) != len(selected_action_ids):
             raise SequencePlanningError("selected actions must not contain duplicates")
 
-        bindings = {binding.action_id: binding for binding in capability_selection.bindings}
+        bindings = {
+            binding.action_id: binding for binding in capability_selection.bindings
+        }
         if set(bindings) != set(selected_action_ids):
             raise SequencePlanningError(
                 "capability bindings must cover exactly the selected actions"
@@ -642,9 +636,7 @@ class SequencePlanner:
                 and binding.skill_id is not None
                 and binding.skill_id in call.required_by_skills
             )
-            tool_requirement = (
-                required_tools[0] if len(required_tools) == 1 else None
-            )
+            tool_requirement = required_tools[0] if len(required_tools) == 1 else None
 
             steps.append(
                 ActionStep(
@@ -747,9 +739,7 @@ class FallbackPlanner:
             except Exception as exc:
                 if isinstance(exc, FallbackPlanningError):
                     raise
-                raise FallbackPlanningError(
-                    "fallback rule execution failed"
-                ) from exc
+                raise FallbackPlanningError("fallback rule execution failed") from exc
             if decision is not None:
                 decisions.append(decision)
 
@@ -762,9 +752,7 @@ class FallbackPlanner:
 
         first = decisions[0]
         if any(decision != first for decision in decisions[1:]):
-            raise FallbackPlanningError(
-                "fallback rules produced conflicting decisions"
-            )
+            raise FallbackPlanningError("fallback rules produced conflicting decisions")
         if not first.mode.strip():
             raise FallbackPlanningError("fallback mode must not be blank")
         if any(not action.strip() for action in first.allowed_actions):

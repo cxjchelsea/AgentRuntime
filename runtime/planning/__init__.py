@@ -36,6 +36,7 @@ from runtime.planning.errors import (
     RetrievalModeRuleExecutionError,
     RetrievalPlanningError,
     RetrievalQueryBuildError,
+    SequencePlanningError,
     StrategyModelBoundaryError,
     StrategyModelExecutionError,
     StrategyModelOutputError,
@@ -43,7 +44,6 @@ from runtime.planning.errors import (
     StrategyRegistryAmbiguityError,
     StrategyRuleExecutionError,
     StrategySelectionError,
-    SequencePlanningError,
     ToolPlanningError,
 )
 from runtime.planning.execution_preplanning import (
@@ -65,9 +65,9 @@ from runtime.planning.execution_preplanning import (
     SequencePlan,
     SequencePlanner,
     ToolCallPlan,
+    ToolPlanDecision,
     ToolPlanner,
     ToolPlanningRule,
-    ToolPlanDecision,
 )
 from runtime.planning.goals import (
     GoalCandidate,

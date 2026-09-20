@@ -336,9 +336,7 @@ def test_confirmation_combines_action_and_policy_requirements() -> None:
     assert action_result.action_ids == ("DOMAIN_ACTION",)
     assert "ACTION_CONFIRMATION_REQUIRED" in action_result.reason_codes
 
-    policy = build_policy_decision().model_copy(
-        update={"confirmation_required": True}
-    )
+    policy = build_policy_decision().model_copy(update={"confirmation_required": True})
     policy_result = ConfirmationPlanner(actions).plan(
         ("DOMAIN_ACTION",),
         policy,

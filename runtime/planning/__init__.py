@@ -19,8 +19,6 @@ from runtime.planning.draft_validation import (
 )
 from runtime.planning.errors import (
     ActionRegistryAmbiguityError,
-    PolicySurfaceViolationError,
-    PolicyApprovalIntegrationError,
     ApprovalIntegrityError,
     CandidateEligibilityError,
     CandidateGenerationError,
@@ -43,10 +41,12 @@ from runtime.planning.errors import (
     KnowledgeNeedRuleExecutionError,
     KnowledgePlanningError,
     MemoryUsagePlanningError,
+    PlanValidationError,
     PlanningBlockedByPolicyError,
     PlanningError,
     PlanningRouteConflictError,
-    PlanValidationError,
+    PolicyApprovalIntegrationError,
+    PolicySurfaceViolationError,
     QueryRewriteError,
     ResponseStrategyPlanningError,
     RetrievalModeRuleExecutionError,
@@ -61,8 +61,7 @@ from runtime.planning.errors import (
     StrategyRuleExecutionError,
     StrategySelectionError,
     ToolPlanningError,
-)
-from runtime.planning.execution_preplanning import (
+)from runtime.planning.execution_preplanning import (
     CapabilityBinding,
     CapabilityBindingRule,
     CapabilityPlanner,

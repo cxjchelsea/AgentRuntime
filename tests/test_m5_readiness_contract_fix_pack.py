@@ -16,18 +16,17 @@ import runtime.execution.resolution as resolution_module
 import runtime.execution.stores as stores_module
 from runtime.contracts import ApprovedActionPlan, ExecutionResult, RuntimeContext
 from runtime.contracts.execution import ExecutionContext
-from runtime.interfaces.execution import ExecutionEngine
 from runtime.execution import (
+    ApprovedWorkflowAuthority,
     ExecutionControlSignal,
+    ExecutionControlSignalSource,
     ExecutionControlSignalType,
     ExecutionImplementationResolver,
     ExecutionImplementationTypeError,
-    ExecutionRegistryResolutionError,
-    ApprovedWorkflowAuthority,
-    ExecutionControlSignalSource,
     ExecutionPermissionContext,
     ExecutionPermissionContextProvider,
     ExecutionPermissionEvaluator,
+    ExecutionRegistryResolutionError,
     ExecutionStateStore,
     IdempotencyRecord,
     IdempotencyStatus,
@@ -37,12 +36,12 @@ from runtime.execution import (
     M5WorkflowResult,
     PermissionDecision,
     PermissionDecisionStatus,
+    ResourceLockProvider,
     SkillExecutionRequest,
     SkillExecutionStatus,
     SkillImplementation,
     ToolExecutionStatus,
     ToolImplementation,
-    ResourceLockProvider,
     ToolInvocationRequest,
     WorkflowCheckpointStore,
     WorkflowExecutionRequest,
@@ -50,6 +49,7 @@ from runtime.execution import (
     WorkflowImplementation,
     project_workflow_authority,
 )
+from runtime.interfaces.execution import ExecutionEngine
 from runtime.registries import (
     SkillDefinition,
     SkillRegistry,

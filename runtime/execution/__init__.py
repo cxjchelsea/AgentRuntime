@@ -5,6 +5,11 @@ from runtime.execution.control import (
     ExecutionControlSignalSource,
     ExecutionControlSignalType,
 )
+from runtime.execution.errors import (
+    ExecutionImplementationTypeError,
+    ExecutionReadinessError,
+    ExecutionRegistryResolutionError,
+)
 from runtime.execution.models import (
     ActivityInstance,
     ActivityStatus,
@@ -28,6 +33,7 @@ from runtime.execution.protocols import (
     ToolImplementation,
     WorkflowImplementation,
 )
+from runtime.execution.resolution import ExecutionImplementationResolver
 from runtime.execution.stores import (
     ExecutionStateStore,
     IdempotencyRecord,
@@ -45,7 +51,11 @@ __all__ = [
     "ExecutionControlSignalType",
     "ExecutionErrorRecord",
     "ExecutionEventRecord",
+    "ExecutionImplementationResolver",
+    "ExecutionImplementationTypeError",
+    "ExecutionReadinessError",
     "ExecutionRecord",
+    "ExecutionRegistryResolutionError",
     "ExecutionStateStore",
     "IdempotencyRecord",
     "IdempotencyStatus",

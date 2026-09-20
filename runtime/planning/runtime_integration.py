@@ -145,12 +145,13 @@ class DefaultM4Planner(Planner):
             capability_context=self._knowledge_capability_context,
         )
 
+        resolved_goals = (
+            ((goals.primary_goal,) if goals.primary_goal is not None else ())
+            + goals.secondary_goals
+        )
         completion_conditions = tuple(
             goal.completion_condition
-            for goal in (
-                *((goals.primary_goal,) if goals.primary_goal is not None else ()),
-                *goals.secondary_goals,
-            )
+            for goal in resolved_goals
             if goal.completion_condition is not None
             and goal.completion_condition.strip()
         )

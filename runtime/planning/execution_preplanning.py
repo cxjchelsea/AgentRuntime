@@ -17,6 +17,7 @@ from runtime.planning.errors import (
     ConfirmationPlanningError,
     FallbackPlanningError,
     MemoryUsagePlanningError,
+    PlanningBlockedByPolicyError,
     SequencePlanningError,
     ToolPlanningError,
 )
@@ -837,6 +838,11 @@ class ExecutionPreplanner:
         policy_decision: PolicyDecision,
         goal_completion_conditions: tuple[str, ...] = (),
     ) -> ExecutionPreplanningResult:
+        if policy_decision.blocked or not policy_decision.allowed:
+            raise PlanningBlockedByPolicyError(
+                "M4-IU5 cannot preplan execution when M2 blocks planning"
+            )
+
         memory_usage = self._memory_planner.plan(
             runtime_context,
             selected_action_ids,

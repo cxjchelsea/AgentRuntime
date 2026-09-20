@@ -20,6 +20,7 @@ from runtime.execution import (
     ExecutionFoundation,
     ExecutionLifecycleError,
     ExecutionLifecycleManager,
+    ExecutionLifecycleService,
     ExecutionRecordFactory,
     ExecutionResultProjector,
     InMemoryExecutionStateStore,
@@ -109,6 +110,15 @@ def test_m5_context_builder_projects_minimum_runtime_context_only() -> None:
         "recent_tool_results": None,
         "network_status": "ONLINE",
     }
+    assert context.step_state is not None
+    assert context.step_state == {
+        "step-001": {
+            "action": plan.steps[0].action,
+            "skill_id": plan.steps[0].skill_id,
+            "workflow_id": plan.steps[0].workflow_id,
+        }
+    }
+    assert "status" not in context.step_state["step-001"]
     assert "conversation_context" not in context.__class__.model_fields
     assert "memory_context" not in context.__class__.model_fields
 
@@ -247,6 +257,119 @@ def test_in_memory_store_does_not_rebind_execution_identity_scope() -> None:
 
     with pytest.raises(ExecutionLifecycleError, match="rebound"):
         asyncio.run(store.save(rebound))
+
+
+def test_execution_context_step_state_is_static_plan_projection_not_lifecycle_truth() -> (
+    None
+):
+    foundation, _ = _foundation()
+    prepared = asyncio.run(
+        foundation.initialize(
+            build_approved_action_plan(),
+            build_runtime_context(),
+        )
+    )
+    lifecycle = ExecutionLifecycleManager()
+
+    running = lifecycle.start_execution(prepared, at=FIXED_TIME)
+    step_running = lifecycle.start_step(
+        running,
+        step_id="step-001",
+        at=FIXED_TIME + timedelta(seconds=1),
+    )
+
+    assert step_running.execution_context.step_state is not None
+    assert "status" not in step_running.execution_context.step_state["step-001"]
+    assert step_running.steps[0].status is StepExecutionStatus.RUNNING
+    assert step_running.execution_record.step_results[0]["status"] == "RUNNING"
+
+
+def test_lifecycle_service_persists_every_authoritative_transition() -> None:
+    foundation, store = _foundation()
+    prepared = asyncio.run(
+        foundation.initialize(
+            build_approved_action_plan(),
+            build_runtime_context(),
+        )
+    )
+    service = ExecutionLifecycleService(
+        lifecycle_manager=ExecutionLifecycleManager(),
+        execution_store=store,
+    )
+
+    running = asyncio.run(service.start_execution(prepared, at=FIXED_TIME))
+    persisted_running = asyncio.run(store.load(running.execution_record.execution_id))
+    assert persisted_running is not None
+    assert persisted_running.status == "RUNNING"
+
+    step_running = asyncio.run(
+        service.start_step(
+            running,
+            step_id="step-001",
+            at=FIXED_TIME + timedelta(seconds=1),
+        )
+    )
+    persisted_step_running = asyncio.run(
+        store.load(step_running.execution_record.execution_id)
+    )
+    assert persisted_step_running is not None
+    assert persisted_step_running.current_step == "step-001"
+    assert persisted_step_running.step_results[0]["status"] == "RUNNING"
+
+    step_done = asyncio.run(
+        service.finish_step(
+            step_running,
+            step_id="step-001",
+            status=StepExecutionStatus.SUCCESS,
+            at=FIXED_TIME + timedelta(seconds=2),
+            output={"observed": True},
+        )
+    )
+    persisted_step_done = asyncio.run(
+        store.load(step_done.execution_record.execution_id)
+    )
+    assert persisted_step_done is not None
+    assert persisted_step_done.current_step is None
+    assert persisted_step_done.step_results[0]["status"] == "SUCCESS"
+
+    completed = asyncio.run(
+        service.finish_execution(
+            step_done,
+            status=ExecutionPlanStatus.SUCCESS,
+            at=FIXED_TIME + timedelta(seconds=3),
+        )
+    )
+    persisted_completed = asyncio.run(
+        store.load(completed.execution_record.execution_id)
+    )
+    assert persisted_completed == completed.execution_record
+    assert persisted_completed.status == "SUCCESS"
+
+
+def test_store_rejects_stale_execution_observation() -> None:
+    foundation, store = _foundation()
+    prepared = asyncio.run(
+        foundation.initialize(
+            build_approved_action_plan(),
+            build_runtime_context(),
+        )
+    )
+    service = ExecutionLifecycleService(
+        lifecycle_manager=ExecutionLifecycleManager(),
+        execution_store=store,
+    )
+    running = asyncio.run(
+        service.start_execution(
+            prepared,
+            at=FIXED_TIME + timedelta(seconds=2),
+        )
+    )
+
+    with pytest.raises(ExecutionLifecycleError, match="backward in time"):
+        asyncio.run(store.save(prepared.execution_record))
+
+    persisted = asyncio.run(store.load(running.execution_record.execution_id))
+    assert persisted == running.execution_record
 
 
 def test_execution_start_time_is_distinct_from_record_creation_time() -> None:

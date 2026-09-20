@@ -31,6 +31,7 @@ from runtime.contracts.enums import (
     PlanningMode,
     ResponseType,
     ResponseValidationStatus,
+    RetrievalMode,
     RuntimeControlState,
     SafetyPhase,
     SafetyRiskLevel,
@@ -41,6 +42,11 @@ from runtime.contracts.enums import (
 from runtime.contracts.execution import ExecutionResult, ExecutionTiming
 from runtime.contracts.identity import CoreIdentity, DomainIdentityExtension
 from runtime.contracts.input import RuntimeInput
+from runtime.contracts.knowledge_planning import (
+    EvidenceRequirement,
+    KnowledgeRequirement,
+    RetrievalPlan,
+)
 from runtime.contracts.planning import ActionPlanDraft, ApprovedActionPlan, PlanningGoal
 from runtime.contracts.policy import PolicyDecision
 from runtime.contracts.response import (
@@ -76,6 +82,7 @@ __all__ = [
     "DomainIdentityExtension",
     "DomainSchemaReference",
     "Entity",
+    "EvidenceRequirement",
     "ExecutionPlanStatus",
     "ExecutionResult",
     "ExecutionTiming",
@@ -85,6 +92,7 @@ __all__ = [
     "InputTriggerType",
     "IntentEvidenceSource",
     "IntentResult",
+    "KnowledgeRequirement",
     "MemoryUpdate",
     "PlanApprovalStatus",
     "PlanningGoal",
@@ -95,6 +103,8 @@ __all__ = [
     "ResponseRequirement",
     "ResponseType",
     "ResponseValidationStatus",
+    "RetrievalMode",
+    "RetrievalPlan",
     "RuntimeContext",
     "RuntimeControlState",
     "RuntimeInput",

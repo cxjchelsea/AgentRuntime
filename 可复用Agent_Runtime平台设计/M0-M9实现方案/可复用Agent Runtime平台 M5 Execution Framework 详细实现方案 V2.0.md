@@ -1614,11 +1614,13 @@ Policy Snapshot 是否仍有效
 
 Safety Lock 是否变化
 
-Capability 是否启用
-
 Session 是否仍有效
 
-Cancellation 是否已触发
+Cancellation / Preemption 是否已触发
+
+说明：Capability 是否存在、enabled、version、implementation_ref 与 execution permission
+统一由 Step 5 Capability Resolution 检查。IU2 Runtime Execution Check 不重复读取 Registry，
+避免形成两套 Capability Truth。
 ```
 
 注意：
@@ -1708,21 +1710,17 @@ optional = true
 optional = false
 ```
 
-且失败，则根据：
+且失败，IU2 第一版先 fail closed，返回：
 
 ```text
-on_failure
+BLOCKED
+REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL
 ```
 
-执行：
-
-```text
-STOP_PLAN
-
-RUN_FALLBACK
-
-CONTINUE_IF_SAFE
-```
+当前 `ActionStep.on_failure` 仍是开放字符串，并没有冻结 Core `FailureDisposition`
+语义，因此 IU2 不直接解释 `STOP_PLAN / RUN_FALLBACK / CONTINUE_IF_SAFE`。
+后续若需要执行这些策略，必须先冻结 FailureDisposition / Resolver Contract，
+再由 Runtime 执行，不允许 Scheduler 自行发明 fallback。
 
 ---
 
@@ -1747,23 +1745,20 @@ PLAY_CONTENT
 
 ## 11.4.5 简单条件执行
 
-支持：
+当前 Canonical `ActionStep` 没有独立 `execution_condition` 字段，
+因此第一版 Runtime Core 不解析业务条件字符串，也不把 `completion_condition`
+误用成执行条件。
+
+简单执行条件通过注入 `StepConditionEvaluator` 处理，Core 只消费：
 
 ```text
-IF_PREVIOUS_SUCCESS
-
-IF_PREVIOUS_FAILED
-
-IF_TOOL_RESULT_AVAILABLE
+SATISFIED
+NOT_SATISFIED
+WAITING
+UNKNOWN
 ```
 
-复杂业务条件放在：
-
-```text
-Skill / Workflow
-```
-
-内部。
+复杂业务条件继续放在 Skill / Workflow 或 Domain 注册规则中。
 
 ---
 

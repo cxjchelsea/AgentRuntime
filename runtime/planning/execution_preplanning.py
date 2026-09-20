@@ -701,7 +701,13 @@ class FallbackRule(Protocol):
 class FallbackPlanner:
     """Plan fallback behavior without using model knowledge as hidden truth."""
 
-    def __init__(self, rules: tuple[FallbackRule, ...] = ()) -> None:
+    def __init__(
+        self,
+        *,
+        action_registry: ActionRegistry,
+        rules: tuple[FallbackRule, ...] = (),
+    ) -> None:
+        self._action_registry = action_registry
         self._rules = rules
 
     def plan(
@@ -709,6 +715,7 @@ class FallbackPlanner:
         selected_action_ids: tuple[str, ...],
         capability_selection: CapabilitySelection,
         tool_plan: ToolPlanDecision,
+        policy_decision: PolicyDecision,
     ) -> FallbackDecision:
         decisions: list[FallbackDecision] = []
         for rule in self._rules:
@@ -745,7 +752,38 @@ class FallbackPlanner:
             raise FallbackPlanningError(
                 "fallback actions must be non-blank registered action IDs"
             )
+
+        available_actions = self._enabled_actions()
+        for action_id in first.allowed_actions:
+            if action_id not in available_actions:
+                raise FallbackPlanningError(
+                    "fallback action is unregistered, disabled, or version-ambiguous"
+                )
+            if action_id in (policy_decision.forbidden_actions or ()):
+                raise FallbackPlanningError(
+                    "fallback action is forbidden by M2 PolicyDecision"
+                )
+            if (
+                policy_decision.allowed_actions is not None
+                and action_id not in policy_decision.allowed_actions
+            ):
+                raise FallbackPlanningError(
+                    "fallback action is outside M2 allowed_actions"
+                )
         return first
+
+    def _enabled_actions(self) -> dict[str, ActionDefinition]:
+        output: dict[str, ActionDefinition] = {}
+        for record in self._action_registry.list():
+            definition = record.definition
+            if not record.enabled or not definition.enabled:
+                continue
+            if definition.action_id in output:
+                raise FallbackPlanningError(
+                    "multiple enabled versions exist for one fallback action_id"
+                )
+            output[definition.action_id] = definition
+        return output
 
 
 @dataclass(frozen=True, slots=True)
@@ -816,6 +854,7 @@ class ExecutionPreplanner:
             selected_action_ids,
             capability_selection,
             tool_plan,
+            policy_decision,
         )
         return ExecutionPreplanningResult(
             memory_usage=memory_usage,

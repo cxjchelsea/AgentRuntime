@@ -7,16 +7,25 @@ from datetime import UTC, datetime
 
 import pytest
 
-import runtime.execution as execution_module
+import runtime.execution.control as control_module
+import runtime.execution.models as models_module
+import runtime.execution.protocols as protocols_module
+import runtime.execution.resolution as resolution_module
+import runtime.execution.stores as stores_module
+from runtime.contracts import ApprovedActionPlan, ExecutionResult, RuntimeContext
 from runtime.contracts.execution import ExecutionContext
+from runtime.interfaces.execution import ExecutionEngine
 from runtime.execution import (
     ExecutionControlSignal,
     ExecutionControlSignalType,
     ExecutionImplementationResolver,
     ExecutionImplementationTypeError,
     ExecutionRegistryResolutionError,
+    ExecutionControlSignalSource,
+    ExecutionStateStore,
     IdempotencyRecord,
     IdempotencyStatus,
+    IdempotencyStore,
     M5SkillResult,
     M5ToolResult,
     M5WorkflowResult,
@@ -25,7 +34,9 @@ from runtime.execution import (
     SkillImplementation,
     ToolExecutionStatus,
     ToolImplementation,
+    ResourceLockProvider,
     ToolInvocationRequest,
+    WorkflowCheckpointStore,
     WorkflowExecutionRequest,
     WorkflowExecutionStatus,
     WorkflowImplementation,
@@ -275,7 +286,16 @@ def test_idempotency_record_has_unknown_state_for_unconfirmed_side_effect() -> N
 
 
 def test_readiness_package_contains_no_domain_execution_taxonomy() -> None:
-    source = inspect.getsource(execution_module)
+    source = "\n".join(
+        inspect.getsource(module)
+        for module in (
+            control_module,
+            models_module,
+            protocols_module,
+            resolution_module,
+            stores_module,
+        )
+    )
 
     for token in (
         "WEATHER",
@@ -286,3 +306,28 @@ def test_readiness_package_contains_no_domain_execution_taxonomy() -> None:
         "HELP_WORKFLOW",
     ):
         assert token not in source
+
+
+def test_execution_store_protocols_freeze_required_method_surface() -> None:
+    assert set(ExecutionStateStore.__dict__) >= {"save", "load"}
+    assert set(WorkflowCheckpointStore.__dict__) >= {"save", "load"}
+    assert set(IdempotencyStore.__dict__) >= {
+        "get",
+        "reserve",
+        "mark_completed",
+        "mark_unknown",
+    }
+    assert set(ResourceLockProvider.__dict__) >= {"acquire", "release"}
+    assert "get_signal" in ExecutionControlSignalSource.__dict__
+
+
+def test_frozen_execution_engine_main_chain_signature_is_unchanged() -> None:
+    signature = inspect.signature(ExecutionEngine.execute)
+    assert list(signature.parameters) == [
+        "self",
+        "approved_action_plan",
+        "runtime_context",
+    ]
+    assert signature.parameters["approved_action_plan"].annotation is ApprovedActionPlan
+    assert signature.parameters["runtime_context"].annotation is RuntimeContext
+    assert signature.return_annotation is ExecutionResult

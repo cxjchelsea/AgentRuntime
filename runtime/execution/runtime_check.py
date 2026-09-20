@@ -37,13 +37,17 @@ class RuntimeExecutionFacts:
     policy_snapshot_valid: bool | None
     safety_allows_step: bool | None
     current_state: str | None = None
-    reason_codes: tuple[str, ...] = ()
+    blocking_reason_codes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.current_state is not None and not self.current_state.strip():
             raise ValueError("current_state must not be blank")
-        if any(not reason.strip() for reason in self.reason_codes):
-            raise ValueError("reason_codes must not contain blank values")
+        if any(
+            not reason.strip() for reason in self.blocking_reason_codes
+        ):
+            raise ValueError(
+                "blocking_reason_codes must not contain blank values"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +120,7 @@ class RuntimeExecutionChecker:
             prepared,
             step,
         )
-        reason_codes = list(facts.reason_codes)
+        reason_codes = list(facts.blocking_reason_codes)
         checks = (
             ("SESSION", facts.session_active),
             ("STATE", facts.state_allows_step),

@@ -398,13 +398,18 @@ class RetrievalQueryBuilder:
         normalized = normalized.strip()
 
         raw_variants = payload.get("query_variants", ())
-        if not isinstance(raw_variants, (list, tuple)) or any(
-            not isinstance(item, str) or not item.strip() for item in raw_variants
-        ):
+        if not isinstance(raw_variants, (list, tuple)):
             raise QueryRewriteError(
                 "query_variants must be an array of non-blank strings"
             )
-        variants = tuple(dict.fromkeys(item.strip() for item in raw_variants))
+        normalized_variants: list[str] = []
+        for item in raw_variants:
+            if not isinstance(item, str) or not item.strip():
+                raise QueryRewriteError(
+                    "query_variants must be an array of non-blank strings"
+                )
+            normalized_variants.append(item.strip())
+        variants = tuple(dict.fromkeys(normalized_variants))
         if len(variants) > self._max_query_variants:
             raise QueryRewriteError("query_variants exceeds configured maximum")
 
@@ -511,6 +516,14 @@ class RetrievalPlanner:
             )
 
         self._validate_policy(policy, capability_context)
+        if (
+            requirement.freshness_requirement is not None
+            and requirement.freshness_requirement
+            not in capability_context.freshness_capabilities
+        ):
+            raise RetrievalPlanningError(
+                "freshness requirement is unsupported by current knowledge capabilities"
+            )
 
         filters = self._base_filters(requirement, capability_context)
         if policy.filters is not None:

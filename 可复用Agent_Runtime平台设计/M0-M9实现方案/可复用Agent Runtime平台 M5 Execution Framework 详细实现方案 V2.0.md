@@ -3,7 +3,7 @@
 
 > **Phase 0 Fix**  
 > M5 只能消费 `ApprovedActionPlan`，不得接受 `ActionPlanDraft` 或歧义 `ActionPlan`。  
-> `ExecutionResult` 使用 `plan_status` + `step_results[]` / `skill_results[]` / `tool_results[]`。  
+> `ExecutionResult` 使用 `plan_status` + `step_results[]` / `skill_results[]` / `tool_results[]`。M5 内部结果先使用 typed internal contracts，再投影到现有 Canonical `ExecutionResult`，本 Fix Pack 不修改主链 Contract。  
 > `elder_id` 已从 ExecutionContext 删除，改 `identity_scope`。
 
 > **平台化转换说明**  
@@ -22,6 +22,31 @@
 ## 平台扩展补充：Execution Core 与 Domain Adapter
 
 M5 Core 只提供 Skill / Workflow / Tool 执行协议、超时、重试、幂等、取消、并发和 Side Effect 管理。具体 Skill、Workflow、Tool Adapter 均由 Domain Package 注册。
+
+## Readiness Contract Fix Pack
+
+在进入 M5-IU1 前，以下内部执行合同已冻结为 M5 Core readiness baseline：
+
+```text
+Internal Result Contracts
+Tool / Skill / Workflow Implementation Protocols
+ExecutionControlSignalSource
+ExecutionStateStore / WorkflowCheckpointStore
+IdempotencyStore / ResourceLockProvider
+Workflow / Tool optional execution metadata
+```
+
+这些对象用于 M5 内部执行可靠性，不改变冻结的主链：
+
+```text
+ApprovedActionPlan
+→ ExecutionEngine
+→ ExecutionResult
+```
+
+Registry 的 `implementation_ref` 在执行前必须满足对应 Protocol；解析失败、版本歧义或实现类型不匹配时必须 fail closed，不允许自行替换 Capability。
+
+---
 
 # 01. 阶段定位
 
@@ -658,7 +683,7 @@ workflow_result
 
 tool_results[]
 
-business_result
+business_outputs
 
 state_observations
 
@@ -813,7 +838,7 @@ metadata
 
 # 7.9 ToolStatus
 
-建议：
+Readiness Fix Pack 后冻结为：
 
 ```text
 SUCCESS
@@ -827,7 +852,11 @@ CANCELLED
 UNAVAILABLE
 
 REJECTED
+
+UNKNOWN
 ```
+
+其中 `UNKNOWN` 表示外部副作用可能已经发生，但当前无法确认结果；不得静默改写成 FAILED。
 
 ---
 
@@ -840,7 +869,7 @@ skill_id
 
 status
 
-business_result
+business_outputs[]
 
 tool_results[]
 
@@ -1068,23 +1097,23 @@ ToolDefinition
 
 tool_id
 
-name
-
 description
 
 input_schema
 
 output_schema
 
-timeout
+timeout_policy
 
 retry_policy
 
-idempotent
+idempotency_mode
 
 side_effect_level
 
-required_permission
+required_permissions[]
+
+resource_locks[]
 
 enabled
 
@@ -1129,6 +1158,10 @@ supported_events[]
 checkpoint_enabled
 
 allowed_states[]
+
+timeout_policy
+
+resume_policy
 
 enabled
 ```

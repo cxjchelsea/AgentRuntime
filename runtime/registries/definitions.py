@@ -100,6 +100,11 @@ class WorkflowDefinition(CanonicalModel):
     states: list[str] | None = None
     entry_conditions: list[str] | None = None
     exit_conditions: list[str] | None = None
+    supported_events: list[str] | None = None
+    allowed_states: list[str] | None = None
+    checkpoint_enabled: bool | None = None
+    timeout_policy: str | None = None
+    resume_policy: str | None = None
 
 
 class ToolDefinition(CanonicalModel):
@@ -116,6 +121,7 @@ class ToolDefinition(CanonicalModel):
     idempotency_mode: str | None = None
     side_effect_level: str | None = None
     required_permissions: list[str] | None = None
+    resource_locks: list[str] | None = None
 
 
 class PolicyDefinition(CanonicalModel):

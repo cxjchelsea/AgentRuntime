@@ -6,9 +6,10 @@ real Golden Planning Sets, business labels, clinical rules, and production thres
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Mapping, Protocol, Sequence
+from typing import Protocol
 
 
 class M4EvalGate(str, Enum):

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from runtime.contracts import (
+    ActionPlanDraft,
     EvidenceRequirement,
     KnowledgeRequirement,
     QualityAssessment,
@@ -536,7 +537,7 @@ class DomainValidationRule:
 
     def validate(
         self,
-        draft: object,
+        draft: ActionPlanDraft,
         context: PlanValidationContext,
     ) -> str | None:
         del draft, context

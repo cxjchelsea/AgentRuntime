@@ -17,6 +17,7 @@ from runtime.contracts import (
     UnderstandingState,
 )
 from runtime.contracts.planning import StrategySelection
+from runtime.contracts.understanding import Entity, GoalUnderstanding
 from runtime.planning import (
     EvidenceRequirementPlanner,
     GoalResolver,
@@ -51,16 +52,16 @@ def _understanding() -> UnderstandingState:
         update={
             "topic": "DOMAIN_TOPIC",
             "entities": [
-                {
-                    "entity_type": "DOMAIN_ENTITY_TYPE",
-                    "value": "domain entity",
-                    "normalized_value": "normalized domain entity",
-                }
+                Entity(
+                    entity_type="DOMAIN_ENTITY_TYPE",
+                    value="domain entity",
+                    normalized_value="normalized domain entity",
+                )
             ],
-            "goal": {
-                "explicit_goal": "DOMAIN_GOAL",
-                "confidence": 1.0,
-            },
+            "goal": GoalUnderstanding(
+                explicit_goal="DOMAIN_GOAL",
+                confidence=1.0,
+            ),
         }
     )
 

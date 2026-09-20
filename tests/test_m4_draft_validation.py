@@ -43,6 +43,8 @@ from runtime.registries import (
     IntrusivenessLevel,
     SkillDefinition,
     SkillRegistry,
+    StrategyDefinition,
+    StrategyRegistry,
     ToolDefinition,
     ToolRegistry,
     WorkflowDefinition,
@@ -69,6 +71,7 @@ def _action(
 
 def _registries() -> tuple[
     ActionRegistry,
+    StrategyRegistry,
     SkillRegistry,
     WorkflowRegistry,
     ToolRegistry,
@@ -76,6 +79,22 @@ def _registries() -> tuple[
     actions = ActionRegistry()
     actions.register(_action("DOMAIN_ACTION"))
     actions.register(_action("DOMAIN_FALLBACK"))
+
+    strategies = StrategyRegistry()
+    strategies.register(
+        StrategyDefinition(
+            strategy_id="DOMAIN_STRATEGY",
+            version="1.0.0",
+            description="domain strategy",
+            preferred_goals=[],
+            preferred_needs=[],
+            compatible_emotions=[],
+            required_conditions=[],
+            avoid_conditions=[],
+            default_actions=["DOMAIN_ACTION"],
+            intrusiveness_level=IntrusivenessLevel.LOW,
+        )
+    )
 
     skills = SkillRegistry()
     skills.register(
@@ -102,7 +121,7 @@ def _registries() -> tuple[
             version="1.0.0",
         )
     )
-    return actions, skills, workflows, tools
+    return actions, strategies, skills, workflows, tools
 
 
 def _goals() -> GoalResolutionResult:
@@ -231,9 +250,10 @@ def _validation_context(
     *,
     knowledge_skill_ids: frozenset[str] = frozenset(),
 ) -> PlanValidationContext:
-    actions, skills, workflows, tools = _registries()
+    actions, strategies, skills, workflows, tools = _registries()
     return PlanValidationContext(
         action_registry=actions,
+        strategy_registry=strategies,
         skill_registry=skills,
         workflow_registry=workflows,
         tool_registry=tools,
@@ -482,7 +502,7 @@ def test_validator_rejects_missing_skill_required_tool() -> None:
 
 
 def test_validator_rejects_confirmation_that_omits_action_requirement() -> None:
-    actions, skills, workflows, tools = _registries()
+    actions, strategies, skills, workflows, tools = _registries()
     actions = ActionRegistry()
     actions.register(_action("DOMAIN_ACTION", requires_confirmation=True))
     actions.register(_action("DOMAIN_FALLBACK"))
@@ -499,6 +519,7 @@ def test_validator_rejects_confirmation_that_omits_action_requirement() -> None:
     )
     context = PlanValidationContext(
         action_registry=actions,
+        strategy_registry=strategies,
         skill_registry=skills,
         workflow_registry=workflows,
         tool_registry=tools,

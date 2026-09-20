@@ -48,6 +48,22 @@ Registry 的 `implementation_ref` 在执行前必须满足对应 Protocol；解�
 
 ---
 
+## Readiness Supplement
+
+在 Readiness Re-Review 后补充冻结：
+
+```text
+ExecutionPermissionContext / Provider / Evaluator
+PermissionDecision(ALLOWED / DENIED / UNKNOWN)
+
+ApprovedWorkflowAuthority
+project_workflow_authority(...)
+```
+
+前者补齐 Tool 执行前权限判定合同；后者明确 Workflow authority 来自已经批准的 `ApprovedActionPlan` 以及现有 `forced_workflow` 约束，不新增不存在的 `allowed_workflows / forbidden_workflows` Policy 字段。
+
+---
+
 # 01. 阶段定位
 
 M5 是整个 Agent Runtime 的执行层。
@@ -443,15 +459,13 @@ ExecutionContext
 M5 必须继承：
 
 ```text
-PolicyDecision
+PolicyDecision / Policy Snapshot
 
-Policy Snapshot
+Allowed / Forbidden Tools
 
-Allowed Tools
+Allowed / Forbidden Skills
 
-Allowed Skills
-
-Allowed Workflows
+forced_workflow（如存在）
 
 Safety Lock
 
@@ -459,6 +473,22 @@ Preemption Decision
 
 Required Confirmation
 ```
+
+当前冻结的 PolicyDecision **不存在** generic `allowed_workflows / forbidden_workflows`。Workflow 执行权限不得由 M5 自行发明该字段，而应来自：
+
+```text
+ApprovedActionPlan 中已经批准的 workflow_id
++
+policy_snapshot.forced_workflow（如存在）
++
+WorkflowRegistry enabled/version
++
+Runtime execution eligibility
++
+Execution Permission
+```
+
+因此，Workflow authority 是已批准计划的执行投影，不是新的 M5 Policy。
 
 ---
 
@@ -2763,10 +2793,20 @@ Tool存在
 当前有权限调用
 ```
 
+同时：
+
+```text
+Planning Authorization
+!=
+Execution Permission
+```
+
+M2/M4 决定 Tool 是否可以进入 ApprovedActionPlan；M5 在真正调用前还必须检查当前执行主体、绑定、设备、环境、角色、Workflow State 等执行权限事实。
+
 权限来源：
 
 ```text
-PolicyDecision
+PolicyDecision / Approved Plan
 
 User Binding
 
@@ -2778,6 +2818,26 @@ Role
 
 Workflow State
 ```
+
+Readiness Supplement 冻结以下内部合同：
+
+```text
+ExecutionPermissionContext
+ExecutionPermissionContextProvider
+PermissionDecision
+PermissionDecisionStatus
+ExecutionPermissionEvaluator
+```
+
+PermissionDecisionStatus：
+
+```text
+ALLOWED
+DENIED
+UNKNOWN
+```
+
+其中 `UNKNOWN` 不得当作 ALLOWED，也不得触发 Capability substitution 或 Replan。具体执行行为由后续 M5-IU fail-closed 规则实现。
 
 ---
 

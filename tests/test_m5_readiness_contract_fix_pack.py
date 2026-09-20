@@ -7,21 +7,31 @@ from datetime import UTC, datetime
 
 import pytest
 
+import runtime.execution.authority as authority_module
 import runtime.execution.control as control_module
 import runtime.execution.models as models_module
+import runtime.execution.permission as permission_module
 import runtime.execution.protocols as protocols_module
 import runtime.execution.resolution as resolution_module
 import runtime.execution.stores as stores_module
-from runtime.contracts import ApprovedActionPlan, ExecutionResult, RuntimeContext
+from runtime.contracts import (
+    ApprovedActionPlan,
+    ExecutionResult,
+    PolicyDecision,
+    RuntimeContext,
+)
 from runtime.contracts.execution import ExecutionContext
-from runtime.interfaces.execution import ExecutionEngine
 from runtime.execution import (
+    ApprovedWorkflowAuthority,
     ExecutionControlSignal,
+    ExecutionControlSignalSource,
     ExecutionControlSignalType,
     ExecutionImplementationResolver,
     ExecutionImplementationTypeError,
+    ExecutionPermissionContext,
+    ExecutionPermissionContextProvider,
+    ExecutionPermissionEvaluator,
     ExecutionRegistryResolutionError,
-    ExecutionControlSignalSource,
     ExecutionStateStore,
     IdempotencyRecord,
     IdempotencyStatus,
@@ -29,18 +39,22 @@ from runtime.execution import (
     M5SkillResult,
     M5ToolResult,
     M5WorkflowResult,
+    PermissionDecision,
+    PermissionDecisionStatus,
+    ResourceLockProvider,
     SkillExecutionRequest,
     SkillExecutionStatus,
     SkillImplementation,
     ToolExecutionStatus,
     ToolImplementation,
-    ResourceLockProvider,
     ToolInvocationRequest,
     WorkflowCheckpointStore,
     WorkflowExecutionRequest,
     WorkflowExecutionStatus,
     WorkflowImplementation,
+    project_workflow_authority,
 )
+from runtime.interfaces.execution import ExecutionEngine
 from runtime.registries import (
     SkillDefinition,
     SkillRegistry,
@@ -49,6 +63,7 @@ from runtime.registries import (
     WorkflowDefinition,
     WorkflowRegistry,
 )
+from tests.orchestration_stubs import build_approved_action_plan
 
 
 def _execution_context() -> ExecutionContext:
@@ -173,7 +188,9 @@ def test_registry_metadata_can_express_checkpoint_recovery_and_locks() -> None:
     assert tool.resource_locks == ["shared-resource"]
 
 
-def test_runtime_checkable_execution_protocols_accept_matching_implementations() -> None:
+def test_runtime_checkable_execution_protocols_accept_matching_implementations() -> (
+    None
+):
     assert isinstance(GoodTool(), ToolImplementation)
     assert isinstance(GoodSkill(), SkillImplementation)
     assert isinstance(GoodWorkflow(), WorkflowImplementation)
@@ -289,8 +306,10 @@ def test_readiness_package_contains_no_domain_execution_taxonomy() -> None:
     source = "\n".join(
         inspect.getsource(module)
         for module in (
+            authority_module,
             control_module,
             models_module,
+            permission_module,
             protocols_module,
             resolution_module,
             stores_module,
@@ -319,6 +338,161 @@ def test_execution_store_protocols_freeze_required_method_surface() -> None:
     }
     assert set(ResourceLockProvider.__dict__) >= {"acquire", "release"}
     assert "get_signal" in ExecutionControlSignalSource.__dict__
+
+
+def test_execution_permission_context_distinguishes_current_permission_facts() -> None:
+    context = ExecutionPermissionContext(
+        execution_id="execution-001",
+        identity_scope="scope-001",
+        granted_permissions=frozenset({"TOOL_USE"}),
+        denied_permissions=frozenset({"ADMIN_ONLY"}),
+        evidence_refs=("binding:subject-001",),
+    )
+
+    assert "TOOL_USE" in context.granted_permissions
+    assert "ADMIN_ONLY" in context.denied_permissions
+
+
+def test_execution_permission_context_rejects_conflicting_permission_fact() -> None:
+    with pytest.raises(ValueError, match="both granted and denied"):
+        ExecutionPermissionContext(
+            execution_id="execution-001",
+            identity_scope="scope-001",
+            granted_permissions=frozenset({"TOOL_USE"}),
+            denied_permissions=frozenset({"TOOL_USE"}),
+        )
+
+
+class StaticPermissionProvider:
+    async def build(
+        self,
+        execution_context: ExecutionContext,
+    ) -> ExecutionPermissionContext:
+        return ExecutionPermissionContext(
+            execution_id=execution_context.execution_id,
+            identity_scope=execution_context.identity_scope,
+            granted_permissions=frozenset({"TOOL_USE"}),
+        )
+
+
+class StaticPermissionEvaluator:
+    def evaluate(
+        self,
+        tool_definition: ToolDefinition,
+        permission_context: ExecutionPermissionContext,
+    ) -> PermissionDecision:
+        required = tuple(tool_definition.required_permissions or ())
+        missing = tuple(
+            permission
+            for permission in required
+            if permission not in permission_context.granted_permissions
+        )
+        return PermissionDecision(
+            status=(
+                PermissionDecisionStatus.ALLOWED
+                if not missing
+                else PermissionDecisionStatus.DENIED
+            ),
+            reason_codes=("PERMISSION_EVALUATED",),
+            missing_permissions=missing,
+        )
+
+
+def test_permission_contract_is_runtime_checkable_by_static_type_surface() -> None:
+    provider: ExecutionPermissionContextProvider = StaticPermissionProvider()
+    evaluator: ExecutionPermissionEvaluator = StaticPermissionEvaluator()
+
+    assert provider is not None
+    assert evaluator is not None
+
+
+def test_permission_decision_supports_unknown_without_replanning() -> None:
+    decision = PermissionDecision(
+        status=PermissionDecisionStatus.UNKNOWN,
+        reason_codes=("PERMISSION_FACT_UNAVAILABLE",),
+        missing_permissions=("TOOL_USE",),
+    )
+
+    assert decision.status is PermissionDecisionStatus.UNKNOWN
+
+
+def test_allowed_permission_decision_cannot_carry_missing_permissions() -> None:
+    with pytest.raises(ValueError, match="ALLOWED"):
+        PermissionDecision(
+            status=PermissionDecisionStatus.ALLOWED,
+            reason_codes=("PERMISSION_ALLOWED",),
+            missing_permissions=("TOOL_USE",),
+        )
+
+
+def test_workflow_authority_comes_from_approved_plan_and_existing_forced_workflow() -> (
+    None
+):
+    plan = build_approved_action_plan().model_copy(
+        update={
+            "steps": [
+                build_approved_action_plan()
+                .steps[0]
+                .model_copy(update={"workflow_id": "WF_FORCED"})
+            ],
+            "policy_snapshot": {
+                "allowed": True,
+                "forced_workflow": "WF_FORCED",
+            },
+        }
+    )
+
+    authority = project_workflow_authority(plan)
+
+    assert isinstance(authority, ApprovedWorkflowAuthority)
+    assert authority.approved_workflow_ids == frozenset({"WF_FORCED"})
+    assert authority.forced_workflow == "WF_FORCED"
+
+
+def test_policy_decision_has_no_generic_workflow_allow_or_forbid_fields() -> None:
+    fields = PolicyDecision.model_fields
+
+    assert "allowed_workflows" not in fields
+    assert "forbidden_workflows" not in fields
+
+
+def test_workflow_authority_does_not_expect_generic_allowed_workflows() -> None:
+    plan = build_approved_action_plan().model_copy(
+        update={
+            "steps": [
+                build_approved_action_plan()
+                .steps[0]
+                .model_copy(update={"workflow_id": "WF_A"})
+            ],
+            "policy_snapshot": {"allowed": True},
+        }
+    )
+
+    authority = project_workflow_authority(plan)
+
+    assert authority.approved_workflow_ids == frozenset({"WF_A"})
+    assert authority.forced_workflow is None
+
+
+def test_workflow_authority_rejects_plan_that_violates_forced_workflow_snapshot() -> (
+    None
+):
+    plan = build_approved_action_plan().model_copy(
+        update={
+            "steps": [
+                build_approved_action_plan()
+                .steps[0]
+                .model_copy(update={"workflow_id": "WF_OTHER"})
+            ],
+            "policy_snapshot": {
+                "allowed": True,
+                "forced_workflow": "WF_FORCED",
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="forced_workflow"):
+        project_workflow_authority(plan)
 
 
 def test_frozen_execution_engine_main_chain_signature_is_unchanged() -> None:

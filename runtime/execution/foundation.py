@@ -239,6 +239,14 @@ class ExecutionRecordFactory:
             )
             for step in approved_plan.steps
         )
+        step_execution_ids = [
+            item.step_execution_id for item in step_snapshots
+        ]
+        if len(set(step_execution_ids)) != len(step_execution_ids):
+            raise ExecutionContextBuildError(
+                "step_execution_id values must be unique within one execution"
+            )
+
         record = ExecutionRecord(
             execution_id=execution_context.execution_id,
             plan_id=approved_plan.plan_id,
@@ -246,7 +254,9 @@ class ExecutionRecordFactory:
             identity_scope=execution_context.identity_scope,
             status="CREATED",
             current_step=None,
-            step_results=tuple(_snapshot_to_record_payload(item) for item in step_snapshots),
+            step_results=tuple(
+                _snapshot_to_record_payload(item) for item in step_snapshots
+            ),
             created_at=now,
             updated_at=now,
         )
@@ -271,7 +281,14 @@ class ExecutionLifecycleManager:
         }
     )
     _TERMINAL_EXECUTION_STATUSES = frozenset(
-        {"SUCCESS", "PARTIAL_SUCCESS", "FAILED", "CANCELLED", "TIMEOUT", "PREEMPTED"}
+        {
+            "SUCCESS",
+            "PARTIAL_SUCCESS",
+            "FAILED",
+            "CANCELLED",
+            "TIMEOUT",
+            "PREEMPTED",
+        }
     )
 
     def start_execution(
@@ -303,6 +320,20 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError("only PENDING step can start")
         if prepared.execution_record.status != "RUNNING":
             raise ExecutionLifecycleError("step requires RUNNING execution")
+        if any(
+            item.status is StepExecutionStatus.RUNNING
+            for item in prepared.steps
+        ):
+            raise ExecutionLifecycleError(
+                "IU1 sequential baseline allows only one RUNNING step"
+            )
+        if (
+            prepared.execution_record.created_at is not None
+            and at < prepared.execution_record.created_at
+        ):
+            raise ExecutionLifecycleError(
+                "step cannot start before execution creation time"
+            )
 
         steps = tuple(
             replace(item, status=StepExecutionStatus.RUNNING, started_at=at)
@@ -334,6 +365,12 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError("only RUNNING step can finish")
         if status not in self._TERMINAL_STEP_STATUSES:
             raise ExecutionLifecycleError("finish_step requires terminal status")
+        if target.started_at is not None and at < target.started_at:
+            raise ExecutionLifecycleError(
+                "step cannot finish before it starts"
+            )
+        if retry_count is not None and retry_count < 0:
+            raise ExecutionLifecycleError("retry_count must be >= 0")
 
         steps = tuple(
             replace(
@@ -373,6 +410,13 @@ class ExecutionLifecycleManager:
         ):
             raise ExecutionLifecycleError(
                 "execution cannot finish while a step is non-terminal"
+            )
+        if (
+            prepared.execution_record.updated_at is not None
+            and at < prepared.execution_record.updated_at
+        ):
+            raise ExecutionLifecycleError(
+                "execution cannot finish before its last observation"
             )
         value = status.value
         if value not in self._TERMINAL_EXECUTION_STATUSES:

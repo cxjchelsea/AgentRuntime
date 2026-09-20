@@ -104,6 +104,7 @@ def test_m5_context_builder_projects_minimum_runtime_context_only() -> None:
     assert context.session_id == "session-001"
     assert context.identity_scope == "scope-001"
     assert context.current_state is RuntimeControlState.IDLE
+    assert context.cancellation_token == "execution-iu1-001"
     assert context.deadline is None
     assert context.trace_context is None
     assert context.tool_context == {

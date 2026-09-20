@@ -159,3 +159,15 @@ class ResponseStrategyPlanningError(DraftAssemblyError):
 
 class PlanValidationError(PlanningError):
     """Raised when ActionPlanDraft fails structural/registry/capability validation."""
+
+
+class PolicyApprovalIntegrationError(PlanningError):
+    """Base error for M4-IU7 policy re-check integration."""
+
+
+class PolicySurfaceViolationError(PolicyApprovalIntegrationError):
+    """Raised when Draft subplans violate explicit M2 PolicyDecision bounds."""
+
+
+class ApprovalIntegrityError(PolicyApprovalIntegrationError):
+    """Raised when the approved plan drifts from the validated Draft."""

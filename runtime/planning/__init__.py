@@ -19,6 +19,7 @@ from runtime.planning.draft_validation import (
 )
 from runtime.planning.errors import (
     ActionRegistryAmbiguityError,
+    ApprovalIntegrityError,
     CandidateEligibilityError,
     CandidateGenerationError,
     CapabilityPlanningError,
@@ -44,6 +45,8 @@ from runtime.planning.errors import (
     PlanningError,
     PlanningRouteConflictError,
     PlanValidationError,
+    PolicyApprovalIntegrationError,
+    PolicySurfaceViolationError,
     QueryRewriteError,
     ResponseStrategyPlanningError,
     RetrievalModeRuleExecutionError,
@@ -110,6 +113,12 @@ from runtime.planning.knowledge_planning import (
     StructuredQueryRewriter,
 )
 from runtime.planning.knowledge_types import RetrievalQuery
+from runtime.planning.policy_approval import (
+    M4PolicySurfaceAuditor,
+    PlanApprovalCoordinator,
+    PolicyApprovalResult,
+    PolicyApprovalRule,
+)
 from runtime.planning.routing import (
     PlanningModeRouter,
     PlanningModeRule,
@@ -135,6 +144,7 @@ __all__ = [
     "ActionCandidateProvider",
     "ActionPlanDraftAssembler",
     "ActionRegistryAmbiguityError",
+    "ApprovalIntegrityError",
     "CandidateContribution",
     "CandidateEligibilityError",
     "CandidateEligibilityRule",
@@ -185,10 +195,12 @@ __all__ = [
     "KnowledgePlanningError",
     "KnowledgePlanningResult",
     "LegalActionCandidateBuilder",
+    "M4PolicySurfaceAuditor",
     "MemoryUsageDecision",
     "MemoryUsagePlanner",
     "MemoryUsagePlanningError",
     "MemoryUsageRule",
+    "PlanApprovalCoordinator",
     "PlanValidationContext",
     "PlanValidationError",
     "PlanValidationResult",
@@ -204,6 +216,10 @@ __all__ = [
     "PlanningRouteDecision",
     "PlanningRouteSignal",
     "PlanningUnderstandingSummary",
+    "PolicyApprovalIntegrationError",
+    "PolicyApprovalResult",
+    "PolicyApprovalRule",
+    "PolicySurfaceViolationError",
     "QueryRewriteError",
     "QueryRewriteRequest",
     "QueryRewriteSemanticValidator",

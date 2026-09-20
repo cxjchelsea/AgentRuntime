@@ -15,6 +15,7 @@ from runtime.execution import (
     ApprovedPlanExecutionError,
     ApprovedPlanExecutionValidator,
     CallableExecutionIdentifierFactory,
+    ExecutionContextBuildError,
     ExecutionContextBuilder,
     ExecutionFoundation,
     ExecutionLifecycleError,
@@ -132,6 +133,33 @@ def test_approved_plan_execution_validator_rejects_non_prior_dependency() -> Non
         ApprovedPlanExecutionValidator().validate(plan)
 
 
+def test_step_execution_ids_must_be_unique_within_execution() -> None:
+    ids = CallableExecutionIdentifierFactory(
+        execution_id_factory=lambda: "execution-duplicate-step-id",
+        step_execution_id_factory=lambda step_id: "same-step-execution-id",
+    )
+    plan = build_approved_action_plan()
+    second = plan.steps[0].model_copy(
+        update={
+            "step_id": "step-002",
+            "depends_on": ["step-001"],
+        }
+    )
+    plan = plan.model_copy(update={"steps": [plan.steps[0], second]})
+    foundation = ExecutionFoundation(
+        plan_validator=ApprovedPlanExecutionValidator(),
+        context_builder=ExecutionContextBuilder(identifier_factory=ids),
+        record_factory=ExecutionRecordFactory(
+            identifier_factory=ids,
+            clock=lambda: FIXED_TIME,
+        ),
+        execution_store=InMemoryExecutionStateStore(),
+    )
+
+    with pytest.raises(ExecutionContextBuildError, match="unique"):
+        asyncio.run(foundation.initialize(plan, build_runtime_context()))
+
+
 def test_execution_id_collision_fails_closed_before_overwrite() -> None:
     foundation, store = _foundation(execution_id="execution-collision")
     plan = build_approved_action_plan()
@@ -205,6 +233,38 @@ def test_step_lifecycle_is_independent_and_deterministic() -> None:
     assert completed.steps[0].status is StepExecutionStatus.SUCCESS
     assert completed.steps[0].output == {"observed": True}
     assert completed.steps[0].tool_call_ids == ("tool-call-001",)
+
+
+def test_iu1_sequential_baseline_rejects_two_running_steps() -> None:
+    plan = build_approved_action_plan()
+    second = plan.steps[0].model_copy(
+        update={
+            "step_id": "step-002",
+            "depends_on": ["step-001"],
+        }
+    )
+    plan = plan.model_copy(update={"steps": [plan.steps[0], second]})
+    foundation, _ = _foundation()
+    prepared = asyncio.run(
+        foundation.initialize(
+            plan,
+            build_runtime_context(),
+        )
+    )
+    lifecycle = ExecutionLifecycleManager()
+    running = lifecycle.start_execution(prepared, at=FIXED_TIME)
+    first_running = lifecycle.start_step(
+        running,
+        step_id="step-001",
+        at=FIXED_TIME + timedelta(seconds=1),
+    )
+
+    with pytest.raises(ExecutionLifecycleError, match="one RUNNING step"):
+        lifecycle.start_step(
+            first_running,
+            step_id="step-002",
+            at=FIXED_TIME + timedelta(seconds=2),
+        )
 
 
 def test_execution_cannot_finish_while_step_is_pending_or_running() -> None:

@@ -225,6 +225,7 @@ def _registries() -> tuple[
 def _build_m4_fixture(
     *,
     plan_id: str = "plan-m4-iu8",
+    use_strategy_rule: bool = True,
 ) -> M4Fixture:
     actions, strategies, skills, workflows, tools, capabilities = _registries()
 
@@ -238,7 +239,7 @@ def _build_m4_fixture(
     )
     strategy_selector = HybridStrategySelector(
         strategy_registry=strategies,
-        rules=(FixedStrategyRule(),),
+        rules=(FixedStrategyRule(),) if use_strategy_rule else (),
     )
     knowledge_planner = KnowledgePlanner(
         need_resolver=KnowledgeNeedResolver(),
@@ -440,6 +441,22 @@ def test_m2_forced_action_enters_legal_candidate_space_without_domain_hint() -> 
 
     assert [candidate.action for candidate in candidates] == ["FORCED_ACTION"]
     assert candidates[0].source_codes == ("POLICY_FORCED_ACTION",)
+
+
+def test_concrete_planner_resolves_single_strategy_defaults_without_rule() -> None:
+    fixture = _build_m4_fixture(use_strategy_rule=False)
+
+    draft = asyncio.run(
+        fixture.planner.plan(
+            build_runtime_context(),
+            _understanding(),
+            build_policy_decision(),
+        )
+    )
+
+    assert draft.strategy is not None
+    assert draft.strategy.reason_code == "ONLY_LEGAL_STRATEGY"
+    assert [step.action for step in draft.steps] == [DOMAIN_ACTION]
 
 
 def test_runtime_validator_and_rechecker_bridge_exact_validated_draft() -> None:

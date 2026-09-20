@@ -20,6 +20,8 @@ class StepScheduleAction(str, Enum):
     READY = "READY"
     WAIT = "WAIT"
     SKIP = "SKIP"
+    STOP_PLAN = "STOP_PLAN"
+    RUN_FALLBACK = "RUN_FALLBACK"
     COMPLETE = "COMPLETE"
 
 
@@ -34,11 +36,21 @@ class StepScheduleDecision:
             not reason.strip() for reason in self.reason_codes
         ):
             raise ValueError("reason_codes must contain non-blank values")
-        if self.action in {StepScheduleAction.READY, StepScheduleAction.SKIP}:
+        actions_requiring_step = {
+            StepScheduleAction.READY,
+            StepScheduleAction.SKIP,
+            StepScheduleAction.STOP_PLAN,
+            StepScheduleAction.RUN_FALLBACK,
+        }
+        if self.action in actions_requiring_step:
             if self.step_id is None or not self.step_id.strip():
-                raise ValueError("READY/SKIP scheduling decision requires step_id")
+                raise ValueError(
+                    "scheduling decision action requires step_id"
+                )
         elif self.step_id is not None:
-            raise ValueError("WAIT/COMPLETE scheduling decision cannot carry step_id")
+            raise ValueError(
+                "WAIT/COMPLETE scheduling decision cannot carry step_id"
+            )
 
 
 class StepEligibilityStatus(str, Enum):
@@ -200,8 +212,10 @@ class SequentialStepScheduler:
         self,
         *,
         eligibility_evaluator: StepEligibilityEvaluator | None = None,
+        failure_resolver: FailureDirectiveResolver | None = None,
     ) -> None:
         self._eligibility_evaluator = eligibility_evaluator
+        self._failure_resolver = failure_resolver or FailureDirectiveResolver()
 
     def next(
         self,
@@ -225,6 +239,39 @@ class SequentialStepScheduler:
             )
 
         snapshots = {item.step_id: item for item in prepared.steps}
+        latest_terminal_step: ActionStep | None = None
+        latest_terminal_status: StepExecutionStatus | None = None
+        for step in approved_plan.steps:
+            status = snapshots[step.step_id].status
+            if status is StepExecutionStatus.PENDING:
+                break
+            if status is StepExecutionStatus.RUNNING:
+                break
+            latest_terminal_step = step
+            latest_terminal_status = status
+
+        if (
+            latest_terminal_step is not None
+            and latest_terminal_status
+            in FailureDirectiveResolver._FAILURE_STATUSES
+        ):
+            failure = self._failure_resolver.resolve(
+                latest_terminal_step,
+                latest_terminal_status,
+                prepared,
+            )
+            if failure.directive is StepFailureDirective.STOP_PLAN:
+                return StepScheduleDecision(
+                    action=StepScheduleAction.STOP_PLAN,
+                    step_id=latest_terminal_step.step_id,
+                    reason_codes=failure.reason_codes,
+                )
+            if failure.directive is StepFailureDirective.RUN_FALLBACK:
+                return StepScheduleDecision(
+                    action=StepScheduleAction.RUN_FALLBACK,
+                    step_id=latest_terminal_step.step_id,
+                    reason_codes=failure.reason_codes,
+                )
         for step in approved_plan.steps:
             snapshot = snapshots[step.step_id]
             if snapshot.status is not StepExecutionStatus.PENDING:
@@ -299,3 +346,13 @@ class SequentialStepScheduler:
             raise ValueError(
                 "prepared steps must preserve approved plan order/action exactly"
             )
+
+        pending_seen = False
+        for snapshot in prepared.steps:
+            if snapshot.status is StepExecutionStatus.PENDING:
+                pending_seen = True
+                continue
+            if pending_seen and snapshot.status is not StepExecutionStatus.RUNNING:
+                raise ValueError(
+                    "sequential lifecycle cannot contain terminal step after PENDING"
+                )

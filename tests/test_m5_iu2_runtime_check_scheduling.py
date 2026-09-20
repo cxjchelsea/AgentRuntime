@@ -146,6 +146,26 @@ def _running_execution(plan=None):
     return approved_plan, running, service, store
 
 
+def _finished_single_step(plan, status: StepExecutionStatus):
+    approved_plan, running, service, store = _running_execution(plan)
+    step_running = asyncio.run(
+        service.start_step(
+            running,
+            step_id=approved_plan.steps[0].step_id,
+            at=FIXED_TIME + timedelta(seconds=1),
+        )
+    )
+    finished = asyncio.run(
+        service.finish_step(
+            step_running,
+            step_id=approved_plan.steps[0].step_id,
+            status=status,
+            at=FIXED_TIME + timedelta(seconds=2),
+        )
+    )
+    return approved_plan, finished, service, store
+
+
 def _allowed_facts() -> RuntimeExecutionFacts:
     return RuntimeExecutionFacts(
         session_active=True,
@@ -412,40 +432,51 @@ def test_scheduler_applies_injected_simple_eligibility_without_reordering() -> N
 
 
 def test_failure_resolver_defaults_optional_failure_to_continue() -> None:
-    plan, running, _, _ = _running_execution()
+    plan = build_approved_action_plan()
     optional = plan.steps[0].model_copy(
         update={"optional": True, "on_failure": None}
+    )
+    plan = plan.model_copy(update={"steps": [optional]})
+    _, failed, _, _ = _finished_single_step(
+        plan,
+        StepExecutionStatus.FAILED,
     )
 
     decision = FailureDirectiveResolver().resolve(
         optional,
         StepExecutionStatus.FAILED,
-        running,
+        failed,
     )
 
     assert decision.directive is StepFailureDirective.CONTINUE
 
 
 def test_failure_resolver_defaults_required_failure_to_stop() -> None:
-    plan, running, _, _ = _running_execution()
+    plan = build_approved_action_plan()
     required = plan.steps[0].model_copy(
         update={"optional": False, "on_failure": None}
+    )
+    plan = plan.model_copy(update={"steps": [required]})
+    _, failed, _, _ = _finished_single_step(
+        plan,
+        StepExecutionStatus.FAILED,
     )
 
     decision = FailureDirectiveResolver().resolve(
         required,
         StepExecutionStatus.FAILED,
-        running,
+        failed,
     )
 
     assert decision.directive is StepFailureDirective.STOP_PLAN
 
 
 def test_failure_resolver_does_not_continue_cancelled_or_preempted_step() -> None:
-    plan, running, _, _ = _running_execution()
-    optional = plan.steps[0].model_copy(
+    base_plan = build_approved_action_plan()
+    optional = base_plan.steps[0].model_copy(
         update={"optional": True, "on_failure": "CONTINUE_IF_SAFE"}
     )
+    plan = base_plan.model_copy(update={"steps": [optional]})
     evaluator = StaticContinueIfSafeEvaluator(allowed=True)
     resolver = FailureDirectiveResolver(
         continue_if_safe_evaluator=evaluator
@@ -455,27 +486,33 @@ def test_failure_resolver_does_not_continue_cancelled_or_preempted_step() -> Non
         StepExecutionStatus.CANCELLED,
         StepExecutionStatus.PREEMPTED,
     ):
-        decision = resolver.resolve(optional, status, running)
+        _, finished, _, _ = _finished_single_step(plan, status)
+        decision = resolver.resolve(optional, status, finished)
         assert decision.directive is StepFailureDirective.STOP_PLAN
 
 
 def test_continue_if_safe_requires_explicit_evaluator_and_fails_closed() -> None:
-    plan, running, _, _ = _running_execution()
+    plan = build_approved_action_plan()
     step = plan.steps[0].model_copy(
         update={"optional": True, "on_failure": "CONTINUE_IF_SAFE"}
+    )
+    plan = plan.model_copy(update={"steps": [step]})
+    _, failed, _, _ = _finished_single_step(
+        plan,
+        StepExecutionStatus.FAILED,
     )
 
     unresolved = FailureDirectiveResolver().resolve(
         step,
         StepExecutionStatus.FAILED,
-        running,
+        failed,
     )
     denied = FailureDirectiveResolver(
         continue_if_safe_evaluator=StaticContinueIfSafeEvaluator(False)
-    ).resolve(step, StepExecutionStatus.FAILED, running)
+    ).resolve(step, StepExecutionStatus.FAILED, failed)
     allowed = FailureDirectiveResolver(
         continue_if_safe_evaluator=StaticContinueIfSafeEvaluator(True)
-    ).resolve(step, StepExecutionStatus.FAILED, running)
+    ).resolve(step, StepExecutionStatus.FAILED, failed)
 
     assert unresolved.directive is StepFailureDirective.STOP_PLAN
     assert denied.directive is StepFailureDirective.STOP_PLAN
@@ -483,15 +520,20 @@ def test_continue_if_safe_requires_explicit_evaluator_and_fails_closed() -> None
 
 
 def test_failure_resolver_surfaces_fallback_without_executing_it() -> None:
-    plan, running, _, _ = _running_execution()
+    plan = build_approved_action_plan()
     step = plan.steps[0].model_copy(
         update={"on_failure": "RUN_FALLBACK"}
+    )
+    plan = plan.model_copy(update={"steps": [step]})
+    _, failed, _, _ = _finished_single_step(
+        plan,
+        StepExecutionStatus.FAILED,
     )
 
     decision = FailureDirectiveResolver().resolve(
         step,
         StepExecutionStatus.FAILED,
-        running,
+        failed,
     )
 
     assert decision.directive is StepFailureDirective.RUN_FALLBACK

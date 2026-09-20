@@ -187,3 +187,7 @@ class CapabilityContextError(RuntimePlanningIntegrationError):
 
 class PlanIdGenerationError(RuntimePlanningIntegrationError):
     """Raised when the concrete M4 Planner cannot obtain a valid plan_id."""
+
+
+class SelectedActionResolutionError(RuntimePlanningIntegrationError):
+    """Raised when IU8 cannot resolve a non-empty legal action sequence."""

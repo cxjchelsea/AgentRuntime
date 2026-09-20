@@ -147,3 +147,15 @@ class ConfirmationPlanningError(ExecutionPreplanningError):
 
 class FallbackPlanningError(ExecutionPreplanningError):
     """Raised when fallback planning is invalid or unsafe."""
+
+
+class DraftAssemblyError(PlanningError):
+    """Raised when M4-IU6 cannot assemble a valid ActionPlanDraft shape."""
+
+
+class ResponseStrategyPlanningError(DraftAssemblyError):
+    """Raised when response-strategy planning is conflicting or malformed."""
+
+
+class PlanValidationError(PlanningError):
+    """Raised when ActionPlanDraft fails structural/registry/capability validation."""

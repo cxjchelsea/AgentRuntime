@@ -24,7 +24,6 @@ from runtime.planning import (
     M4PolicySurfaceAuditor,
     PlanApprovalCoordinator,
     PlanValidationResult,
-    PolicyApprovalRule,
     PolicySurfaceViolationError,
 )
 from runtime.policy_enforcement import (

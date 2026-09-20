@@ -10,7 +10,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from runtime.contracts import (
     ActionPlanDraft,
@@ -35,6 +35,7 @@ from runtime.planning.draft_validation import (
 from runtime.planning.errors import (
     CapabilityContextError,
     PlanIdGenerationError,
+    SelectedActionResolutionError,
     ValidationReceiptError,
 )
 from runtime.planning.execution_preplanning import ExecutionPreplanner
@@ -45,8 +46,11 @@ from runtime.planning.knowledge_planning import (
 )
 from runtime.planning.policy_approval import PlanApprovalCoordinator
 from runtime.planning.routing import PlanningModeRouter
-from runtime.planning.strategy_selection import HybridStrategySelector
-from runtime.registries import CapabilityRegistry
+from runtime.planning.strategy_selection import (
+    HybridStrategySelector,
+    StrategySelectionResult,
+)
+from runtime.registries import CapabilityRegistry, StrategyRegistry
 
 
 class CapabilityIdResolver:
@@ -69,6 +73,71 @@ class CapabilityIdResolver:
         return frozenset(seen)
 
 
+class SelectedActionResolver:
+    """Resolve the executable action list after strategy selection.
+
+    IU3 may legally select a single strategy without explicitly listing action IDs.
+    IU8 closes that integration gap by projecting registered strategy defaults and
+    M2 forced_action into the final selected action sequence. A zero-action plan is
+    rejected; WAIT/SILENCE behavior must be represented by an explicit registered
+    Action rather than by an empty executable plan.
+    """
+
+    def __init__(self, strategy_registry: StrategyRegistry) -> None:
+        self._strategy_registry = strategy_registry
+
+    def resolve(
+        self,
+        strategy: StrategySelectionResult,
+        *,
+        candidate_action_ids: frozenset[str],
+        policy_decision: PolicyDecision,
+    ) -> StrategySelectionResult:
+        selected = list(strategy.selected_action_ids)
+
+        if not selected:
+            definition = self._get_enabled_strategy(
+                strategy.strategy.strategy_id
+            )
+            selected.extend(definition.default_actions)
+
+        forced_action = policy_decision.forced_action
+        if forced_action is not None and forced_action not in selected:
+            selected.insert(0, forced_action)
+
+        if not selected:
+            raise SelectedActionResolutionError(
+                "strategy resolved to zero actions; explicit Action is required"
+            )
+        if len(set(selected)) != len(selected):
+            raise SelectedActionResolutionError(
+                "resolved action sequence contains duplicates"
+            )
+        if not set(selected) <= candidate_action_ids:
+            raise SelectedActionResolutionError(
+                "resolved action sequence exceeds legal candidate space"
+            )
+
+        return replace(
+            strategy,
+            selected_action_ids=tuple(selected),
+        )
+
+    def _get_enabled_strategy(self, strategy_id: str):
+        matches = [
+            record.definition
+            for record in self._strategy_registry.list()
+            if record.enabled
+            and record.definition.enabled
+            and record.definition.strategy_id == strategy_id
+        ]
+        if len(matches) != 1:
+            raise SelectedActionResolutionError(
+                "selected strategy must resolve to exactly one enabled version"
+            )
+        return matches[0]
+
+
 class DefaultM4Planner(Planner):
     """Concrete M4 planner composed from the already-verified IU2-IU6 units."""
 
@@ -79,6 +148,7 @@ class DefaultM4Planner(Planner):
         goal_resolver: GoalResolver,
         candidate_builder: LegalActionCandidateBuilder,
         strategy_selector: HybridStrategySelector,
+        selected_action_resolver: SelectedActionResolver,
         knowledge_planner: KnowledgePlanner,
         execution_preplanner: ExecutionPreplanner,
         response_strategy_builder: ResponseStrategyBuilder,
@@ -91,6 +161,7 @@ class DefaultM4Planner(Planner):
         self._goal_resolver = goal_resolver
         self._candidate_builder = candidate_builder
         self._strategy_selector = strategy_selector
+        self._selected_action_resolver = selected_action_resolver
         self._knowledge_planner = knowledge_planner
         self._execution_preplanner = execution_preplanner
         self._response_strategy_builder = response_strategy_builder
@@ -133,6 +204,13 @@ class DefaultM4Planner(Planner):
             candidates=candidates,
             policy_decision=policy_decision,
             available_capability_ids=available_capability_ids,
+        )
+        strategy = self._selected_action_resolver.resolve(
+            strategy,
+            candidate_action_ids=frozenset(
+                candidate.action for candidate in candidates
+            ),
+            policy_decision=policy_decision,
         )
 
         knowledge = await self._knowledge_planner.plan(

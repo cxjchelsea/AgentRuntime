@@ -146,6 +146,7 @@ class LegalActionCandidateBuilder:
         definitions = self._enabled_action_definitions()
 
         contributions: list[CandidateContribution] = []
+        contributions.extend(self._from_policy_forced(policy_decision))
         contributions.extend(self._from_m3(understanding_state))
         contributions.extend(self._from_strategy_defaults())
 
@@ -223,6 +224,26 @@ class LegalActionCandidateBuilder:
                 )
             output[definition.action_id] = definition
         return output
+
+    @staticmethod
+    def _from_policy_forced(
+        policy_decision: PolicyDecision,
+    ) -> tuple[CandidateContribution, ...]:
+        forced_action = policy_decision.forced_action
+        if forced_action is None:
+            return ()
+        if not forced_action.strip():
+            raise InvalidActionCandidateError(
+                "PolicyDecision.forced_action must not be blank"
+            )
+        return (
+            CandidateContribution(
+                action=forced_action,
+                source_code="POLICY_FORCED_ACTION",
+                goal_fit=1.0,
+                confidence=1.0,
+            ),
+        )
 
     def _from_strategy_defaults(self) -> tuple[CandidateContribution, ...]:
         output: list[CandidateContribution] = []

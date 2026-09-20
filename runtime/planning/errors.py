@@ -171,3 +171,23 @@ class PolicySurfaceViolationError(PolicyApprovalIntegrationError):
 
 class ApprovalIntegrityError(PolicyApprovalIntegrationError):
     """Raised when the approved plan drifts from the validated Draft."""
+
+
+class RuntimePlanningIntegrationError(PlanningError):
+    """Base error for M4-IU8 runtime integration."""
+
+
+class ValidationReceiptError(RuntimePlanningIntegrationError):
+    """Raised when PLAN_VALIDATE -> POLICY_RECHECK validation continuity breaks."""
+
+
+class CapabilityContextError(RuntimePlanningIntegrationError):
+    """Raised when runtime capability IDs are ambiguous or invalid."""
+
+
+class PlanIdGenerationError(RuntimePlanningIntegrationError):
+    """Raised when the concrete M4 Planner cannot obtain a valid plan_id."""
+
+
+class SelectedActionResolutionError(RuntimePlanningIntegrationError):
+    """Raised when IU8 cannot resolve a non-empty legal action sequence."""

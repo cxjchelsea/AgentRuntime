@@ -29,9 +29,7 @@ def project_workflow_authority(
     approved_plan: ApprovedActionPlan,
 ) -> ApprovedWorkflowAuthority:
     workflow_ids = frozenset(
-        step.workflow_id
-        for step in approved_plan.steps
-        if step.workflow_id is not None
+        step.workflow_id for step in approved_plan.steps if step.workflow_id is not None
     )
     forced_workflow = approved_plan.policy_snapshot.get("forced_workflow")
     if forced_workflow is not None and not isinstance(forced_workflow, str):
@@ -39,13 +37,9 @@ def project_workflow_authority(
 
     if forced_workflow is not None:
         if forced_workflow not in workflow_ids:
-            raise ValueError(
-                "approved plan lost the M2 forced_workflow reference"
-            )
+            raise ValueError("approved plan lost the M2 forced_workflow reference")
         if workflow_ids - {forced_workflow}:
-            raise ValueError(
-                "approved plan contains workflow outside forced_workflow"
-            )
+            raise ValueError("approved plan contains workflow outside forced_workflow")
 
     return ApprovedWorkflowAuthority(
         approved_workflow_ids=workflow_ids,

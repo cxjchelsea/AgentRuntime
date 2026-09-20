@@ -98,9 +98,7 @@ class ExecutionImplementationResolver:
         label: str,
     ) -> RegistryRecord[DefinitionT]:
         if not item_id.strip():
-            raise ExecutionRegistryResolutionError(
-                f"{label} id must not be blank"
-            )
+            raise ExecutionRegistryResolutionError(f"{label} id must not be blank")
 
         matches = [
             record

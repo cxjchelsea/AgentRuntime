@@ -37,9 +37,7 @@ class ExecutionPermissionContext:
         if not self.execution_id.strip() or not self.identity_scope.strip():
             raise ValueError("execution_id and identity_scope must not be blank")
         if self.granted_permissions & self.denied_permissions:
-            raise ValueError(
-                "one permission cannot be both granted and denied"
-            )
+            raise ValueError("one permission cannot be both granted and denied")
         if any(not value.strip() for value in self.granted_permissions):
             raise ValueError("granted_permissions must not contain blank values")
         if any(not value.strip() for value in self.denied_permissions):
@@ -60,13 +58,8 @@ class PermissionDecision:
         ):
             raise ValueError("reason_codes must contain non-blank values")
         if any(not value.strip() for value in self.missing_permissions):
-            raise ValueError(
-                "missing_permissions must not contain blank values"
-            )
-        if (
-            self.status is PermissionDecisionStatus.ALLOWED
-            and self.missing_permissions
-        ):
+            raise ValueError("missing_permissions must not contain blank values")
+        if self.status is PermissionDecisionStatus.ALLOWED and self.missing_permissions:
             raise ValueError(
                 "ALLOWED permission decision cannot carry missing_permissions"
             )

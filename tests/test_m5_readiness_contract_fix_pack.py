@@ -188,7 +188,9 @@ def test_registry_metadata_can_express_checkpoint_recovery_and_locks() -> None:
     assert tool.resource_locks == ["shared-resource"]
 
 
-def test_runtime_checkable_execution_protocols_accept_matching_implementations() -> None:
+def test_runtime_checkable_execution_protocols_accept_matching_implementations() -> (
+    None
+):
     assert isinstance(GoodTool(), ToolImplementation)
     assert isinstance(GoodSkill(), SkillImplementation)
     assert isinstance(GoodWorkflow(), WorkflowImplementation)
@@ -338,8 +340,6 @@ def test_execution_store_protocols_freeze_required_method_surface() -> None:
     assert "get_signal" in ExecutionControlSignalSource.__dict__
 
 
-
-
 def test_execution_permission_context_distinguishes_current_permission_facts() -> None:
     context = ExecutionPermissionContext(
         execution_id="execution-001",
@@ -416,9 +416,6 @@ def test_permission_decision_supports_unknown_without_replanning() -> None:
     assert decision.status is PermissionDecisionStatus.UNKNOWN
 
 
-
-
-
 def test_allowed_permission_decision_cannot_carry_missing_permissions() -> None:
     with pytest.raises(ValueError, match="ALLOWED"):
         PermissionDecision(
@@ -427,13 +424,16 @@ def test_allowed_permission_decision_cannot_carry_missing_permissions() -> None:
             missing_permissions=("TOOL_USE",),
         )
 
-def test_workflow_authority_comes_from_approved_plan_and_existing_forced_workflow() -> None:
+
+def test_workflow_authority_comes_from_approved_plan_and_existing_forced_workflow() -> (
+    None
+):
     plan = build_approved_action_plan().model_copy(
         update={
             "steps": [
-                build_approved_action_plan().steps[0].model_copy(
-                    update={"workflow_id": "WF_FORCED"}
-                )
+                build_approved_action_plan()
+                .steps[0]
+                .model_copy(update={"workflow_id": "WF_FORCED"})
             ],
             "policy_snapshot": {
                 "allowed": True,
@@ -460,9 +460,9 @@ def test_workflow_authority_does_not_expect_generic_allowed_workflows() -> None:
     plan = build_approved_action_plan().model_copy(
         update={
             "steps": [
-                build_approved_action_plan().steps[0].model_copy(
-                    update={"workflow_id": "WF_A"}
-                )
+                build_approved_action_plan()
+                .steps[0]
+                .model_copy(update={"workflow_id": "WF_A"})
             ],
             "policy_snapshot": {"allowed": True},
         }
@@ -474,13 +474,15 @@ def test_workflow_authority_does_not_expect_generic_allowed_workflows() -> None:
     assert authority.forced_workflow is None
 
 
-def test_workflow_authority_rejects_plan_that_violates_forced_workflow_snapshot() -> None:
+def test_workflow_authority_rejects_plan_that_violates_forced_workflow_snapshot() -> (
+    None
+):
     plan = build_approved_action_plan().model_copy(
         update={
             "steps": [
-                build_approved_action_plan().steps[0].model_copy(
-                    update={"workflow_id": "WF_OTHER"}
-                )
+                build_approved_action_plan()
+                .steps[0]
+                .model_copy(update={"workflow_id": "WF_OTHER"})
             ],
             "policy_snapshot": {
                 "allowed": True,

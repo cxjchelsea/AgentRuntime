@@ -229,7 +229,7 @@ class ExecutionContextBuilder:
             step_state=step_state,
             tool_context=tool_context,
             deadline=deadline,
-            cancellation_token=None,
+            cancellation_token=execution_id,
             trace_context=trace_context,
         )
 

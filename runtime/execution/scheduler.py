@@ -80,9 +80,12 @@ class StepScheduleDecision:
             raise ValueError("reason_codes must not be empty")
         if any(not reason.strip() for reason in self.reason_codes):
             raise ValueError("reason_codes must not contain blank values")
-        if self.status in {StepScheduleStatus.READY, StepScheduleStatus.SKIP}:
-            if self.step_id is None or not self.step_id.strip():
-                raise ValueError("READY/SKIP schedule decision requires step_id")
+        # READY/SKIP 必须指向具体 Approved Step，不能只给状态
+        if self.status in {
+            StepScheduleStatus.READY,
+            StepScheduleStatus.SKIP,
+        } and (self.step_id is None or not self.step_id.strip()):
+            raise ValueError("READY/SKIP schedule decision requires step_id")
 
 
 class SequentialStepScheduler:
@@ -108,9 +111,7 @@ class SequentialStepScheduler:
         *,
         condition_evaluator: StepConditionEvaluator | None = None,
     ) -> None:
-        self._condition_evaluator = (
-            condition_evaluator or NoopStepConditionEvaluator()
-        )
+        self._condition_evaluator = condition_evaluator or NoopStepConditionEvaluator()
 
     async def next_step(
         self,
@@ -236,7 +237,9 @@ class SequentialStepScheduler:
         prepared: PreparedExecution,
     ) -> None:
         if prepared.execution_record.plan_id != approved_plan.plan_id:
-            raise ValueError("PreparedExecution plan_id does not match ApprovedActionPlan")
+            raise ValueError(
+                "PreparedExecution plan_id does not match ApprovedActionPlan"
+            )
         if prepared.execution_record.request_id != approved_plan.request_id:
             raise ValueError(
                 "PreparedExecution request_id does not match ApprovedActionPlan"

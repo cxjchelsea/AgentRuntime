@@ -187,7 +187,9 @@ def test_runtime_execution_check_allows_only_after_all_runtime_facts_pass() -> N
     assert decision.reason_codes == ("RUNTIME_EXECUTION_ALLOWED",)
 
 
-def test_cancel_signal_preempts_other_runtime_checks_without_redeciding_priority() -> None:
+def test_cancel_signal_preempts_other_runtime_checks_without_redeciding_priority() -> (
+    None
+):
     plan, prepared = _prepared()
     checker, snapshot_provider = _runtime_checker(
         signal=ExecutionControlSignal(
@@ -503,7 +505,9 @@ def test_scheduler_blocks_after_required_previous_step_failure() -> None:
     assert decision.reason_codes == ("REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL",)
 
 
-def test_optional_previous_step_failure_may_continue_when_no_dependency_requires_it() -> None:
+def test_optional_previous_step_failure_may_continue_when_no_dependency_requires_it() -> (
+    None
+):
     plan = _two_step_plan(first_optional=True, dependency=False)
     _, prepared = _prepared(plan)
     first_done = _finish_first_step(
@@ -523,7 +527,9 @@ def test_optional_previous_step_failure_may_continue_when_no_dependency_requires
     assert decision.step_id == "step-002"
 
 
-def test_scheduler_uses_injected_simple_condition_without_parsing_business_rules() -> None:
+def test_scheduler_uses_injected_simple_condition_without_parsing_business_rules() -> (
+    None
+):
     plan, prepared = _running_prepared()
     scheduler = SequentialStepScheduler(
         condition_evaluator=StaticConditionEvaluator(

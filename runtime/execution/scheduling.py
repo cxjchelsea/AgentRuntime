@@ -41,6 +41,33 @@ class StepScheduleDecision:
             raise ValueError("WAIT/COMPLETE scheduling decision cannot carry step_id")
 
 
+class StepEligibilityStatus(str, Enum):
+    ALLOW = "ALLOW"
+    WAIT = "WAIT"
+    SKIP = "SKIP"
+
+
+@dataclass(frozen=True, slots=True)
+class StepEligibilityDecision:
+    status: StepEligibilityStatus
+    reason_codes: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
+            raise ValueError("reason_codes must contain non-blank values")
+
+
+class StepEligibilityEvaluator(Protocol):
+    def evaluate(
+        self,
+        step: ActionStep,
+        prepared: PreparedExecution,
+    ) -> StepEligibilityDecision:
+        """Resolve simple injected run conditions for the current approved step."""
+
+
 class StepFailureDirective(str, Enum):
     CONTINUE = "CONTINUE"
     STOP_PLAN = "STOP_PLAN"
@@ -154,6 +181,13 @@ class FailureDirectiveResolver:
 class SequentialStepScheduler:
     """Deterministic approved-order scheduler for the M5 first-version baseline."""
 
+    def __init__(
+        self,
+        *,
+        eligibility_evaluator: StepEligibilityEvaluator | None = None,
+    ) -> None:
+        self._eligibility_evaluator = eligibility_evaluator
+
     def next(
         self,
         approved_plan: ApprovedActionPlan,
@@ -203,6 +237,23 @@ class SequentialStepScheduler:
                     step_id=step.step_id,
                     reason_codes=("DEPENDENCY_NOT_SUCCESSFUL",),
                 )
+
+            if self._eligibility_evaluator is not None:
+                eligibility = self._eligibility_evaluator.evaluate(
+                    step,
+                    prepared,
+                )
+                if eligibility.status is StepEligibilityStatus.WAIT:
+                    return StepScheduleDecision(
+                        action=StepScheduleAction.WAIT,
+                        reason_codes=eligibility.reason_codes,
+                    )
+                if eligibility.status is StepEligibilityStatus.SKIP:
+                    return StepScheduleDecision(
+                        action=StepScheduleAction.SKIP,
+                        step_id=step.step_id,
+                        reason_codes=eligibility.reason_codes,
+                    )
 
             return StepScheduleDecision(
                 action=StepScheduleAction.READY,

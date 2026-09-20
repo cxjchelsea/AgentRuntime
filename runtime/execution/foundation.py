@@ -211,8 +211,9 @@ class ExecutionContextBuilder:
 
         step_state = {
             step.step_id: {
-                "status": StepExecutionStatus.PENDING.value,
                 "action": step.action,
+                "skill_id": step.skill_id,
+                "workflow_id": step.workflow_id,
             }
             for step in approved_plan.steps
         }
@@ -493,6 +494,92 @@ class ExecutionLifecycleManager:
         )
 
 
+class ExecutionLifecycleService:
+    """Persist every authoritative lifecycle transition.
+
+    ExecutionLifecycleManager remains a pure transition engine. This service is the
+    M5-IU1 mutation boundary: callers that change execution/step lifecycle state must
+    go through it so ExecutionStateStore remains aligned with PreparedExecution.
+    """
+
+    def __init__(
+        self,
+        *,
+        lifecycle_manager: ExecutionLifecycleManager,
+        execution_store: ExecutionStateStore,
+    ) -> None:
+        self._lifecycle_manager = lifecycle_manager
+        self._execution_store = execution_store
+
+    async def start_execution(
+        self,
+        prepared: PreparedExecution,
+        *,
+        at: datetime,
+    ) -> PreparedExecution:
+        updated = self._lifecycle_manager.start_execution(prepared, at=at)
+        await self._persist(updated)
+        return updated
+
+    async def start_step(
+        self,
+        prepared: PreparedExecution,
+        *,
+        step_id: str,
+        at: datetime,
+    ) -> PreparedExecution:
+        updated = self._lifecycle_manager.start_step(
+            prepared,
+            step_id=step_id,
+            at=at,
+        )
+        await self._persist(updated)
+        return updated
+
+    async def finish_step(
+        self,
+        prepared: PreparedExecution,
+        *,
+        step_id: str,
+        status: StepExecutionStatus,
+        at: datetime,
+        output: dict[str, Any] | None = None,
+        error: str | None = None,
+        tool_call_ids: tuple[str, ...] = (),
+        retry_count: int | None = None,
+    ) -> PreparedExecution:
+        updated = self._lifecycle_manager.finish_step(
+            prepared,
+            step_id=step_id,
+            status=status,
+            at=at,
+            output=output,
+            error=error,
+            tool_call_ids=tool_call_ids,
+            retry_count=retry_count,
+        )
+        await self._persist(updated)
+        return updated
+
+    async def finish_execution(
+        self,
+        prepared: PreparedExecution,
+        *,
+        status: ExecutionPlanStatus,
+        at: datetime,
+    ) -> PreparedExecution:
+        updated = self._lifecycle_manager.finish_execution(
+            prepared,
+            status=status,
+            at=at,
+        )
+        await self._persist(updated)
+        return updated
+
+    async def _persist(self, prepared: PreparedExecution) -> None:
+        await self._execution_store.save(prepared.execution_record)
+
+
 class ExecutionResultProjector:
     """Project terminal M5 observations into the existing Canonical ExecutionResult."""
 
@@ -609,6 +696,15 @@ class InMemoryExecutionStateStore:
         ):
             raise ExecutionLifecycleError(
                 "execution_id cannot be rebound to another plan/request/identity scope"
+            )
+        if (
+            existing is not None
+            and existing.updated_at is not None
+            and record.updated_at is not None
+            and record.updated_at < existing.updated_at
+        ):
+            raise ExecutionLifecycleError(
+                "execution observation cannot move backward in time"
             )
         self._records[record.execution_id] = record
 

@@ -468,7 +468,7 @@ class ToolPlanner:
                     tool_id=tool_id,
                     required=tool_id in required_set,
                     required_by_skills=tuple(
-                        dict.fromkeys(required_by.get(tool_id, ()))
+                        dict.fromkeys(required_by.get(tool_id, []))
                     ),
                     timeout_policy=definition.timeout_policy,
                     retry_policy=definition.retry_policy,

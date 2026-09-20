@@ -103,6 +103,15 @@ class PreparedExecution:
     execution_context: ExecutionContext
     execution_record: ExecutionRecord
     steps: tuple[StepLifecycleSnapshot, ...]
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class ExecutionCreationStore(ExecutionStateStore, Protocol):
+    """IU1 requires atomic creation in addition to the readiness store surface."""
+
+    async def create(self, record: ExecutionRecord) -> bool:
+        """Atomically create one execution; return False when execution_id exists."""
 
 
 class ApprovedPlanExecutionValidator:
@@ -316,8 +325,16 @@ class ExecutionLifecycleManager:
     ) -> PreparedExecution:
         if prepared.execution_record.status != "CREATED":
             raise ExecutionLifecycleError("only CREATED execution can start")
+        if (
+            prepared.execution_record.created_at is not None
+            and at < prepared.execution_record.created_at
+        ):
+            raise ExecutionLifecycleError(
+                "execution cannot start before creation time"
+            )
         return replace(
             prepared,
+            started_at=at,
             execution_record=replace(
                 prepared.execution_record,
                 status="RUNNING",
@@ -344,12 +361,13 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError(
                 "IU1 sequential baseline allows only one RUNNING step"
             )
-        if (
-            prepared.execution_record.created_at is not None
-            and at < prepared.execution_record.created_at
-        ):
+        if prepared.started_at is None:
             raise ExecutionLifecycleError(
-                "step cannot start before execution creation time"
+                "step requires execution started_at"
+            )
+        if at < prepared.started_at:
+            raise ExecutionLifecycleError(
+                "step cannot start before execution start time"
             )
 
         steps = tuple(
@@ -438,8 +456,17 @@ class ExecutionLifecycleManager:
         value = status.value
         if value not in self._TERMINAL_EXECUTION_STATUSES:
             raise ExecutionLifecycleError("execution terminal status is unsupported")
+        if prepared.started_at is None:
+            raise ExecutionLifecycleError(
+                "terminal execution requires started_at"
+            )
+        if at < prepared.started_at:
+            raise ExecutionLifecycleError(
+                "execution cannot finish before it starts"
+            )
         return replace(
             prepared,
+            finished_at=at,
             execution_record=replace(
                 prepared.execution_record,
                 status=value,
@@ -525,8 +552,8 @@ class ExecutionResultProjector:
                 for item in prepared.steps
             ],
             timing=ExecutionTiming(
-                started_at=prepared.execution_record.created_at,
-                finished_at=prepared.execution_record.updated_at,
+                started_at=prepared.started_at,
+                finished_at=prepared.finished_at,
             ),
             skill_results=None,
             workflow_result=None,
@@ -549,7 +576,7 @@ class ExecutionFoundation:
         plan_validator: ApprovedPlanExecutionValidator,
         context_builder: ExecutionContextBuilder,
         record_factory: ExecutionRecordFactory,
-        execution_store: ExecutionStateStore,
+        execution_store: ExecutionCreationStore,
     ) -> None:
         self._plan_validator = plan_validator
         self._context_builder = context_builder
@@ -570,14 +597,13 @@ class ExecutionFoundation:
             approved_plan,
             execution_context,
         )
-        existing = await self._execution_store.load(
-            prepared.execution_record.execution_id
+        created = await self._execution_store.create(
+            prepared.execution_record
         )
-        if existing is not None:
+        if not created:
             raise ExecutionLifecycleError(
                 "execution_id already exists in ExecutionStateStore"
             )
-        await self._execution_store.save(prepared.execution_record)
         return prepared
 
 
@@ -586,6 +612,12 @@ class InMemoryExecutionStateStore:
 
     def __init__(self) -> None:
         self._records: dict[str, ExecutionRecord] = {}
+
+    async def create(self, record: ExecutionRecord) -> bool:
+        if record.execution_id in self._records:
+            return False
+        self._records[record.execution_id] = record
+        return True
 
     async def save(self, record: ExecutionRecord) -> None:
         existing = self._records.get(record.execution_id)

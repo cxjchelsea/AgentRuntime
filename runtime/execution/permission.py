@@ -63,6 +63,13 @@ class PermissionDecision:
             raise ValueError(
                 "missing_permissions must not contain blank values"
             )
+        if (
+            self.status is PermissionDecisionStatus.ALLOWED
+            and self.missing_permissions
+        ):
+            raise ValueError(
+                "ALLOWED permission decision cannot carry missing_permissions"
+            )
 
 
 class ExecutionPermissionContextProvider(Protocol):

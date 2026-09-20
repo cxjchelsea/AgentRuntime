@@ -208,6 +208,30 @@ def test_execution_id_collision_fails_closed_before_overwrite() -> None:
     assert persisted.plan_id == plan.plan_id
 
 
+
+
+def test_execution_creation_is_atomic_for_duplicate_execution_id() -> None:
+    foundation, store = _foundation(execution_id="execution-atomic")
+    plan = build_approved_action_plan()
+    context = build_runtime_context()
+
+    async def run_both() -> tuple[object, object]:
+        results = await asyncio.gather(
+            foundation.initialize(plan, context),
+            foundation.initialize(plan, context),
+            return_exceptions=True,
+        )
+        return results[0], results[1]
+
+    first, second = asyncio.run(run_both())
+    outcomes = (first, second)
+
+    assert sum(not isinstance(item, Exception) for item in outcomes) == 1
+    assert sum(isinstance(item, ExecutionLifecycleError) for item in outcomes) == 1
+    persisted = asyncio.run(store.load("execution-atomic"))
+    assert persisted is not None
+    assert persisted.execution_id == "execution-atomic"
+
 def test_in_memory_store_does_not_rebind_execution_identity_scope() -> None:
     foundation, store = _foundation(execution_id="execution-scope")
     prepared = asyncio.run(
@@ -231,6 +255,40 @@ def test_in_memory_store_does_not_rebind_execution_identity_scope() -> None:
     with pytest.raises(ExecutionLifecycleError, match="rebound"):
         asyncio.run(store.save(rebound))
 
+
+
+
+def test_execution_start_time_is_distinct_from_record_creation_time() -> None:
+    foundation, _ = _foundation()
+    prepared = asyncio.run(
+        foundation.initialize(
+            build_approved_action_plan(),
+            build_runtime_context(),
+        )
+    )
+    lifecycle = ExecutionLifecycleManager()
+    start_time = FIXED_TIME + timedelta(seconds=5)
+
+    running = lifecycle.start_execution(prepared, at=start_time)
+
+    assert running.execution_record.created_at == FIXED_TIME
+    assert running.started_at == start_time
+
+
+def test_execution_cannot_start_before_creation_time() -> None:
+    foundation, _ = _foundation()
+    prepared = asyncio.run(
+        foundation.initialize(
+            build_approved_action_plan(),
+            build_runtime_context(),
+        )
+    )
+
+    with pytest.raises(ExecutionLifecycleError, match="before creation"):
+        ExecutionLifecycleManager().start_execution(
+            prepared,
+            at=FIXED_TIME - timedelta(seconds=1),
+        )
 
 def test_step_lifecycle_is_independent_and_deterministic() -> None:
     foundation, _ = _foundation()
@@ -350,6 +408,8 @@ def test_execution_result_projection_preserves_observation_not_business_truth() 
     result = ExecutionResultProjector().project(completed)
 
     assert result.plan_status is ExecutionPlanStatus.SUCCESS
+    assert result.timing.started_at == FIXED_TIME
+    assert result.timing.finished_at == FIXED_TIME + timedelta(seconds=3)
     assert result.step_results[0].status == "SUCCESS"
     assert result.step_results[0].output == {"tool_observation": "returned"}
     assert result.business_outputs is None

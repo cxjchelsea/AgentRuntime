@@ -12,6 +12,7 @@ from runtime.contracts import (
     KnowledgeRequirement,
     PolicyDecision,
     RetrievalMode,
+    RetrievalPlan,
     RuntimeContext,
     UnderstandingState,
 )
@@ -25,6 +26,7 @@ from runtime.planning import (
     KnowledgeNeedResolutionError,
     KnowledgeNeedResolver,
     KnowledgePlanner,
+    PlanningActionCandidate,
     QueryRewriteError,
     RetrievalPlanner,
     RetrievalPlanningError,
@@ -126,7 +128,7 @@ class StaticNeedRule:
         understanding_state: UnderstandingState,
         goals: GoalResolutionResult,
         strategy: StrategySelectionResult,
-        candidates: tuple[object, ...],
+        candidates: tuple[PlanningActionCandidate, ...],
         policy_decision: PolicyDecision,
     ) -> KnowledgeRequirement | None:
         del (
@@ -176,7 +178,7 @@ class StaticEvidenceRule:
     def plan(
         self,
         requirement: KnowledgeRequirement,
-        retrieval_plan: object,
+        retrieval_plan: RetrievalPlan,
     ) -> EvidenceRequirement | None:
         del requirement, retrieval_plan
         return self.requirement

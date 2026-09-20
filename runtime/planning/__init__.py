@@ -67,6 +67,16 @@ from runtime.planning.errors import (
     ToolPlanningError,
     ValidationReceiptError,
 )
+from runtime.planning.evaluation import (
+    M4EvalGate,
+    M4EvalReport,
+    M4EvalRunner,
+    M4GateSummary,
+    M4GateThresholds,
+    PlanningCaseEvaluator,
+    PlanningEvalCase,
+    PlanningEvalResult,
+)
 from runtime.planning.execution_preplanning import (
     CapabilityBinding,
     CapabilityBindingRule,
@@ -124,6 +134,7 @@ from runtime.planning.policy_approval import (
     PolicyApprovalResult,
     PolicyApprovalRule,
 )
+from runtime.planning.replan import ReplanEntryRequest
 from runtime.planning.routing import (
     PlanningModeRouter,
     PlanningModeRule,
@@ -212,6 +223,11 @@ __all__ = [
     "KnowledgePlanningError",
     "KnowledgePlanningResult",
     "LegalActionCandidateBuilder",
+    "M4EvalGate",
+    "M4EvalReport",
+    "M4EvalRunner",
+    "M4GateSummary",
+    "M4GateThresholds",
     "M4PolicySurfaceAuditor",
     "MemoryUsageDecision",
     "MemoryUsagePlanner",
@@ -226,7 +242,10 @@ __all__ = [
     "PlanValidator",
     "PlanningActionCandidate",
     "PlanningBlockedByPolicyError",
+    "PlanningCaseEvaluator",
     "PlanningError",
+    "PlanningEvalCase",
+    "PlanningEvalResult",
     "PlanningModeRouter",
     "PlanningModeRule",
     "PlanningModelContext",
@@ -242,6 +261,7 @@ __all__ = [
     "QueryRewriteRequest",
     "QueryRewriteSemanticValidator",
     "QuerySeedProvider",
+    "ReplanEntryRequest",
     "ResponseStrategyBuilder",
     "ResponseStrategyDecision",
     "ResponseStrategyPlanningError",

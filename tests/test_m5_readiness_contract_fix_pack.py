@@ -14,7 +14,12 @@ import runtime.execution.permission as permission_module
 import runtime.execution.protocols as protocols_module
 import runtime.execution.resolution as resolution_module
 import runtime.execution.stores as stores_module
-from runtime.contracts import ApprovedActionPlan, ExecutionResult, RuntimeContext
+from runtime.contracts import (
+    ApprovedActionPlan,
+    ExecutionResult,
+    PolicyDecision,
+    RuntimeContext,
+)
 from runtime.contracts.execution import ExecutionContext
 from runtime.execution import (
     ApprovedWorkflowAuthority,
@@ -442,6 +447,13 @@ def test_workflow_authority_comes_from_approved_plan_and_existing_forced_workflo
     assert isinstance(authority, ApprovedWorkflowAuthority)
     assert authority.approved_workflow_ids == frozenset({"WF_FORCED"})
     assert authority.forced_workflow == "WF_FORCED"
+
+
+def test_policy_decision_has_no_generic_workflow_allow_or_forbid_fields() -> None:
+    fields = PolicyDecision.model_fields
+
+    assert "allowed_workflows" not in fields
+    assert "forbidden_workflows" not in fields
 
 
 def test_workflow_authority_does_not_expect_generic_allowed_workflows() -> None:

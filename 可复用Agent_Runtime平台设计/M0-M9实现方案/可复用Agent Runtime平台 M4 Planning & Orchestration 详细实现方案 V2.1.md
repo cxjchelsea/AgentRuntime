@@ -150,11 +150,11 @@ Memory Usage Decision
 
 +
 
-Clarification Planning
+Clarification Eligibility Projection
 
 +
 
-Active Interaction Planning
+Active Interaction Eligibility Projection
 
 +
 

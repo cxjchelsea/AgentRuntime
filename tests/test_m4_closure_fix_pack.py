@@ -8,7 +8,6 @@ from dataclasses import dataclass, fields
 import pytest
 
 import runtime.planning.evaluation as evaluation_module
-
 from runtime.planning import (
     M4EvalGate,
     M4EvalRunner,
@@ -67,11 +66,7 @@ def test_eval_gate_fails_when_category_has_no_cases() -> None:
     )
 
     assert report.passed is False
-    missing = {
-        summary.gate
-        for summary in report.gates
-        if summary.total == 0
-    }
+    missing = {summary.gate for summary in report.gates if summary.total == 0}
     assert missing == {
         M4EvalGate.BEHAVIOR,
         M4EvalGate.MEMORY_TOOL,
@@ -104,9 +99,7 @@ def test_eval_thresholds_are_mechanism_config_not_business_labels() -> None:
 
     assert report.passed is True
     policy = next(
-        summary
-        for summary in report.gates
-        if summary.gate is M4EvalGate.POLICY
+        summary for summary in report.gates if summary.gate is M4EvalGate.POLICY
     )
     assert policy.pass_rate == 0.5
     assert policy.threshold == 0.5

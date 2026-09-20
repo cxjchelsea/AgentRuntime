@@ -119,3 +119,31 @@ class EvidenceRequirementPlanningError(KnowledgePlanningError):
 
 class EvidenceRequirementRuleExecutionError(EvidenceRequirementPlanningError):
     """Raised when an injected evidence-requirement rule fails."""
+
+
+class ExecutionPreplanningError(PlanningError):
+    """Base error for M4-IU5 execution-preplanning decisions."""
+
+
+class MemoryUsagePlanningError(ExecutionPreplanningError):
+    """Raised when memory-usage planning cannot be resolved safely."""
+
+
+class CapabilityPlanningError(ExecutionPreplanningError):
+    """Raised when selected actions cannot be mapped to legal capabilities."""
+
+
+class ToolPlanningError(ExecutionPreplanningError):
+    """Raised when required tools cannot be planned legally."""
+
+
+class SequencePlanningError(ExecutionPreplanningError):
+    """Raised when a valid action sequence cannot be constructed."""
+
+
+class ConfirmationPlanningError(ExecutionPreplanningError):
+    """Raised when confirmation requirements are inconsistent."""
+
+
+class FallbackPlanningError(ExecutionPreplanningError):
+    """Raised when fallback planning is invalid or unsafe."""

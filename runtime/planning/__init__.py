@@ -66,7 +66,8 @@ from runtime.planning.errors import (
     StrategySelectionError,
     ToolPlanningError,
     ValidationReceiptError,
-)from runtime.planning.execution_preplanning import (
+)
+from runtime.planning.execution_preplanning import (
     CapabilityBinding,
     CapabilityBindingRule,
     CapabilityPlanner,
@@ -123,6 +124,12 @@ from runtime.planning.policy_approval import (
     PolicyApprovalResult,
     PolicyApprovalRule,
 )
+from runtime.planning.routing import (
+    PlanningModeRouter,
+    PlanningModeRule,
+    PlanningRouteDecision,
+    PlanningRouteSignal,
+)
 from runtime.planning.runtime_integration import (
     CapabilityIdResolver,
     DefaultM4Planner,
@@ -131,12 +138,6 @@ from runtime.planning.runtime_integration import (
     SelectedActionResolver,
     ValidationReceipt,
     ValidationReceiptLedger,
-)
-from runtime.planning.routing import (
-    PlanningModeRouter,
-    PlanningModeRule,
-    PlanningRouteDecision,
-    PlanningRouteSignal,
 )
 from runtime.planning.strategy_selection import (
     HybridStrategySelector,

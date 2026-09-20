@@ -27,7 +27,9 @@ def test_m4_runtime_components_implement_frozen_planning_interfaces() -> None:
     assert issubclass(RuntimePolicyRecheckerAdapter, PolicyRechecker)
 
 
-def test_m4_runtime_integration_adds_no_new_runtime_stage_or_execution_dependency() -> None:
+def test_m4_runtime_integration_adds_no_new_runtime_stage_or_execution_dependency() -> (
+    None
+):
     source = inspect.getsource(runtime_integration_module)
     tree = ast.parse(source)
     imported_modules: set[str] = set()

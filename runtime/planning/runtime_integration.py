@@ -21,8 +21,10 @@ from runtime.contracts import (
 )
 from runtime.interfaces.planning import (
     Planner,
-    PlanValidator as PlanValidatorInterface,
     PolicyRechecker,
+)
+from runtime.interfaces.planning import (
+    PlanValidator as PlanValidatorInterface,
 )
 from runtime.planning.candidates import LegalActionCandidateBuilder
 from runtime.planning.draft_validation import (
@@ -100,9 +102,7 @@ class SelectedActionResolver:
         selected = list(strategy.selected_action_ids)
 
         if not selected:
-            definition = self._get_enabled_strategy(
-                strategy.strategy.strategy_id
-            )
+            definition = self._get_enabled_strategy(strategy.strategy.strategy_id)
             selected.extend(definition.default_actions)
 
         forced_action = policy_decision.forced_action
@@ -228,9 +228,8 @@ class DefaultM4Planner(Planner):
         )
 
         resolved_goals = (
-            ((goals.primary_goal,) if goals.primary_goal is not None else ())
-            + goals.secondary_goals
-        )
+            (goals.primary_goal,) if goals.primary_goal is not None else ()
+        ) + goals.secondary_goals
         completion_conditions = tuple(
             goal.completion_condition
             for goal in resolved_goals
@@ -316,9 +315,7 @@ class ValidationReceiptLedger:
                 "POLICY_RECHECK requires a prior PLAN_VALIDATE receipt"
             )
         if receipt.fingerprint != self.fingerprint(draft):
-            raise ValidationReceiptError(
-                "ActionPlanDraft changed after PLAN_VALIDATE"
-            )
+            raise ValidationReceiptError("ActionPlanDraft changed after PLAN_VALIDATE")
         return receipt
 
     def pending_count(self) -> int:

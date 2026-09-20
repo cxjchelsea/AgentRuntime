@@ -42,11 +42,11 @@ from runtime.planning import (
     KnowledgePlanner,
     LegalActionCandidateBuilder,
     MemoryUsagePlanner,
-    PlanningActionCandidate,
     PlanApprovalCoordinator,
+    PlanningActionCandidate,
+    PlanningModeRouter,
     PlanValidationContext,
     PlanValidator,
-    PlanningModeRouter,
     ResponseStrategyBuilder,
     RetrievalPlanner,
     RetrievalQueryBuilder,
@@ -92,7 +92,6 @@ from tests.orchestration_stubs import (
     build_runtime_input,
     build_understanding_state,
 )
-
 
 DOMAIN_ACTION = "DOMAIN_ACTION"
 DOMAIN_STRATEGY = "DOMAIN_STRATEGY"
@@ -274,9 +273,7 @@ def _build_m4_fixture(
         draft_assembler=ActionPlanDraftAssembler(),
         capability_id_resolver=CapabilityIdResolver(capabilities),
         knowledge_capability_context=knowledge_capabilities,
-        plan_id_factory=lambda request_id: (
-            plan_id if request_id.strip() else ""
-        ),
+        plan_id_factory=lambda request_id: plan_id if request_id.strip() else "",
     )
 
     receipt_ledger = ValidationReceiptLedger()
@@ -347,8 +344,6 @@ def test_concrete_m4_planner_composes_iu2_through_iu6_into_draft() -> None:
     assert draft.steps[0].skill_id == DOMAIN_SKILL
     assert draft.knowledge_requirement is not None
     assert draft.knowledge_requirement.required is False
-
-
 
 
 def test_single_legal_strategy_defaults_resolve_to_explicit_action() -> None:

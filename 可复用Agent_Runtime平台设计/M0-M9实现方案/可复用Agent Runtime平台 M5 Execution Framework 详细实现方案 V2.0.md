@@ -1710,21 +1710,17 @@ optional = true
 optional = false
 ```
 
-且失败，则根据：
+且失败，IU2 第一版先 fail closed，返回：
 
 ```text
-on_failure
+BLOCKED
+REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL
 ```
 
-执行：
-
-```text
-STOP_PLAN
-
-RUN_FALLBACK
-
-CONTINUE_IF_SAFE
-```
+当前 `ActionStep.on_failure` 仍是开放字符串，并没有冻结 Core `FailureDisposition`
+语义，因此 IU2 不直接解释 `STOP_PLAN / RUN_FALLBACK / CONTINUE_IF_SAFE`。
+后续若需要执行这些策略，必须先冻结 FailureDisposition / Resolver Contract，
+再由 Runtime 执行，不允许 Scheduler 自行发明 fallback。
 
 ---
 

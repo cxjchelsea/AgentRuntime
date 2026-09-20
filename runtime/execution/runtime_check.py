@@ -194,6 +194,11 @@ class RuntimeExecutionChecker:
                 reason_codes=("SESSION_VALIDITY_UNKNOWN",),
             )
 
+        if snapshot.safety_lock is None:
+            return RuntimeExecutionCheckDecision(
+                status=RuntimeExecutionCheckStatus.UNKNOWN,
+                reason_codes=("SAFETY_LOCK_STATE_UNKNOWN",),
+            )
         if snapshot.safety_lock is True:
             if snapshot.restricted_actions is None:
                 return RuntimeExecutionCheckDecision(

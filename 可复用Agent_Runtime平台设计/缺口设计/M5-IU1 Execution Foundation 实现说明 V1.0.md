@@ -85,7 +85,7 @@ cancellation_token
 trace_context
 ```
 
-当前 deadline 从 `RuntimeContext.task_context.timeout_at` 投影；ToolContext 只以其 Canonical 子上下文投影；Conversation / Memory 等完整上下文不进入 ExecutionContext。
+当前 `deadline` 与 `trace_context` 都只允许通过显式 resolver 注入；IU1 不默认把 `RuntimeContext.task_context.timeout_at` 或 M4 trace 当作执行层事实。ToolContext 只以其 Canonical 子上下文投影；Conversation / Memory 等完整上下文不进入 ExecutionContext。
 
 ## 5. Execution / Step ID Chain
 
@@ -113,7 +113,7 @@ current_step = null
 所有 Step = PENDING
 ```
 
-Execution ID 已存在时不得覆盖已有执行。
+`ExecutionCreationStore.create(...)` 必须提供原子创建语义。Execution ID 已存在时不得覆盖已有执行，即使两个初始化请求并发到达，也只能有一个创建成功。
 
 `InMemoryExecutionStateStore` 仅用于 IU1 机制测试，不代表生产持久化方案。
 
@@ -133,7 +133,7 @@ PENDING
 
 IU1 不负责 dependency scheduling；真正的依赖解析属于后续 StepScheduler IU。
 
-生命周期必须满足时间单调性：Step 不能在 Execution 创建前开始，也不能在 started_at 之前结束。
+生命周期必须满足时间单调性：Execution 不能在 `created_at` 之前开始；Step 不能在 Execution `started_at` 之前开始，也不能在自身 `started_at` 之前结束。`ExecutionResult.timing.started_at` 使用真实 Execution start time，而不是 record creation time。
 
 ## 8. ExecutionResult Projection
 
@@ -203,8 +203,8 @@ Execution Event publisher
 1. 只接受 ApprovedActionPlan
 2. ExecutionContext 只投影 M5 所需上下文
 3. request → plan → execution → step execution ID 链成立
-4. Execution 初始化时持久化 CREATED + PENDING steps
-5. execution_id 不允许覆盖/跨 identity_scope 重绑定
+4. Execution 初始化时原子持久化 CREATED + PENDING steps
+5. execution_id 不允许覆盖/并发重复创建/跨 identity_scope 重绑定
 6. Step 生命周期转换 deterministic + fail closed
 7. IU1 sequential baseline 同时最多一个 RUNNING Step
 8. 非终态 Execution 不能投影 ExecutionResult

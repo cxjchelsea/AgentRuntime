@@ -206,12 +206,20 @@ class CapabilityPlanner:
                 bindings.append(binding)
                 continue
 
-            matching_skills = tuple(
+            supporting_skills = tuple(
                 definition.skill_id
                 for definition in skills.values()
                 if action_id in (definition.supported_actions or ())
-                and self._skill_allowed(definition.skill_id, policy_decision)
             )
+            matching_skills = tuple(
+                skill_id
+                for skill_id in supporting_skills
+                if self._skill_allowed(skill_id, policy_decision)
+            )
+            if supporting_skills and not matching_skills:
+                raise CapabilityPlanningError(
+                    "all registered skills for selected action are disallowed by policy"
+                )
             if len(matching_skills) > 1:
                 raise CapabilityPlanningError(
                     "multiple enabled skills support one action; binding rule required"

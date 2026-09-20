@@ -120,6 +120,15 @@ def _prepared(plan=None):
     return approved_plan, prepared
 
 
+def _running_prepared(plan=None):
+    approved_plan, prepared = _prepared(plan)
+    running = ExecutionLifecycleManager().start_execution(
+        prepared,
+        at=FIXED_TIME,
+    )
+    return approved_plan, running
+
+
 def _runtime_checker(
     *,
     snapshot: RuntimeExecutionSnapshot | None = None,
@@ -383,8 +392,22 @@ def _finish_first_step(plan, prepared, *, status: StepExecutionStatus):
     )
 
 
-def test_scheduler_returns_first_approved_pending_step() -> None:
+def test_scheduler_blocks_before_execution_enters_running_state() -> None:
     plan, prepared = _prepared()
+
+    decision = asyncio.run(
+        SequentialStepScheduler().next_step(
+            approved_plan=plan,
+            prepared=prepared,
+        )
+    )
+
+    assert decision.status is StepScheduleStatus.BLOCKED
+    assert decision.reason_codes == ("EXECUTION_NOT_RUNNING",)
+
+
+def test_scheduler_returns_first_approved_pending_step() -> None:
+    plan, prepared = _running_prepared()
     decision = asyncio.run(
         SequentialStepScheduler().next_step(
             approved_plan=plan,
@@ -501,7 +524,7 @@ def test_optional_previous_step_failure_may_continue_when_no_dependency_requires
 
 
 def test_scheduler_uses_injected_simple_condition_without_parsing_business_rules() -> None:
-    plan, prepared = _prepared()
+    plan, prepared = _running_prepared()
     scheduler = SequentialStepScheduler(
         condition_evaluator=StaticConditionEvaluator(
             StepConditionDecision(
@@ -523,7 +546,7 @@ def test_scheduler_uses_injected_simple_condition_without_parsing_business_rules
 
 
 def test_scheduler_preserves_unknown_condition_fail_closed() -> None:
-    plan, prepared = _prepared()
+    plan, prepared = _running_prepared()
     scheduler = SequentialStepScheduler(
         condition_evaluator=StaticConditionEvaluator(
             StepConditionDecision(
@@ -563,7 +586,7 @@ def test_scheduler_reports_complete_when_no_pending_steps_remain() -> None:
 
 
 def test_scheduler_rejects_plan_execution_alignment_drift() -> None:
-    plan, prepared = _prepared()
+    plan, prepared = _running_prepared()
     drifted = replace(
         prepared,
         execution_record=replace(

@@ -120,6 +120,13 @@ class SequentialStepScheduler:
     ) -> StepScheduleDecision:
         self._validate_alignment(approved_plan, prepared)
 
+        if prepared.execution_record.status != "RUNNING":
+            return StepScheduleDecision(
+                status=StepScheduleStatus.BLOCKED,
+                step_id=None,
+                reason_codes=("EXECUTION_NOT_RUNNING",),
+            )
+
         running = [
             step
             for step in prepared.steps
@@ -139,8 +146,6 @@ class SequentialStepScheduler:
             )
 
         step_by_id = {step.step_id: step for step in prepared.steps}
-        plan_by_id = {step.step_id: step for step in approved_plan.steps}
-
         pending_index: int | None = None
         for index, plan_step in enumerate(approved_plan.steps):
             lifecycle = step_by_id[plan_step.step_id]

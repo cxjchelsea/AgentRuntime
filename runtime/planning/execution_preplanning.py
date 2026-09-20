@@ -21,6 +21,7 @@ from runtime.planning.errors import (
     ToolPlanningError,
 )
 from runtime.registries import (
+    ActionDefinition,
     ActionRegistry,
     SkillDefinition,
     SkillRegistry,
@@ -219,6 +220,27 @@ class CapabilityPlanner:
                     action_id=action_id,
                     skill_id=matching_skills[0] if matching_skills else None,
                 )
+            )
+
+        if policy_decision.forced_workflow is not None:
+            forced_workflow = policy_decision.forced_workflow
+            if forced_workflow not in workflows:
+                raise CapabilityPlanningError(
+                    "M2 forced workflow is unavailable in WorkflowRegistry"
+                )
+            if not bindings:
+                raise CapabilityPlanningError(
+                    "M2 forced workflow requires at least one selected action"
+                )
+            first = bindings[0]
+            if first.workflow_id is not None and first.workflow_id != forced_workflow:
+                raise CapabilityPlanningError(
+                    "selected workflow conflicts with M2 forced workflow"
+                )
+            bindings[0] = CapabilityBinding(
+                action_id=first.action_id,
+                skill_id=first.skill_id,
+                workflow_id=forced_workflow,
             )
 
         selected_skills = tuple(
@@ -530,8 +552,8 @@ class ConfirmationPlanner:
             reason_codes=tuple(reasons),
         )
 
-    def _enabled_actions(self) -> dict[str, object]:
-        output: dict[str, object] = {}
+    def _enabled_actions(self) -> dict[str, ActionDefinition]:
+        output: dict[str, ActionDefinition] = {}
         for record in self._action_registry.list():
             definition = record.definition
             if not record.enabled or not definition.enabled:

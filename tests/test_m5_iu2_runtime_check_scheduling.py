@@ -11,7 +11,6 @@ import pytest
 
 import runtime.execution.runtime_check as runtime_check_module
 import runtime.execution.scheduling as scheduling_module
-from runtime.contracts import ExecutionPlanStatus
 from runtime.execution import (
     CallableExecutionIdentifierFactory,
     ExecutionContextBuilder,

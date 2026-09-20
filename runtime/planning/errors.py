@@ -75,3 +75,47 @@ class StrategyModelExecutionError(StrategyModelBoundaryError):
 
 class StrategyModelOutputError(StrategyModelBoundaryError):
     """Raised when model output violates the frozen legal-choice boundary."""
+
+
+class KnowledgePlanningError(PlanningError):
+    """Base error for M4 Knowledge Planning."""
+
+
+class KnowledgeNeedResolutionError(KnowledgePlanningError):
+    """Raised when knowledge need cannot be resolved safely."""
+
+
+class KnowledgeNeedRuleExecutionError(KnowledgeNeedResolutionError):
+    """Raised when an injected knowledge-need rule fails."""
+
+
+class KnowledgeDomainRoutingError(KnowledgePlanningError):
+    """Raised when a required knowledge domain cannot be resolved."""
+
+
+class KnowledgeDomainRuleExecutionError(KnowledgeDomainRoutingError):
+    """Raised when an injected knowledge-domain rule fails."""
+
+
+class RetrievalQueryBuildError(KnowledgePlanningError):
+    """Raised when a valid RetrievalQuery cannot be constructed."""
+
+
+class QueryRewriteError(RetrievalQueryBuildError):
+    """Raised when query rewrite violates the bounded rewrite contract."""
+
+
+class RetrievalPlanningError(KnowledgePlanningError):
+    """Raised when RetrievalPlan cannot be produced from supported capabilities."""
+
+
+class RetrievalModeRuleExecutionError(RetrievalPlanningError):
+    """Raised when an injected retrieval-mode rule fails."""
+
+
+class EvidenceRequirementPlanningError(KnowledgePlanningError):
+    """Raised when EvidenceRequirement cannot be resolved."""
+
+
+class EvidenceRequirementRuleExecutionError(EvidenceRequirementPlanningError):
+    """Raised when an injected evidence-requirement rule fails."""

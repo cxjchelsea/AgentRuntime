@@ -7,8 +7,10 @@ from datetime import UTC, datetime
 
 import pytest
 
+import runtime.execution.authority as authority_module
 import runtime.execution.control as control_module
 import runtime.execution.models as models_module
+import runtime.execution.permission as permission_module
 import runtime.execution.protocols as protocols_module
 import runtime.execution.resolution as resolution_module
 import runtime.execution.stores as stores_module
@@ -297,8 +299,10 @@ def test_readiness_package_contains_no_domain_execution_taxonomy() -> None:
     source = "\n".join(
         inspect.getsource(module)
         for module in (
+            authority_module,
             control_module,
             models_module,
+            permission_module,
             protocols_module,
             resolution_module,
             stores_module,
@@ -406,6 +410,17 @@ def test_permission_decision_supports_unknown_without_replanning() -> None:
 
     assert decision.status is PermissionDecisionStatus.UNKNOWN
 
+
+
+
+
+def test_allowed_permission_decision_cannot_carry_missing_permissions() -> None:
+    with pytest.raises(ValueError, match="ALLOWED"):
+        PermissionDecision(
+            status=PermissionDecisionStatus.ALLOWED,
+            reason_codes=("PERMISSION_ALLOWED",),
+            missing_permissions=("TOOL_USE",),
+        )
 
 def test_workflow_authority_comes_from_approved_plan_and_existing_forced_workflow() -> None:
     plan = build_approved_action_plan().model_copy(

@@ -1,5 +1,9 @@
 """M5 Execution Framework internal contracts and protocols."""
 
+from runtime.execution.authority import (
+    ApprovedWorkflowAuthority,
+    project_workflow_authority,
+)
 from runtime.execution.control import (
     ExecutionControlSignal,
     ExecutionControlSignalSource,
@@ -28,6 +32,13 @@ from runtime.execution.models import (
     WorkflowExecutionRequest,
     WorkflowExecutionStatus,
 )
+from runtime.execution.permission import (
+    ExecutionPermissionContext,
+    ExecutionPermissionContextProvider,
+    ExecutionPermissionEvaluator,
+    PermissionDecision,
+    PermissionDecisionStatus,
+)
 from runtime.execution.protocols import (
     SkillImplementation,
     ToolImplementation,
@@ -46,6 +57,7 @@ from runtime.execution.stores import (
 __all__ = [
     "ActivityInstance",
     "ActivityStatus",
+    "ApprovedWorkflowAuthority",
     "ExecutionControlSignal",
     "ExecutionControlSignalSource",
     "ExecutionControlSignalType",
@@ -53,6 +65,9 @@ __all__ = [
     "ExecutionEventRecord",
     "ExecutionImplementationResolver",
     "ExecutionImplementationTypeError",
+    "ExecutionPermissionContext",
+    "ExecutionPermissionContextProvider",
+    "ExecutionPermissionEvaluator",
     "ExecutionReadinessError",
     "ExecutionRecord",
     "ExecutionRegistryResolutionError",
@@ -63,6 +78,8 @@ __all__ = [
     "M5SkillResult",
     "M5ToolResult",
     "M5WorkflowResult",
+    "PermissionDecision",
+    "PermissionDecisionStatus",
     "ResourceLockProvider",
     "SkillExecutionRequest",
     "SkillExecutionStatus",
@@ -76,4 +93,5 @@ __all__ = [
     "WorkflowExecutionRequest",
     "WorkflowExecutionStatus",
     "WorkflowImplementation",
+    "project_workflow_authority",
 ]

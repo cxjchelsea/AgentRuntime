@@ -28,6 +28,8 @@ from runtime.execution import (
     RuntimeExecutionCheckStatus,
     RuntimeExecutionFacts,
     SequentialStepScheduler,
+    StepEligibilityDecision,
+    StepEligibilityStatus,
     StepExecutionStatus,
     StepFailureDirective,
     StepScheduleAction,
@@ -57,6 +59,15 @@ class StaticControlSignalSource:
     async def get_signal(self, execution_id: str) -> ExecutionControlSignal:
         assert execution_id
         return self.signal
+
+
+@dataclass
+class StaticStepEligibilityEvaluator:
+    decision: StepEligibilityDecision
+
+    def evaluate(self, step, prepared: PreparedExecution) -> StepEligibilityDecision:
+        del step, prepared
+        return self.decision
 
 
 @dataclass
@@ -380,6 +391,24 @@ def test_sequential_scheduler_completes_when_no_pending_steps_remain() -> None:
     decision = SequentialStepScheduler().next(plan, step_done)
 
     assert decision.action is StepScheduleAction.COMPLETE
+
+
+def test_scheduler_applies_injected_simple_eligibility_without_reordering() -> None:
+    plan, running, _, _ = _running_execution(_two_step_plan())
+    scheduler = SequentialStepScheduler(
+        eligibility_evaluator=StaticStepEligibilityEvaluator(
+            StepEligibilityDecision(
+                status=StepEligibilityStatus.SKIP,
+                reason_codes=("SIMPLE_CONDITION_FALSE",),
+            )
+        )
+    )
+
+    decision = scheduler.next(plan, running)
+
+    assert decision.action is StepScheduleAction.SKIP
+    assert decision.step_id == "step-001"
+    assert decision.reason_codes == ("SIMPLE_CONDITION_FALSE",)
 
 
 def test_failure_resolver_defaults_optional_failure_to_continue() -> None:

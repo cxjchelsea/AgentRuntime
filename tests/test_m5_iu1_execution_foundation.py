@@ -110,6 +110,7 @@ def test_m5_context_builder_projects_minimum_runtime_context_only() -> None:
         "recent_tool_results": None,
         "network_status": "ONLINE",
     }
+    assert context.step_state is not None
     assert context.step_state == {
         "step-001": {
             "action": plan.steps[0].action,
@@ -275,6 +276,7 @@ def test_execution_context_step_state_is_static_plan_projection_not_lifecycle_tr
         at=FIXED_TIME + timedelta(seconds=1),
     )
 
+    assert step_running.execution_context.step_state is not None
     assert "status" not in step_running.execution_context.step_state["step-001"]
     assert step_running.steps[0].status is StepExecutionStatus.RUNNING
     assert step_running.execution_record.step_results[0]["status"] == "RUNNING"

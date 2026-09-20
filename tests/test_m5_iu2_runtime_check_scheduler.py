@@ -277,6 +277,29 @@ def test_runtime_execution_check_preserves_unknown_session_validity() -> None:
     assert decision.reason_codes == ("SESSION_VALIDITY_UNKNOWN",)
 
 
+def test_unknown_safety_lock_state_is_preserved_and_never_allowed() -> None:
+    plan, prepared = _prepared()
+    checker, _ = _runtime_checker(
+        snapshot=RuntimeExecutionSnapshot(
+            session_id="session-001",
+            identity_scope="scope-001",
+            current_state=RuntimeControlState.IDLE,
+            session_active=True,
+            safety_lock=None,
+        )
+    )
+
+    decision = asyncio.run(
+        checker.check(
+            step=plan.steps[0],
+            execution_context=prepared.execution_context,
+        )
+    )
+
+    assert decision.status is RuntimeExecutionCheckStatus.UNKNOWN
+    assert decision.reason_codes == ("SAFETY_LOCK_STATE_UNKNOWN",)
+
+
 def test_safety_lock_blocks_only_explicitly_restricted_action() -> None:
     plan, prepared = _prepared()
     checker, _ = _runtime_checker(

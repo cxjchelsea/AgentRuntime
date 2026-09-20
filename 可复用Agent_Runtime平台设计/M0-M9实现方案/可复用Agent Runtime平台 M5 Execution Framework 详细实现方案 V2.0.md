@@ -1612,14 +1612,14 @@ cancellation_token
 
 Policy Snapshot 是否仍有效
 
-Safety Lock 是否变化
-
-Capability 是否启用
+Safety 是否仍允许该 Step
 
 Session 是否仍有效
 
-Cancellation 是否已触发
+Cancellation / Preemption 是否已触发
 ```
+
+M5-IU2 只负责 Runtime 层的实时执行资格检查。Capability 是否注册、enabled、版本兼容、Skill / Workflow 当前状态适配以及 Tool Permission，统一留给后续 Capability Resolution / Permission Enforcement，避免 Runtime Check 与 Capability Resolver 重复维护同一套能力真值。
 
 注意：
 
@@ -1747,17 +1747,25 @@ PLAY_CONTENT
 
 ## 11.4.5 简单条件执行
 
-支持：
+M5 Core 不硬编码领域条件名，也不复用 `completion_condition` 作为执行前置条件。
+
+第一版通过注入的：
 
 ```text
-IF_PREVIOUS_SUCCESS
-
-IF_PREVIOUS_FAILED
-
-IF_TOOL_RESULT_AVAILABLE
+StepEligibilityEvaluator
 ```
 
-复杂业务条件放在：
+对“当前已批准 Step 是否可运行 / 等待 / 跳过”进行简单条件投影：
+
+```text
+ALLOW
+WAIT
+SKIP
+```
+
+Evaluator 只能约束当前 approved Step，不能改序、不能生成新 Step、不能替换 Capability。
+
+复杂业务条件仍放在：
 
 ```text
 Skill / Workflow

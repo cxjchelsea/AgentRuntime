@@ -412,6 +412,57 @@ def test_sequential_scheduler_completes_when_no_pending_steps_remain() -> None:
     assert decision.action is StepScheduleAction.COMPLETE
 
 
+def test_scheduler_stops_after_required_step_failure() -> None:
+    plan = _two_step_plan()
+    _, failed, _, _ = _finished_single_step(
+        plan,
+        StepExecutionStatus.FAILED,
+    )
+
+    decision = SequentialStepScheduler().next(plan, failed)
+
+    assert decision.action is StepScheduleAction.STOP_PLAN
+    assert decision.step_id == "step-001"
+
+
+def test_scheduler_continues_after_optional_step_failure() -> None:
+    plan = _two_step_plan()
+    optional_first = plan.steps[0].model_copy(
+        update={"optional": True, "on_failure": None}
+    )
+    plan = plan.model_copy(
+        update={"steps": [optional_first, plan.steps[1]]}
+    )
+    _, failed, _, _ = _finished_single_step(
+        plan,
+        StepExecutionStatus.FAILED,
+    )
+
+    decision = SequentialStepScheduler().next(plan, failed)
+
+    assert decision.action is StepScheduleAction.READY
+    assert decision.step_id == "step-002"
+
+
+def test_scheduler_surfaces_fallback_without_executing_it() -> None:
+    plan = _two_step_plan()
+    fallback_first = plan.steps[0].model_copy(
+        update={"on_failure": "RUN_FALLBACK"}
+    )
+    plan = plan.model_copy(
+        update={"steps": [fallback_first, plan.steps[1]]}
+    )
+    _, failed, _, _ = _finished_single_step(
+        plan,
+        StepExecutionStatus.FAILED,
+    )
+
+    decision = SequentialStepScheduler().next(plan, failed)
+
+    assert decision.action is StepScheduleAction.RUN_FALLBACK
+    assert decision.step_id == "step-001"
+
+
 def test_scheduler_applies_injected_simple_eligibility_without_reordering() -> None:
     plan, running, _, _ = _running_execution(_two_step_plan())
     scheduler = SequentialStepScheduler(

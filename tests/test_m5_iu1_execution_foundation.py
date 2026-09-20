@@ -104,15 +104,48 @@ def test_m5_context_builder_projects_minimum_runtime_context_only() -> None:
     assert context.session_id == "session-001"
     assert context.identity_scope == "scope-001"
     assert context.current_state is RuntimeControlState.IDLE
-    assert context.deadline == FIXED_TIME + timedelta(minutes=5)
+    assert context.deadline is None
+    assert context.trace_context is None
     assert context.tool_context == {
         "active_tool_calls": None,
         "recent_tool_results": None,
         "network_status": "ONLINE",
     }
-    assert context.trace_context == {"planning_path": "DETERMINISTIC"}
-    assert "conversation_context" not in context.model_fields
-    assert "memory_context" not in context.model_fields
+    assert "conversation_context" not in context.__class__.model_fields
+    assert "memory_context" not in context.__class__.model_fields
+
+
+def test_deadline_and_trace_projection_require_explicit_resolvers() -> None:
+    plan = build_approved_action_plan().model_copy(
+        update={"trace": {"planning_path": "DETERMINISTIC"}}
+    )
+    runtime_context = build_runtime_context().model_copy(
+        update={
+            "task_context": TaskContext(
+                timeout_at=FIXED_TIME + timedelta(minutes=5)
+            )
+        }
+    )
+    builder = ExecutionContextBuilder(
+        identifier_factory=_identifier_factory(),
+        deadline_resolver=lambda approved_plan, context: (
+            context.task_context.timeout_at
+            if context.task_context is not None
+            else None
+        ),
+        trace_context_resolver=lambda approved_plan, context: {
+            "source": "injected-execution-trace",
+            "plan_id": approved_plan.plan_id,
+        },
+    )
+
+    context = builder.build(plan, runtime_context)
+
+    assert context.deadline == FIXED_TIME + timedelta(minutes=5)
+    assert context.trace_context == {
+        "source": "injected-execution-trace",
+        "plan_id": plan.plan_id,
+    }
 
 
 def test_approved_plan_execution_validator_rejects_unsupported_schema() -> None:

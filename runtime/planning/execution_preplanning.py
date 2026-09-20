@@ -359,6 +359,7 @@ class ToolCallPlan:
 
     tool_id: str
     required: bool
+    required_by_skills: tuple[str, ...]
     timeout_policy: str | None
     retry_policy: str | None
     idempotency_mode: str | None
@@ -409,12 +410,15 @@ class ToolPlanner:
         tools = self._enabled_tools()
 
         required: list[str] = []
+        required_by: dict[str, list[str]] = {}
         optional_available: set[str] = set()
         for skill_id in capability_selection.selected_skills:
             skill = skills.get(skill_id)
             if skill is None:
                 raise ToolPlanningError("selected skill became unavailable")
-            required.extend(skill.required_tools or ())
+            for tool_id in skill.required_tools or ():
+                required.append(tool_id)
+                required_by.setdefault(tool_id, []).append(skill_id)
             optional_available.update(skill.optional_tools or ())
 
         selected_optional: list[str] = []
@@ -454,6 +458,9 @@ class ToolPlanner:
                 ToolCallPlan(
                     tool_id=tool_id,
                     required=tool_id in required_set,
+                    required_by_skills=tuple(
+                        dict.fromkeys(required_by.get(tool_id, ()))
+                    ),
                     timeout_policy=definition.timeout_policy,
                     retry_policy=definition.retry_policy,
                     idempotency_mode=definition.idempotency_mode,
@@ -599,6 +606,9 @@ class SequencePlanner:
         capability_selection: CapabilitySelection,
         tool_plan: ToolPlanDecision,
     ) -> SequencePlan:
+        if len(set(selected_action_ids)) != len(selected_action_ids):
+            raise SequencePlanningError("selected actions must not contain duplicates")
+
         bindings = {binding.action_id: binding for binding in capability_selection.bindings}
         if set(bindings) != set(selected_action_ids):
             raise SequencePlanningError(
@@ -620,11 +630,11 @@ class SequencePlanner:
                 call.tool_id
                 for call in tool_plan.tool_calls
                 if call.required
+                and binding.skill_id is not None
+                and binding.skill_id in call.required_by_skills
             )
             tool_requirement = (
-                required_tools[0]
-                if len(required_tools) == 1 and binding.skill_id is not None
-                else None
+                required_tools[0] if len(required_tools) == 1 else None
             )
 
             steps.append(

@@ -259,7 +259,9 @@ def test_in_memory_store_does_not_rebind_execution_identity_scope() -> None:
         asyncio.run(store.save(rebound))
 
 
-def test_execution_context_step_state_is_static_plan_projection_not_lifecycle_truth() -> None:
+def test_execution_context_step_state_is_static_plan_projection_not_lifecycle_truth() -> (
+    None
+):
     foundation, _ = _foundation()
     prepared = asyncio.run(
         foundation.initialize(

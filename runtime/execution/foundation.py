@@ -265,9 +265,7 @@ class ExecutionRecordFactory:
             )
             for step in approved_plan.steps
         )
-        step_execution_ids = [
-            item.step_execution_id for item in step_snapshots
-        ]
+        step_execution_ids = [item.step_execution_id for item in step_snapshots]
         if len(set(step_execution_ids)) != len(step_execution_ids):
             raise ExecutionContextBuildError(
                 "step_execution_id values must be unique within one execution"
@@ -329,9 +327,7 @@ class ExecutionLifecycleManager:
             prepared.execution_record.created_at is not None
             and at < prepared.execution_record.created_at
         ):
-            raise ExecutionLifecycleError(
-                "execution cannot start before creation time"
-            )
+            raise ExecutionLifecycleError("execution cannot start before creation time")
         return replace(
             prepared,
             started_at=at,
@@ -354,17 +350,12 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError("only PENDING step can start")
         if prepared.execution_record.status != "RUNNING":
             raise ExecutionLifecycleError("step requires RUNNING execution")
-        if any(
-            item.status is StepExecutionStatus.RUNNING
-            for item in prepared.steps
-        ):
+        if any(item.status is StepExecutionStatus.RUNNING for item in prepared.steps):
             raise ExecutionLifecycleError(
                 "IU1 sequential baseline allows only one RUNNING step"
             )
         if prepared.started_at is None:
-            raise ExecutionLifecycleError(
-                "step requires execution started_at"
-            )
+            raise ExecutionLifecycleError("step requires execution started_at")
         if at < prepared.started_at:
             raise ExecutionLifecycleError(
                 "step cannot start before execution start time"
@@ -401,9 +392,7 @@ class ExecutionLifecycleManager:
         if status not in self._TERMINAL_STEP_STATUSES:
             raise ExecutionLifecycleError("finish_step requires terminal status")
         if target.started_at is not None and at < target.started_at:
-            raise ExecutionLifecycleError(
-                "step cannot finish before it starts"
-            )
+            raise ExecutionLifecycleError("step cannot finish before it starts")
         if retry_count is not None and retry_count < 0:
             raise ExecutionLifecycleError("retry_count must be >= 0")
 
@@ -414,9 +403,7 @@ class ExecutionLifecycleManager:
                 output=output,
                 error=error,
                 tool_call_ids=tool_call_ids,
-                retry_count=item.retry_count
-                if retry_count is None
-                else retry_count,
+                retry_count=item.retry_count if retry_count is None else retry_count,
                 finished_at=at,
             )
             if item.step_id == step_id
@@ -457,13 +444,9 @@ class ExecutionLifecycleManager:
         if value not in self._TERMINAL_EXECUTION_STATUSES:
             raise ExecutionLifecycleError("execution terminal status is unsupported")
         if prepared.started_at is None:
-            raise ExecutionLifecycleError(
-                "terminal execution requires started_at"
-            )
+            raise ExecutionLifecycleError("terminal execution requires started_at")
         if at < prepared.started_at:
-            raise ExecutionLifecycleError(
-                "execution cannot finish before it starts"
-            )
+            raise ExecutionLifecycleError("execution cannot finish before it starts")
         return replace(
             prepared,
             finished_at=at,
@@ -597,9 +580,7 @@ class ExecutionFoundation:
             approved_plan,
             execution_context,
         )
-        created = await self._execution_store.create(
-            prepared.execution_record
-        )
+        created = await self._execution_store.create(prepared.execution_record)
         if not created:
             raise ExecutionLifecycleError(
                 "execution_id already exists in ExecutionStateStore"

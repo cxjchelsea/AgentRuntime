@@ -15,8 +15,8 @@ from runtime.execution import (
     ApprovedPlanExecutionError,
     ApprovedPlanExecutionValidator,
     CallableExecutionIdentifierFactory,
-    ExecutionContextBuildError,
     ExecutionContextBuilder,
+    ExecutionContextBuildError,
     ExecutionFoundation,
     ExecutionLifecycleError,
     ExecutionLifecycleManager,
@@ -29,7 +29,6 @@ from tests.orchestration_stubs import (
     build_approved_action_plan,
     build_runtime_context,
 )
-
 
 FIXED_TIME = datetime(2026, 9, 20, 7, 30, tzinfo=UTC)
 
@@ -61,7 +60,9 @@ def _foundation(
     return foundation, store
 
 
-def test_execution_foundation_initializes_and_persists_without_executing_capability() -> None:
+def test_execution_foundation_initializes_and_persists_without_executing_capability() -> (
+    None
+):
     foundation, store = _foundation()
 
     prepared = asyncio.run(
@@ -87,15 +88,11 @@ def test_m5_context_builder_projects_minimum_runtime_context_only() -> None:
     )
     runtime_context = build_runtime_context().model_copy(
         update={
-            "task_context": TaskContext(
-                timeout_at=FIXED_TIME + timedelta(minutes=5)
-            ),
+            "task_context": TaskContext(timeout_at=FIXED_TIME + timedelta(minutes=5)),
             "tool_context": ToolContext(network_status="ONLINE"),
         }
     )
-    builder = ExecutionContextBuilder(
-        identifier_factory=_identifier_factory()
-    )
+    builder = ExecutionContextBuilder(identifier_factory=_identifier_factory())
 
     context = builder.build(plan, runtime_context)
 
@@ -122,9 +119,7 @@ def test_deadline_and_trace_projection_require_explicit_resolvers() -> None:
     )
     runtime_context = build_runtime_context().model_copy(
         update={
-            "task_context": TaskContext(
-                timeout_at=FIXED_TIME + timedelta(minutes=5)
-            )
+            "task_context": TaskContext(timeout_at=FIXED_TIME + timedelta(minutes=5))
         }
     )
     builder = ExecutionContextBuilder(
@@ -150,9 +145,7 @@ def test_deadline_and_trace_projection_require_explicit_resolvers() -> None:
 
 
 def test_approved_plan_execution_validator_rejects_unsupported_schema() -> None:
-    plan = build_approved_action_plan().model_copy(
-        update={"schema_version": "9.9.9"}
-    )
+    plan = build_approved_action_plan().model_copy(update={"schema_version": "9.9.9"})
 
     with pytest.raises(ApprovedPlanExecutionError, match="schema_version"):
         ApprovedPlanExecutionValidator().validate(plan)
@@ -209,8 +202,6 @@ def test_execution_id_collision_fails_closed_before_overwrite() -> None:
     assert persisted.plan_id == plan.plan_id
 
 
-
-
 def test_execution_creation_is_atomic_for_duplicate_execution_id() -> None:
     foundation, store = _foundation(execution_id="execution-atomic")
     plan = build_approved_action_plan()
@@ -232,6 +223,7 @@ def test_execution_creation_is_atomic_for_duplicate_execution_id() -> None:
     persisted = asyncio.run(store.load("execution-atomic"))
     assert persisted is not None
     assert persisted.execution_id == "execution-atomic"
+
 
 def test_in_memory_store_does_not_rebind_execution_identity_scope() -> None:
     foundation, store = _foundation(execution_id="execution-scope")
@@ -255,8 +247,6 @@ def test_in_memory_store_does_not_rebind_execution_identity_scope() -> None:
 
     with pytest.raises(ExecutionLifecycleError, match="rebound"):
         asyncio.run(store.save(rebound))
-
-
 
 
 def test_execution_start_time_is_distinct_from_record_creation_time() -> None:
@@ -290,6 +280,7 @@ def test_execution_cannot_start_before_creation_time() -> None:
             prepared,
             at=FIXED_TIME - timedelta(seconds=1),
         )
+
 
 def test_step_lifecycle_is_independent_and_deterministic() -> None:
     foundation, _ = _foundation()
@@ -431,7 +422,9 @@ def test_result_projection_rejects_non_terminal_execution() -> None:
         ExecutionResultProjector().project(prepared)
 
 
-def test_iu1_foundation_has_no_skill_workflow_tool_invocation_or_m6_dependency() -> None:
+def test_iu1_foundation_has_no_skill_workflow_tool_invocation_or_m6_dependency() -> (
+    None
+):
     source = inspect.getsource(foundation_module)
 
     forbidden = (

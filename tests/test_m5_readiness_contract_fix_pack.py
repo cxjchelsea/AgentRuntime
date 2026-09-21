@@ -168,6 +168,8 @@ def test_registry_metadata_extension_is_backward_compatible() -> None:
 
     assert legacy_workflow.checkpoint_enabled is None
     assert legacy_workflow.resume_policy is None
+    assert legacy_workflow.required_tools is None
+    assert legacy_workflow.optional_tools is None
     assert legacy_tool.resource_locks is None
 
 
@@ -180,6 +182,8 @@ def test_registry_metadata_can_express_checkpoint_recovery_and_locks() -> None:
         checkpoint_enabled=True,
         timeout_policy="WORKFLOW_STANDARD",
         resume_policy="SAFE_RESUME_ONLY",
+        required_tools=["DOMAIN_TOOL"],
+        optional_tools=["OPTIONAL_TOOL"],
     )
     tool = ToolDefinition(
         tool_id="DOMAIN_TOOL",
@@ -189,6 +193,8 @@ def test_registry_metadata_can_express_checkpoint_recovery_and_locks() -> None:
 
     assert workflow.checkpoint_enabled is True
     assert workflow.resume_policy == "SAFE_RESUME_ONLY"
+    assert workflow.required_tools == ["DOMAIN_TOOL"]
+    assert workflow.optional_tools == ["OPTIONAL_TOOL"]
     assert tool.resource_locks == ["shared-resource"]
 
 

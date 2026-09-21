@@ -144,3 +144,18 @@ M5 = IN PROGRESS
 ```text
 M5-IU3 production implementation = NOT ALLOWED TO START
 ```
+## 8. CA-M5-IU3-01 实施状态更新
+
+受控修复已在分支 `ca-m5-iu3-01-version-pinning` 实施。
+
+当前状态：
+
+```text
+CA-M5-IU3-01 = CODE/TEST/DOC COMPLETE
+B-M5-IU3-001 = FIX_IMPLEMENTED
+
+M5-IU3 IMPLEMENTATION READINESS
+= PENDING_AMENDMENT_VERIFICATION
+```
+
+本状态不等于 blocker 已关闭。正式关闭仍需四项本地门禁与 Independent Amendment Review。

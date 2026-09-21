@@ -134,7 +134,9 @@ class CapabilityBinding:
 
     action_id: str
     skill_id: str | None = None
+    skill_version: str | None = None
     workflow_id: str | None = None
+    workflow_version: str | None = None
 
 
 class CapabilityBindingRule(Protocol):
@@ -203,7 +205,7 @@ class CapabilityPlanner:
                     )
                 binding = unique[0]
                 self._validate_binding(binding, skills, workflows, policy_decision)
-                bindings.append(binding)
+                bindings.append(self._pin_binding(binding, skills, workflows))
                 continue
 
             supporting_skills = tuple(
@@ -224,10 +226,16 @@ class CapabilityPlanner:
                 raise CapabilityPlanningError(
                     "multiple enabled skills support one action; binding rule required"
                 )
+            selected_skill_id = matching_skills[0] if matching_skills else None
             bindings.append(
                 CapabilityBinding(
                     action_id=action_id,
-                    skill_id=matching_skills[0] if matching_skills else None,
+                    skill_id=selected_skill_id,
+                    skill_version=(
+                        skills[selected_skill_id].version
+                        if selected_skill_id is not None
+                        else None
+                    ),
                 )
             )
 
@@ -249,7 +257,9 @@ class CapabilityPlanner:
             bindings[0] = CapabilityBinding(
                 action_id=first.action_id,
                 skill_id=first.skill_id,
+                skill_version=first.skill_version,
                 workflow_id=forced_workflow,
+                workflow_version=workflows[forced_workflow].version,
             )
 
         selected_skills = tuple(
@@ -347,6 +357,53 @@ class CapabilityPlanner:
         if binding.workflow_id is not None and binding.workflow_id not in workflows:
             raise CapabilityPlanningError("binding references unavailable workflow")
 
+        if binding.skill_id is None and binding.skill_version is not None:
+            raise CapabilityPlanningError(
+                "binding skill_version requires skill_id"
+            )
+        if binding.workflow_id is None and binding.workflow_version is not None:
+            raise CapabilityPlanningError(
+                "binding workflow_version requires workflow_id"
+            )
+        if (
+            binding.skill_id is not None
+            and binding.skill_version is not None
+            and binding.skill_version != skills[binding.skill_id].version
+        ):
+            raise CapabilityPlanningError(
+                "binding skill_version does not match selected registry definition"
+            )
+        if (
+            binding.workflow_id is not None
+            and binding.workflow_version is not None
+            and binding.workflow_version != workflows[binding.workflow_id].version
+        ):
+            raise CapabilityPlanningError(
+                "binding workflow_version does not match selected registry definition"
+            )
+
+    @staticmethod
+    def _pin_binding(
+        binding: CapabilityBinding,
+        skills: dict[str, SkillDefinition],
+        workflows: dict[str, WorkflowDefinition],
+    ) -> CapabilityBinding:
+        return CapabilityBinding(
+            action_id=binding.action_id,
+            skill_id=binding.skill_id,
+            skill_version=(
+                skills[binding.skill_id].version
+                if binding.skill_id is not None
+                else None
+            ),
+            workflow_id=binding.workflow_id,
+            workflow_version=(
+                workflows[binding.workflow_id].version
+                if binding.workflow_id is not None
+                else None
+            ),
+        )
+
     @staticmethod
     def _skill_allowed(skill_id: str, policy_decision: PolicyDecision) -> bool:
         if skill_id in (policy_decision.forbidden_skills or ()):
@@ -361,6 +418,7 @@ class ToolCallPlan:
     """A selected Tool reference; no call is executed."""
 
     tool_id: str
+    tool_version: str
     required: bool
     required_by_skills: tuple[str, ...]
     timeout_policy: str | None
@@ -458,6 +516,7 @@ class ToolPlanner:
             calls.append(
                 ToolCallPlan(
                     tool_id=tool_id,
+                    tool_version=definition.version,
                     required=tool_id in required_set,
                     required_by_skills=tuple(
                         dict.fromkeys(required_by.get(tool_id, []))

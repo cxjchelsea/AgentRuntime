@@ -337,7 +337,7 @@ def _skill_resolved(
     tools: tuple[ResolvedCapability, ...] = (),
 ) -> ResolvedStepCapabilities:
     return ResolvedStepCapabilities(
-        step_id="step-1",
+        step_id="step-001",
         execution_owner=CapabilityExecutionOwner.SKILL,
         skill=ResolvedCapability(
             kind=CapabilityKind.SKILL,
@@ -361,7 +361,7 @@ def _workflow_resolved(
     tools: tuple[ResolvedCapability, ...] = (),
 ) -> ResolvedStepCapabilities:
     return ResolvedStepCapabilities(
-        step_id="step-1",
+        step_id="step-001",
         execution_owner=CapabilityExecutionOwner.WORKFLOW,
         workflow=ResolvedCapability(
             kind=CapabilityKind.WORKFLOW,

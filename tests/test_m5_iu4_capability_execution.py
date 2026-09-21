@@ -649,6 +649,15 @@ def test_output_invalid_preserves_raw_success_but_final_truth_is_unknown() -> No
     assert outcome.status is CapabilityExecutionStatus.UNKNOWN
     assert outcome.tool_results[0].status is ToolExecutionStatus.UNKNOWN
     assert outcome.tool_results[0].error_code == "TOOL_INVALID_OUTPUT"
+    assert outcome.tool_journal[0].raw_result is not None
+    assert (
+        outcome.tool_journal[0].raw_result.status
+        is ToolExecutionStatus.SUCCESS
+    )
+    assert (
+        outcome.tool_journal[0].output_validation_status
+        is ToolPayloadValidationStatus.INVALID
+    )
 
 
 def test_non_success_tool_result_is_not_output_validated_or_upgraded() -> None:
@@ -721,6 +730,54 @@ def test_skill_exception_after_tool_call_preserves_core_tool_observation() -> No
     assert outcome.reason_codes == ("SKILL_EXECUTION_EXCEPTION",)
     assert len(outcome.tool_results) == 1
     assert outcome.tool_results[0].status is ToolExecutionStatus.SUCCESS
+
+
+def test_workflow_owner_uses_same_core_tool_gateway() -> None:
+    plan, step = _approved_step(owner=CapabilityExecutionOwner.WORKFLOW)
+    tool_impl = RecordingTool()
+    workflow = RecordingWorkflow(tool_ids=("DOMAIN_TOOL",))
+    resolved = _workflow_resolved(workflow, tools=(_tool(tool_impl),))
+
+    outcome = asyncio.run(
+        _executor().execute(
+            approved_plan=plan,
+            step=step,
+            step_snapshot=_snapshot(step),
+            resolved=resolved,
+            execution_context=_execution_context(),
+        )
+    )
+
+    assert outcome.status is CapabilityExecutionStatus.EXECUTED
+    assert workflow.start_calls == 1
+    assert workflow.resume_calls == 0
+    assert tool_impl.calls == 1
+    assert len(outcome.tool_journal) == 1
+    assert outcome.workflow_result is not None
+    assert outcome.workflow_result.tool_results == outcome.tool_results
+
+
+def test_execution_context_cannot_be_rebound_to_another_plan() -> None:
+    plan, step = _approved_step(owner=CapabilityExecutionOwner.SKILL)
+    skill = RecordingSkill()
+    resolved = _skill_resolved(skill)
+    wrong_context = _execution_context().model_copy(
+        update={"plan_id": "other-plan"}
+    )
+
+    outcome = asyncio.run(
+        _executor().execute(
+            approved_plan=plan,
+            step=step,
+            step_snapshot=_snapshot(step),
+            resolved=resolved,
+            execution_context=wrong_context,
+        )
+    )
+
+    assert outcome.status is CapabilityExecutionStatus.BLOCKED
+    assert outcome.reason_codes == ("EXECUTION_CONTEXT_PLAN_MISMATCH",)
+    assert skill.calls == 0
 
 
 def test_wrong_workflow_instance_result_fails_closed() -> None:

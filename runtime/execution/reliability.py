@@ -258,8 +258,6 @@ class TimeoutRunResult(Generic[T]):
             not reason.strip() for reason in self.reason_codes
         ):
             raise ValueError("reason_codes must contain non-blank values")
-        if self.status is TimeoutRunStatus.COMPLETED and self.value is None:
-            raise ValueError("COMPLETED timeout result requires a value")
         if self.status is not TimeoutRunStatus.COMPLETED and self.value is not None:
             raise ValueError("non-COMPLETED timeout result must not carry value")
 

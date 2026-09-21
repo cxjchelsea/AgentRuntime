@@ -134,6 +134,25 @@ class FailIfCalledPermissionProvider:
         raise AssertionError("permission provider must not be called")
 
 
+class TimeoutPermissionProvider:
+    async def build(
+        self,
+        execution_context: ExecutionContext,
+    ) -> ExecutionPermissionContext:
+        del execution_context
+        raise TimeoutError("permission facts unavailable")
+
+
+class TimeoutPermissionEvaluator:
+    def evaluate(
+        self,
+        tool_definition: ToolDefinition,
+        permission_context: ExecutionPermissionContext,
+    ) -> PermissionDecision:
+        del tool_definition, permission_context
+        raise TimeoutError("permission evaluation unavailable")
+
+
 class StaticPermissionEvaluator:
     def evaluate(
         self,
@@ -641,6 +660,50 @@ def test_tool_permission_denied_or_unknown_never_becomes_allowed(
 
     assert decision.status is expected_status
     assert decision.reason_codes == (expected_reason,)
+
+
+def test_permission_provider_timeout_fails_closed_as_unknown() -> None:
+    plan = _plan()
+    implementation_resolver, *_ = _registries()
+    resolver = StepCapabilityResolver(
+        implementation_resolver=implementation_resolver,
+        permission_context_provider=TimeoutPermissionProvider(),
+        permission_evaluator=StaticPermissionEvaluator(),
+    )
+
+    decision = asyncio.run(
+        resolver.resolve(
+            approved_plan=plan,
+            step=plan.steps[0],
+            execution_context=_execution_context(),
+            current_state=RuntimeControlState.PROCESSING,
+        )
+    )
+
+    assert decision.status is CapabilityResolutionStatus.UNKNOWN
+    assert decision.reason_codes == ("TOOL_PERMISSION_UNKNOWN",)
+
+
+def test_permission_evaluator_timeout_fails_closed_as_unknown() -> None:
+    plan = _plan()
+    implementation_resolver, *_ = _registries()
+    resolver = StepCapabilityResolver(
+        implementation_resolver=implementation_resolver,
+        permission_context_provider=StaticPermissionProvider(),
+        permission_evaluator=TimeoutPermissionEvaluator(),
+    )
+
+    decision = asyncio.run(
+        resolver.resolve(
+            approved_plan=plan,
+            step=plan.steps[0],
+            execution_context=_execution_context(),
+            current_state=RuntimeControlState.PROCESSING,
+        )
+    )
+
+    assert decision.status is CapabilityResolutionStatus.UNKNOWN
+    assert decision.reason_codes == ("TOOL_PERMISSION_UNKNOWN",)
 
 
 def test_multiple_required_tools_are_projected_from_approved_tool_plan() -> None:

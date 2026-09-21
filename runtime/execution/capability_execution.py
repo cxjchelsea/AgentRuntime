@@ -951,6 +951,14 @@ class StepCapabilityExecutor:
         if resolved.step_id != step.step_id:
             return "RESOLVED_STEP_MISMATCH"
 
+        binding_error = StepCapabilityExecutor._validate_approved_owner_binding(
+            approved_plan=approved_plan,
+            step=step,
+            resolved=resolved,
+        )
+        if binding_error is not None:
+            return binding_error
+
         if resolved.execution_owner is CapabilityExecutionOwner.SKILL:
             if (
                 step.skill_id is None
@@ -976,6 +984,56 @@ class StepCapabilityExecutor:
                 or resolved.tools
             ):
                 return "NONE_OWNER_BINDING_INVALID"
+        return None
+
+    @staticmethod
+    def _validate_approved_owner_binding(
+        *,
+        approved_plan: ApprovedActionPlan,
+        step: ActionStep,
+        resolved: ResolvedStepCapabilities,
+    ) -> str | None:
+        capability_plan = approved_plan.capability_plan
+        if capability_plan is None:
+            return "APPROVED_EXECUTION_OWNER_MISSING"
+        bindings = capability_plan.get("bindings")
+        if not isinstance(bindings, list):
+            return "APPROVED_EXECUTION_OWNER_MISSING"
+
+        matches = [
+            item
+            for item in bindings
+            if isinstance(item, dict) and item.get("action_id") == step.action
+        ]
+        if len(matches) != 1:
+            return "APPROVED_EXECUTION_OWNER_MISSING"
+
+        binding = matches[0]
+        if binding.get("execution_owner") != resolved.execution_owner.value:
+            return "APPROVED_EXECUTION_OWNER_MISMATCH"
+
+        if resolved.execution_owner is CapabilityExecutionOwner.SKILL:
+            skill = resolved.skill
+            if (
+                skill is None
+                or binding.get("skill_id") != skill.capability_id
+                or binding.get("skill_version") != skill.version
+            ):
+                return "APPROVED_OWNER_IDENTITY_MISMATCH"
+        elif resolved.execution_owner is CapabilityExecutionOwner.WORKFLOW:
+            workflow = resolved.workflow
+            if (
+                workflow is None
+                or binding.get("workflow_id") != workflow.capability_id
+                or binding.get("workflow_version") != workflow.version
+            ):
+                return "APPROVED_OWNER_IDENTITY_MISMATCH"
+        else:
+            if (
+                binding.get("skill_id") is not None
+                or binding.get("workflow_id") is not None
+            ):
+                return "APPROVED_OWNER_IDENTITY_MISMATCH"
         return None
 
     def _boundary_outcome(

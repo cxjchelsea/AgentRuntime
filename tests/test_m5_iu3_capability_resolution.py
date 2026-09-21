@@ -373,8 +373,7 @@ def test_resolves_exact_approved_capabilities_without_invoking_them() -> None:
     assert decision.status is CapabilityResolutionStatus.RESOLVED
     assert decision.resolved is not None
     assert decision.resolved.execution_owner is CapabilityExecutionOwner.WORKFLOW
-    assert decision.resolved.skill is not None
-    assert decision.resolved.skill.version == "1.0.0"
+    assert decision.resolved.skill is None
     assert decision.resolved.workflow is not None
     assert decision.resolved.workflow.version == "1.0.0"
     assert [tool.version for tool in decision.resolved.tools] == ["1.0.0"]
@@ -469,7 +468,11 @@ def test_workflow_owner_cannot_inherit_skill_tool_provenance() -> None:
 
 
 def test_other_enabled_version_is_never_substituted_for_approved_version() -> None:
-    plan = _plan(skill_version="1.0.0")
+    plan = _plan(
+        skill_version="1.0.0",
+        workflow_id=None,
+        forced_workflow=None,
+    )
     resolver, *_ = _registries(skill_version="2.0.0")
 
     decision = asyncio.run(
@@ -483,6 +486,26 @@ def test_other_enabled_version_is_never_substituted_for_approved_version() -> No
 
     assert decision.status is CapabilityResolutionStatus.BLOCKED
     assert decision.reason_codes == ("CAPABILITY_NOT_FOUND",)
+
+
+def test_non_owner_skill_registry_drift_does_not_block_workflow_owner() -> None:
+    plan = _plan(skill_version="1.0.0")
+    resolver, *_ = _registries(skill_version="2.0.0")
+
+    decision = asyncio.run(
+        _step_resolver(resolver).resolve(
+            approved_plan=plan,
+            step=plan.steps[0],
+            execution_context=_execution_context(),
+            current_state=RuntimeControlState.PROCESSING,
+        )
+    )
+
+    assert decision.status is CapabilityResolutionStatus.RESOLVED
+    assert decision.resolved is not None
+    assert decision.resolved.execution_owner is CapabilityExecutionOwner.WORKFLOW
+    assert decision.resolved.skill is None
+    assert decision.resolved.workflow is not None
 
 
 def test_disabled_exact_approved_version_is_blocked() -> None:
@@ -581,11 +604,30 @@ def test_wrong_implementation_protocol_is_blocked() -> None:
     assert decision.reason_codes == ("IMPLEMENTATION_PROTOCOL_INVALID",)
 
 
-def test_skill_and_workflow_allowed_states_are_runtime_gates() -> None:
+def test_non_owner_skill_state_does_not_block_workflow_owner() -> None:
     plan = _plan()
     resolver, *_ = _registries(
         skill_states=["WAITING_EXTERNAL"],
         workflow_states=["PROCESSING"],
+    )
+
+    decision = asyncio.run(
+        _step_resolver(resolver).resolve(
+            approved_plan=plan,
+            step=plan.steps[0],
+            execution_context=_execution_context(),
+            current_state=RuntimeControlState.PROCESSING,
+        )
+    )
+
+    assert decision.status is CapabilityResolutionStatus.RESOLVED
+
+
+def test_workflow_owner_state_is_a_runtime_gate() -> None:
+    plan = _plan()
+    resolver, *_ = _registries(
+        skill_states=["PROCESSING"],
+        workflow_states=["WAITING_EXTERNAL"],
     )
 
     decision = asyncio.run(
@@ -602,7 +644,7 @@ def test_skill_and_workflow_allowed_states_are_runtime_gates() -> None:
 
 
 def test_required_capability_state_without_current_fact_is_unknown() -> None:
-    plan = _plan()
+    plan = _plan(workflow_id=None, forced_workflow=None)
     resolver, *_ = _registries(skill_states=["PROCESSING"])
 
     decision = asyncio.run(

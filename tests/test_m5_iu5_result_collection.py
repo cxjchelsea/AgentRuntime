@@ -407,14 +407,25 @@ def test_incomparable_timestamps_are_structural_collection_error() -> None:
     assert exc_info.value.reason_code == "RESULT_COLLECTION_TIME_INVALID"
 
 
-def test_reason_codes_preserve_upstream_order_and_deduplicate_collector_code() -> None:
+def test_reason_codes_preserve_upstream_order_duplicates_and_collector_code() -> None:
     outcome = _skill_outcome(
-        reason_codes=("FIRST", "RESULT_COLLECTED", "SECOND"),
+        reason_codes=("FIRST", "FIRST", "RESULT_COLLECTED", "SECOND"),
     )
 
     observation = _collect(outcome)
 
-    assert observation.reason_codes == ("FIRST", "RESULT_COLLECTED", "SECOND")
+    assert observation.reason_codes == (
+        "FIRST",
+        "FIRST",
+        "RESULT_COLLECTED",
+        "SECOND",
+    )
+
+
+def test_core_supplied_attempt_number_is_preserved() -> None:
+    observation = _collect(_skill_outcome(), attempt_number=2)
+
+    assert observation.attempt_number == 2
 
 
 def test_collection_does_not_mutate_running_step_lifecycle() -> None:

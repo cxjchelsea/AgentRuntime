@@ -80,6 +80,8 @@ ReliabilityPolicyResolver 不拥有 Registry discovery、Capability substitution
 
 ## 4. Retry policy semantics
 
+ResolvedRetryPolicy 使用 capability-neutral RetryTriggerStatus（FAILED / TIMEOUT / UNAVAILABLE / PARTIAL_SUCCESS）表达可重试 observation，不把 ToolExecutionStatus 泄漏给 Skill/Workflow policy。
+
 ResolvedRetryPolicy.max_attempts = 总尝试次数，包含 attempt 1。
 
 例如 max_attempts=3 只允许 attempt 1/2/3。

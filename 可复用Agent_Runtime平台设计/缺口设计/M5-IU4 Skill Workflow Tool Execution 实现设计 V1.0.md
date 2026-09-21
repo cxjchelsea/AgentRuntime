@@ -170,6 +170,14 @@ workflow_id == None
 
 IU4 只执行 owner，不根据字段组合重新推导 owner。
 
+实现兼容要求：
+
+```text
+CapabilityBinding.execution_owner
+```
+
+必须追加在现有 dataclass 字段尾部并给默认值，避免再次破坏既有 positional constructor。正式 Draft / Approved path 则必须由 Validator 强制 owner 非空且与 binding 一致。
+
 ### 3.2 为什么暂不加入 DIRECT_TOOL
 
 当前 M4 ToolPlan 的 Tool 来源是：
@@ -260,6 +268,23 @@ IU3 Approved Tool Projection 必须同步识别：
 required_by_skills
 required_by_workflows
 ```
+
+并且 M4 `SequencePlanner.tool_requirement` 必须改成 owner-specific projection：
+
+```text
+owner = SKILL
+→ 只从 required_by_skills == current skill 投影
+
+owner = WORKFLOW
+→ 只从 required_by_workflows == current workflow 投影
+
+owner = NONE
+→ tool_requirement = None
+```
+
+不能继续因为 ActionStep 仍保留 `skill_id`，就在 WORKFLOW owner 场景把 Skill required Tool 投影进 Step。
+
+IU3 也必须先读取 Approved binding.execution_owner，再按同一 owner provenance 投影 Tool Set；不得仅凭 `step.skill_id` 猜 Tool ownership。
 
 且仍禁止从执行时 Registry metadata 扩张 Approved Tool Set。
 

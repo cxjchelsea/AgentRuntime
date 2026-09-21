@@ -478,7 +478,14 @@ class StepCapabilityResolver:
                 return resolved
             resolved_tools.append(resolved)
 
-        if resolved_tools:
+        permission_tools: list[ResolvedCapability] = []
+        for tool in resolved_tools:
+            if not isinstance(tool.definition, ToolDefinition):
+                return self._blocked("IMPLEMENTATION_PROTOCOL_INVALID")
+            if tool.definition.required_permissions:
+                permission_tools.append(tool)
+
+        if permission_tools:
             try:
                 permission_context = await self._permission_context_provider.build(
                     execution_context
@@ -493,7 +500,7 @@ class StepCapabilityResolver:
             ):
                 return self._unknown("TOOL_PERMISSION_UNKNOWN")
 
-            for tool in resolved_tools:
+            for tool in permission_tools:
                 if not isinstance(tool.definition, ToolDefinition):
                     return self._blocked("IMPLEMENTATION_PROTOCOL_INVALID")
                 try:

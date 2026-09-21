@@ -158,12 +158,30 @@ M6 / M7 / M8
 
 ## 10. 当前状态
 
+Verified code HEAD:
+
+~~~text
+87e9c18be721351982ee6d90f1cbc8a608b60190
+~~~
+
+Verification evidence:
+
+~~~text
+pytest = PASSED (583 passed)
+mypy = PASSED (170 files)
+ruff check = PASSED
+ruff format --check = PASSED (170 files)
+~~~
+
+Formal closure:
+
 ~~~text
 M5-IU5 IMPLEMENTATION = CODE COMPLETE
 M5-IU5 INDEPENDENT IMPLEMENTATION REVIEW = PASSED
+M5-IU5 VERIFICATION = PASSED
+
+M5-IU5 = PASSED
 NEW BLOCKER = NONE
 
-M5-IU5 VERIFICATION = PENDING FOUR LOCAL GATES
-M5-IU5 = NOT YET PASSED
 M5 = IN PROGRESS
 ~~~

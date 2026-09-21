@@ -307,6 +307,22 @@ tool_plan.tool_calls[].required_by_workflows
 
 ToolPlanner 必须按照 execution_owner 生成 owner-specific Tool authority。
 
+同时必须同步修改：
+
+```text
+SequencePlanner.tool_requirement
+IU3 ApprovedStepCapabilityProjector
+PlanValidator tool provenance checks
+```
+
+规则统一为：
+
+```text
+SKILL owner -> Skill provenance
+WORKFLOW owner -> Workflow provenance
+NONE owner -> no owner Tool projection
+```
+
 IU3 Tool Projection 需同步消费 workflow provenance；不得执行时再从 WorkflowDefinition 扩张 Tool 集合。
 
 ## 7. Existing Technical Debt Assessment
@@ -433,6 +449,9 @@ CapabilityInvocationIdentifierFactory
 WorkflowDefinition.required_tools / optional_tools
 ToolCallPlan.required_by_workflows
 approved tool_plan workflow provenance
+SequencePlanner owner-specific tool_requirement
+IU3 owner-specific Approved Tool projection
+PlanValidator owner/provenance consistency
 
 Tool Gateway owns attempt/idempotency input surface
 Schema reference ambiguity must fail closed
@@ -460,7 +479,9 @@ WorkflowImplementation.resume(..., tool_invoker)
 13. schema reference cannot silently drift to another version
 14. Tool output invalid cannot erase possible side-effect ambiguity
 15. Domain cannot supply attempt/idempotency_key
-16. no Retry/Idempotency/Lock/M6
+16. SequencePlanner 不得在 WORKFLOW owner 场景投影 Skill Tool
+17. PlanValidator 必须验证 owner 与 Tool provenance 一致
+18. no Retry/Idempotency/Lock/M6
 ```
 
 ## 10. Current Formal Status

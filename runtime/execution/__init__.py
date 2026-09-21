@@ -124,6 +124,133 @@ from runtime.execution.stores import (
 )
 
 __all__ = [
+
+]""M5 Execution Framework internal contracts and protocols."""
+
+from runtime.execution.authority import (
+    ApprovedWorkflowAuthority,
+    project_workflow_authority,
+)
+from runtime.execution.capability_resolution import (
+    ApprovedCapabilityReference,
+    ApprovedStepCapabilityProjector,
+    ApprovedStepCapabilityReferences,
+    CapabilityExecutionOwner,
+    CapabilityKind,
+    CapabilityReferenceSource,
+    CapabilityResolutionDecision,
+    CapabilityResolutionStatus,
+    ResolvedCapability,
+    ResolvedStepCapabilities,
+    StepCapabilityResolver,
+)
+from runtime.execution.control import (
+    ExecutionControlSignal,
+    ExecutionControlSignalSource,
+    ExecutionControlSignalType,
+)
+from runtime.execution.errors import (
+    ExecutionCapabilityDisabledError,
+    ExecutionCapabilityNotFoundError,
+    ExecutionImplementationMissingError,
+    ExecutionImplementationTypeError,
+    ExecutionReadinessError,
+    ExecutionRegistryResolutionError,
+)
+from runtime.execution.foundation import (
+    ApprovedPlanExecutionError,
+    ApprovedPlanExecutionValidator,
+    CallableExecutionIdentifierFactory,
+    ExecutionContextBuilder,
+    ExecutionContextBuildError,
+    ExecutionCreationStore,
+    ExecutionFoundation,
+    ExecutionFoundationError,
+    ExecutionLifecycleError,
+    ExecutionLifecycleManager,
+    ExecutionLifecycleService,
+    ExecutionRecordFactory,
+    ExecutionResultProjector,
+    InMemoryExecutionStateStore,
+    PreparedExecution,
+    StepLifecycleSnapshot,
+)
+from runtime.execution.invocation import (
+    ApprovedToolInvoker,
+    CapabilityInvocationIdentifierFactory,
+    ToolInputValidator,
+    ToolInvocationJournalEntry,
+    ToolInvocationJournalReader,
+    ToolOutputValidator,
+    ToolPayloadValidationDecision,
+    ToolPayloadValidationStatus,
+)
+from runtime.execution.models import (
+    ActivityInstance,
+    ActivityStatus,
+    ExecutionErrorRecord,
+    ExecutionEventRecord,
+    ExecutionRecord,
+    M5SkillResult,
+    M5ToolResult,
+    M5WorkflowResult,
+    SkillExecutionRequest,
+    SkillExecutionStatus,
+    StepExecutionStatus,
+    ToolExecutionStatus,
+    ToolInvocationRequest,
+    WorkflowCheckpoint,
+    WorkflowExecutionRequest,
+    WorkflowExecutionStatus,
+)
+from runtime.execution.permission import (
+    ExecutionPermissionContext,
+    ExecutionPermissionContextProvider,
+    ExecutionPermissionEvaluator,
+    PermissionDecision,
+    PermissionDecisionStatus,
+)
+from runtime.execution.protocols import (
+    SkillImplementation,
+    ToolImplementation,
+    WorkflowImplementation,
+)
+from runtime.execution.resolution import (
+    ExecutionImplementationResolver,
+    ResolvedExecutionImplementation,
+)
+from runtime.execution.runtime_check import (
+    ExecutionStateEligibilityEvaluator,
+    PolicySnapshotValidityDecision,
+    PolicySnapshotValidityEvaluator,
+    PolicySnapshotValidityStatus,
+    RuntimeExecutionCheckDecision,
+    RuntimeExecutionChecker,
+    RuntimeExecutionCheckStatus,
+    RuntimeExecutionSnapshot,
+    RuntimeExecutionSnapshotProvider,
+    StateEligibilityDecision,
+    StateEligibilityStatus,
+)
+from runtime.execution.scheduler import (
+    NoopStepConditionEvaluator,
+    SequentialStepScheduler,
+    StepConditionDecision,
+    StepConditionEvaluator,
+    StepConditionStatus,
+    StepScheduleDecision,
+    StepScheduleStatus,
+)
+from runtime.execution.stores import (
+    ExecutionStateStore,
+    IdempotencyRecord,
+    IdempotencyStatus,
+    IdempotencyStore,
+    ResourceLockProvider,
+    WorkflowCheckpointStore,
+)
+
+__all__ = [
     "ActivityInstance",
     "ActivityStatus",
     "ApprovedCapabilityReference",

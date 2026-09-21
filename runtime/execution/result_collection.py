@@ -170,7 +170,7 @@ class StepResultCollector:
             attempt_number=attempt_number,
             status=status,
             execution_owner=outcome.execution_owner,
-            reason_codes=self._merge_reason_codes(
+            reason_codes=self._append_reason_codes(
                 outcome.reason_codes,
                 collector_reasons,
                 ("RESULT_COLLECTED",),
@@ -372,11 +372,12 @@ class StepResultCollector:
         return (), ()
 
     @staticmethod
-    def _merge_reason_codes(
-        *groups: tuple[str, ...],
+    def _append_reason_codes(
+        base: tuple[str, ...],
+        *extras: tuple[str, ...],
     ) -> tuple[str, ...]:
-        merged: list[str] = []
-        for group in groups:
+        merged = list(base)
+        for group in extras:
             for reason in group:
                 if reason not in merged:
                     merged.append(reason)

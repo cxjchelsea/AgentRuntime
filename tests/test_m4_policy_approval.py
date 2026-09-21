@@ -159,9 +159,18 @@ def test_real_m2_rechecker_is_the_only_approval_creator_and_preserves_plan() -> 
     assert result.approved_plan.evidence_requirement == draft.evidence_requirement
     assert result.approved_plan.capability_plan == draft.capability_plan
     assert result.approved_plan.tool_plan == draft.tool_plan
-    assert result.approved_plan.capability_plan["bindings"][0]["skill_version"] == "1.0.0"
-    assert result.approved_plan.capability_plan["bindings"][0]["workflow_version"] == "1.0.0"
-    assert result.approved_plan.tool_plan["tool_calls"][0]["tool_version"] == "1.0.0"
+    assert (
+        result.approved_plan.capability_plan["bindings"][0]["skill_version"]
+        == "1.0.0"
+    )
+    assert (
+        result.approved_plan.capability_plan["bindings"][0]["workflow_version"]
+        == "1.0.0"
+    )
+    assert (
+        result.approved_plan.tool_plan["tool_calls"][0]["tool_version"]
+        == "1.0.0"
+    )
     assert result.approved_plan.policy_snapshot == policy.model_dump(mode="json")
     assert "M2_POLICY_RECHECK_APPROVED" in result.audit_codes
 

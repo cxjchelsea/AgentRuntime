@@ -287,9 +287,14 @@ class ApprovedStepCapabilityProjector:
         step: ActionStep,
     ) -> CapabilityExecutionOwner:
         raw_owner = binding.get("execution_owner")
+        if not isinstance(raw_owner, str):
+            raise ApprovedCapabilityProjectionError(
+                "APPROVED_CAPABILITY_PLAN_INCONSISTENT",
+                "approved capability binding requires frozen execution_owner",
+            )
         try:
             owner = CapabilityExecutionOwner(raw_owner)
-        except (TypeError, ValueError) as exc:
+        except ValueError as exc:
             raise ApprovedCapabilityProjectionError(
                 "APPROVED_CAPABILITY_PLAN_INCONSISTENT",
                 "approved capability binding requires frozen execution_owner",

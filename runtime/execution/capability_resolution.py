@@ -509,7 +509,9 @@ class StepCapabilityResolver:
                 ),
             )
 
-        if references.workflow is not None:
+        if references.execution_owner is CapabilityExecutionOwner.WORKFLOW:
+            if references.workflow is None:
+                return self._blocked("APPROVED_CAPABILITY_PLAN_INCONSISTENT")
             try:
                 authority = project_workflow_authority(approved_plan)
             except (TypeError, ValueError):
@@ -521,7 +523,9 @@ class StepCapabilityResolver:
         resolved_workflow: ResolvedCapability | None = None
         resolved_tools: list[ResolvedCapability] = []
 
-        if references.skill is not None:
+        if references.execution_owner is CapabilityExecutionOwner.SKILL:
+            if references.skill is None:
+                return self._blocked("APPROVED_CAPABILITY_PLAN_INCONSISTENT")
             resolved = self._resolve_reference(references.skill)
             if isinstance(resolved, CapabilityResolutionDecision):
                 return resolved
@@ -533,7 +537,9 @@ class StepCapabilityResolver:
             if state_decision is not None:
                 return state_decision
 
-        if references.workflow is not None:
+        if references.execution_owner is CapabilityExecutionOwner.WORKFLOW:
+            if references.workflow is None:
+                return self._blocked("APPROVED_CAPABILITY_PLAN_INCONSISTENT")
             resolved = self._resolve_reference(references.workflow)
             if isinstance(resolved, CapabilityResolutionDecision):
                 return resolved

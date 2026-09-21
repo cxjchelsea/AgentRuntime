@@ -10,7 +10,7 @@
 M5-IU4 IMPLEMENTATION DESIGN = COMPLETE
 M5-IU4 IMPLEMENTATION READINESS = NOT_READY
 
-BLOCKERS = 4
+BLOCKERS = 5
 NEW PRODUCTION CODE = NOT AUTHORIZED
 ```
 
@@ -26,6 +26,8 @@ Domain Skill / Workflow 如何被强制留在 Approved Tool authority 内
 真实 Tool invoke 前后的 Validation Gate
 +
 Tool / Workflow invocation identity
++
+Workflow owner 的 Approved Tool authority
 ```
 
 ## 2. B-M5-IU4-001 — Capability Execution Owner Not Frozen
@@ -238,7 +240,76 @@ new_workflow_instance_id(...)
 
 不修改 Canonical main-chain contract。
 
-## 6. Existing Technical Debt Assessment
+## 6. B-M5-IU4-005 — Workflow Tool Authority Not Representable
+
+### 6.1 事实
+
+当前 ToolPlanner 只从：
+
+```text
+SkillDefinition.required_tools
+SkillDefinition.optional_tools
+```
+
+生成 ToolPlan，并只记录：
+
+```text
+required_by_skills
+```
+
+当前 WorkflowDefinition 没有：
+
+```text
+required_tools
+optional_tools
+```
+
+### 6.2 风险
+
+当：
+
+```text
+execution_owner = WORKFLOW
+```
+
+时，Workflow 要调用通知、事件、提醒等 Tool，却没有正式 Approved Tool provenance。
+
+如果让 Workflow implementation 自己拿 Tool Adapter：
+
+```text
+Approved Tool authority
+exact version
+permission
+validation
+future reliability gates
+```
+
+都会被绕过。
+
+### 6.3 Blocker
+
+```text
+B-M5-IU4-005
+= WORKFLOW_TOOL_AUTHORITY_NOT_REPRESENTABLE
+```
+
+### 6.4 Required fix
+
+受控扩展：
+
+```text
+WorkflowDefinition.required_tools
+WorkflowDefinition.optional_tools
+
+ToolCallPlan.required_by_workflows
+tool_plan.tool_calls[].required_by_workflows
+```
+
+ToolPlanner 必须按照 execution_owner 生成 owner-specific Tool authority。
+
+IU3 Tool Projection 需同步消费 workflow provenance；不得执行时再从 WorkflowDefinition 扩张 Tool 集合。
+
+## 11. Existing Technical Debt Assessment
 
 ### 6.1 TD-M5-IU3-01 Registry Namespace Not Pinned
 
@@ -306,7 +377,7 @@ Resume / callback / checkpoint correlation 进入后续 Persistence / Recovery u
 TD-M5-IU4-02 = OPEN / NON_BLOCKING
 ```
 
-## 7. Proposed Controlled Amendment
+## 11. Proposed Controlled Amendment
 
 建议合并为一次最小受控修正：
 
@@ -322,6 +393,9 @@ M4 internal CapabilityBinding / opaque capability_plan
 M5 internal execution protocols
 M5 internal validation / invocation protocols
 M5 internal invocation identifier protocols
+WorkflowDefinition Tool dependency metadata
+M4 ToolPlanner provenance
+IU3 approved Tool projection
 tests
 design docs
 ```
@@ -338,7 +412,7 @@ RuntimeOrchestrator
 M6
 ```
 
-## 8. CA-M5-IU4-01 Required Deliverables
+## 11. CA-M5-IU4-01 Required Deliverables
 
 至少冻结：
 
@@ -354,6 +428,10 @@ ToolInputValidator
 ToolOutputValidator
 
 CapabilityInvocationIdentifierFactory
+
+WorkflowDefinition.required_tools / optional_tools
+ToolCallPlan.required_by_workflows
+approved tool_plan workflow provenance
 
 SkillImplementation(..., tool_invoker)
 WorkflowImplementation.start(..., tool_invoker)
@@ -372,10 +450,12 @@ WorkflowImplementation.resume(..., tool_invoker)
 7. permission UNKNOWN remains UNKNOWN
 8. tool_call_id / workflow_instance_id come only from injected factory
 9. Canonical contracts unchanged
-10. no Retry/Idempotency/Lock/M6
+10. Workflow owner Tool set comes only from approved workflow provenance
+11. IU3 projection never expands Workflow tools at execution time
+12. no Retry/Idempotency/Lock/M6
 ```
 
-## 9. Current Formal Status
+## 11. Current Formal Status
 
 ```text
 M4 = CLOSED
@@ -390,6 +470,7 @@ B-M5-IU4-001 = OPEN
 B-M5-IU4-002 = OPEN
 B-M5-IU4-003 = OPEN
 B-M5-IU4-004 = OPEN
+B-M5-IU4-005 = OPEN
 
 M5-IU4 IMPLEMENTATION READINESS = NOT_READY
 
@@ -400,7 +481,7 @@ Execution Ownership + Core-controlled Invocation Boundary
 M5 = IN PROGRESS
 ```
 
-## 10. Authorization
+## 11. Authorization
 
 在上述 4 个 blocker 关闭前：
 

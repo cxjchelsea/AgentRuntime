@@ -410,6 +410,32 @@ def test_validator_rejects_unpinned_or_drifted_capability_versions() -> None:
         PlanValidator().validate(invalid_tool, _validation_context())
 
 
+def test_validator_rejects_workflow_version_drift() -> None:
+    draft = ActionPlanDraftAssembler().build(
+        plan_id="plan-iu6",
+        request_id="request-iu6",
+        planning_mode=PlanningMode.AGENT_PLANNED,
+        goals=_goals(),
+        strategy=_strategy(),
+        knowledge_planning=_no_knowledge(),
+        execution_preplanning=_preplanning(),
+        response_strategy=None,
+    )
+    step = draft.steps[0].model_copy(update={"workflow_id": "DOMAIN_WORKFLOW"})
+    capability = dict(draft.capability_plan or {})
+    bindings = [dict(item) for item in capability["bindings"]]
+    bindings[0]["workflow_id"] = "DOMAIN_WORKFLOW"
+    bindings[0]["workflow_version"] = "2.0.0"
+    capability["bindings"] = bindings
+    capability["selected_workflows"] = ["DOMAIN_WORKFLOW"]
+    invalid = draft.model_copy(
+        update={"steps": [step], "capability_plan": capability}
+    )
+
+    with pytest.raises(PlanValidationError, match="Workflow pinned id/version"):
+        PlanValidator().validate(invalid, _validation_context())
+
+
 def test_validator_rejects_missing_capability_version_pin() -> None:
     draft = ActionPlanDraftAssembler().build(
         plan_id="plan-iu6",

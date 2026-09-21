@@ -2140,7 +2140,9 @@ Tool 的职责只有：
 
 ---
 
-# Step 7：Tool Input / Output Validation
+# Step 6A：Tool Input / Output Validation
+
+> 实施映射澄清：Tool Input / Output Validation 是真实 Tool invocation boundary 的组成部分，已纳入 M5-IU4 Capability Execution。它不再占用主流程“⑦ Collect Step / Tool Result”的编号。
 
 执行前：
 
@@ -2164,7 +2166,7 @@ INVALID_PARAMETER
 
 ---
 
-## 11.7.1 Tool Output Validation
+## 11.6A.1 Tool Output Validation
 
 Tool 返回后：
 
@@ -2179,6 +2181,59 @@ TOOL_INVALID_OUTPUT
 ```
 
 不得直接当 SUCCESS。
+
+---
+
+# Step 7：Collect Step / Tool Result
+
+本步骤只负责收集一次执行尝试的真实观察，不负责提前终态化 Step。
+
+正式输入：
+
+```text
+RUNNING StepLifecycleSnapshot
++
+StepCapabilityExecutionOutcome
+```
+
+输出使用 M5 internal attempt observation，至少需要无损表达：
+
+```text
+SUCCESS
+PARTIAL_SUCCESS
+FAILED
+WAITING
+IN_PROGRESS
+CANCELLED
+TIMEOUT
+PREEMPTED
+BLOCKED
+UNKNOWN
+NO_EXTERNAL_EXECUTION
+```
+
+特别注意：
+
+```text
+Attempt observation
+!= Step terminal lifecycle
+
+WAITING / IN_PROGRESS
+不得映射成 FAILED
+
+UNKNOWN
+不得映射成 FAILED
+
+NO_EXTERNAL_EXECUTION
+不得直接映射成 SUCCESS
+
+FAILED / TIMEOUT
+在 Retry / Idempotency 处理前不得提前调用 finish_step
+```
+
+Core Tool journal 仍是唯一 Tool execution truth；Result Collection 不重新调用 Tool、不重做 Registry resolution、不重做 Permission / Validation。
+
+真正的 Step terminal lifecycle mutation 在后续 Reliability / Control / Finalization 已确定“不再 retry、不再 waiting、不再 recovery”后发生。
 
 ---
 

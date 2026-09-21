@@ -281,9 +281,7 @@ logical Tool call
 ↓
 resolve typed reliability policy
 ↓
-stable idempotency identity
-↓
-reserve if KEY_BASED
+stable logical call / idempotency identity
 ↓
 physical attempt N
 ↓
@@ -291,13 +289,21 @@ input validation
 ↓
 permission re-check
 ↓
-deadline / timeout
+deadline admission
 ↓
-exact Tool.invoke
+idempotency preflight
+  - first KEY_BASED attempt: reserve
+  - later attempt: verify same existing reservation/provenance
+  - COMPLETED: recover result, do not invoke
+  - UNKNOWN: do not invoke
+↓
+timeout runner + exact Tool.invoke
 ↓
 output validation
 ↓
-append attempt journal
+update idempotency state when applicable
+↓
+append physical-attempt journal
 ↓
 replay safety
 ↓
@@ -307,6 +313,10 @@ retry or return final logical Tool result
 ~~~
 
 每个 physical retry 都必须重新检查当前 execution permission。
+
+Idempotency reserve 绝不能早于 Input Validation / Permission / deadline admission。否则 INVALID_PARAMETER / PERMISSION_DENIED / 已过期 deadline 也会占住 key，而当前 Store 没有 release contract。
+
+已有 COMPLETED record 的 result recovery 也必须在当前 Permission 仍允许的前提下返回，不能把 idempotency cache 变成绕过执行权限的旁路。
 
 ## 12. Step Attempt Retry
 
@@ -405,7 +415,7 @@ M6
 
 ## 19. Planned Tests
 
-至少覆盖：opaque policy 不被直接解释、disabled retry、max_attempts 总次数语义、retryable/non-retryable、每 attempt permission re-check、deadline admission、NATURAL/KEY_BASED/NON_IDEMPOTENT replay safety、stable idempotency key、logical id stable、physical attempt 递增、journal attempt history、RESERVED/COMPLETED/UNKNOWN idempotency、Tool timeout != FAILED、Skill replay safety、Workflow no auto-retry、Step attempt sequence、WAITING/IN_PROGRESS 不终态、UNKNOWN/PARTIAL_SUCCESS 不被猜测终态、IU6 不解释 on_failure/fallback、不进入 M6。
+至少覆盖：opaque policy 不被直接解释、disabled retry、max_attempts 总次数语义、retryable/non-retryable、每 attempt permission re-check、INVALID/PERMISSION_DENIED 不 reserve key、deadline 过期不 reserve/不 invoke、NATURAL/KEY_BASED/NON_IDEMPOTENT replay safety、stable idempotency key、logical id stable、physical attempt 递增、journal attempt history、RESERVED/COMPLETED/UNKNOWN idempotency、COMPLETED recovery 仍受当前 Permission 约束、Tool timeout != FAILED、Skill replay safety、Workflow no auto-retry、Step attempt sequence、WAITING/IN_PROGRESS 不终态、UNKNOWN/PARTIAL_SUCCESS 不被猜测终态、IU6 不解释 on_failure/fallback、不进入 M6。
 
 ## 20. Controlled Amendment 预案
 

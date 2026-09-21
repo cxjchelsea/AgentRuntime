@@ -97,6 +97,7 @@ def _rich_draft() -> ActionPlanDraft:
                         "skill_version": "1.0.0",
                         "workflow_id": "DOMAIN_WORKFLOW",
                         "workflow_version": "1.0.0",
+                        "execution_owner": "WORKFLOW",
                     }
                 ],
                 "selected_skills": ["DOMAIN_SKILL"],
@@ -108,7 +109,8 @@ def _rich_draft() -> ActionPlanDraft:
                         "tool_id": "DOMAIN_TOOL",
                         "tool_version": "1.0.0",
                         "required": True,
-                        "required_by_skills": ["DOMAIN_SKILL"],
+                        "required_by_skills": [],
+                        "required_by_workflows": ["DOMAIN_WORKFLOW"],
                         "timeout_policy": None,
                         "retry_policy": None,
                         "idempotency_mode": None,
@@ -166,7 +168,9 @@ def test_real_m2_rechecker_is_the_only_approval_creator_and_preserves_plan() -> 
     assert tool_plan is not None
     assert capability_plan["bindings"][0]["skill_version"] == "1.0.0"
     assert capability_plan["bindings"][0]["workflow_version"] == "1.0.0"
+    assert capability_plan["bindings"][0]["execution_owner"] == "WORKFLOW"
     assert tool_plan["tool_calls"][0]["tool_version"] == "1.0.0"
+    assert tool_plan["tool_calls"][0]["required_by_workflows"] == ["DOMAIN_WORKFLOW"]
     assert result.approved_plan.policy_snapshot == policy.model_dump(mode="json")
     assert "M2_POLICY_RECHECK_APPROVED" in result.audit_codes
 

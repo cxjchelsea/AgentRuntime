@@ -8,7 +8,7 @@ Tool, writes Memory, or approves an ActionPlan.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from runtime.contracts import PolicyDecision, RuntimeContext
 from runtime.contracts.planning import ActionStep
@@ -137,6 +137,7 @@ class CapabilityBinding:
     skill_version: str | None = None
     workflow_id: str | None = None
     workflow_version: str | None = None
+    execution_owner: Literal["SKILL", "WORKFLOW", "NONE"] | None = None
 
 
 class CapabilityBindingRule(Protocol):
@@ -236,6 +237,9 @@ class CapabilityPlanner:
                         if selected_skill_id is not None
                         else None
                     ),
+                    execution_owner=(
+                        "SKILL" if selected_skill_id is not None else "NONE"
+                    ),
                 )
             )
 
@@ -260,6 +264,7 @@ class CapabilityPlanner:
                 skill_version=first.skill_version,
                 workflow_id=forced_workflow,
                 workflow_version=workflows[forced_workflow].version,
+                execution_owner="WORKFLOW",
             )
 
         selected_skills = tuple(
@@ -384,6 +389,27 @@ class CapabilityPlanner:
                     "binding workflow_version does not match selected Workflow definition"
                 )
 
+        owner = binding.execution_owner
+        if binding.skill_id is not None and binding.workflow_id is not None:
+            if owner not in {"SKILL", "WORKFLOW"}:
+                raise CapabilityPlanningError(
+                    "binding with both skill and workflow requires explicit execution_owner"
+                )
+        elif binding.skill_id is not None:
+            if owner not in {None, "SKILL"}:
+                raise CapabilityPlanningError(
+                    "skill-only binding execution_owner must be SKILL"
+                )
+        elif binding.workflow_id is not None:
+            if owner not in {None, "WORKFLOW"}:
+                raise CapabilityPlanningError(
+                    "workflow-only binding execution_owner must be WORKFLOW"
+                )
+        elif owner not in {None, "NONE"}:
+            raise CapabilityPlanningError(
+                "capability-free binding execution_owner must be NONE"
+            )
+
     @staticmethod
     def _pin_binding_versions(
         binding: CapabilityBinding,
@@ -404,7 +430,20 @@ class CapabilityPlanner:
                 if binding.workflow_id is not None
                 else None
             ),
+            execution_owner=CapabilityPlanner._normalize_execution_owner(binding),
         )
+
+    @staticmethod
+    def _normalize_execution_owner(
+        binding: CapabilityBinding,
+    ) -> Literal["SKILL", "WORKFLOW", "NONE"]:
+        if binding.execution_owner is not None:
+            return binding.execution_owner
+        if binding.workflow_id is not None:
+            return "WORKFLOW"
+        if binding.skill_id is not None:
+            return "SKILL"
+        return "NONE"
 
     @staticmethod
     def _skill_allowed(skill_id: str, policy_decision: PolicyDecision) -> bool:
@@ -427,6 +466,7 @@ class ToolCallPlan:
     idempotency_mode: str | None
     side_effect_level: str | None
     tool_version: str | None = None
+    required_by_workflows: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,9 +497,11 @@ class ToolPlanner:
         *,
         skill_registry: SkillRegistry,
         tool_registry: ToolRegistry,
+        workflow_registry: WorkflowRegistry | None = None,
         rules: tuple[ToolPlanningRule, ...] = (),
     ) -> None:
         self._skill_registry = skill_registry
+        self._workflow_registry = workflow_registry
         self._tool_registry = tool_registry
         self._rules = rules
 
@@ -470,19 +512,48 @@ class ToolPlanner:
         policy_decision: PolicyDecision,
     ) -> ToolPlanDecision:
         skills = self._enabled_skills()
+        workflows = self._enabled_workflows()
         tools = self._enabled_tools()
 
         required: list[str] = []
-        required_by: dict[str, list[str]] = {}
+        required_by_skills: dict[str, list[str]] = {}
+        required_by_workflows: dict[str, list[str]] = {}
         optional_available: set[str] = set()
-        for skill_id in capability_selection.selected_skills:
-            skill = skills.get(skill_id)
-            if skill is None:
-                raise ToolPlanningError("selected skill became unavailable")
-            for tool_id in skill.required_tools or ():
-                required.append(tool_id)
-                required_by.setdefault(tool_id, []).append(skill_id)
-            optional_available.update(skill.optional_tools or ())
+
+        for binding in capability_selection.bindings:
+            owner = binding.execution_owner
+            if owner == "SKILL":
+                if binding.skill_id is None:
+                    raise ToolPlanningError(
+                        "SKILL execution_owner requires selected skill"
+                    )
+                skill = skills.get(binding.skill_id)
+                if skill is None:
+                    raise ToolPlanningError("selected skill became unavailable")
+                for tool_id in skill.required_tools or ():
+                    required.append(tool_id)
+                    required_by_skills.setdefault(tool_id, []).append(binding.skill_id)
+                optional_available.update(skill.optional_tools or ())
+            elif owner == "WORKFLOW":
+                if binding.workflow_id is None:
+                    raise ToolPlanningError(
+                        "WORKFLOW execution_owner requires selected workflow"
+                    )
+                workflow = workflows.get(binding.workflow_id)
+                if workflow is None:
+                    raise ToolPlanningError("selected workflow became unavailable")
+                for tool_id in workflow.required_tools or ():
+                    required.append(tool_id)
+                    required_by_workflows.setdefault(tool_id, []).append(
+                        binding.workflow_id
+                    )
+                optional_available.update(workflow.optional_tools or ())
+            elif owner == "NONE":
+                continue
+            else:
+                raise ToolPlanningError(
+                    "capability binding requires frozen execution_owner"
+                )
 
         selected_optional: list[str] = []
         for rule in self._rules:
@@ -521,12 +592,15 @@ class ToolPlanner:
                     tool_version=definition.version,
                     required=tool_id in required_set,
                     required_by_skills=tuple(
-                        dict.fromkeys(required_by.get(tool_id, []))
+                        dict.fromkeys(required_by_skills.get(tool_id, []))
                     ),
                     timeout_policy=definition.timeout_policy,
                     retry_policy=definition.retry_policy,
                     idempotency_mode=definition.idempotency_mode,
                     side_effect_level=definition.side_effect_level,
+                    required_by_workflows=tuple(
+                        dict.fromkeys(required_by_workflows.get(tool_id, []))
+                    ),
                 )
             )
 
@@ -547,6 +621,22 @@ class ToolPlanner:
                     "multiple enabled versions exist for one skill_id"
                 )
             output[definition.skill_id] = definition
+        return output
+
+    def _enabled_workflows(self) -> dict[str, WorkflowDefinition]:
+        if self._workflow_registry is None:
+            return {}
+
+        output: dict[str, WorkflowDefinition] = {}
+        for record in self._workflow_registry.list():
+            definition = record.definition
+            if not record.enabled or not definition.enabled:
+                continue
+            if definition.workflow_id in output:
+                raise ToolPlanningError(
+                    "multiple enabled versions exist for one workflow_id"
+                )
+            output[definition.workflow_id] = definition
         return output
 
     def _enabled_tools(self) -> dict[str, ToolDefinition]:
@@ -694,8 +784,18 @@ class SequencePlanner:
                 call.tool_id
                 for call in tool_plan.tool_calls
                 if call.required
-                and binding.skill_id is not None
-                and binding.skill_id in call.required_by_skills
+                and (
+                    (
+                        binding.execution_owner == "SKILL"
+                        and binding.skill_id is not None
+                        and binding.skill_id in call.required_by_skills
+                    )
+                    or (
+                        binding.execution_owner == "WORKFLOW"
+                        and binding.workflow_id is not None
+                        and binding.workflow_id in call.required_by_workflows
+                    )
+                )
             )
             tool_requirement = required_tools[0] if len(required_tools) == 1 else None
 

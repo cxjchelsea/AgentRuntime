@@ -112,6 +112,7 @@ def _registries() -> tuple[
         WorkflowDefinition(
             workflow_id="DOMAIN_WORKFLOW",
             version="1.0.0",
+            required_tools=["DOMAIN_TOOL"],
         )
     )
 
@@ -168,6 +169,7 @@ def _preplanning() -> ExecutionPreplanningResult:
                     action_id="DOMAIN_ACTION",
                     skill_id="DOMAIN_SKILL",
                     skill_version="1.0.0",
+                    execution_owner="SKILL",
                 ),
             ),
             selected_skills=("DOMAIN_SKILL",),
@@ -302,8 +304,10 @@ def test_assembler_projects_prior_m4_results_into_canonical_draft() -> None:
     }
     assert draft.capability_plan is not None
     assert draft.capability_plan["bindings"][0]["skill_version"] == "1.0.0"
+    assert draft.capability_plan["bindings"][0]["execution_owner"] == "SKILL"
     assert draft.tool_plan is not None
     assert draft.tool_plan["tool_calls"][0]["tool_version"] == "1.0.0"
+    assert draft.tool_plan["tool_calls"][0]["required_by_workflows"] == []
     assert draft.confirmation_plan is not None
     assert draft.fallback_plan is not None
     assert draft.stop_conditions == ["DOMAIN_DONE"]
@@ -377,6 +381,106 @@ def test_validator_accepts_structurally_valid_nonknowledge_draft() -> None:
     assert result.draft is draft
     assert "DRAFT_STRUCTURE_VALID" in result.validation_codes
     assert draft.approval_status.value == "DRAFT"
+
+
+def test_validator_rejects_missing_execution_owner() -> None:
+    draft = ActionPlanDraftAssembler().build(
+        plan_id="plan-owner-missing",
+        request_id="request-iu6",
+        planning_mode=PlanningMode.AGENT_PLANNED,
+        goals=_goals(),
+        strategy=_strategy(),
+        knowledge_planning=_no_knowledge(),
+        execution_preplanning=_preplanning(),
+        response_strategy=None,
+    )
+    capability_plan = dict(draft.capability_plan or {})
+    bindings = [dict(item) for item in capability_plan["bindings"]]
+    bindings[0].pop("execution_owner")
+    capability_plan["bindings"] = bindings
+    invalid = draft.model_copy(update={"capability_plan": capability_plan})
+
+    with pytest.raises(PlanValidationError, match="execution_owner"):
+        PlanValidator().validate(invalid, _validation_context())
+
+
+def test_validator_accepts_workflow_owner_tool_provenance() -> None:
+    draft = ActionPlanDraftAssembler().build(
+        plan_id="plan-workflow-owner",
+        request_id="request-iu6",
+        planning_mode=PlanningMode.AGENT_PLANNED,
+        goals=_goals(),
+        strategy=_strategy(),
+        knowledge_planning=_no_knowledge(),
+        execution_preplanning=_preplanning(),
+        response_strategy=None,
+    )
+
+    capability_plan = dict(draft.capability_plan or {})
+    bindings = [dict(item) for item in capability_plan["bindings"]]
+    bindings[0]["workflow_id"] = "DOMAIN_WORKFLOW"
+    bindings[0]["workflow_version"] = "1.0.0"
+    bindings[0]["execution_owner"] = "WORKFLOW"
+    capability_plan["bindings"] = bindings
+    capability_plan["selected_workflows"] = ["DOMAIN_WORKFLOW"]
+
+    tool_plan = dict(draft.tool_plan or {})
+    calls = [dict(item) for item in tool_plan["tool_calls"]]
+    calls[0]["required_by_skills"] = []
+    calls[0]["required_by_workflows"] = ["DOMAIN_WORKFLOW"]
+    tool_plan["tool_calls"] = calls
+
+    step = draft.steps[0].model_copy(update={"workflow_id": "DOMAIN_WORKFLOW"})
+    workflow_draft = draft.model_copy(
+        update={
+            "capability_plan": capability_plan,
+            "tool_plan": tool_plan,
+            "steps": [step],
+        }
+    )
+
+    result = PlanValidator().validate(workflow_draft, _validation_context())
+
+    assert result.draft is workflow_draft
+    assert "REGISTRY_REFERENCES_VALID" in result.validation_codes
+
+
+def test_validator_rejects_tool_provenance_for_non_owner_skill() -> None:
+    draft = ActionPlanDraftAssembler().build(
+        plan_id="plan-owner-provenance",
+        request_id="request-iu6",
+        planning_mode=PlanningMode.AGENT_PLANNED,
+        goals=_goals(),
+        strategy=_strategy(),
+        knowledge_planning=_no_knowledge(),
+        execution_preplanning=_preplanning(),
+        response_strategy=None,
+    )
+    capability_plan = dict(draft.capability_plan or {})
+    bindings = [dict(item) for item in capability_plan["bindings"]]
+    bindings[0]["execution_owner"] = "WORKFLOW"
+    bindings[0]["workflow_id"] = "DOMAIN_WORKFLOW"
+    bindings[0]["workflow_version"] = "1.0.0"
+    capability_plan["bindings"] = bindings
+    capability_plan["selected_workflows"] = ["DOMAIN_WORKFLOW"]
+
+    tool_plan = dict(draft.tool_plan or {})
+    calls = [dict(item) for item in tool_plan["tool_calls"]]
+    calls[0]["required_by_skills"] = ["DOMAIN_SKILL"]
+    calls[0]["required_by_workflows"] = []
+    tool_plan["tool_calls"] = calls
+
+    step = draft.steps[0].model_copy(update={"workflow_id": "DOMAIN_WORKFLOW"})
+    invalid = draft.model_copy(
+        update={
+            "capability_plan": capability_plan,
+            "tool_plan": tool_plan,
+            "steps": [step],
+        }
+    )
+
+    with pytest.raises(PlanValidationError, match="non-owner Skill"):
+        PlanValidator().validate(invalid, _validation_context())
 
 
 def test_validator_rejects_skill_version_drift_even_when_id_exists() -> None:

@@ -6,12 +6,15 @@
 
 ## 1. Readiness 结论
 
+> CA-M5-IU4-01 已完成 Targeted Amendment Review，并在 HEAD `2fa430fac88502c59cbc33ae263bf83822c2eb5e` 通过四项本地门禁：pytest 529 passed、mypy 166 files、ruff check、ruff format --check。
+
 ```text
 M5-IU4 IMPLEMENTATION DESIGN = COMPLETE
-M5-IU4 IMPLEMENTATION READINESS = NOT_READY
+M5-IU4 INDEPENDENT DESIGN REVIEW = PASSED
+M5-IU4 IMPLEMENTATION READINESS = READY
 
-BLOCKERS = 5
-NEW PRODUCTION CODE = NOT AUTHORIZED
+BLOCKERS = 0
+PRODUCTION IMPLEMENTATION = AUTHORIZED_WITHIN_FROZEN_IU4_SCOPE
 ```
 
 原因不是 Capability Resolution 缺失；IU3 已经完成 exact resolution。
@@ -494,35 +497,41 @@ M5-IU2 = PASSED
 M5-IU3 = PASSED
 
 M5-IU4 IMPLEMENTATION DESIGN = COMPLETE
+M5-IU4 INDEPENDENT DESIGN REVIEW = PASSED
 
-B-M5-IU4-001 = OPEN
-B-M5-IU4-002 = OPEN
-B-M5-IU4-003 = OPEN
-B-M5-IU4-004 = OPEN
-B-M5-IU4-005 = OPEN
+B-M5-IU4-001 = CLOSED
+B-M5-IU4-002 = CLOSED
+B-M5-IU4-003 = CLOSED
+B-M5-IU4-004 = CLOSED
+B-M5-IU4-005 = CLOSED
 
-M5-IU4 IMPLEMENTATION READINESS = NOT_READY
+CA-M5-IU4-01 TARGETED AMENDMENT REVIEW = PASSED
+CA-M5-IU4-01 VERIFICATION = PASSED
+CA-M5-IU4-01 = PASSED
+
+M5-IU4 IMPLEMENTATION READINESS = READY
 
 NEXT REQUIRED:
-CA-M5-IU4-01
-Execution Ownership + Core-controlled Invocation Boundary
+M5-IU4 production implementation within frozen first-version scope
 
 M5 = IN PROGRESS
 ```
 
 ## 11. Authorization
 
-在上述 5 个 blocker 关闭前：
+现在允许开始 M5-IU4 第一版真实 Skill / fresh Workflow START / approved Tool invocation implementation，但仍必须遵守：
 
 ```text
-不得开始真正 Skill / Workflow / Tool production invocation implementation
-```
+只执行 frozen execution_owner
+Tool 只能经过 Core ApprovedToolInvoker
+只使用 IU3 exact-resolved Approved Tool Set
+每次 Tool invoke 前重检 Permission
+Input / Output Validation 不得绕过
+Core Tool journal 是唯一 Tool execution truth
 
-允许做：
-
-```text
-CA-M5-IU4-01 controlled amendment
-targeted amendment review
-four local gates
-readiness re-review
+optional Tool invocation = NOT AUTHORIZED
+direct Tool fast path = NOT AUTHORIZED
+Workflow resume/recovery = NOT AUTHORIZED
+Retry/Timeout/Idempotency/Lock/Cancellation/Preemption = NOT IN IU4
+M6 = NOT IN IU4
 ```

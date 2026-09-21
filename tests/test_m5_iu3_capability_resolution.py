@@ -9,6 +9,8 @@ import pytest
 from runtime.contracts.enums import RuntimeControlState
 from runtime.contracts.execution import ExecutionContext
 from runtime.execution import (
+    ApprovedToolInvoker,
+    CapabilityExecutionOwner,
     CapabilityResolutionStatus,
     ExecutionImplementationResolver,
     ExecutionPermissionContext,
@@ -44,8 +46,9 @@ class RecordingSkill:
         self,
         request: SkillExecutionRequest,
         execution_context: ExecutionContext,
+        tool_invoker: ApprovedToolInvoker,
     ) -> M5SkillResult:
-        del execution_context
+        del execution_context, tool_invoker
         self.calls += 1
         return M5SkillResult(
             skill_id=request.skill_id,
@@ -61,8 +64,9 @@ class RecordingWorkflow:
         self,
         request: WorkflowExecutionRequest,
         execution_context: ExecutionContext,
+        tool_invoker: ApprovedToolInvoker,
     ) -> M5WorkflowResult:
-        del execution_context
+        del execution_context, tool_invoker
         self.calls += 1
         return M5WorkflowResult(
             workflow_instance_id=request.workflow_instance_id,
@@ -74,8 +78,9 @@ class RecordingWorkflow:
         self,
         request: WorkflowExecutionRequest,
         execution_context: ExecutionContext,
+        tool_invoker: ApprovedToolInvoker,
     ) -> M5WorkflowResult:
-        del execution_context
+        del execution_context, tool_invoker
         self.calls += 1
         return M5WorkflowResult(
             workflow_instance_id=request.workflow_instance_id,
@@ -210,6 +215,7 @@ def _plan(
     workflow_id: str | None = "DOMAIN_WORKFLOW",
     tool_requirement: str | None = "DOMAIN_TOOL",
     forced_workflow: str | None = "DOMAIN_WORKFLOW",
+    execution_owner: str | None = None,
 ):
     base = build_approved_action_plan()
     step = base.steps[0].model_copy(
@@ -221,19 +227,24 @@ def _plan(
         }
     )
 
+    owner = execution_owner or ("WORKFLOW" if workflow_id is not None else "SKILL")
     binding = {
         "action_id": "DOMAIN_ACTION",
         "skill_id": "DOMAIN_SKILL",
         "skill_version": skill_version,
         "workflow_id": workflow_id,
         "workflow_version": workflow_version if workflow_id is not None else None,
+        "execution_owner": owner,
     }
     calls = [
         {
             "tool_id": tool_id,
             "tool_version": version,
             "required": True,
-            "required_by_skills": ["DOMAIN_SKILL"],
+            "required_by_skills": ["DOMAIN_SKILL"] if owner == "SKILL" else [],
+            "required_by_workflows": (
+                [workflow_id] if owner == "WORKFLOW" and workflow_id is not None else []
+            ),
             "timeout_policy": None,
             "retry_policy": None,
             "idempotency_mode": None,
@@ -359,8 +370,8 @@ def test_resolves_exact_approved_capabilities_without_invoking_them() -> None:
 
     assert decision.status is CapabilityResolutionStatus.RESOLVED
     assert decision.resolved is not None
-    assert decision.resolved.skill is not None
-    assert decision.resolved.skill.version == "1.0.0"
+    assert decision.resolved.execution_owner is CapabilityExecutionOwner.WORKFLOW
+    assert decision.resolved.skill is None
     assert decision.resolved.workflow is not None
     assert decision.resolved.workflow.version == "1.0.0"
     assert [tool.version for tool in decision.resolved.tools] == ["1.0.0"]
@@ -409,8 +420,57 @@ def test_unpinned_approved_version_fails_closed() -> None:
     assert decision.reason_codes == ("CAPABILITY_VERSION_UNPINNED",)
 
 
+def test_missing_execution_owner_fails_closed() -> None:
+    plan = _plan()
+    capability_plan = dict(plan.capability_plan or {})
+    bindings = [dict(item) for item in capability_plan["bindings"]]
+    bindings[0].pop("execution_owner")
+    capability_plan["bindings"] = bindings
+    invalid = plan.model_copy(update={"capability_plan": capability_plan})
+    resolver, *_ = _registries()
+
+    decision = asyncio.run(
+        _step_resolver(resolver).resolve(
+            approved_plan=invalid,
+            step=invalid.steps[0],
+            execution_context=_execution_context(),
+            current_state=RuntimeControlState.PROCESSING,
+        )
+    )
+
+    assert decision.status is CapabilityResolutionStatus.BLOCKED
+    assert decision.reason_codes == ("APPROVED_CAPABILITY_PLAN_INCONSISTENT",)
+
+
+def test_workflow_owner_cannot_inherit_skill_tool_provenance() -> None:
+    plan = _plan()
+    tool_plan = dict(plan.tool_plan or {})
+    calls = [dict(item) for item in tool_plan["tool_calls"]]
+    calls[0]["required_by_skills"] = ["DOMAIN_SKILL"]
+    calls[0]["required_by_workflows"] = []
+    tool_plan["tool_calls"] = calls
+    invalid = plan.model_copy(update={"tool_plan": tool_plan})
+    resolver, *_ = _registries()
+
+    decision = asyncio.run(
+        _step_resolver(resolver).resolve(
+            approved_plan=invalid,
+            step=invalid.steps[0],
+            execution_context=_execution_context(),
+            current_state=RuntimeControlState.PROCESSING,
+        )
+    )
+
+    assert decision.status is CapabilityResolutionStatus.BLOCKED
+    assert decision.reason_codes == ("APPROVED_TOOL_PLAN_INCONSISTENT",)
+
+
 def test_other_enabled_version_is_never_substituted_for_approved_version() -> None:
-    plan = _plan(skill_version="1.0.0")
+    plan = _plan(
+        skill_version="1.0.0",
+        workflow_id=None,
+        forced_workflow=None,
+    )
     resolver, *_ = _registries(skill_version="2.0.0")
 
     decision = asyncio.run(
@@ -424,6 +484,26 @@ def test_other_enabled_version_is_never_substituted_for_approved_version() -> No
 
     assert decision.status is CapabilityResolutionStatus.BLOCKED
     assert decision.reason_codes == ("CAPABILITY_NOT_FOUND",)
+
+
+def test_non_owner_skill_registry_drift_does_not_block_workflow_owner() -> None:
+    plan = _plan(skill_version="1.0.0")
+    resolver, *_ = _registries(skill_version="2.0.0")
+
+    decision = asyncio.run(
+        _step_resolver(resolver).resolve(
+            approved_plan=plan,
+            step=plan.steps[0],
+            execution_context=_execution_context(),
+            current_state=RuntimeControlState.PROCESSING,
+        )
+    )
+
+    assert decision.status is CapabilityResolutionStatus.RESOLVED
+    assert decision.resolved is not None
+    assert decision.resolved.execution_owner is CapabilityExecutionOwner.WORKFLOW
+    assert decision.resolved.skill is None
+    assert decision.resolved.workflow is not None
 
 
 def test_disabled_exact_approved_version_is_blocked() -> None:
@@ -470,6 +550,7 @@ def test_missing_implementation_ref_is_blocked() -> None:
                         "skill_version": "1.0.0",
                         "workflow_id": None,
                         "workflow_version": None,
+                        "execution_owner": "SKILL",
                     }
                 ],
                 "selected_skills": ["DOMAIN_SKILL"],
@@ -521,11 +602,30 @@ def test_wrong_implementation_protocol_is_blocked() -> None:
     assert decision.reason_codes == ("IMPLEMENTATION_PROTOCOL_INVALID",)
 
 
-def test_skill_and_workflow_allowed_states_are_runtime_gates() -> None:
+def test_non_owner_skill_state_does_not_block_workflow_owner() -> None:
     plan = _plan()
     resolver, *_ = _registries(
         skill_states=["WAITING_EXTERNAL"],
         workflow_states=["PROCESSING"],
+    )
+
+    decision = asyncio.run(
+        _step_resolver(resolver).resolve(
+            approved_plan=plan,
+            step=plan.steps[0],
+            execution_context=_execution_context(),
+            current_state=RuntimeControlState.PROCESSING,
+        )
+    )
+
+    assert decision.status is CapabilityResolutionStatus.RESOLVED
+
+
+def test_workflow_owner_state_is_a_runtime_gate() -> None:
+    plan = _plan()
+    resolver, *_ = _registries(
+        skill_states=["PROCESSING"],
+        workflow_states=["WAITING_EXTERNAL"],
     )
 
     decision = asyncio.run(
@@ -542,7 +642,7 @@ def test_skill_and_workflow_allowed_states_are_runtime_gates() -> None:
 
 
 def test_required_capability_state_without_current_fact_is_unknown() -> None:
-    plan = _plan()
+    plan = _plan(workflow_id=None, forced_workflow=None)
     resolver, *_ = _registries(skill_states=["PROCESSING"])
 
     decision = asyncio.run(

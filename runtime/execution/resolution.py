@@ -8,7 +8,8 @@ Skill / Workflow / Tool.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from inspect import Signature, signature
+from typing import Any, Generic, TypeVar
 
 from runtime.execution.errors import (
     ExecutionCapabilityDisabledError,
@@ -90,6 +91,10 @@ class ExecutionImplementationResolver:
             raise ExecutionImplementationTypeError(
                 "skill implementation_ref does not satisfy SkillImplementation"
             )
+        self._require_tool_invoker_parameter(
+            implementation.execute,
+            label="skill execute",
+        )
         return ResolvedExecutionImplementation(
             definition=record.definition,
             implementation_ref=implementation,
@@ -115,6 +120,14 @@ class ExecutionImplementationResolver:
             raise ExecutionImplementationTypeError(
                 "workflow implementation_ref does not satisfy WorkflowImplementation"
             )
+        self._require_tool_invoker_parameter(
+            implementation.start,
+            label="workflow start",
+        )
+        self._require_tool_invoker_parameter(
+            implementation.resume,
+            label="workflow resume",
+        )
         return ResolvedExecutionImplementation(
             definition=record.definition,
             implementation_ref=implementation,
@@ -144,6 +157,25 @@ class ExecutionImplementationResolver:
             definition=record.definition,
             implementation_ref=implementation,
         )
+
+    @staticmethod
+    def _require_tool_invoker_parameter(
+        method: Any,
+        *,
+        label: str,
+    ) -> None:
+        try:
+            method_signature: Signature = signature(method)
+        except (TypeError, ValueError) as exc:
+            raise ExecutionImplementationTypeError(
+                f"{label} signature is not inspectable"
+            ) from exc
+
+        parameter = method_signature.parameters.get("tool_invoker")
+        if parameter is None:
+            raise ExecutionImplementationTypeError(
+                f"{label} must accept ApprovedToolInvoker"
+            )
 
     @staticmethod
     def _resolve_exact(

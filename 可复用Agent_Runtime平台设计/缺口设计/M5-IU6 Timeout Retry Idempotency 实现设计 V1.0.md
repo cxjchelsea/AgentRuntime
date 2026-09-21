@@ -111,6 +111,22 @@ Workflow owner -> 第一版不启用 auto-retry policy
 
 同名 policy reference 在不同 capability kind 上也不得由 Core 假定同义；由 resolver 返回 typed policy。
 
+Policy resolution 还必须满足版本稳定性：
+
+~~~text
+exact capability version
+→ deterministic reliability policy
+~~~
+
+禁止：
+
+~~~text
+policy_ref = "standard"
+→ execution 时静默绑定“当前最新版 policy”
+~~~
+
+如果 policy reference 指向外部 policy repository，则必须带 immutable version/hash，或由 resolver 证明该 token 在 exact capability version 下是不可变映射。
+
 ## 4. Timeout Authority
 
 IU6 必须区分：
@@ -300,6 +316,21 @@ Tool physical retry 仍可在同一个 logical invocation 内安全设计。
 RESERVED -> concurrent/in-flight；不得再次 invoke
 COMPLETED -> 不再次 invoke；必须恢复可信 completed result
 UNKNOWN -> 不再次 invoke；返回 UNKNOWN / recovery-required
+
+另外必须补齐 reservation lifecycle：
+
+~~~text
+当 operation 被可信确认“未产生 side effect 且最终停止”时，
+不能永久遗留 RESERVED。
+~~~
+
+CA 必须明确选择一种合同：
+
+~~~text
+mark_failed / release / abandon
+~~~
+
+并冻结其原子性和何时允许使用。不得用 mark_unknown 代替“已确认无 side effect”的失败。
 ~~~
 
 ## 11. Tool Retry Execution
@@ -353,6 +384,8 @@ Idempotency reserve 绝不能早于 Input Validation / Permission / deadline adm
 第一版设计包含 Skill owner Step replay 的目标，但当前 Readiness 尚未授权。
 
 Workflow owner 永不在 IU6 第一版自动重放。
+
+但 Workflow 内部通过 CoreApprovedToolInvoker 发起的单个 Tool logical call，仍可以使用 Tool-level physical retry；禁止的是重新执行整个 Workflow.start。
 
 Skill Step replay 除了要求 StepReplaySafety = SAFE，还必须有跨 Step attempts 的 ToolOperationCorrelationKey。只要该 correlation 缺失，或存在 UNKNOWN Tool outcome、untrusted success、NON_IDEMPOTENT 已开始 side effect、idempotency UNKNOWN，就禁止自动 replay whole Skill。
 

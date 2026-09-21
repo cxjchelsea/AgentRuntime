@@ -361,6 +361,8 @@ StepLifecycleSnapshot 必须匹配 step_id/action
 StepLifecycleSnapshot.status 必须是 RUNNING
 ResolvedStepCapabilities.step_id 必须匹配
 resolved owner 与 Step skill/workflow identity 必须一致
+ApprovedPlan capability_plan.bindings[].execution_owner 必须匹配 resolved owner
+Approved owner capability ID + version 必须匹配 IU3 resolved owner identity
 ```
 
 IU4 不自行修改 lifecycle；只消费 RUNNING snapshot。
@@ -401,6 +403,8 @@ tests/test_m5_iu4_capability_execution.py
 Skill owner exact execution
 fresh Workflow START
 Workflow WAITING
+forced-workflow 保留 non-owner skill_id 时仍只执行 Workflow owner
+forged resolved owner 不能覆盖 Approved execution_owner
 Workflow Tool Gateway
 unapproved Tool blocked
 authority violation latch
@@ -408,6 +412,8 @@ input INVALID
 input validator failure
 invoke-time permission per call
 permission DENIED
+permission UNKNOWN
+Tool adapter exception
 output INVALID + raw observation preservation
 non-success Tool never upgraded
 Domain fabricated tool_results rejected

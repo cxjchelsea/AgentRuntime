@@ -197,7 +197,73 @@ IU4 第一版不伪造该路径，登记技术债：
 TD-M5-IU4-01 DIRECT_TOOL_FAST_PATH_NOT_REPRESENTABLE
 ```
 
-## 4. Core-controlled Tool Invocation Gateway
+## 4. Workflow Tool Authority 必须可表达
+
+当前 ToolPlanner 只从：
+
+```text
+SkillDefinition.required_tools
+SkillDefinition.optional_tools
+```
+
+生成 ToolPlan，并只保留：
+
+```text
+required_by_skills
+```
+
+但 Workflow 是正式执行 owner，且真实 Workflow 通常必须调用 Tool。
+
+当前 `WorkflowDefinition` 没有：
+
+```text
+required_tools
+optional_tools
+```
+
+因此以下合法形态目前无法安全表达：
+
+```text
+execution_owner = WORKFLOW
+workflow_id = HELP_WORKFLOW
+required approved tools = CREATE_EVENT + NOTIFY
+```
+
+不得用“Workflow implementation 自己知道要调什么 Tool”补洞。
+
+建议受控扩展：
+
+```text
+WorkflowDefinition.required_tools
+WorkflowDefinition.optional_tools
+
+ToolCallPlan.required_by_workflows
+tool_plan.tool_calls[].required_by_workflows
+```
+
+ToolPlanner 必须根据 execution_owner 生成 authority：
+
+```text
+owner = SKILL
+→ 只生成该 Skill 的 Tool provenance
+
+owner = WORKFLOW
+→ 只生成该 Workflow 的 Tool provenance
+
+owner = NONE
+→ 不生成 owner Tool authority
+```
+
+IU3 Approved Tool Projection 必须同步识别：
+
+```text
+required_by_skills
+required_by_workflows
+```
+
+且仍禁止从执行时 Registry metadata 扩张 Approved Tool Set。
+
+## 16. Core-controlled Tool Invocation Gateway
 
 正式原则：
 
@@ -273,7 +339,7 @@ IU3 exact resolution
 
 之间不存在第二次版本选择。
 
-## 5. Skill / Workflow Protocol Amendment
+## 16. Skill / Workflow Protocol Amendment
 
 为保证 Tool 调用不脱离 Core，当前 Protocol 需要受控修改。
 
@@ -313,7 +379,7 @@ EmptyApprovedToolInvoker
 
 这样 Domain implementation 不需要两套函数签名。
 
-## 6. Tool Permission TOCTOU
+## 16. Tool Permission TOCTOU
 
 IU3 已在 Capability Resolution 时检查 execution permission。
 
@@ -344,7 +410,7 @@ UNKNOWN -> UNKNOWN / TOOL_PERMISSION_UNKNOWN
 provider/evaluator failure -> UNKNOWN
 ```
 
-## 7. Tool Input / Output Validation Boundary
+## 16. Tool Input / Output Validation Boundary
 
 建议新增：
 
@@ -398,7 +464,7 @@ output_schema
 
 Core 不把业务 schema 写死。
 
-## 8. Invocation Identifier Contract
+## 16. Invocation Identifier Contract
 
 当前：
 
@@ -425,7 +491,7 @@ new_workflow_instance_id(step_execution_id, workflow_id)
 
 ID 策略继续注入，Core 不硬编码 UUID。
 
-## 9. Skill Executor
+## 16. Skill Executor
 
 输入：
 
@@ -467,7 +533,7 @@ result.skill_id == resolved skill_id
 SKILL_RESULT_INVALID
 ```
 
-## 10. Workflow Executor
+## 16. Workflow Executor
 
 IU4 第一版只处理：
 
@@ -503,7 +569,7 @@ Resume 保留现有 Protocol，但本 IU 不授权调用。
 TD-M5-IU4-02 WORKFLOW_RESUME_DEFERRED_TO_RECOVERY_UNIT
 ```
 
-## 11. Optional Tool 边界
+## 16. Optional Tool 边界
 
 继承：
 
@@ -530,7 +596,7 @@ optional Tool invocation
 
 在未来真正启用 optional Tool 前，该 TD 必须关闭。
 
-## 12. IU4 内部结果
+## 16. IU4 内部结果
 
 IU4 不直接生成 Canonical ExecutionResult。
 
@@ -548,6 +614,8 @@ StepCapabilityExecutionOutcome
   step_id
   step_execution_id
   owner
+  owner_capability_id?
+  owner_capability_version?
   skill_result?
   workflow_result?
   tool_results[]
@@ -566,7 +634,7 @@ EXECUTED
 
 真正 Step lifecycle mutation 仍由 ExecutionLifecycleService / 后续 orchestration 完成。
 
-## 13. 明确不属于 IU4
+## 16. 明确不属于 IU4
 
 ```text
 Retry
@@ -585,7 +653,7 @@ Response
 State/Memory Update
 ```
 
-## 14. Planned Gate
+## 16. Planned Gate
 
 至少覆盖：
 
@@ -605,11 +673,13 @@ State/Memory Update
 13. Workflow START 生成唯一 instance id
 14. Workflow WAITING 保持 WAITING
 15. no external execution 不等于 Step success
-16. optional Tool 不猜归属
-17. IU4 不进入 Retry/Idempotency/Lock/M6
+16. Workflow owner 只能使用 Approved workflow Tool provenance
+17. optional Tool 不猜归属
+18. executed owner version 必须保留到 internal outcome
+19. IU4 不进入 Retry/Idempotency/Lock/M6
 ```
 
-## 15. 设计结论
+## 16. 设计结论
 
 ```text
 M5-IU4 IMPLEMENTATION DESIGN = COMPLETE

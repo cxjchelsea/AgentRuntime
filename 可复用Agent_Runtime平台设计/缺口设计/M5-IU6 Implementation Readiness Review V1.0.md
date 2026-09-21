@@ -98,6 +98,7 @@ result_reference?
 缺少：
 
 ~~~text
+step_execution_id
 tool_id
 tool_version
 operation_fingerprint
@@ -336,11 +337,13 @@ M5 internal reliability contracts
 3. CA-M5-IU6-02 Targeted Amendment Review = PASSED
 4. CA-M5-IU6-02 four local gates = GREEN
 5. 5 个 blocker 全部 CLOSED
-6. 不新增 Capability substitution / Replan
-7. UNKNOWN side effect 不会进入 blind retry
-8. Workflow owner 仍禁止 auto retry
-9. IU6 不解释 on_failure/fallback
-10. Canonical / M6 边界未被破坏
+6. max_attempts 明确表示“包含第一次”的总尝试次数
+7. Tool physical attempt 与 Step attempt_number 两套计数不可混用
+8. 不新增 Capability substitution / Replan
+9. UNKNOWN side effect 不会进入 blind retry
+10. Workflow owner 仍禁止 auto retry
+11. IU6 不解释 on_failure/fallback
+12. Canonical / M6 边界未被破坏
 ~~~
 
 ## 14. Current Formal Status

@@ -27,6 +27,7 @@ from runtime.planning.knowledge_planning import (
 from runtime.planning.strategy_selection import StrategySelectionResult
 from runtime.registries import (
     ActionRegistry,
+    RegistryItemNotFoundError,
     SkillRegistry,
     StrategyRegistry,
     ToolRegistry,
@@ -198,7 +199,9 @@ class ActionPlanDraftAssembler:
                 {
                     "action_id": binding.action_id,
                     "skill_id": binding.skill_id,
+                    "skill_version": binding.skill_version,
                     "workflow_id": binding.workflow_id,
+                    "workflow_version": binding.workflow_version,
                 }
                 for binding in selection.bindings
             ],
@@ -215,6 +218,7 @@ class ActionPlanDraftAssembler:
             "tool_calls": [
                 {
                     "tool_id": call.tool_id,
+                    "tool_version": call.tool_version,
                     "required": call.required,
                     "required_by_skills": list(call.required_by_skills),
                     "timeout_policy": call.timeout_policy,
@@ -625,7 +629,9 @@ class PlanValidator:
                 raise PlanValidationError("capability binding must be object")
             action_id = binding.get("action_id")
             skill_id = binding.get("skill_id")
+            skill_version = binding.get("skill_version")
             workflow_id = binding.get("workflow_id")
+            workflow_version = binding.get("workflow_version")
             if not isinstance(action_id, str) or action_id not in actions:
                 raise PlanValidationError(
                     "capability binding must reference a Draft Action"
@@ -636,21 +642,67 @@ class PlanValidator:
                 )
             bound_actions.add(action_id)
 
-            if skill_id is not None:
+            if skill_id is None:
+                if skill_version is not None:
+                    raise PlanValidationError(
+                        "skill_version requires capability binding skill_id"
+                    )
+            else:
                 if not isinstance(skill_id, str) or skill_id not in skills:
                     raise PlanValidationError(
                         "capability binding references unavailable Skill"
                     )
-                if action_id not in (skills[skill_id].supported_actions or ()):
+                if not isinstance(skill_version, str) or not skill_version.strip():
+                    raise PlanValidationError(
+                        "capability binding requires pinned skill_version"
+                    )
+                try:
+                    skill_record = context.skill_registry.get(skill_id, skill_version)
+                except RegistryItemNotFoundError as exc:
+                    raise PlanValidationError(
+                        "capability binding references unavailable Skill version"
+                    ) from exc
+                if not skill_record.enabled or not skill_record.definition.enabled:
+                    raise PlanValidationError(
+                        "capability binding Skill version is disabled"
+                    )
+                if action_id not in (skill_record.definition.supported_actions or ()):
                     raise PlanValidationError(
                         "capability Skill does not support bound Action"
                     )
-            if workflow_id is not None and (
-                not isinstance(workflow_id, str) or workflow_id not in workflows
-            ):
-                raise PlanValidationError(
-                    "capability binding references unavailable Workflow"
-                )
+
+            if workflow_id is None:
+                if workflow_version is not None:
+                    raise PlanValidationError(
+                        "workflow_version requires capability binding workflow_id"
+                    )
+            else:
+                if not isinstance(workflow_id, str) or workflow_id not in workflows:
+                    raise PlanValidationError(
+                        "capability binding references unavailable Workflow"
+                    )
+                if (
+                    not isinstance(workflow_version, str)
+                    or not workflow_version.strip()
+                ):
+                    raise PlanValidationError(
+                        "capability binding requires pinned workflow_version"
+                    )
+                try:
+                    workflow_record = context.workflow_registry.get(
+                        workflow_id, workflow_version
+                    )
+                except RegistryItemNotFoundError as exc:
+                    raise PlanValidationError(
+                        "capability binding references unavailable Workflow version"
+                    ) from exc
+                if (
+                    not workflow_record.enabled
+                    or not workflow_record.definition.enabled
+                ):
+                    raise PlanValidationError(
+                        "capability binding Workflow version is disabled"
+                    )
 
         if bound_actions != actions:
             raise PlanValidationError(
@@ -705,16 +757,27 @@ class PlanValidator:
             if not isinstance(call, dict):
                 raise PlanValidationError("tool call plan must be object")
             tool_id = call.get("tool_id")
+            tool_version = call.get("tool_version")
             required = call.get("required")
             if not isinstance(required, bool):
                 raise PlanValidationError("tool call required must be bool")
             if not isinstance(tool_id, str) or tool_id not in tools:
                 raise PlanValidationError("tool plan references unavailable Tool")
+            if not isinstance(tool_version, str) or not tool_version.strip():
+                raise PlanValidationError("tool plan requires pinned tool_version")
+            try:
+                tool_record = context.tool_registry.get(tool_id, tool_version)
+            except RegistryItemNotFoundError as exc:
+                raise PlanValidationError(
+                    "tool plan references unavailable Tool version"
+                ) from exc
+            if not tool_record.enabled or not tool_record.definition.enabled:
+                raise PlanValidationError("tool plan Tool version is disabled")
             if tool_id in seen:
                 raise PlanValidationError("tool plan must not duplicate tool_id")
             seen.add(tool_id)
 
-            definition = tools[tool_id]
+            definition = tool_record.definition
             metadata_pairs = {
                 "timeout_policy": definition.timeout_policy,
                 "retry_policy": definition.retry_policy,

@@ -18,12 +18,15 @@ from runtime.execution import (
     PermissionDecisionStatus,
     ResolvedCapability,
     ResolvedStepCapabilities,
+    SkillExecutionRequest,
     SkillExecutionStatus,
     StepExecutionStatus,
     StepLifecycleSnapshot,
     ToolExecutionStatus,
+    ToolInvocationRequest,
     ToolPayloadValidationDecision,
     ToolPayloadValidationStatus,
+    WorkflowExecutionRequest,
     WorkflowExecutionStatus,
 )
 from runtime.execution.capability_execution import (
@@ -164,7 +167,7 @@ class RecordingTool:
     ) -> None:
         self.status = status
         self.calls = 0
-        self.requests = []
+        self.requests: list[ToolInvocationRequest] = []
 
     async def invoke(self, request, execution_context):
         del execution_context
@@ -200,7 +203,7 @@ class RecordingSkill:
         self.fabricated_tool_result = fabricated_tool_result
         self.fail_after_tools = fail_after_tools
         self.calls = 0
-        self.requests = []
+        self.requests: list[SkillExecutionRequest] = []
 
     async def execute(self, request, execution_context, tool_invoker):
         del execution_context
@@ -270,7 +273,7 @@ class RecordingWorkflow:
         self.wrong_instance = wrong_instance
         self.start_calls = 0
         self.resume_calls = 0
-        self.requests = []
+        self.requests: list[WorkflowExecutionRequest] = []
 
     async def start(self, request, execution_context, tool_invoker):
         del execution_context
@@ -322,7 +325,9 @@ def _approved_step(
         update={
             "action": "DOMAIN_ACTION",
             "parameters": {"p": 1},
-            "skill_id": "DOMAIN_SKILL" if owner is CapabilityExecutionOwner.SKILL else None,
+            "skill_id": "DOMAIN_SKILL"
+            if owner is CapabilityExecutionOwner.SKILL
+            else None,
             "workflow_id": (
                 "DOMAIN_WORKFLOW"
                 if owner is CapabilityExecutionOwner.WORKFLOW
@@ -334,24 +339,14 @@ def _approved_step(
     binding = {
         "action_id": "DOMAIN_ACTION",
         "skill_id": (
-            "DOMAIN_SKILL"
-            if owner is CapabilityExecutionOwner.SKILL
-            else None
+            "DOMAIN_SKILL" if owner is CapabilityExecutionOwner.SKILL else None
         ),
-        "skill_version": (
-            "3.2.1"
-            if owner is CapabilityExecutionOwner.SKILL
-            else None
-        ),
+        "skill_version": ("3.2.1" if owner is CapabilityExecutionOwner.SKILL else None),
         "workflow_id": (
-            "DOMAIN_WORKFLOW"
-            if owner is CapabilityExecutionOwner.WORKFLOW
-            else None
+            "DOMAIN_WORKFLOW" if owner is CapabilityExecutionOwner.WORKFLOW else None
         ),
         "workflow_version": (
-            "4.5.6"
-            if owner is CapabilityExecutionOwner.WORKFLOW
-            else None
+            "4.5.6" if owner is CapabilityExecutionOwner.WORKFLOW else None
         ),
         "execution_owner": owner.value,
     }
@@ -361,9 +356,7 @@ def _approved_step(
             "capability_plan": {
                 "bindings": [binding],
                 "selected_skills": (
-                    ["DOMAIN_SKILL"]
-                    if owner is CapabilityExecutionOwner.SKILL
-                    else []
+                    ["DOMAIN_SKILL"] if owner is CapabilityExecutionOwner.SKILL else []
                 ),
                 "selected_workflows": (
                     ["DOMAIN_WORKFLOW"]
@@ -818,10 +811,7 @@ def test_output_invalid_preserves_raw_success_but_final_truth_is_unknown() -> No
     assert outcome.tool_results[0].status is ToolExecutionStatus.UNKNOWN
     assert outcome.tool_results[0].error_code == "TOOL_INVALID_OUTPUT"
     assert outcome.tool_journal[0].raw_result is not None
-    assert (
-        outcome.tool_journal[0].raw_result.status
-        is ToolExecutionStatus.SUCCESS
-    )
+    assert outcome.tool_journal[0].raw_result.status is ToolExecutionStatus.SUCCESS
     assert (
         outcome.tool_journal[0].output_validation_status
         is ToolPayloadValidationStatus.INVALID
@@ -929,9 +919,7 @@ def test_execution_context_cannot_be_rebound_to_another_plan() -> None:
     plan, step = _approved_step(owner=CapabilityExecutionOwner.SKILL)
     skill = RecordingSkill()
     resolved = _skill_resolved(skill)
-    wrong_context = _execution_context().model_copy(
-        update={"plan_id": "other-plan"}
-    )
+    wrong_context = _execution_context().model_copy(update={"plan_id": "other-plan"})
 
     outcome = asyncio.run(
         _executor().execute(

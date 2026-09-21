@@ -36,6 +36,7 @@ from runtime.execution.models import (
     M5ToolResult,
     M5WorkflowResult,
     SkillExecutionRequest,
+    SkillExecutionStatus,
     StepExecutionStatus,
     ToolExecutionStatus,
     ToolInvocationRequest,
@@ -92,28 +93,30 @@ class StepCapabilityExecutionOutcome:
         ):
             raise ValueError("owner capability id/version must be present together")
         if self.skill_result is not None and self.workflow_result is not None:
-            raise ValueError("one IU4 outcome cannot carry both Skill and Workflow result")
+            raise ValueError(
+                "one IU4 outcome cannot carry both Skill and Workflow result"
+            )
         if self.tool_results != tuple(entry.result for entry in self.tool_journal):
             raise ValueError("tool_results must exactly match the Core Tool journal")
-        if self.execution_owner is CapabilityExecutionOwner.NONE:
-            if (
-                self.owner_capability_id is not None
-                or self.skill_result is not None
-                or self.workflow_result is not None
-                or self.tool_results
-                or self.tool_journal
-            ):
-                raise ValueError("NONE execution_owner cannot carry execution results")
-        if self.status is CapabilityExecutionStatus.NO_EXTERNAL_EXECUTION:
-            if self.execution_owner is not CapabilityExecutionOwner.NONE:
-                raise ValueError("NO_EXTERNAL_EXECUTION requires NONE execution_owner")
-        if self.status is CapabilityExecutionStatus.WAITING:
-            if (
-                self.execution_owner is not CapabilityExecutionOwner.WORKFLOW
-                or self.workflow_result is None
-                or self.workflow_result.status is not WorkflowExecutionStatus.WAITING
-            ):
-                raise ValueError("WAITING requires a WAITING Workflow result")
+        if self.execution_owner is CapabilityExecutionOwner.NONE and (
+            self.owner_capability_id is not None
+            or self.skill_result is not None
+            or self.workflow_result is not None
+            or self.tool_results
+            or self.tool_journal
+        ):
+            raise ValueError("NONE execution_owner cannot carry execution results")
+        if (
+            self.status is CapabilityExecutionStatus.NO_EXTERNAL_EXECUTION
+            and self.execution_owner is not CapabilityExecutionOwner.NONE
+        ):
+            raise ValueError("NO_EXTERNAL_EXECUTION requires NONE execution_owner")
+        if self.status is CapabilityExecutionStatus.WAITING and (
+            self.execution_owner is not CapabilityExecutionOwner.WORKFLOW
+            or self.workflow_result is None
+            or self.workflow_result.status is not WorkflowExecutionStatus.WAITING
+        ):
+            raise ValueError("WAITING requires a WAITING Workflow result")
 
 
 class ToolInvocationBoundaryError(RuntimeError):
@@ -305,9 +308,8 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
             )
             return result
 
-        if (
-            not isinstance(raw_result, M5ToolResult)
-            or not isinstance(raw_result.status, ToolExecutionStatus)
+        if not isinstance(raw_result, M5ToolResult) or not isinstance(
+            raw_result.status, ToolExecutionStatus
         ):
             result = self._generated_result(
                 tool_call_id=tool_call_id,
@@ -421,7 +423,7 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
                 step_execution_id=self._step_execution_id,
                 tool_id=tool_id,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_fault("TOOL_CALL_ID_UNAVAILABLE")
             raise ToolInvocationBoundaryError(
                 "TOOL_CALL_ID_UNAVAILABLE",
@@ -454,9 +456,8 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
                 status=ToolPayloadValidationStatus.UNKNOWN,
                 reason_codes=("TOOL_INPUT_VALIDATOR_FAILURE",),
             )
-        if (
-            not isinstance(decision, ToolPayloadValidationDecision)
-            or not isinstance(decision.status, ToolPayloadValidationStatus)
+        if not isinstance(decision, ToolPayloadValidationDecision) or not isinstance(
+            decision.status, ToolPayloadValidationStatus
         ):
             return ToolPayloadValidationDecision(
                 status=ToolPayloadValidationStatus.UNKNOWN,
@@ -476,9 +477,8 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
                 status=ToolPayloadValidationStatus.UNKNOWN,
                 reason_codes=("TOOL_OUTPUT_VALIDATOR_FAILURE",),
             )
-        if (
-            not isinstance(decision, ToolPayloadValidationDecision)
-            or not isinstance(decision.status, ToolPayloadValidationStatus)
+        if not isinstance(decision, ToolPayloadValidationDecision) or not isinstance(
+            decision.status, ToolPayloadValidationStatus
         ):
             return ToolPayloadValidationDecision(
                 status=ToolPayloadValidationStatus.UNKNOWN,
@@ -509,9 +509,8 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
             decision = self._permission_evaluator.evaluate(definition, context)
         except Exception:  # noqa: BLE001
             return PermissionDecisionStatus.UNKNOWN
-        if (
-            not hasattr(decision, "status")
-            or not isinstance(decision.status, PermissionDecisionStatus)
+        if not hasattr(decision, "status") or not isinstance(
+            decision.status, PermissionDecisionStatus
         ):
             return PermissionDecisionStatus.UNKNOWN
         return decision.status
@@ -814,7 +813,10 @@ class StepCapabilityExecutor:
                 status=CapabilityExecutionStatus.UNKNOWN,
                 reason_codes=("WORKFLOW_INSTANCE_ID_UNAVAILABLE",),
             )
-        if not isinstance(workflow_instance_id, str) or not workflow_instance_id.strip():
+        if (
+            not isinstance(workflow_instance_id, str)
+            or not workflow_instance_id.strip()
+        ):
             return self._outcome(
                 step=step,
                 step_snapshot=step_snapshot,
@@ -1112,9 +1114,7 @@ class StepCapabilityExecutor:
             execution_owner=owner,
             reason_codes=reason_codes,
             owner_capability_id=(
-                owner_capability.capability_id
-                if owner_capability is not None
-                else None
+                owner_capability.capability_id if owner_capability is not None else None
             ),
             owner_capability_version=(
                 owner_capability.version if owner_capability is not None else None

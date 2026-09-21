@@ -339,7 +339,7 @@ def _snapshot(step, *, status: StepExecutionStatus = StepExecutionStatus.RUNNING
 
 
 def _tool(
-    implementation: RecordingTool,
+    implementation: Any,
     *,
     required_permissions: list[str] | None = None,
     tool_id: str = "DOMAIN_TOOL",
@@ -359,7 +359,7 @@ def _tool(
 
 
 def _skill_resolved(
-    skill: RecordingSkill,
+    skill: Any,
     *,
     tools: tuple[ResolvedCapability, ...] = (),
 ) -> ResolvedStepCapabilities:
@@ -383,7 +383,7 @@ def _skill_resolved(
 
 
 def _workflow_resolved(
-    workflow: RecordingWorkflow,
+    workflow: Any,
     *,
     tools: tuple[ResolvedCapability, ...] = (),
 ) -> ResolvedStepCapabilities:

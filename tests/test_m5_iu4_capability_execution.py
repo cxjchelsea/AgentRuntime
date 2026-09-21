@@ -223,6 +223,33 @@ class RecordingSkill:
         )
 
 
+class CatchingAuthorityViolationSkill:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def execute(self, request, execution_context, tool_invoker):
+        del execution_context
+        self.calls += 1
+        try:
+            await tool_invoker.invoke(
+                tool_id="UNAPPROVED_TOOL",
+                input_payload={"value": 1},
+            )
+        except RuntimeError:
+            pass
+        try:
+            await tool_invoker.invoke(
+                tool_id="DOMAIN_TOOL",
+                input_payload={"value": 2},
+            )
+        except RuntimeError:
+            pass
+        return M5SkillResult(
+            skill_id=request.skill_id,
+            status=SkillExecutionStatus.SUCCESS,
+        )
+
+
 class RecordingWorkflow:
     def __init__(
         self,
@@ -464,6 +491,27 @@ def test_unapproved_tool_request_is_blocked_and_never_invoked() -> None:
 
     assert outcome.status is CapabilityExecutionStatus.BLOCKED
     assert "TOOL_NOT_APPROVED_FOR_STEP" in outcome.reason_codes
+    assert approved_tool.calls == 0
+
+
+def test_authority_violation_latches_gateway_and_blocks_later_side_effects() -> None:
+    plan, step = _approved_step(owner=CapabilityExecutionOwner.SKILL)
+    approved_tool = RecordingTool()
+    skill = CatchingAuthorityViolationSkill()
+    resolved = _skill_resolved(skill, tools=(_tool(approved_tool),))
+
+    outcome = asyncio.run(
+        _executor().execute(
+            approved_plan=plan,
+            step=step,
+            step_snapshot=_snapshot(step),
+            resolved=resolved,
+            execution_context=_execution_context(),
+        )
+    )
+
+    assert outcome.status is CapabilityExecutionStatus.BLOCKED
+    assert outcome.reason_codes == ("TOOL_NOT_APPROVED_FOR_STEP",)
     assert approved_tool.calls == 0
 
 

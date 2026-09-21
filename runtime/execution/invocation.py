@@ -79,6 +79,7 @@ class ToolAttemptObservation:
     tool_version: str
     physical_attempt: int
     result: M5ToolResult
+    operation_key: str | None = None
     idempotency_key: str | None = None
     raw_result: M5ToolResult | None = None
     permission_status: PermissionDecisionStatus | None = None
@@ -93,6 +94,8 @@ class ToolAttemptObservation:
             raise ValueError("Tool attempt identifiers must not be blank")
         if self.physical_attempt < 1:
             raise ValueError("physical_attempt must be >= 1")
+        if self.operation_key is not None and not self.operation_key.strip():
+            raise ValueError("operation_key must not be blank when present")
         if self.idempotency_key is not None and not self.idempotency_key.strip():
             raise ValueError("idempotency_key must not be blank when present")
         if self.result.tool_call_id != self.logical_tool_call_id:
@@ -183,6 +186,10 @@ class ToolInvocationJournalEntry:
                     raise ValueError("Tool journal attempt tool_id must match")
                 if attempt.tool_version != self.tool_version:
                     raise ValueError("Tool journal attempt tool_version must match")
+                if attempt.operation_key != self.operation_key:
+                    raise ValueError(
+                        "Tool journal attempt operation_key must stay stable"
+                    )
                 if attempt.idempotency_key != self.idempotency_key:
                     raise ValueError(
                         "Tool journal attempt idempotency_key must stay stable"

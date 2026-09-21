@@ -144,6 +144,18 @@ class CapabilityResolutionDecision:
         }:
             if self.resolved is None:
                 raise ValueError("successful resolution status requires resolved payload")
+            if (
+                self.status is CapabilityResolutionStatus.RESOLVED
+                and not self.resolved.has_external_capability
+            ):
+                raise ValueError("RESOLVED requires at least one external capability")
+            if (
+                self.status is CapabilityResolutionStatus.NO_EXTERNAL_CAPABILITY
+                and self.resolved.has_external_capability
+            ):
+                raise ValueError(
+                    "NO_EXTERNAL_CAPABILITY cannot carry external capability"
+                )
         elif self.resolved is not None:
             raise ValueError("blocked/unknown resolution cannot expose partial payload")
 
@@ -564,9 +576,7 @@ class StepCapabilityResolver:
         if current_state is None:
             return StepCapabilityResolver._unknown("CAPABILITY_STATE_UNKNOWN")
         if current_state.value not in allowed_states:
-            return StepCapabilityResolver._blocked(
-                "CAPABILITY_STATE_INELIGIBLE"
-            )
+            return StepCapabilityResolver._blocked("CAPABILITY_STATE_INELIGIBLE")
         return None
 
     @staticmethod

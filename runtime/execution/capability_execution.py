@@ -239,6 +239,12 @@ class CoreApprovedToolInvoker(
 
         existing = self._journal_entry(logical_tool_call_id)
         if existing is None:
+            if logical_tool_call_id in self._issued_tool_call_ids:
+                self._record_fault("TOOL_CALL_ID_COLLISION")
+                raise ToolInvocationBoundaryError(
+                    "TOOL_CALL_ID_COLLISION",
+                    "logical Tool call id is already issued",
+                )
             if physical_attempt != 1:
                 self._record_fault("TOOL_ATTEMPT_SEQUENCE_INVALID")
                 raise ToolInvocationBoundaryError(
@@ -553,7 +559,6 @@ class CoreApprovedToolInvoker(
                 "TOOL_CALL_ID_COLLISION",
                 "Tool call id factory returned a duplicate id",
             )
-        self._issued_tool_call_ids.add(value)
         return value
 
     def _validate_input(

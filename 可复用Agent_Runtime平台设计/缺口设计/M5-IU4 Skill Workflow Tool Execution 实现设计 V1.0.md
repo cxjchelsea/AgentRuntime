@@ -339,6 +339,81 @@ IU3 exact resolution
 
 之间不存在第二次版本选择。
 
+### 5.3 Gateway Tool Journal 是唯一 Tool execution truth
+
+ApprovedToolInvoker 必须由 Core 维护本 Step 的 authoritative journal：
+
+```text
+tool_call_id
+tool_id
+approved_version
+input validation decision
+permission decision
+raw ToolResult
+output validation decision
+final M5ToolResult
+```
+
+Skill / Workflow implementation 返回对象里现有的：
+
+```text
+M5SkillResult.tool_results
+M5WorkflowResult.tool_results
+```
+
+不得直接作为真实 Tool 调用证据。
+
+第一版规则：
+
+```text
+Core outcome.tool_results
+= Gateway journal
+```
+
+若 Domain result 自带 tool_results：
+
+```text
+必须与 Gateway journal 一致
+否则：
+CAPABILITY_RESULT_TOOL_TRACE_MISMATCH
+→ UNKNOWN / fail closed
+```
+
+这样禁止：
+
+```text
+Domain implementation 未调用 Tool
+却自行构造 SUCCESS ToolResult
+```
+
+### 5.4 IU4 不允许 Domain 控制 Reliability 字段
+
+ApprovedToolInvoker 对 Domain 暴露的调用参数只允许：
+
+```text
+tool_id
+input_payload
+```
+
+Domain 不允许传入：
+
+```text
+attempt
+idempotency_key
+retry policy
+timeout policy
+resource lock
+```
+
+IU4 第一版固定：
+
+```text
+attempt = 1
+idempotency_key = None
+```
+
+这些字段由后续 Reliability IU 接管。
+
 ## 6. Skill / Workflow Protocol Amendment
 
 为保证 Tool 调用不脱离 Core，当前 Protocol 需要受控修改。
@@ -441,13 +516,24 @@ UNKNOWN -> 不调用 Tool，返回 UNKNOWN
 
 ### 8.2 Output
 
-Tool 返回后：
+只有 Tool 返回能够声称成功的数据时，才对成功 payload 做 output validation。
 
 ```text
-VALID   -> 保留 Tool 原始 status/data
-INVALID -> TOOL_INVALID_OUTPUT
-UNKNOWN -> UNKNOWN
+SUCCESS + VALID
+→ 保留 SUCCESS
+
+SUCCESS + INVALID
+→ UNKNOWN / TOOL_INVALID_OUTPUT
+
+SUCCESS + UNKNOWN
+→ UNKNOWN / TOOL_OUTPUT_VALIDATION_UNKNOWN
+
+FAILED / TIMEOUT / CANCELLED / UNAVAILABLE / REJECTED / UNKNOWN
+→ 不得被 output validator 升格为 SUCCESS
+→ 保留原始非成功事实
 ```
+
+之所以 invalid output 默认落到 UNKNOWN，而不是简单 FAILED，是因为 Tool 可能已经产生真实副作用，只是返回结构不可信。
 
 不得让 LLM 猜 schema。
 
@@ -463,6 +549,14 @@ output_schema
 具体 schema_reference / SchemaRegistry / JSON Schema engine 由注入 Validator 解析。
 
 Core 不把业务 schema 写死。
+
+同时冻结：
+
+```text
+Validator 不得按 schema_id 猜“当前最新版本”
+```
+
+若 `input_schema / output_schema` 只是无法唯一解析的逻辑 ID，则必须 UNKNOWN / fail closed；只有当该字符串本身已经是不可歧义的 immutable reference，或 Validator 能得到明确版本绑定时才允许验证。
 
 ## 9. Invocation Identifier Contract
 
@@ -520,6 +614,15 @@ step.parameters or {}
 
 Skill Executor 不自行构造额外业务参数。
 
+Skill implementation 抛出未声明异常时：
+
+```text
+不得默认 FAILED
+→ UNKNOWN / SKILL_EXECUTION_EXCEPTION
+```
+
+因为 Gateway journal 中可能已经存在真实副作用结果，必须原样保留供后续 Result Collection / M6 使用。
+
 输出必须：
 
 ```text
@@ -554,6 +657,14 @@ callback correlation
 属于后续 Persistence / Checkpoint / Recovery 单元。
 
 IU4 为 fresh workflow 创建 `workflow_instance_id`，构造 `WorkflowExecutionRequest`，调用 exact resolved `start`。
+
+Workflow implementation 抛出未声明异常时：
+
+```text
+UNKNOWN / WORKFLOW_EXECUTION_EXCEPTION
+```
+
+同时保留 Gateway journal，不得抹掉已经发生的 Tool side effect observation。
 
 若 Workflow 返回 WAITING，只记录真实 WAITING，不把它当失败或成功。
 
@@ -676,7 +787,12 @@ State/Memory Update
 16. Workflow owner 只能使用 Approved workflow Tool provenance
 17. optional Tool 不猜归属
 18. executed owner version 必须保留到 internal outcome
-19. IU4 不进入 Retry/Idempotency/Lock/M6
+19. Core Tool journal 是唯一 Tool execution truth
+20. Domain result 伪造/不一致 tool_results 必须 fail closed
+21. output invalid 不得把可能已发生的 side effect 简化成 FAILED
+22. schema ref 不可歧义，否则 UNKNOWN
+23. Domain 不得控制 attempt/idempotency_key
+24. IU4 不进入 Retry/Idempotency/Lock/M6
 ```
 
 ## 16. 设计结论

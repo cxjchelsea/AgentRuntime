@@ -245,18 +245,48 @@ NON_IDEMPOTENT：真实 invocation 已开始后默认 UNSAFE；第一版不发�
 
 新增 IdempotencyKeyFactory。Core 不硬编码哈希算法。
 
-Key 至少要绑定可验证的 logical operation identity：
+Key 必须绑定可验证的 logical operation identity。
+
+对于同一个 logical Tool call 的 physical retries：
 
 ~~~text
-execution_id
-step_execution_id
-tool_id
-tool_version
-logical_tool_call identity
-normalized input fingerprint
+同一个 key
 ~~~
 
-同一次 logical call 的 retry 必须复用同一个 key。
+但 Step-level Skill replay 会重新执行 Skill，当前 ApprovedToolInvoker.invoke 只有：
+
+~~~text
+tool_id
+input_payload
+~~~
+
+没有跨 Step attempt 稳定的 Tool operation correlation。
+
+因此不能简单：
+
+~~~text
+key = tool_id + input fingerprint
+~~~
+
+因为同一 Skill attempt 内合法的两次“相同 Tool + 相同参数”会错误碰撞。
+
+也不能简单把新 logical_tool_call_id 放进 key，因为下一次 Step retry 会生成新 key，失去 dedupe。
+
+若要启用 Skill Step replay，必须先冻结：
+
+~~~text
+ToolOperationCorrelationKey
+~~~
+
+或等价的 Core-controlled stable operation identity，使“同一个业务 Tool operation”可以跨 Step attempts 对齐，而同一 attempt 内两个独立相同调用仍可区分。
+
+在该 contract 关闭前：
+
+~~~text
+Skill owner automatic Step replay = NOT AUTHORIZED
+~~~
+
+Tool physical retry 仍可在同一个 logical invocation 内安全设计。
 
 ## 10. Idempotency Store
 
@@ -320,11 +350,11 @@ Idempotency reserve 绝不能早于 Input Validation / Permission / deadline adm
 
 ## 12. Step Attempt Retry
 
-第一版只评估 Skill owner 的自动 Step replay。
+第一版设计包含 Skill owner Step replay 的目标，但当前 Readiness 尚未授权。
 
-Workflow owner 不自动重放。
+Workflow owner 永不在 IU6 第一版自动重放。
 
-Skill Step replay 只有在 StepReplaySafety = SAFE 时允许。只要存在 UNKNOWN Tool outcome、untrusted success、NON_IDEMPOTENT 已开始 side effect、idempotency UNKNOWN，就禁止自动 replay whole Skill。
+Skill Step replay 除了要求 StepReplaySafety = SAFE，还必须有跨 Step attempts 的 ToolOperationCorrelationKey。只要该 correlation 缺失，或存在 UNKNOWN Tool outcome、untrusted success、NON_IDEMPOTENT 已开始 side effect、idempotency UNKNOWN，就禁止自动 replay whole Skill。
 
 ## 13. Step Attempt Sequence
 
@@ -427,7 +457,7 @@ M6
 
 ### CA-M5-IU6-02 Tool Attempt + Idempotency + Finalization Boundary
 
-冻结 logical Tool call / physical attempt model、ToolAttemptObservation、Tool journal attempt history、IdempotencyKeyFactory、IdempotencyRecord provenance、completed-result recovery、StepAttemptSequenceAuthority、StepReliabilityDecision、StepFinalizationDecision。
+冻结 logical Tool call / physical attempt model、ToolAttemptObservation、Tool journal attempt history、IdempotencyKeyFactory、ToolOperationCorrelationKey、IdempotencyRecord provenance、completed-result recovery、StepAttemptSequenceAuthority、StepReliabilityDecision、StepFinalizationDecision。
 
 两项 amendment 都不得修改 Canonical ApprovedActionPlan、PolicyDecision、ExecutionEngine frozen signature、RuntimeOrchestrator 或 M6。
 

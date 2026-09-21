@@ -281,7 +281,10 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
             )
             return result
 
-        if not isinstance(raw_result, M5ToolResult):
+        if (
+            not isinstance(raw_result, M5ToolResult)
+            or not isinstance(raw_result.status, ToolExecutionStatus)
+        ):
             result = self._generated_result(
                 tool_call_id=tool_call_id,
                 tool_id=tool_id,
@@ -371,8 +374,16 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
     ) -> dict[str, ResolvedCapability]:
         indexed: dict[str, ResolvedCapability] = {}
         for resolved in resolved_tools:
-            if resolved.kind is not CapabilityKind.TOOL:
-                raise ValueError("CoreApprovedToolInvoker accepts Tool capabilities only")
+            if (
+                resolved.kind is not CapabilityKind.TOOL
+                or not resolved.capability_id.strip()
+                or not resolved.version.strip()
+                or not isinstance(resolved.definition, ToolDefinition)
+                or not isinstance(resolved.implementation_ref, ToolImplementation)
+                or resolved.definition.tool_id != resolved.capability_id
+                or resolved.definition.version != resolved.version
+            ):
+                raise ValueError("resolved Tool binding is internally inconsistent")
             if resolved.capability_id in indexed:
                 raise ValueError("resolved Tool ids must be unique for one step")
             indexed[resolved.capability_id] = resolved
@@ -390,11 +401,11 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
                 "TOOL_CALL_ID_UNAVAILABLE",
                 "Tool call id factory failed",
             ) from exc
-        if not value.strip():
+        if not isinstance(value, str) or not value.strip():
             self._record_fault("TOOL_CALL_ID_UNAVAILABLE")
             raise ToolInvocationBoundaryError(
                 "TOOL_CALL_ID_UNAVAILABLE",
-                "Tool call id factory returned blank id",
+                "Tool call id factory returned invalid id",
             )
         if value in self._issued_tool_call_ids:
             self._record_fault("TOOL_CALL_ID_COLLISION")
@@ -417,7 +428,10 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
                 status=ToolPayloadValidationStatus.UNKNOWN,
                 reason_codes=("TOOL_INPUT_VALIDATOR_FAILURE",),
             )
-        if not isinstance(decision, ToolPayloadValidationDecision):
+        if (
+            not isinstance(decision, ToolPayloadValidationDecision)
+            or not isinstance(decision.status, ToolPayloadValidationStatus)
+        ):
             return ToolPayloadValidationDecision(
                 status=ToolPayloadValidationStatus.UNKNOWN,
                 reason_codes=("TOOL_INPUT_VALIDATOR_INVALID_RESULT",),
@@ -436,7 +450,10 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
                 status=ToolPayloadValidationStatus.UNKNOWN,
                 reason_codes=("TOOL_OUTPUT_VALIDATOR_FAILURE",),
             )
-        if not isinstance(decision, ToolPayloadValidationDecision):
+        if (
+            not isinstance(decision, ToolPayloadValidationDecision)
+            or not isinstance(decision.status, ToolPayloadValidationStatus)
+        ):
             return ToolPayloadValidationDecision(
                 status=ToolPayloadValidationStatus.UNKNOWN,
                 reason_codes=("TOOL_OUTPUT_VALIDATOR_INVALID_RESULT",),
@@ -457,6 +474,8 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
         except Exception:  # noqa: BLE001
             return PermissionDecisionStatus.UNKNOWN
 
+        if not isinstance(context, ExecutionPermissionContext):
+            return PermissionDecisionStatus.UNKNOWN
         if not self._permission_context_matches(context):
             return PermissionDecisionStatus.UNKNOWN
 
@@ -464,7 +483,10 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
             decision = self._permission_evaluator.evaluate(definition, context)
         except Exception:  # noqa: BLE001
             return PermissionDecisionStatus.UNKNOWN
-        if not hasattr(decision, "status"):
+        if (
+            not hasattr(decision, "status")
+            or not isinstance(decision.status, PermissionDecisionStatus)
+        ):
             return PermissionDecisionStatus.UNKNOWN
         return decision.status
 
@@ -558,6 +580,7 @@ class StepCapabilityExecutor:
             step=step,
             step_snapshot=step_snapshot,
             resolved=resolved,
+            execution_context=execution_context,
         )
         if authority_error is not None:
             return self._outcome(
@@ -756,7 +779,7 @@ class StepCapabilityExecutor:
                 status=CapabilityExecutionStatus.UNKNOWN,
                 reason_codes=("WORKFLOW_INSTANCE_ID_UNAVAILABLE",),
             )
-        if not workflow_instance_id.strip():
+        if not isinstance(workflow_instance_id, str) or not workflow_instance_id.strip():
             return self._outcome(
                 step=step,
                 step_snapshot=step_snapshot,
@@ -868,7 +891,13 @@ class StepCapabilityExecutor:
         step: ActionStep,
         step_snapshot: StepLifecycleSnapshot,
         resolved: ResolvedStepCapabilities,
+        execution_context: ExecutionContext,
     ) -> str | None:
+        if (
+            execution_context.plan_id != approved_plan.plan_id
+            or execution_context.request_id != approved_plan.request_id
+        ):
+            return "EXECUTION_CONTEXT_PLAN_MISMATCH"
         matches = [item for item in approved_plan.steps if item.step_id == step.step_id]
         if len(matches) != 1 or matches[0] != step:
             return "APPROVED_STEP_MISMATCH"

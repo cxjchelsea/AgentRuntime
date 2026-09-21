@@ -150,6 +150,50 @@ has_untrusted_success_observation
 observed_at
 ~~~
 
+建议代码级字段类型冻结为：
+
+~~~python
+@dataclass(frozen=True, slots=True)
+class StepAttemptObservation:
+    step_id: str
+    step_execution_id: str
+    attempt_number: int
+    status: StepAttemptStatus
+    execution_owner: CapabilityExecutionOwner
+    owner_capability_id: str | None
+    owner_capability_version: str | None
+    reason_codes: tuple[str, ...]
+    skill_result: M5SkillResult | None
+    workflow_result: M5WorkflowResult | None
+    tool_results: tuple[M5ToolResult, ...]
+    tool_journal: tuple[ToolInvocationJournalEntry, ...]
+    business_outputs: tuple[dict[str, Any], ...]
+    capability_events: tuple[dict[str, Any], ...]
+    has_non_success_tool_observation: bool
+    has_unknown_tool_observation: bool
+    has_untrusted_success_observation: bool
+    observed_at: datetime
+~~~
+
+投影规则：
+
+~~~text
+Skill business_outputs
+→ 原 tuple
+
+Workflow important_outputs
+→ 非空时 (dict(important_outputs),)
+→ 空时 ()
+
+Skill events
+→ capability_events
+
+Workflow 当前无 event 字段
+→ capability_events = ()
+~~~
+
+无论最终 attempt status 是 UNKNOWN / BLOCKED / FAILED / SUCCESS，已经存在的 raw owner result、Tool journal、business outputs 都不得因为状态分类而被静默删除；“状态判断”和“证据保留”是两个维度。
+
 attempt_number 必须 >= 1，由 Core caller 提供，Domain implementation 无权决定。
 
 第一轮：

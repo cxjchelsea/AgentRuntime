@@ -22,6 +22,13 @@ class ReliabilityCapabilityKind(str, Enum):
     TOOL = "TOOL"
 
 
+class RetryTriggerStatus(str, Enum):
+    FAILED = "FAILED"
+    TIMEOUT = "TIMEOUT"
+    UNAVAILABLE = "UNAVAILABLE"
+    PARTIAL_SUCCESS = "PARTIAL_SUCCESS"
+
+
 class IdempotencyMode(str, Enum):
     NATURAL = "NATURAL"
     KEY_BASED = "KEY_BASED"
@@ -48,7 +55,7 @@ class ResolvedTimeoutPolicy:
 class ResolvedRetryPolicy:
     enabled: bool
     max_attempts: int
-    retry_on_statuses: tuple[ToolExecutionStatus, ...] = ()
+    retry_on_statuses: tuple[RetryTriggerStatus, ...] = ()
     retry_on_error_codes: tuple[str, ...] = ()
     backoff_seconds: float = 0.0
     backoff_multiplier: float = 1.0
@@ -193,7 +200,7 @@ class RetryDecision:
 @dataclass(frozen=True, slots=True)
 class RetryDecisionContext:
     current_attempt: int
-    result_status: ToolExecutionStatus
+    result_status: RetryTriggerStatus
     error_code: str | None
     replay_safety: ReplaySafetyDecision
     deadline_remaining_seconds: float | None

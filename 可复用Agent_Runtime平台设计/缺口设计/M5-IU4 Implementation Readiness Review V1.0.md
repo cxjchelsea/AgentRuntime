@@ -421,6 +421,7 @@ CapabilityExecutionOwner
 capability_plan.bindings[].execution_owner
 
 ApprovedToolInvoker
+Approved Tool Invocation Journal / authoritative tool result source
 
 ToolPayloadValidationStatus
 ToolPayloadValidationDecision
@@ -432,6 +433,9 @@ CapabilityInvocationIdentifierFactory
 WorkflowDefinition.required_tools / optional_tools
 ToolCallPlan.required_by_workflows
 approved tool_plan workflow provenance
+
+Tool Gateway owns attempt/idempotency input surface
+Schema reference ambiguity must fail closed
 
 SkillImplementation(..., tool_invoker)
 WorkflowImplementation.start(..., tool_invoker)
@@ -452,7 +456,11 @@ WorkflowImplementation.resume(..., tool_invoker)
 9. Canonical contracts unchanged
 10. Workflow owner Tool set comes only from approved workflow provenance
 11. IU3 projection never expands Workflow tools at execution time
-12. no Retry/Idempotency/Lock/M6
+12. Domain-returned tool_results cannot override Gateway journal
+13. schema reference cannot silently drift to another version
+14. Tool output invalid cannot erase possible side-effect ambiguity
+15. Domain cannot supply attempt/idempotency_key
+16. no Retry/Idempotency/Lock/M6
 ```
 
 ## 10. Current Formal Status

@@ -263,7 +263,7 @@ required_by_workflows
 
 且仍禁止从执行时 Registry metadata 扩张 Approved Tool Set。
 
-## 16. Core-controlled Tool Invocation Gateway
+## 5. Core-controlled Tool Invocation Gateway
 
 正式原则：
 
@@ -299,7 +299,7 @@ input/output validators
 tool_call_id factory
 ```
 
-### 4.1 Gateway Authority
+### 5.1 Gateway Authority
 
 调用 `tool_id` 必须已经存在于当前 Step 的 IU3 resolved Tool set。
 
@@ -318,7 +318,7 @@ TOOL_NOT_APPROVED_FOR_STEP
 调用任意 Domain Tool
 ```
 
-### 4.2 Gateway 使用 exact implementation
+### 5.2 Gateway 使用 exact implementation
 
 Gateway 直接使用 IU3：
 
@@ -339,7 +339,7 @@ IU3 exact resolution
 
 之间不存在第二次版本选择。
 
-## 16. Skill / Workflow Protocol Amendment
+## 6. Skill / Workflow Protocol Amendment
 
 为保证 Tool 调用不脱离 Core，当前 Protocol 需要受控修改。
 
@@ -367,7 +367,7 @@ WorkflowImplementation.resume(
 
 其中 `tool_invoker` 只能看到当前 Step 已批准/已解析的 Tool。
 
-### 5.1 Tool-free Skill / Workflow
+### 6.1 Tool-free Skill / Workflow
 
 即使没有 Tool，也传入一个：
 
@@ -379,7 +379,7 @@ EmptyApprovedToolInvoker
 
 这样 Domain implementation 不需要两套函数签名。
 
-## 16. Tool Permission TOCTOU
+## 7. Tool Permission TOCTOU
 
 IU3 已在 Capability Resolution 时检查 execution permission。
 
@@ -410,7 +410,7 @@ UNKNOWN -> UNKNOWN / TOOL_PERMISSION_UNKNOWN
 provider/evaluator failure -> UNKNOWN
 ```
 
-## 16. Tool Input / Output Validation Boundary
+## 8. Tool Input / Output Validation Boundary
 
 建议新增：
 
@@ -429,7 +429,7 @@ INVALID
 UNKNOWN
 ```
 
-### 7.1 Input
+### 8.1 Input
 
 调用前：
 
@@ -439,7 +439,7 @@ INVALID -> 不调用 Tool，返回 REJECTED / INVALID_PARAMETER
 UNKNOWN -> 不调用 Tool，返回 UNKNOWN
 ```
 
-### 7.2 Output
+### 8.2 Output
 
 Tool 返回后：
 
@@ -451,7 +451,7 @@ UNKNOWN -> UNKNOWN
 
 不得让 LLM 猜 schema。
 
-### 7.3 Schema reference
+### 8.3 Schema reference
 
 第一版 Validator 只消费 ToolDefinition 已有：
 
@@ -464,7 +464,7 @@ output_schema
 
 Core 不把业务 schema 写死。
 
-## 16. Invocation Identifier Contract
+## 9. Invocation Identifier Contract
 
 当前：
 
@@ -491,7 +491,7 @@ new_workflow_instance_id(step_execution_id, workflow_id)
 
 ID 策略继续注入，Core 不硬编码 UUID。
 
-## 16. Skill Executor
+## 10. Skill Executor
 
 输入：
 
@@ -533,7 +533,7 @@ result.skill_id == resolved skill_id
 SKILL_RESULT_INVALID
 ```
 
-## 16. Workflow Executor
+## 11. Workflow Executor
 
 IU4 第一版只处理：
 
@@ -569,7 +569,7 @@ Resume 保留现有 Protocol，但本 IU 不授权调用。
 TD-M5-IU4-02 WORKFLOW_RESUME_DEFERRED_TO_RECOVERY_UNIT
 ```
 
-## 16. Optional Tool 边界
+## 12. Optional Tool 边界
 
 继承：
 
@@ -596,7 +596,7 @@ optional Tool invocation
 
 在未来真正启用 optional Tool 前，该 TD 必须关闭。
 
-## 16. IU4 内部结果
+## 13. IU4 内部结果
 
 IU4 不直接生成 Canonical ExecutionResult。
 
@@ -634,7 +634,7 @@ EXECUTED
 
 真正 Step lifecycle mutation 仍由 ExecutionLifecycleService / 后续 orchestration 完成。
 
-## 16. 明确不属于 IU4
+## 14. 明确不属于 IU4
 
 ```text
 Retry
@@ -653,7 +653,7 @@ Response
 State/Memory Update
 ```
 
-## 16. Planned Gate
+## 15. Planned Gate
 
 至少覆盖：
 

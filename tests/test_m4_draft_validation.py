@@ -379,7 +379,6 @@ def test_validator_accepts_structurally_valid_nonknowledge_draft() -> None:
     assert draft.approval_status.value == "DRAFT"
 
 
-
 def test_validator_rejects_skill_version_drift_even_when_id_exists() -> None:
     draft = ActionPlanDraftAssembler().build(
         plan_id="plan-version-drift",

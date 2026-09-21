@@ -31,7 +31,10 @@ from runtime.execution.protocols import (
     ToolImplementation,
     WorkflowImplementation,
 )
-from runtime.execution.resolution import ExecutionImplementationResolver
+from runtime.execution.resolution import (
+    ExecutionImplementationResolver,
+    ResolvedExecutionImplementation,
+)
 from runtime.registries.definitions import (
     SkillDefinition,
     ToolDefinition,
@@ -90,6 +93,11 @@ class ApprovedStepCapabilityReferences:
 CapabilityDefinition = SkillDefinition | WorkflowDefinition | ToolDefinition
 CapabilityImplementation = (
     SkillImplementation | WorkflowImplementation | ToolImplementation
+)
+ResolvedImplementation = (
+    ResolvedExecutionImplementation[SkillDefinition, SkillImplementation]
+    | ResolvedExecutionImplementation[WorkflowDefinition, WorkflowImplementation]
+    | ResolvedExecutionImplementation[ToolDefinition, ToolImplementation]
 )
 
 
@@ -505,6 +513,7 @@ class StepCapabilityResolver:
         reference: ApprovedCapabilityReference,
     ) -> ResolvedCapability | CapabilityResolutionDecision:
         try:
+            resolved: ResolvedImplementation
             if reference.kind is CapabilityKind.SKILL:
                 resolved = self._implementation_resolver.resolve_skill(
                     reference.capability_id,

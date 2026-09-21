@@ -105,6 +105,8 @@ class WorkflowDefinition(CanonicalModel):
     checkpoint_enabled: bool | None = None
     timeout_policy: str | None = None
     resume_policy: str | None = None
+    required_tools: list[str] | None = None
+    optional_tools: list[str] | None = None
 
 
 class ToolDefinition(CanonicalModel):

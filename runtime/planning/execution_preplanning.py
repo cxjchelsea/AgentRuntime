@@ -205,9 +205,7 @@ class CapabilityPlanner:
                     )
                 binding = unique[0]
                 self._validate_binding(binding, skills, workflows, policy_decision)
-                bindings.append(
-                    self._pin_binding_versions(binding, skills, workflows)
-                )
+                bindings.append(self._pin_binding_versions(binding, skills, workflows))
                 continue
 
             supporting_skills = tuple(
@@ -357,14 +355,13 @@ class CapabilityPlanner:
                 )
 
         if binding.skill_id is None and binding.skill_version is not None:
-            raise CapabilityPlanningError(
-                "binding skill_version requires skill_id"
-            )
+            raise CapabilityPlanningError("binding skill_version requires skill_id")
+        # 规则声明的 skill_version 必须等于当前已选中的 Skill Definition
         if binding.skill_id is not None:
-            definition = skills[binding.skill_id]
+            skill_definition = skills[binding.skill_id]
             if (
                 binding.skill_version is not None
-                and binding.skill_version != definition.version
+                and binding.skill_version != skill_definition.version
             ):
                 raise CapabilityPlanningError(
                     "binding skill_version does not match selected Skill definition"
@@ -376,11 +373,12 @@ class CapabilityPlanner:
             raise CapabilityPlanningError(
                 "binding workflow_version requires workflow_id"
             )
+        # 规则声明的 workflow_version 必须等于当前已选中的 Workflow Definition
         if binding.workflow_id is not None:
-            definition = workflows[binding.workflow_id]
+            workflow_definition = workflows[binding.workflow_id]
             if (
                 binding.workflow_version is not None
-                and binding.workflow_version != definition.version
+                and binding.workflow_version != workflow_definition.version
             ):
                 raise CapabilityPlanningError(
                     "binding workflow_version does not match selected Workflow definition"

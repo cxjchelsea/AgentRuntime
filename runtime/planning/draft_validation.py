@@ -27,11 +27,11 @@ from runtime.planning.knowledge_planning import (
 from runtime.planning.strategy_selection import StrategySelectionResult
 from runtime.registries import (
     ActionRegistry,
+    RegistryItemNotFoundError,
     SkillRegistry,
     StrategyRegistry,
     ToolRegistry,
     WorkflowRegistry,
-    RegistryItemNotFoundError,
 )
 
 
@@ -681,7 +681,10 @@ class PlanValidator:
                     raise PlanValidationError(
                         "capability binding references unavailable Workflow"
                     )
-                if not isinstance(workflow_version, str) or not workflow_version.strip():
+                if (
+                    not isinstance(workflow_version, str)
+                    or not workflow_version.strip()
+                ):
                     raise PlanValidationError(
                         "capability binding requires pinned workflow_version"
                     )
@@ -693,7 +696,10 @@ class PlanValidator:
                     raise PlanValidationError(
                         "capability binding references unavailable Workflow version"
                     ) from exc
-                if not workflow_record.enabled or not workflow_record.definition.enabled:
+                if (
+                    not workflow_record.enabled
+                    or not workflow_record.definition.enabled
+                ):
                     raise PlanValidationError(
                         "capability binding Workflow version is disabled"
                     )

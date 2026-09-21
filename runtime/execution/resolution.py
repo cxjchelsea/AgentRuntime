@@ -25,6 +25,7 @@ from runtime.execution.protocols import (
 from runtime.registries import (
     BaseRegistry,
     RegistryItemNotFoundError,
+    RegistryRecord,
     SkillDefinition,
     SkillRegistry,
     ToolDefinition,
@@ -32,7 +33,6 @@ from runtime.registries import (
     WorkflowDefinition,
     WorkflowRegistry,
 )
-from runtime.registries.base import RegistryRecord
 
 DefinitionT = TypeVar(
     "DefinitionT",

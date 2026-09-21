@@ -125,6 +125,15 @@ class StaticPermissionProvider:
         )
 
 
+class FailIfCalledPermissionProvider:
+    async def build(
+        self,
+        execution_context: ExecutionContext,
+    ) -> ExecutionPermissionContext:
+        del execution_context
+        raise AssertionError("permission provider must not be called")
+
+
 class StaticPermissionEvaluator:
     def evaluate(
         self,
@@ -566,6 +575,50 @@ def test_forced_workflow_authority_cannot_drift() -> None:
         ),
     ],
 )
+def test_tool_without_required_permissions_needs_no_permission_facts() -> None:
+    plan = _plan(workflow_id=None, forced_workflow=None)
+
+    skills = SkillRegistry()
+    skills.register(
+        SkillDefinition(
+            skill_id="DOMAIN_SKILL",
+            version="1.0.0",
+            supported_actions=["DOMAIN_ACTION"],
+        ),
+        implementation_ref=RecordingSkill(),
+    )
+    tools = ToolRegistry()
+    tools.register(
+        ToolDefinition(
+            tool_id="DOMAIN_TOOL",
+            version="1.0.0",
+            required_permissions=None,
+        ),
+        implementation_ref=RecordingTool(),
+    )
+    implementation_resolver = ExecutionImplementationResolver(
+        skill_registry=skills,
+        workflow_registry=WorkflowRegistry(),
+        tool_registry=tools,
+    )
+    resolver = StepCapabilityResolver(
+        implementation_resolver=implementation_resolver,
+        permission_context_provider=FailIfCalledPermissionProvider(),
+        permission_evaluator=StaticPermissionEvaluator(),
+    )
+
+    decision = asyncio.run(
+        resolver.resolve(
+            approved_plan=plan,
+            step=plan.steps[0],
+            execution_context=_execution_context(),
+            current_state=RuntimeControlState.PROCESSING,
+        )
+    )
+
+    assert decision.status is CapabilityResolutionStatus.RESOLVED
+
+
 def test_tool_permission_denied_or_unknown_never_becomes_allowed(
     granted: frozenset[str],
     denied: frozenset[str],

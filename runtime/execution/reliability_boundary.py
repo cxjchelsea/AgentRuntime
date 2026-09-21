@@ -10,10 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
 
-from runtime.execution.invocation import (
-    ToolAttemptObservation,
-    ToolInvocationJournalEntry,
-)
+from runtime.execution.invocation import ToolInvocationJournalEntry
 from runtime.execution.models import M5ToolResult, StepExecutionStatus
 from runtime.execution.reliability import (
     ReplaySafetyDecision,
@@ -103,19 +100,6 @@ class IdempotencyKeyFactory(Protocol):
         operation_fingerprint: str,
     ) -> str:
         """Create a stable idempotency key for one correlated Tool operation."""
-
-
-class PhysicalToolAttemptExecutor(Protocol):
-    async def execute_physical_attempt(
-        self,
-        *,
-        logical_tool_call_id: str,
-        tool_id: str,
-        input_payload: dict[str, Any],
-        physical_attempt: int,
-        idempotency_key: str | None,
-    ) -> ToolAttemptObservation:
-        """Execute exactly one physical attempt; never decide whether to retry."""
 
 
 class StepAttemptSequenceStatus(str, Enum):

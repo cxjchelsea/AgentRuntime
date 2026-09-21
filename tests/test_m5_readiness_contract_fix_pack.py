@@ -107,6 +107,45 @@ class GoodSkill:
         )
 
 
+class LegacySkillWithoutToolInvoker:
+    async def execute(
+        self,
+        request: SkillExecutionRequest,
+        execution_context: ExecutionContext,
+    ) -> M5SkillResult:
+        del execution_context
+        return M5SkillResult(
+            skill_id=request.skill_id,
+            status=SkillExecutionStatus.SUCCESS,
+        )
+
+
+class LegacyWorkflowWithoutToolInvoker:
+    async def start(
+        self,
+        request: WorkflowExecutionRequest,
+        execution_context: ExecutionContext,
+    ) -> M5WorkflowResult:
+        del execution_context
+        return M5WorkflowResult(
+            workflow_instance_id=request.workflow_instance_id,
+            workflow_id=request.workflow_id,
+            status=WorkflowExecutionStatus.RUNNING,
+        )
+
+    async def resume(
+        self,
+        request: WorkflowExecutionRequest,
+        execution_context: ExecutionContext,
+    ) -> M5WorkflowResult:
+        del execution_context
+        return M5WorkflowResult(
+            workflow_instance_id=request.workflow_instance_id,
+            workflow_id=request.workflow_id,
+            status=WorkflowExecutionStatus.RUNNING,
+        )
+
+
 class GoodWorkflow:
     async def start(
         self,
@@ -241,6 +280,38 @@ def test_execution_implementation_resolver_enforces_protocols() -> None:
         resolver.resolve_tool("DOMAIN_TOOL", "1.0.0").implementation_ref,
         ToolImplementation,
     )
+
+
+def test_execution_resolver_rejects_legacy_skill_without_tool_invoker() -> None:
+    skills = SkillRegistry()
+    skills.register(
+        SkillDefinition(skill_id="LEGACY_SKILL", version="1.0.0"),
+        implementation_ref=LegacySkillWithoutToolInvoker(),
+    )
+    resolver = ExecutionImplementationResolver(
+        skill_registry=skills,
+        workflow_registry=WorkflowRegistry(),
+        tool_registry=ToolRegistry(),
+    )
+
+    with pytest.raises(ExecutionImplementationTypeError, match="ApprovedToolInvoker"):
+        resolver.resolve_skill("LEGACY_SKILL", "1.0.0")
+
+
+def test_execution_resolver_rejects_legacy_workflow_without_tool_invoker() -> None:
+    workflows = WorkflowRegistry()
+    workflows.register(
+        WorkflowDefinition(workflow_id="LEGACY_WORKFLOW", version="1.0.0"),
+        implementation_ref=LegacyWorkflowWithoutToolInvoker(),
+    )
+    resolver = ExecutionImplementationResolver(
+        skill_registry=SkillRegistry(),
+        workflow_registry=workflows,
+        tool_registry=ToolRegistry(),
+    )
+
+    with pytest.raises(ExecutionImplementationTypeError, match="ApprovedToolInvoker"):
+        resolver.resolve_workflow("LEGACY_WORKFLOW", "1.0.0")
 
 
 def test_execution_implementation_resolver_rejects_wrong_implementation_type() -> None:

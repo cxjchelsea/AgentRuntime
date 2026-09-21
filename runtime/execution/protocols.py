@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from runtime.contracts.execution import ExecutionContext
+from runtime.execution.invocation import ApprovedToolInvoker
 from runtime.execution.models import (
     M5SkillResult,
     M5ToolResult,
@@ -36,6 +37,7 @@ class SkillImplementation(Protocol):
         self,
         request: SkillExecutionRequest,
         execution_context: ExecutionContext,
+        tool_invoker: ApprovedToolInvoker,
     ) -> M5SkillResult:
         """Execute exactly the registered Skill represented by request.skill_id."""
 
@@ -46,6 +48,7 @@ class WorkflowImplementation(Protocol):
         self,
         request: WorkflowExecutionRequest,
         execution_context: ExecutionContext,
+        tool_invoker: ApprovedToolInvoker,
     ) -> M5WorkflowResult:
         """Start one registered Workflow instance."""
 
@@ -53,5 +56,6 @@ class WorkflowImplementation(Protocol):
         self,
         request: WorkflowExecutionRequest,
         execution_context: ExecutionContext,
+        tool_invoker: ApprovedToolInvoker,
     ) -> M5WorkflowResult:
         """Resume one registered Workflow instance from persisted state."""

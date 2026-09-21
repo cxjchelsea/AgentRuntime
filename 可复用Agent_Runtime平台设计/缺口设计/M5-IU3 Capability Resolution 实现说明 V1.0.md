@@ -214,15 +214,24 @@ NO_EXTERNAL_CAPABILITY != execution success
 
 同时更新 M5 Readiness resolver 测试，使其正式使用 exact-version API。
 
-## 11. 当前状态
+## 11. 非阻塞技术债
+
+```text
+TD-M5-IU3-01 REGISTRY_NAMESPACE_NOT_PINNED
+TD-M5-IU3-04 OPTIONAL_TOOL_STEP_PROVENANCE_NOT_FROZEN
+```
+
+其中 optional Tool 当前虽然已进入 approved tool_plan，但没有冻结其 step/skill provenance。IU3 不猜归属，因此不会产生错误执行；在后续真正 Skill/Tool Executor 允许 optional Tool invocation 前必须补齐。
+
+## 12. 当前状态
 
 ```text
 M5-IU3 IMPLEMENTATION = CODE COMPLETE
+M5-IU3 INDEPENDENT IMPLEMENTATION REVIEW = PASSED
 M5-IU3 VERIFICATION = PENDING FOUR LOCAL GATES
-M5-IU3 INDEPENDENT REVIEW = PENDING
-M5-IU3 = NOT YET PASSED
+M5-IU3 = READY_TO_PASS_AFTER_FOUR_LOCAL_GATES
 
 M5 = IN PROGRESS
 ```
 
-只有四项本地门禁全部通过并完成 Independent Review 后，才能写 `M5-IU3 = PASSED`。
+只有四项本地门禁全部通过后，才能写 `M5-IU3 = PASSED`。

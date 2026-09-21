@@ -9,6 +9,7 @@ from runtime.contracts.enums import RuntimeControlState
 from runtime.contracts.execution import ExecutionContext
 from runtime.execution import (
     CapabilityExecutionOwner,
+    CapabilityKind,
     CapabilityReferenceSource,
     M5SkillResult,
     M5ToolResult,
@@ -317,10 +318,7 @@ def _tool(
     tool_id: str = "DOMAIN_TOOL",
 ) -> ResolvedCapability:
     return ResolvedCapability(
-        kind=__import__(
-            "runtime.execution.capability_resolution",
-            fromlist=["CapabilityKind"],
-        ).CapabilityKind.TOOL,
+        kind=CapabilityKind.TOOL,
         capability_id=tool_id,
         version="1.0.0",
         definition=ToolDefinition(
@@ -338,8 +336,6 @@ def _skill_resolved(
     *,
     tools: tuple[ResolvedCapability, ...] = (),
 ) -> ResolvedStepCapabilities:
-    from runtime.execution import CapabilityKind
-
     return ResolvedStepCapabilities(
         step_id="step-1",
         execution_owner=CapabilityExecutionOwner.SKILL,
@@ -364,8 +360,6 @@ def _workflow_resolved(
     *,
     tools: tuple[ResolvedCapability, ...] = (),
 ) -> ResolvedStepCapabilities:
-    from runtime.execution import CapabilityKind
-
     return ResolvedStepCapabilities(
         step_id="step-1",
         execution_owner=CapabilityExecutionOwner.WORKFLOW,

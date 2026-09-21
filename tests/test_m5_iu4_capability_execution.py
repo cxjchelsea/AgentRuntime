@@ -179,6 +179,13 @@ class RecordingTool:
         )
 
 
+class ExplodingTool(RecordingTool):
+    async def invoke(self, request, execution_context):
+        del request, execution_context
+        self.calls += 1
+        raise RuntimeError("Tool adapter failed")
+
+
 class RecordingSkill:
     def __init__(
         self,
@@ -622,6 +629,55 @@ def test_permission_denied_prevents_tool_invocation() -> None:
     assert tool_impl.calls == 0
     assert outcome.tool_results[0].status is ToolExecutionStatus.REJECTED
     assert outcome.tool_results[0].error_code == "PERMISSION_DENIED"
+
+
+def test_permission_unknown_never_invokes_tool_or_becomes_allowed() -> None:
+    plan, step = _approved_step(owner=CapabilityExecutionOwner.SKILL)
+    tool_impl = RecordingTool()
+    skill = RecordingSkill(tool_ids=("DOMAIN_TOOL",))
+    resolved = _skill_resolved(
+        skill,
+        tools=(_tool(tool_impl, required_permissions=["TOOL_USE"]),),
+    )
+
+    outcome = asyncio.run(
+        _executor(
+            evaluator=StaticPermissionEvaluator(PermissionDecisionStatus.UNKNOWN)
+        ).execute(
+            approved_plan=plan,
+            step=step,
+            step_snapshot=_snapshot(step),
+            resolved=resolved,
+            execution_context=_execution_context(),
+        )
+    )
+
+    assert tool_impl.calls == 0
+    assert outcome.status is CapabilityExecutionStatus.UNKNOWN
+    assert outcome.tool_results[0].status is ToolExecutionStatus.UNKNOWN
+    assert outcome.tool_results[0].error_code == "TOOL_PERMISSION_UNKNOWN"
+
+
+def test_tool_exception_is_unknown_and_preserved_in_core_journal() -> None:
+    plan, step = _approved_step(owner=CapabilityExecutionOwner.SKILL)
+    tool_impl = ExplodingTool()
+    skill = RecordingSkill(tool_ids=("DOMAIN_TOOL",))
+    resolved = _skill_resolved(skill, tools=(_tool(tool_impl),))
+
+    outcome = asyncio.run(
+        _executor().execute(
+            approved_plan=plan,
+            step=step,
+            step_snapshot=_snapshot(step),
+            resolved=resolved,
+            execution_context=_execution_context(),
+        )
+    )
+
+    assert tool_impl.calls == 1
+    assert outcome.status is CapabilityExecutionStatus.UNKNOWN
+    assert outcome.tool_results[0].error_code == "TOOL_EXECUTION_EXCEPTION"
+    assert len(outcome.tool_journal) == 1
 
 
 def test_output_invalid_preserves_raw_success_but_final_truth_is_unknown() -> None:

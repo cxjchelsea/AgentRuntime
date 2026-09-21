@@ -22,6 +22,7 @@ from runtime.contracts import (
 )
 from runtime.contracts.execution import ExecutionContext
 from runtime.execution import (
+    ApprovedToolInvoker,
     ApprovedWorkflowAuthority,
     ExecutionControlSignal,
     ExecutionControlSignalSource,
@@ -97,8 +98,9 @@ class GoodSkill:
         self,
         request: SkillExecutionRequest,
         execution_context: ExecutionContext,
+        tool_invoker: ApprovedToolInvoker,
     ) -> M5SkillResult:
-        del execution_context
+        del execution_context, tool_invoker
         return M5SkillResult(
             skill_id=request.skill_id,
             status=SkillExecutionStatus.SUCCESS,
@@ -110,8 +112,9 @@ class GoodWorkflow:
         self,
         request: WorkflowExecutionRequest,
         execution_context: ExecutionContext,
+        tool_invoker: ApprovedToolInvoker,
     ) -> M5WorkflowResult:
-        del execution_context
+        del execution_context, tool_invoker
         return M5WorkflowResult(
             workflow_instance_id=request.workflow_instance_id,
             workflow_id=request.workflow_id,
@@ -122,8 +125,9 @@ class GoodWorkflow:
         self,
         request: WorkflowExecutionRequest,
         execution_context: ExecutionContext,
+        tool_invoker: ApprovedToolInvoker,
     ) -> M5WorkflowResult:
-        del execution_context
+        del execution_context, tool_invoker
         return M5WorkflowResult(
             workflow_instance_id=request.workflow_instance_id,
             workflow_id=request.workflow_id,

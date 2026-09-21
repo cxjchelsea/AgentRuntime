@@ -529,6 +529,32 @@ def test_validator_rejects_missing_capability_version_pin() -> None:
         PlanValidator().validate(invalid, _validation_context())
 
 
+def test_validator_rejects_workflow_version_drift() -> None:
+    draft = ActionPlanDraftAssembler().build(
+        plan_id="plan-iu6-workflow",
+        request_id="request-iu6",
+        planning_mode=PlanningMode.AGENT_PLANNED,
+        goals=_goals(),
+        strategy=_strategy(),
+        knowledge_planning=_no_knowledge(),
+        execution_preplanning=_preplanning(),
+        response_strategy=None,
+    )
+    capability_plan = dict(draft.capability_plan or {})
+    bindings = [dict(item) for item in capability_plan["bindings"]]
+    bindings[0]["workflow_id"] = "DOMAIN_WORKFLOW"
+    bindings[0]["workflow_version"] = "2.0.0"
+    capability_plan["bindings"] = bindings
+    capability_plan["selected_workflows"] = ["DOMAIN_WORKFLOW"]
+    step = draft.steps[0].model_copy(update={"workflow_id": "DOMAIN_WORKFLOW"})
+    invalid = draft.model_copy(
+        update={"steps": [step], "capability_plan": capability_plan}
+    )
+
+    with pytest.raises(PlanValidationError, match="workflow_id/version"):
+        PlanValidator().validate(invalid, _validation_context())
+
+
 def test_validator_rejects_tool_version_drift() -> None:
     draft = ActionPlanDraftAssembler().build(
         plan_id="plan-iu6",

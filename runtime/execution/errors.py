@@ -1,4 +1,4 @@
-"""M5 readiness errors for execution contract resolution."""
+"""M5 execution/readiness errors."""
 
 
 class ExecutionReadinessError(RuntimeError):
@@ -6,7 +6,19 @@ class ExecutionReadinessError(RuntimeError):
 
 
 class ExecutionRegistryResolutionError(ExecutionReadinessError):
-    """Raised when an execution definition cannot resolve unambiguously."""
+    """Base error for exact approved capability Registry resolution."""
+
+
+class ExecutionCapabilityNotFoundError(ExecutionRegistryResolutionError):
+    """Raised when the exact approved capability id + version is not registered."""
+
+
+class ExecutionCapabilityDisabledError(ExecutionRegistryResolutionError):
+    """Raised when the exact approved capability version is currently disabled."""
+
+
+class ExecutionImplementationMissingError(ExecutionReadinessError):
+    """Raised when the exact approved Registry record has no implementation_ref."""
 
 
 class ExecutionImplementationTypeError(ExecutionReadinessError, TypeError):

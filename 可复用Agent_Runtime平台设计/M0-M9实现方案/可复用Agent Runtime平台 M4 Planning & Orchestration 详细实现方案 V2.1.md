@@ -906,15 +906,23 @@ risk
 
 # 7.11 CapabilitySelection
 
+M5-IU3 CA1 补充：Capability 进入 ApprovedActionPlan 前必须固定规划时实际 Registry version，避免 approval-to-execution version drift。
+
 ```text
-selected_skill
+bindings[]
 
-selected_workflow
+binding:
+  action_id
+  skill_id
+  skill_version
+  workflow_id
+  workflow_version
 
-selected_tools[]
-
-selection_reason
+selected_skills[]
+selected_workflows[]
 ```
+
+`skill_version / workflow_version` 来自 M4 规划时实际通过 enabled / ambiguity 校验的 Registry Definition。若绑定规则显式携带 version，则必须与当前被选中的 Registry version 一致，否则 Planning fail closed。
 
 ---
 
@@ -923,12 +931,21 @@ selection_reason
 ```text
 tool_calls[]
 
+tool_call:
+  tool_id
+  tool_version
+  required
+  required_by_skills[]
+  timeout_policy
+  retry_policy
+  idempotency_mode
+  side_effect_level
+
 parallelizable
-
-timeout_policy
-
 required_success
 ```
+
+`tool_version` 必须来自规划时实际选中的 ToolDefinition，并由 Draft Validator 校验 `tool_id + tool_version` 一致。M2 Policy 仍按 capability ID 授权，不新增 version policy。
 
 ---
 

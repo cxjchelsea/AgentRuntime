@@ -906,9 +906,10 @@ class PlanValidator:
                     raise PlanValidationError(
                         "tool plan omits a Skill owner required_tool"
                     )
-                if not required_tools <= required_by_skill.get(skill_id, set()):
+                if required_tools != required_by_skill.get(skill_id, set()):
                     raise PlanValidationError(
-                        "tool required_by_skills provenance is incomplete"
+                        "tool required_by_skills provenance must exactly match "
+                        "Skill required_tools"
                     )
             elif owner == "WORKFLOW":
                 workflow_id = binding.get("workflow_id")
@@ -934,11 +935,12 @@ class PlanValidator:
                     raise PlanValidationError(
                         "tool plan omits a Workflow owner required_tool"
                     )
-                if not required_tools <= required_by_workflow.get(
+                if required_tools != required_by_workflow.get(
                     workflow_id, set()
                 ):
                     raise PlanValidationError(
-                        "tool required_by_workflows provenance is incomplete"
+                        "tool required_by_workflows provenance must exactly match "
+                        "Workflow required_tools"
                     )
 
     def _validate_confirmation(

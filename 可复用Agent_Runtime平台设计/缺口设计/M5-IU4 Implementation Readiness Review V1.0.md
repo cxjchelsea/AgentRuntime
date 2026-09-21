@@ -309,9 +309,9 @@ ToolPlanner 必须按照 execution_owner 生成 owner-specific Tool authority。
 
 IU3 Tool Projection 需同步消费 workflow provenance；不得执行时再从 WorkflowDefinition 扩张 Tool 集合。
 
-## 11. Existing Technical Debt Assessment
+## 7. Existing Technical Debt Assessment
 
-### 6.1 TD-M5-IU3-01 Registry Namespace Not Pinned
+### 7.1 TD-M5-IU3-01 Registry Namespace Not Pinned
 
 当前 exact resolver 默认 namespace=None。
 
@@ -325,7 +325,7 @@ IU4 不重新 Registry lookup，因此本 IU 不扩大该风险。
 TD-M5-IU3-01 = OPEN / NON_BLOCKING_FOR_IU4
 ```
 
-### 6.2 TD-M5-IU3-04 Optional Tool Step Provenance
+### 7.2 TD-M5-IU3-04 Optional Tool Step Provenance
 
 当前 selected optional Tool：
 
@@ -353,7 +353,7 @@ NON_BLOCKING only because IU4 explicitly disables optional Tool invocation
 MUST CLOSE before optional Tool execution is authorized
 ```
 
-### 6.3 TD-M5-IU4-01 Direct Tool Fast Path
+### 7.3 TD-M5-IU4-01 Direct Tool Fast Path
 
 当前 M4 不能正式生成 direct Tool execution owner。
 
@@ -365,7 +365,7 @@ TD-M5-IU4-01 = OPEN / NON_BLOCKING
 
 IU4 第一版不实现 direct Tool fast path。
 
-### 6.4 TD-M5-IU4-02 Workflow Resume
+### 7.4 TD-M5-IU4-02 Workflow Resume
 
 IU4 第一版只授权 fresh Workflow START。
 
@@ -377,7 +377,7 @@ Resume / callback / checkpoint correlation 进入后续 Persistence / Recovery u
 TD-M5-IU4-02 = OPEN / NON_BLOCKING
 ```
 
-## 11. Proposed Controlled Amendment
+## 8. Proposed Controlled Amendment
 
 建议合并为一次最小受控修正：
 
@@ -412,7 +412,7 @@ RuntimeOrchestrator
 M6
 ```
 
-## 11. CA-M5-IU4-01 Required Deliverables
+## 9. CA-M5-IU4-01 Required Deliverables
 
 至少冻结：
 
@@ -455,7 +455,7 @@ WorkflowImplementation.resume(..., tool_invoker)
 12. no Retry/Idempotency/Lock/M6
 ```
 
-## 11. Current Formal Status
+## 10. Current Formal Status
 
 ```text
 M4 = CLOSED
@@ -483,7 +483,7 @@ M5 = IN PROGRESS
 
 ## 11. Authorization
 
-在上述 4 个 blocker 关闭前：
+在上述 5 个 blocker 关闭前：
 
 ```text
 不得开始真正 Skill / Workflow / Tool production invocation implementation

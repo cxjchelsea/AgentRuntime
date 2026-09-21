@@ -331,7 +331,48 @@ def _approved_step(
             "tool_requirement": None,
         }
     )
-    return base.model_copy(update={"steps": [step]}), step
+    binding = {
+        "action_id": "DOMAIN_ACTION",
+        "skill_id": (
+            "DOMAIN_SKILL"
+            if owner is CapabilityExecutionOwner.SKILL
+            else None
+        ),
+        "skill_version": (
+            "3.2.1"
+            if owner is CapabilityExecutionOwner.SKILL
+            else None
+        ),
+        "workflow_id": (
+            "DOMAIN_WORKFLOW"
+            if owner is CapabilityExecutionOwner.WORKFLOW
+            else None
+        ),
+        "workflow_version": (
+            "4.5.6"
+            if owner is CapabilityExecutionOwner.WORKFLOW
+            else None
+        ),
+        "execution_owner": owner.value,
+    }
+    return base.model_copy(
+        update={
+            "steps": [step],
+            "capability_plan": {
+                "bindings": [binding],
+                "selected_skills": (
+                    ["DOMAIN_SKILL"]
+                    if owner is CapabilityExecutionOwner.SKILL
+                    else []
+                ),
+                "selected_workflows": (
+                    ["DOMAIN_WORKFLOW"]
+                    if owner is CapabilityExecutionOwner.WORKFLOW
+                    else []
+                ),
+            },
+        }
+    ), step
 
 
 def _snapshot(step, *, status: StepExecutionStatus = StepExecutionStatus.RUNNING):

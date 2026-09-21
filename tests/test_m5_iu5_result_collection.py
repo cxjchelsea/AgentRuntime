@@ -417,6 +417,18 @@ def test_reason_codes_preserve_upstream_order_and_deduplicate_collector_code() -
     assert observation.reason_codes == ("FIRST", "RESULT_COLLECTED", "SECOND")
 
 
+def test_collection_does_not_mutate_running_step_lifecycle() -> None:
+    snapshot = _snapshot()
+    before = snapshot
+
+    observation = _collect(_skill_outcome(), snapshot=snapshot)
+
+    assert observation.status is StepAttemptStatus.SUCCESS
+    assert snapshot == before
+    assert snapshot.status is StepExecutionStatus.RUNNING
+    assert snapshot.finished_at is None
+
+
 def test_attempt_observation_flags_must_match_preserved_tool_truth() -> None:
     journal = _tool_journal(ToolExecutionStatus.FAILED)
     with pytest.raises(ValueError, match="non-success Tool evidence"):

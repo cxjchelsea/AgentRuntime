@@ -131,6 +131,8 @@ attempt_number >= 1
 
 后续 Retry 单元可以递增 attempt_number。
 
+IU5 只负责单次 collect 时验证 attempt_number >= 1。跨 observation 的单调递增 / 唯一性需要 attempt history 或 Reliability orchestration 才能判断，属于后续单元，不阻塞纯 Result Collection。
+
 ## 8. Tool Journal sufficiency
 
 现有 ToolInvocationJournalEntry 已保存：
@@ -266,6 +268,14 @@ idempotency store
 
 决定是否允许 replay。
 
+### TD-M5-IU5-04 ATTEMPT_SEQUENCE_AUTHORITY_DEFERRED
+
+IU5 只接收单次 attempt_number，不能独立证明同一 step_execution_id 下的跨次单调递增 / 不重复。
+
+该 authority 必须由后续 Reliability / Persistence 中维护 attempt history 的组件拥有。
+
+这不阻塞 IU5，因为 IU5 不执行 Retry，也不保存 attempt history。
+
 ### 继承既有非阻塞债
 
 ~~~text
@@ -342,13 +352,14 @@ M6
 
 ~~~text
 1. 新对象属于 M5 internal，不污染 Canonical
-2. WAITING / IN_PROGRESS / PARTIAL_SUCCESS / UNKNOWN 均可无损表达
-3. ResultCollector 不拥有 lifecycle mutation
-4. ResultCollector 不拥有 Retry / Idempotency 决策
-5. Tool journal 仍是唯一 Tool truth
-6. raw business outputs 不被提升成 business truth
-7. IU4 reason codes 不被覆盖
-8. 不进入 Registry / Tool invoke / Store / M6
+2. RUNNING snapshot 必须有 started_at；identity/time 结构错误与 UNKNOWN execution fact 分离
+3. WAITING / IN_PROGRESS / PARTIAL_SUCCESS / UNKNOWN 均可无损表达
+4. ResultCollector 不拥有 lifecycle mutation
+5. ResultCollector 不拥有 Retry / Idempotency 决策
+6. Tool journal 仍是唯一 Tool truth
+7. raw business outputs 不被提升成 business truth
+8. IU4 reason codes 不被覆盖
+9. 不进入 Registry / Tool invoke / Store / M6
 ~~~
 
 ## 18. Current Formal Status

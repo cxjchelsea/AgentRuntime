@@ -243,9 +243,7 @@ def _plan(
             "required": True,
             "required_by_skills": ["DOMAIN_SKILL"] if owner == "SKILL" else [],
             "required_by_workflows": (
-                [workflow_id]
-                if owner == "WORKFLOW" and workflow_id is not None
-                else []
+                [workflow_id] if owner == "WORKFLOW" and workflow_id is not None else []
             ),
             "timeout_policy": None,
             "retry_policy": None,

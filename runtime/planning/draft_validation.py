@@ -887,16 +887,12 @@ class PlanValidator:
             if owner == "SKILL":
                 skill_id = binding.get("skill_id")
                 skill_version = binding.get("skill_version")
-                if not isinstance(skill_id, str) or not isinstance(
-                    skill_version, str
-                ):
+                if not isinstance(skill_id, str) or not isinstance(skill_version, str):
                     raise PlanValidationError(
                         "SKILL owner requires pinned Skill identity"
                     )
                 try:
-                    skill_record = context.skill_registry.get(
-                        skill_id, skill_version
-                    )
+                    skill_record = context.skill_registry.get(skill_id, skill_version)
                 except RegistryItemNotFoundError as exc:
                     raise PlanValidationError(
                         "SKILL owner references unavailable Skill version"
@@ -928,16 +924,12 @@ class PlanValidator:
                     raise PlanValidationError(
                         "WORKFLOW owner references unavailable Workflow version"
                     ) from exc
-                required_tools = set(
-                    workflow_record.definition.required_tools or ()
-                )
+                required_tools = set(workflow_record.definition.required_tools or ())
                 if not required_tools <= seen:
                     raise PlanValidationError(
                         "tool plan omits a Workflow owner required_tool"
                     )
-                if required_tools != required_by_workflow.get(
-                    workflow_id, set()
-                ):
+                if required_tools != required_by_workflow.get(workflow_id, set()):
                     raise PlanValidationError(
                         "tool required_by_workflows provenance must exactly match "
                         "Workflow required_tools"

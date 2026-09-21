@@ -532,9 +532,7 @@ class ToolPlanner:
                     raise ToolPlanningError("selected skill became unavailable")
                 for tool_id in skill.required_tools or ():
                     required.append(tool_id)
-                    required_by_skills.setdefault(tool_id, []).append(
-                        binding.skill_id
-                    )
+                    required_by_skills.setdefault(tool_id, []).append(binding.skill_id)
                 optional_available.update(skill.optional_tools or ())
             elif owner == "WORKFLOW":
                 if binding.workflow_id is None:

@@ -87,15 +87,20 @@ def test_validation_decision_requires_reason_code() -> None:
 
 
 def test_invocation_contracts_are_dependency_injectable() -> None:
-    identifier_factory: CapabilityInvocationIdentifierFactory = StaticIdentifierFactory()
+    identifier_factory: CapabilityInvocationIdentifierFactory = (
+        StaticIdentifierFactory()
+    )
     input_validator: ToolInputValidator = StaticInputValidator()
     output_validator: ToolOutputValidator = StaticOutputValidator()
     tool_invoker: ApprovedToolInvoker = NeverInvokeToolGateway()
 
-    assert identifier_factory.new_tool_call_id(
-        step_execution_id="step-execution-001",
-        tool_id="DOMAIN_TOOL",
-    ) == "step-execution-001:DOMAIN_TOOL:call"
+    assert (
+        identifier_factory.new_tool_call_id(
+            step_execution_id="step-execution-001",
+            tool_id="DOMAIN_TOOL",
+        )
+        == "step-execution-001:DOMAIN_TOOL:call"
+    )
     assert input_validator is not None
     assert output_validator is not None
     assert tool_invoker is not None

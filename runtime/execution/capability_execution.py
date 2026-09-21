@@ -164,7 +164,7 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
                 self._boundary_faults[0],
                 "Tool invocation boundary is already fail-closed for this step",
             )
-        if not tool_id.strip():
+        if not isinstance(tool_id, str) or not tool_id.strip():
             self._record_fault("TOOL_ID_INVALID")
             raise ToolInvocationBoundaryError(
                 "TOOL_ID_INVALID",
@@ -179,6 +179,23 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
                 "TOOL_NOT_APPROVED_FOR_STEP",
                 "Tool is not approved/resolved for the current step",
             )
+
+        if not isinstance(input_payload, dict):
+            result = self._generated_result(
+                tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.REJECTED,
+                error_code="INVALID_PARAMETER",
+                reason_codes=("TOOL_INPUT_PAYLOAD_NOT_OBJECT",),
+            )
+            self._append_journal(
+                resolved=resolved,
+                result=result,
+                permission_status=None,
+                input_status=ToolPayloadValidationStatus.INVALID,
+                output_status=None,
+            )
+            return result
 
         if (
             resolved.kind is not CapabilityKind.TOOL
@@ -383,7 +400,9 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
         for resolved in resolved_tools:
             if (
                 resolved.kind is not CapabilityKind.TOOL
+                or not isinstance(resolved.capability_id, str)
                 or not resolved.capability_id.strip()
+                or not isinstance(resolved.version, str)
                 or not resolved.version.strip()
                 or not isinstance(resolved.definition, ToolDefinition)
                 or not isinstance(resolved.implementation_ref, ToolImplementation)

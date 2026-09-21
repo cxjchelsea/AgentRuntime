@@ -489,8 +489,10 @@ class StepCapabilityResolver:
                 permission_context = await self._permission_context_provider.build(
                     execution_context
                 )
-            # 权限事实投影失败时不得默认放行
-            except (ValueError, TypeError, RuntimeError):
+            # Permission provider is an injected trust boundary. Any provider
+            # failure means the current permission facts are not reliable enough to
+            # authorize execution, so fail closed as UNKNOWN.
+            except Exception:  # noqa: BLE001
                 return self._unknown("TOOL_PERMISSION_UNKNOWN")
 
             if (
@@ -507,8 +509,9 @@ class StepCapabilityResolver:
                         tool.definition,
                         permission_context,
                     )
-                # 权限判定器异常时不得默认放行
-                except (ValueError, TypeError, RuntimeError):
+                # Permission evaluator is an injected trust boundary. Any
+                # evaluator failure must never become implicit authorization.
+                except Exception:  # noqa: BLE001
                     return self._unknown("TOOL_PERMISSION_UNKNOWN")
 
                 if permission.status is PermissionDecisionStatus.DENIED:

@@ -99,6 +99,12 @@ from runtime.execution.resolution import (
     ExecutionImplementationResolver,
     ResolvedExecutionImplementation,
 )
+from runtime.execution.result_collection import (
+    StepAttemptObservation,
+    StepAttemptStatus,
+    StepResultCollectionError,
+    StepResultCollector,
+)
 from runtime.execution.runtime_check import (
     ExecutionStateEligibilityEvaluator,
     PolicySnapshotValidityDecision,
@@ -206,6 +212,8 @@ __all__ = [
     "SkillImplementation",
     "StateEligibilityDecision",
     "StateEligibilityStatus",
+    "StepAttemptObservation",
+    "StepAttemptStatus",
     "StepCapabilityExecutionOutcome",
     "StepCapabilityExecutor",
     "StepCapabilityResolver",
@@ -214,6 +222,8 @@ __all__ = [
     "StepConditionStatus",
     "StepExecutionStatus",
     "StepLifecycleSnapshot",
+    "StepResultCollectionError",
+    "StepResultCollector",
     "StepScheduleDecision",
     "StepScheduleStatus",
     "ToolExecutionStatus",

@@ -75,6 +75,7 @@ class ToolInvocationJournalEntry:
     tool_id: str
     tool_version: str
     result: M5ToolResult
+    raw_result: M5ToolResult | None = None
     permission_status: PermissionDecisionStatus | None = None
     input_validation_status: ToolPayloadValidationStatus | None = None
     output_validation_status: ToolPayloadValidationStatus | None = None
@@ -87,6 +88,11 @@ class ToolInvocationJournalEntry:
             raise ValueError("Tool journal result tool_call_id must match")
         if self.result.tool_id != self.tool_id:
             raise ValueError("Tool journal result tool_id must match")
+        if self.raw_result is not None:
+            if self.raw_result.tool_call_id != self.tool_call_id:
+                raise ValueError("Tool journal raw_result tool_call_id must match")
+            if self.raw_result.tool_id != self.tool_id:
+                raise ValueError("Tool journal raw_result tool_id must match")
 
 
 class ApprovedToolInvoker(Protocol):

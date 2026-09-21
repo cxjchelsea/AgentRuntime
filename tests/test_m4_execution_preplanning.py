@@ -217,6 +217,56 @@ def test_capability_planner_selects_unique_registered_skill() -> None:
 
     assert result.selected_skills == ("DOMAIN_SKILL",)
     assert result.bindings[0].skill_id == "DOMAIN_SKILL"
+    assert result.bindings[0].skill_version == "1.0.0"
+
+
+
+def test_binding_rule_version_is_pinned_from_selected_registry_definition() -> None:
+    _, skills, workflows, _ = _registries()
+    planner = CapabilityPlanner(
+        skill_registry=skills,
+        workflow_registry=workflows,
+        binding_rules=(
+            StaticBindingRule(
+                CapabilityBinding(
+                    action_id="DOMAIN_ACTION",
+                    skill_id="DOMAIN_SKILL",
+                )
+            ),
+        ),
+    )
+
+    result = planner.plan(
+        ("DOMAIN_ACTION",),
+        build_runtime_context(),
+        build_policy_decision(),
+    )
+
+    assert result.bindings[0].skill_version == "1.0.0"
+
+
+def test_binding_rule_rejects_version_drift_from_selected_definition() -> None:
+    _, skills, workflows, _ = _registries()
+    planner = CapabilityPlanner(
+        skill_registry=skills,
+        workflow_registry=workflows,
+        binding_rules=(
+            StaticBindingRule(
+                CapabilityBinding(
+                    action_id="DOMAIN_ACTION",
+                    skill_id="DOMAIN_SKILL",
+                    skill_version="2.0.0",
+                )
+            ),
+        ),
+    )
+
+    with pytest.raises(CapabilityPlanningError, match="skill_version"):
+        planner.plan(
+            ("DOMAIN_ACTION",),
+            build_runtime_context(),
+            build_policy_decision(),
+        )
 
 
 def test_capability_planner_fails_on_ambiguous_or_policy_blocked_skills() -> None:
@@ -273,6 +323,7 @@ def test_forced_workflow_from_m2_is_preserved() -> None:
     )
 
     assert result.bindings[0].workflow_id == "DOMAIN_WORKFLOW"
+    assert result.bindings[0].workflow_version == "1.0.0"
     assert result.selected_workflows == ("DOMAIN_WORKFLOW",)
 
 
@@ -298,6 +349,7 @@ def test_tool_planner_resolves_required_registered_tool_without_execution() -> N
 
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].tool_id == "DOMAIN_TOOL"
+    assert result.tool_calls[0].tool_version == "1.0.0"
     assert result.tool_calls[0].required is True
     assert result.tool_calls[0].required_by_skills == ("DOMAIN_SKILL",)
     assert result.required_success is True

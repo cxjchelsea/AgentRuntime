@@ -10,6 +10,7 @@ from runtime.execution.models import ToolExecutionStatus
 from runtime.execution.reliability import (
     IdempotencyMode,
     ReliabilityCapabilityKind,
+    RetryTriggerStatus,
     ReplaySafetyContext,
     ReplaySafetyDecision,
     ReplaySafetyStatus,
@@ -30,7 +31,7 @@ def _retry_policy(**overrides: object) -> ResolvedRetryPolicy:
     values: dict[str, object] = {
         "enabled": True,
         "max_attempts": 3,
-        "retry_on_statuses": (ToolExecutionStatus.FAILED,),
+        "retry_on_statuses": (RetryTriggerStatus.FAILED,),
         "retry_on_error_codes": ("NETWORK_ERROR",),
         "backoff_seconds": 1.0,
         "backoff_multiplier": 2.0,
@@ -175,7 +176,7 @@ def test_retry_context_rejects_negative_deadline_budget() -> None:
     with pytest.raises(ValueError, match="deadline_remaining_seconds"):
         RetryDecisionContext(
             current_attempt=1,
-            result_status=ToolExecutionStatus.FAILED,
+            result_status=RetryTriggerStatus.FAILED,
             error_code="NETWORK_ERROR",
             replay_safety=safety,
             deadline_remaining_seconds=-0.01,

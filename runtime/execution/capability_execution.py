@@ -155,6 +155,11 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
         tool_id: str,
         input_payload: dict[str, Any],
     ) -> M5ToolResult:
+        if self._boundary_faults:
+            raise ToolInvocationBoundaryError(
+                self._boundary_faults[0],
+                "Tool invocation boundary is already fail-closed for this step",
+            )
         if not tool_id.strip():
             self._record_fault("TOOL_ID_INVALID")
             raise ToolInvocationBoundaryError(
@@ -166,11 +171,9 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
         resolved = self._resolved_tools.get(tool_id)
         if resolved is None:
             self._record_fault("TOOL_NOT_APPROVED_FOR_STEP")
-            return self._generated_result(
-                tool_call_id=tool_call_id,
-                tool_id=tool_id,
-                status=ToolExecutionStatus.REJECTED,
-                error_code="TOOL_NOT_APPROVED_FOR_STEP",
+            raise ToolInvocationBoundaryError(
+                "TOOL_NOT_APPROVED_FOR_STEP",
+                "Tool is not approved/resolved for the current step",
             )
 
         if (

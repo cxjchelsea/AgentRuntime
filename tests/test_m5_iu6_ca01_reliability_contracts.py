@@ -192,19 +192,15 @@ def test_timeout_result_keeps_timeout_distinct_from_failure() -> None:
     assert timed_out.value is None
 
 
-def test_timeout_result_completed_requires_value() -> None:
-    completed = TimeoutRunResult(
+def test_timeout_result_completed_may_return_none() -> None:
+    completed = TimeoutRunResult[object](
         status=TimeoutRunStatus.COMPLETED,
-        value={"ok": True},
+        value=None,
         reason_codes=("COMPLETED_WITHIN_TIMEOUT",),
     )
-    assert completed.value == {"ok": True}
 
-    with pytest.raises(ValueError, match="requires a value"):
-        TimeoutRunResult[object](
-            status=TimeoutRunStatus.COMPLETED,
-            reason_codes=("COMPLETED_WITHIN_TIMEOUT",),
-        )
+    assert completed.status is TimeoutRunStatus.COMPLETED
+    assert completed.value is None
 
 
 def test_timeout_result_unknown_cannot_carry_value() -> None:

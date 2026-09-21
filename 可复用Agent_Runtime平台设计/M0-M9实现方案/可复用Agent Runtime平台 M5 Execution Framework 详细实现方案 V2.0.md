@@ -2241,6 +2241,42 @@ Core Tool journal 仍是唯一 Tool execution truth；Result Collection 不重�
 
 这是 M5 的可靠性核心。
 
+> 实施映射：Step 8 对应 M5-IU6。IU6 必须建立在 IU5 StepAttemptObservation 之上，且不得把 Retry 实现成通用 while-loop。正式实现前必须先冻结 typed Reliability Policy、Timeout Runner、Replay Safety、logical Tool call / physical attempt、Idempotency provenance、Step attempt sequence 与 Step finalization authority。
+
+第一版边界：
+
+```text
+允许讨论 / 实现：
+Tool timeout
+Tool retry
+Tool idempotency
+ExecutionContext.deadline admission
+Skill owner replay（仅 replay-safe）
+Step attempt sequencing
+Step finalization decision
+
+不自动重放：
+Workflow owner start
+
+继续后置：
+Workflow WAITING timeout
+Workflow resume / Recovery
+Resource Lock
+Cancellation / Preemption handling
+Plan stop/fallback
+Aggregation
+M6
+```
+
+Reliability 必须保持：
+
+```text
+TIMEOUT != FAILED
+UNKNOWN side effect != safe to replay
+Retry != Replan
+Retry != Capability substitution
+```
+
 ---
 
 ## 11.8.1 Tool Timeout

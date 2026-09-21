@@ -101,6 +101,16 @@ SideEffectClass
 
 Resolver 只能解释 exact resolved definition 上已经存在的 policy reference，不得 Registry discovery、Capability substitution 或 Domain hardcode。
 
+作用域必须区分：
+
+~~~text
+ToolDefinition.retry_policy -> Tool physical-attempt policy
+SkillDefinition.retry_policy -> Skill Step-attempt policy
+Workflow owner -> 第一版不启用 auto-retry policy
+~~~
+
+同名 policy reference 在不同 capability kind 上也不得由 Core 假定同义；由 resolver 返回 typed policy。
+
 ## 4. Timeout Authority
 
 IU6 必须区分：
@@ -146,6 +156,18 @@ finished_at
 
 同一个 logical Tool call 的 logical id 与 idempotency key 必须稳定，physical_attempt 单调递增。
 
+计数语义正式区分：
+
+~~~text
+ToolInvocationRequest.attempt
+= 当前 logical Tool call 内的 physical Tool attempt
+
+StepAttemptObservation.attempt_number
+= 当前 step_execution_id 的 Step attempt
+~~~
+
+二者不得混用。
+
 ## 6. Tool Journal Amendment
 
 当前 ToolInvocationJournalEntry 只表达一份 raw/final result。若 retry 时简单追加多个旧 JournalEntry，会把一次 logical Tool call 错误表示成多次独立业务 Tool 调用。
@@ -182,6 +204,14 @@ RetryDecision
 - next_attempt?
 - backoff_seconds?
 ~~~
+
+ResolvedRetryPolicy.max_attempts 冻结为：
+
+~~~text
+总尝试次数，包含第一次 attempt
+~~~
+
+例如 max_attempts = 3 表示最多 attempt 1 / 2 / 3，不表示“第一次 + 3 次 retry”。
 
 只有同时满足以下条件才允许 RETRY：
 

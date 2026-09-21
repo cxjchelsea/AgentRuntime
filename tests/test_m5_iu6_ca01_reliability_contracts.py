@@ -10,7 +10,6 @@ from runtime.execution.models import ToolExecutionStatus
 from runtime.execution.reliability import (
     IdempotencyMode,
     ReliabilityCapabilityKind,
-    RetryTriggerStatus,
     ReplaySafetyContext,
     ReplaySafetyDecision,
     ReplaySafetyStatus,
@@ -21,6 +20,7 @@ from runtime.execution.reliability import (
     RetryDecision,
     RetryDecisionContext,
     RetryDecisionStatus,
+    RetryTriggerStatus,
     SideEffectClass,
     TimeoutRunResult,
     TimeoutRunStatus,
@@ -108,9 +108,7 @@ def test_resolved_policy_requires_exact_identity_and_policy_identity() -> None:
             policy_identity="",
             timeout=ResolvedTimeoutPolicy(timeout_seconds=None),
             retry=_retry_policy(),
-            idempotency=ResolvedIdempotencyPolicy(
-                mode=IdempotencyMode.NATURAL
-            ),
+            idempotency=ResolvedIdempotencyPolicy(mode=IdempotencyMode.NATURAL),
             side_effect_class=SideEffectClass.NONE,
         )
 

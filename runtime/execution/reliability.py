@@ -76,9 +76,7 @@ class ResolvedRetryPolicy:
             self.max_backoff_seconds is not None
             and self.max_backoff_seconds < self.backoff_seconds
         ):
-            raise ValueError(
-                "max_backoff_seconds must be >= initial backoff_seconds"
-            )
+            raise ValueError("max_backoff_seconds must be >= initial backoff_seconds")
 
 
 @dataclass(frozen=True, slots=True)

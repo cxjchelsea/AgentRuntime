@@ -4,12 +4,27 @@ from runtime.execution.authority import (
     ApprovedWorkflowAuthority,
     project_workflow_authority,
 )
+from runtime.execution.capability_resolution import (
+    ApprovedCapabilityReference,
+    ApprovedStepCapabilityProjector,
+    ApprovedStepCapabilityReferences,
+    CapabilityKind,
+    CapabilityReferenceSource,
+    CapabilityResolutionDecision,
+    CapabilityResolutionStatus,
+    ResolvedCapability,
+    ResolvedStepCapabilities,
+    StepCapabilityResolver,
+)
 from runtime.execution.control import (
     ExecutionControlSignal,
     ExecutionControlSignalSource,
     ExecutionControlSignalType,
 )
 from runtime.execution.errors import (
+    ExecutionCapabilityDisabledError,
+    ExecutionCapabilityNotFoundError,
+    ExecutionImplementationMissingError,
     ExecutionImplementationTypeError,
     ExecutionReadinessError,
     ExecutionRegistryResolutionError,
@@ -62,7 +77,10 @@ from runtime.execution.protocols import (
     ToolImplementation,
     WorkflowImplementation,
 )
-from runtime.execution.resolution import ExecutionImplementationResolver
+from runtime.execution.resolution import (
+    ExecutionImplementationResolver,
+    ResolvedExecutionImplementation,
+)
 from runtime.execution.runtime_check import (
     ExecutionStateEligibilityEvaluator,
     PolicySnapshotValidityDecision,
@@ -95,6 +113,20 @@ from runtime.execution.stores import (
 )
 
 __all__ = [
+    "ApprovedCapabilityReference",
+    "ApprovedStepCapabilityProjector",
+    "ApprovedStepCapabilityReferences",
+    "CapabilityKind",
+    "CapabilityReferenceSource",
+    "CapabilityResolutionDecision",
+    "CapabilityResolutionStatus",
+    "ExecutionCapabilityDisabledError",
+    "ExecutionCapabilityNotFoundError",
+    "ExecutionImplementationMissingError",
+    "ResolvedCapability",
+    "ResolvedExecutionImplementation",
+    "ResolvedStepCapabilities",
+    "StepCapabilityResolver",
     "ActivityInstance",
     "ActivityStatus",
     "ApprovedPlanExecutionError",

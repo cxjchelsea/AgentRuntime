@@ -21,6 +21,7 @@ from runtime.execution import (
     WorkflowExecutionStatus,
 )
 from runtime.execution.result_collection import (
+    StepAttemptObservation,
     StepAttemptStatus,
     StepResultCollectionError,
     StepResultCollector,
@@ -147,7 +148,7 @@ def _collect(
     snapshot: StepLifecycleSnapshot | None = None,
     attempt_number: int = 1,
     observed_at: datetime = OBSERVED_AT,
-):
+) -> StepAttemptObservation:
     return StepResultCollector().collect(
         step_snapshot=snapshot or _snapshot(),
         outcome=outcome,
@@ -419,8 +420,6 @@ def test_reason_codes_preserve_upstream_order_and_deduplicate_collector_code() -
 def test_attempt_observation_flags_must_match_preserved_tool_truth() -> None:
     journal = _tool_journal(ToolExecutionStatus.FAILED)
     with pytest.raises(ValueError, match="non-success Tool evidence"):
-        from runtime.execution.result_collection import StepAttemptObservation
-
         StepAttemptObservation(
             step_id="step-001",
             step_execution_id="step-execution-001",

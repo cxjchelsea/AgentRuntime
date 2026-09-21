@@ -287,9 +287,7 @@ def _registries(
     tool_impls: dict[str, RecordingTool] = {}
     for version in tool_versions:
         implementation = (
-            tool_implementation
-            if tool_implementation is not None
-            else RecordingTool()
+            tool_implementation if tool_implementation is not None else RecordingTool()
         )
         tools.register(
             ToolDefinition(
@@ -558,23 +556,6 @@ def test_forced_workflow_authority_cannot_drift() -> None:
     assert decision.reason_codes == ("WORKFLOW_AUTHORITY_INVALID",)
 
 
-@pytest.mark.parametrize(
-    ("granted", "denied", "expected_status", "expected_reason"),
-    [
-        (
-            frozenset(),
-            frozenset({"TOOL_USE"}),
-            CapabilityResolutionStatus.BLOCKED,
-            "TOOL_PERMISSION_DENIED",
-        ),
-        (
-            frozenset(),
-            frozenset(),
-            CapabilityResolutionStatus.UNKNOWN,
-            "TOOL_PERMISSION_UNKNOWN",
-        ),
-    ],
-)
 def test_tool_without_required_permissions_needs_no_permission_facts() -> None:
     plan = _plan(workflow_id=None, forced_workflow=None)
 
@@ -619,6 +600,23 @@ def test_tool_without_required_permissions_needs_no_permission_facts() -> None:
     assert decision.status is CapabilityResolutionStatus.RESOLVED
 
 
+@pytest.mark.parametrize(
+    ("granted", "denied", "expected_status", "expected_reason"),
+    [
+        (
+            frozenset(),
+            frozenset({"TOOL_USE"}),
+            CapabilityResolutionStatus.BLOCKED,
+            "TOOL_PERMISSION_DENIED",
+        ),
+        (
+            frozenset(),
+            frozenset(),
+            CapabilityResolutionStatus.UNKNOWN,
+            "TOOL_PERMISSION_UNKNOWN",
+        ),
+    ],
+)
 def test_tool_permission_denied_or_unknown_never_becomes_allowed(
     granted: frozenset[str],
     denied: frozenset[str],

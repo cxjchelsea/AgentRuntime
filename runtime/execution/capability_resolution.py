@@ -143,7 +143,9 @@ class CapabilityResolutionDecision:
             CapabilityResolutionStatus.NO_EXTERNAL_CAPABILITY,
         }:
             if self.resolved is None:
-                raise ValueError("successful resolution status requires resolved payload")
+                raise ValueError(
+                    "successful resolution status requires resolved payload"
+                )
             if (
                 self.status is CapabilityResolutionStatus.RESOLVED
                 and not self.resolved.has_external_capability
@@ -438,10 +440,7 @@ class StepCapabilityResolver:
                 authority = project_workflow_authority(approved_plan)
             except (TypeError, ValueError):
                 return self._blocked("WORKFLOW_AUTHORITY_INVALID")
-            if (
-                references.workflow.capability_id
-                not in authority.approved_workflow_ids
-            ):
+            if references.workflow.capability_id not in authority.approved_workflow_ids:
                 return self._blocked("WORKFLOW_AUTHORITY_INVALID")
 
         resolved_skill: ResolvedCapability | None = None
@@ -490,13 +489,13 @@ class StepCapabilityResolver:
                 permission_context = await self._permission_context_provider.build(
                     execution_context
                 )
-            except Exception:
+            # 权限事实投影失败时不得默认放行
+            except (ValueError, TypeError, RuntimeError):
                 return self._unknown("TOOL_PERMISSION_UNKNOWN")
 
             if (
                 permission_context.execution_id != execution_context.execution_id
-                or permission_context.identity_scope
-                != execution_context.identity_scope
+                or permission_context.identity_scope != execution_context.identity_scope
             ):
                 return self._unknown("TOOL_PERMISSION_UNKNOWN")
 
@@ -508,7 +507,8 @@ class StepCapabilityResolver:
                         tool.definition,
                         permission_context,
                     )
-                except Exception:
+                # 权限判定器异常时不得默认放行
+                except (ValueError, TypeError, RuntimeError):
                     return self._unknown("TOOL_PERMISSION_UNKNOWN")
 
                 if permission.status is PermissionDecisionStatus.DENIED:

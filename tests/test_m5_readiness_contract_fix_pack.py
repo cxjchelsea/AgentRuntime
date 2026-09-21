@@ -224,9 +224,7 @@ def test_execution_implementation_resolver_enforces_protocols() -> None:
         SkillImplementation,
     )
     assert isinstance(
-        resolver.resolve_workflow(
-            "DOMAIN_WORKFLOW", "1.0.0"
-        ).implementation_ref,
+        resolver.resolve_workflow("DOMAIN_WORKFLOW", "1.0.0").implementation_ref,
         WorkflowImplementation,
     )
     assert isinstance(

@@ -202,6 +202,7 @@ class ActionPlanDraftAssembler:
                     "skill_version": binding.skill_version,
                     "workflow_id": binding.workflow_id,
                     "workflow_version": binding.workflow_version,
+                    "execution_owner": binding.execution_owner,
                 }
                 for binding in selection.bindings
             ],
@@ -221,6 +222,7 @@ class ActionPlanDraftAssembler:
                     "tool_version": call.tool_version,
                     "required": call.required,
                     "required_by_skills": list(call.required_by_skills),
+                    "required_by_workflows": list(call.required_by_workflows),
                     "timeout_policy": call.timeout_policy,
                     "retry_policy": call.retry_policy,
                     "idempotency_mode": call.idempotency_mode,
@@ -632,6 +634,7 @@ class PlanValidator:
             skill_version = binding.get("skill_version")
             workflow_id = binding.get("workflow_id")
             workflow_version = binding.get("workflow_version")
+            execution_owner = binding.get("execution_owner")
             if not isinstance(action_id, str) or action_id not in actions:
                 raise PlanValidationError(
                     "capability binding must reference a Draft Action"
@@ -704,6 +707,41 @@ class PlanValidator:
                         "capability binding Workflow version is disabled"
                     )
 
+            if execution_owner not in {"SKILL", "WORKFLOW", "NONE"}:
+                raise PlanValidationError(
+                    "capability binding requires frozen execution_owner"
+                )
+            if execution_owner == "SKILL" and skill_id is None:
+                raise PlanValidationError(
+                    "SKILL execution_owner requires capability binding skill_id"
+                )
+            if execution_owner == "WORKFLOW" and workflow_id is None:
+                raise PlanValidationError(
+                    "WORKFLOW execution_owner requires capability binding workflow_id"
+                )
+            if execution_owner == "NONE" and (
+                skill_id is not None or workflow_id is not None
+            ):
+                raise PlanValidationError(
+                    "NONE execution_owner cannot carry Skill or Workflow"
+                )
+            if (
+                skill_id is not None
+                and workflow_id is None
+                and execution_owner != "SKILL"
+            ):
+                raise PlanValidationError(
+                    "skill-only binding execution_owner must be SKILL"
+                )
+            if (
+                workflow_id is not None
+                and skill_id is None
+                and execution_owner != "WORKFLOW"
+            ):
+                raise PlanValidationError(
+                    "workflow-only binding execution_owner must be WORKFLOW"
+                )
+
         if bound_actions != actions:
             raise PlanValidationError(
                 "capability bindings must cover every Draft Action"
@@ -753,6 +791,7 @@ class PlanValidator:
         )
         seen: set[str] = set()
         required_by_skill: dict[str, set[str]] = {}
+        required_by_workflow: dict[str, set[str]] = {}
         for call in calls:
             if not isinstance(call, dict):
                 raise PlanValidationError("tool call plan must be object")
@@ -797,29 +836,110 @@ class PlanValidator:
                 raise PlanValidationError(
                     "tool call required_by_skills must be string list"
                 )
+            required_by_wf = call.get("required_by_workflows")
+            if not isinstance(required_by_wf, list) or any(
+                not isinstance(item, str) for item in required_by_wf
+            ):
+                raise PlanValidationError(
+                    "tool call required_by_workflows must be string list"
+                )
+            if required and not required_by and not required_by_wf:
+                raise PlanValidationError(
+                    "required tool call requires owner provenance"
+                )
             for skill_id in required_by:
                 required_by_skill.setdefault(skill_id, set()).add(tool_id)
+            for workflow_id in required_by_wf:
+                required_by_workflow.setdefault(workflow_id, set()).add(tool_id)
 
         capability = draft.capability_plan or {}
-        selected_skills = capability.get("selected_skills", [])
-        if not set(required_by_skill) <= set(selected_skills):
+        bindings = capability.get("bindings", [])
+        if not isinstance(bindings, list):
+            raise PlanValidationError("capability_plan.bindings must be list")
+
+        owner_skills = {
+            binding.get("skill_id")
+            for binding in bindings
+            if isinstance(binding, dict)
+            and binding.get("execution_owner") == "SKILL"
+            and binding.get("skill_id") is not None
+        }
+        owner_workflows = {
+            binding.get("workflow_id")
+            for binding in bindings
+            if isinstance(binding, dict)
+            and binding.get("execution_owner") == "WORKFLOW"
+            and binding.get("workflow_id") is not None
+        }
+        if not set(required_by_skill) <= owner_skills:
             raise PlanValidationError(
-                "tool required_by_skills references unselected Skill"
+                "tool required_by_skills references non-owner Skill"
             )
-        skill_defs = self._enabled_definitions(
-            context.skill_registry,
-            "skill_id",
-            "Skill",
-        )
-        for skill_id in selected_skills:
-            skill = skill_defs[skill_id]
-            required_tools = set(skill.required_tools or ())
-            if not required_tools <= seen:
-                raise PlanValidationError("tool plan omits a Skill required_tool")
-            if not required_tools <= required_by_skill.get(skill_id, set()):
-                raise PlanValidationError(
-                    "tool required_by_skills provenance is incomplete"
+        if not set(required_by_workflow) <= owner_workflows:
+            raise PlanValidationError(
+                "tool required_by_workflows references non-owner Workflow"
+            )
+
+        for binding in bindings:
+            if not isinstance(binding, dict):
+                continue
+            owner = binding.get("execution_owner")
+            if owner == "SKILL":
+                skill_id = binding.get("skill_id")
+                skill_version = binding.get("skill_version")
+                if not isinstance(skill_id, str) or not isinstance(
+                    skill_version, str
+                ):
+                    raise PlanValidationError(
+                        "SKILL owner requires pinned Skill identity"
+                    )
+                try:
+                    skill_record = context.skill_registry.get(
+                        skill_id, skill_version
+                    )
+                except RegistryItemNotFoundError as exc:
+                    raise PlanValidationError(
+                        "SKILL owner references unavailable Skill version"
+                    ) from exc
+                required_tools = set(skill_record.definition.required_tools or ())
+                if not required_tools <= seen:
+                    raise PlanValidationError(
+                        "tool plan omits a Skill owner required_tool"
+                    )
+                if not required_tools <= required_by_skill.get(skill_id, set()):
+                    raise PlanValidationError(
+                        "tool required_by_skills provenance is incomplete"
+                    )
+            elif owner == "WORKFLOW":
+                workflow_id = binding.get("workflow_id")
+                workflow_version = binding.get("workflow_version")
+                if not isinstance(workflow_id, str) or not isinstance(
+                    workflow_version, str
+                ):
+                    raise PlanValidationError(
+                        "WORKFLOW owner requires pinned Workflow identity"
+                    )
+                try:
+                    workflow_record = context.workflow_registry.get(
+                        workflow_id, workflow_version
+                    )
+                except RegistryItemNotFoundError as exc:
+                    raise PlanValidationError(
+                        "WORKFLOW owner references unavailable Workflow version"
+                    ) from exc
+                required_tools = set(
+                    workflow_record.definition.required_tools or ()
                 )
+                if not required_tools <= seen:
+                    raise PlanValidationError(
+                        "tool plan omits a Workflow owner required_tool"
+                    )
+                if not required_tools <= required_by_workflow.get(
+                    workflow_id, set()
+                ):
+                    raise PlanValidationError(
+                        "tool required_by_workflows provenance is incomplete"
+                    )
 
     def _validate_confirmation(
         self,

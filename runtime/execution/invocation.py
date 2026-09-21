@@ -120,6 +120,20 @@ class ToolAttemptObservation:
             raise ValueError("Tool attempt finished_at cannot precede started_at")
 
 
+class PhysicalToolAttemptExecutor(Protocol):
+    async def execute_physical_attempt(
+        self,
+        *,
+        logical_tool_call_id: str,
+        tool_id: str,
+        input_payload: dict[str, Any],
+        physical_attempt: int,
+        idempotency_key: str | None,
+        operation_key: str | None,
+    ) -> ToolAttemptObservation:
+        """Execute exactly one physical attempt; never decide whether to retry."""
+
+
 @dataclass(frozen=True, slots=True)
 class ToolInvocationJournalEntry:
     tool_call_id: str

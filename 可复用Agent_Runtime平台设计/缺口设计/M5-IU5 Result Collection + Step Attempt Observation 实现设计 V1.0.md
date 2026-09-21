@@ -162,6 +162,8 @@ attempt_number = 1
 
 Step attempt_number 与 ToolInvocationRequest.attempt 是不同层级的计数。
 
+IU5 只验证 attempt_number >= 1；“同一 step_execution_id 下 attempt_number 的单调递增 / 不重复”需要 attempt history 或 Reliability orchestration 才能判断，因此由后续 Reliability / Persistence 单元拥有，不由纯 Collector 猜测。
+
 ## 5. 输入一致性门禁
 
 StepResultCollector 接收：
@@ -177,13 +179,31 @@ observed_at
 
 ~~~text
 snapshot.status == RUNNING
+snapshot.started_at != None
 outcome.step_id == snapshot.step_id
 outcome.step_execution_id == snapshot.step_execution_id
 attempt_number >= 1
 observed_at >= snapshot.started_at
 ~~~
 
-错配必须 fail closed；IU5 不重新读 ApprovedPlan、不重新解析 Capability，因为 IU4 已完成 Approved owner / ID / version 校验。
+这类身份 / 生命周期 / 时间结构错误属于 Core integration fault，而不是业务执行结果不确定。
+
+建议新增内部：
+
+~~~text
+StepResultCollectionError
+~~~
+
+遇到上述结构错误时：
+
+~~~text
+不生成 StepAttemptObservation
+不修改 lifecycle
+不把错误伪装成 StepAttemptStatus.UNKNOWN
+由上层 M5 error boundary 接管
+~~~
+
+IU5 不重新读 ApprovedPlan、不重新解析 Capability，因为 IU4 已完成 Approved owner / ID / version 校验。
 
 ## 6. CapabilityExecutionStatus 顶层映射
 
@@ -455,30 +475,31 @@ Collector 必须是：
 至少覆盖：
 
 ~~~text
-1. Snapshot 必须 RUNNING
+1. Snapshot 必须 RUNNING 且 started_at 非空
 2. step_id / step_execution_id 必须一致
 3. attempt_number >= 1
 4. observed_at 不早于 step started_at
-5. BLOCKED 保持 BLOCKED
-6. UNKNOWN 保持 UNKNOWN
-7. WAITING 保持 WAITING
-8. NO_EXTERNAL_EXECUTION 不变成 SUCCESS
-9. Skill SUCCESS -> SUCCESS
-10. Skill PARTIAL_SUCCESS 保持 PARTIAL_SUCCESS
-11. Skill FAILED/CANCELLED/TIMEOUT/PREEMPTED 精确分类
-12. Workflow COMPLETED -> SUCCESS
-13. Workflow WAITING -> WAITING
-14. Workflow CREATED/RUNNING -> IN_PROGRESS
-15. Workflow FAILED/CANCELLED/TIMEOUT/PREEMPTED 精确分类
-16. Core tool journal 原样保留
-17. Tool UNKNOWN 不得被 owner SUCCESS 覆盖
-18. non-success Tool observation 不被删除
-19. raw SUCCESS + final UNKNOWN 标记 untrusted-success evidence
-20. business_outputs 原样保留
-21. capability events 不升级成 Core execution events
-22. IU5 不调用 Registry / Tool / Lifecycle / Store / M6
-23. IU5 不做 Retry / Timeout enforcement / Idempotency
-24. IU5 不生成 Canonical ExecutionResult
+5. identity/time 结构错误抛 StepResultCollectionError，不伪装成 UNKNOWN
+6. BLOCKED 保持 BLOCKED
+7. UNKNOWN 保持 UNKNOWN
+8. WAITING 保持 WAITING
+9. NO_EXTERNAL_EXECUTION 不变成 SUCCESS
+10. Skill SUCCESS -> SUCCESS
+11. Skill PARTIAL_SUCCESS 保持 PARTIAL_SUCCESS
+12. Skill FAILED/CANCELLED/TIMEOUT/PREEMPTED 精确分类
+13. Workflow COMPLETED -> SUCCESS
+14. Workflow WAITING -> WAITING
+15. Workflow CREATED/RUNNING -> IN_PROGRESS
+16. Workflow FAILED/CANCELLED/TIMEOUT/PREEMPTED 精确分类
+17. Core tool journal 原样保留
+18. Tool UNKNOWN 不得被 owner SUCCESS 覆盖
+19. non-success Tool observation 不被删除
+20. raw SUCCESS + final UNKNOWN 标记 untrusted-success evidence
+21. business_outputs 原样保留
+22. capability events 不升级成 Core execution events
+23. IU5 不调用 Registry / Tool / Lifecycle / Store / M6
+24. IU5 不做 Retry / Timeout enforcement / Idempotency
+25. IU5 不生成 Canonical ExecutionResult
 ~~~
 
 ## 18. 明确不属于 IU5

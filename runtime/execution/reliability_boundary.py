@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Any, Protocol
 
 from runtime.execution.invocation import ToolInvocationJournalEntry
-from runtime.execution.models import M5ToolResult, StepExecutionStatus
+from runtime.execution.models import StepExecutionStatus
 from runtime.execution.reliability import (
     ReplaySafetyDecision,
     RetryDecision,
@@ -229,18 +229,3 @@ class StepFinalizationEvaluator(Protocol):
         reliability_decision: StepReliabilityDecision,
     ) -> StepFinalizationDecision:
         """Authorize terminal mapping without interpreting plan fallback/on_failure."""
-
-
-@dataclass(frozen=True, slots=True)
-class RecoveredIdempotentToolResult:
-    """Trusted result recovered from a previous completed idempotent operation."""
-
-    operation_key: ToolOperationCorrelationKey
-    original_logical_tool_call_id: str
-    result: M5ToolResult
-
-    def __post_init__(self) -> None:
-        if not self.original_logical_tool_call_id.strip():
-            raise ValueError("original_logical_tool_call_id must not be blank")
-        if self.result.tool_call_id != self.original_logical_tool_call_id:
-            raise ValueError("recovered result must retain original logical call id")

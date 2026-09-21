@@ -499,6 +499,77 @@ def test_skill_owner_executes_exact_skill_and_approved_tool_once() -> None:
     assert outcome.skill_result.tool_results == outcome.tool_results
 
 
+def test_workflow_owner_ignores_retained_non_owner_skill() -> None:
+    base, base_step = _approved_step(owner=CapabilityExecutionOwner.WORKFLOW)
+    step = base_step.model_copy(update={"skill_id": "DOMAIN_SKILL"})
+    capability_plan = dict(base.capability_plan or {})
+    bindings = [dict(item) for item in capability_plan["bindings"]]
+    bindings[0]["skill_id"] = "DOMAIN_SKILL"
+    bindings[0]["skill_version"] = "3.2.1"
+    capability_plan["bindings"] = bindings
+    capability_plan["selected_skills"] = ["DOMAIN_SKILL"]
+    plan = base.model_copy(
+        update={
+            "steps": [step],
+            "capability_plan": capability_plan,
+        }
+    )
+
+    workflow = RecordingWorkflow()
+    resolved = _workflow_resolved(workflow)
+
+    outcome = asyncio.run(
+        _executor().execute(
+            approved_plan=plan,
+            step=step,
+            step_snapshot=_snapshot(step),
+            resolved=resolved,
+            execution_context=_execution_context(),
+        )
+    )
+
+    assert step.skill_id == "DOMAIN_SKILL"
+    assert outcome.status is CapabilityExecutionStatus.EXECUTED
+    assert outcome.execution_owner is CapabilityExecutionOwner.WORKFLOW
+    assert outcome.skill_result is None
+    assert workflow.start_calls == 1
+    assert workflow.resume_calls == 0
+
+
+def test_resolved_owner_cannot_override_approved_execution_owner() -> None:
+    base, base_step = _approved_step(owner=CapabilityExecutionOwner.WORKFLOW)
+    step = base_step.model_copy(update={"skill_id": "DOMAIN_SKILL"})
+    capability_plan = dict(base.capability_plan or {})
+    bindings = [dict(item) for item in capability_plan["bindings"]]
+    bindings[0]["skill_id"] = "DOMAIN_SKILL"
+    bindings[0]["skill_version"] = "3.2.1"
+    capability_plan["bindings"] = bindings
+    capability_plan["selected_skills"] = ["DOMAIN_SKILL"]
+    plan = base.model_copy(
+        update={
+            "steps": [step],
+            "capability_plan": capability_plan,
+        }
+    )
+
+    skill = RecordingSkill()
+    forged = _skill_resolved(skill)
+
+    outcome = asyncio.run(
+        _executor().execute(
+            approved_plan=plan,
+            step=step,
+            step_snapshot=_snapshot(step),
+            resolved=forged,
+            execution_context=_execution_context(),
+        )
+    )
+
+    assert outcome.status is CapabilityExecutionStatus.BLOCKED
+    assert outcome.reason_codes == ("APPROVED_EXECUTION_OWNER_MISMATCH",)
+    assert skill.calls == 0
+
+
 def test_workflow_owner_starts_fresh_workflow_and_never_resumes() -> None:
     plan, step = _approved_step(owner=CapabilityExecutionOwner.WORKFLOW)
     workflow = RecordingWorkflow(status=WorkflowExecutionStatus.WAITING)

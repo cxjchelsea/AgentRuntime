@@ -95,15 +95,15 @@ from runtime.execution.protocols import (
     ToolImplementation,
     WorkflowImplementation,
 )
+from runtime.execution.resolution import (
+    ExecutionImplementationResolver,
+    ResolvedExecutionImplementation,
+)
 from runtime.execution.result_collection import (
     StepAttemptObservation,
     StepAttemptStatus,
     StepResultCollectionError,
     StepResultCollector,
-)
-from runtime.execution.resolution import (
-    ExecutionImplementationResolver,
-    ResolvedExecutionImplementation,
 )
 from runtime.execution.runtime_check import (
     ExecutionStateEligibilityEvaluator,

@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from runtime.execution.capability_execution import (
     CapabilityExecutionStatus,
@@ -90,8 +90,7 @@ class StepAttemptObservation:
             raise ValueError("tool_results must exactly match the Core Tool journal")
 
         non_success = any(
-            item.status is not ToolExecutionStatus.SUCCESS
-            for item in self.tool_results
+            item.status is not ToolExecutionStatus.SUCCESS for item in self.tool_results
         )
         unknown = any(
             item.status is ToolExecutionStatus.UNKNOWN for item in self.tool_results
@@ -123,7 +122,7 @@ class StepResultCollectionError(RuntimeError):
 class StepResultCollector:
     """Collect one IU4 outcome into an M5-internal attempt observation."""
 
-    _SKILL_STATUS_MAP = {
+    _SKILL_STATUS_MAP: ClassVar[dict[SkillExecutionStatus, StepAttemptStatus]] = {
         SkillExecutionStatus.SUCCESS: StepAttemptStatus.SUCCESS,
         SkillExecutionStatus.PARTIAL_SUCCESS: StepAttemptStatus.PARTIAL_SUCCESS,
         SkillExecutionStatus.FAILED: StepAttemptStatus.FAILED,
@@ -132,7 +131,7 @@ class StepResultCollector:
         SkillExecutionStatus.PREEMPTED: StepAttemptStatus.PREEMPTED,
     }
 
-    _WORKFLOW_STATUS_MAP = {
+    _WORKFLOW_STATUS_MAP: ClassVar[dict[WorkflowExecutionStatus, StepAttemptStatus]] = {
         WorkflowExecutionStatus.COMPLETED: StepAttemptStatus.SUCCESS,
         WorkflowExecutionStatus.FAILED: StepAttemptStatus.FAILED,
         WorkflowExecutionStatus.CANCELLED: StepAttemptStatus.CANCELLED,
@@ -185,8 +184,7 @@ class StepResultCollector:
             business_outputs=business_outputs,
             capability_events=capability_events,
             has_non_success_tool_observation=any(
-                item.status is not ToolExecutionStatus.SUCCESS
-                for item in tool_results
+                item.status is not ToolExecutionStatus.SUCCESS for item in tool_results
             ),
             has_unknown_tool_observation=any(
                 item.status is ToolExecutionStatus.UNKNOWN for item in tool_results
@@ -265,8 +263,7 @@ class StepResultCollector:
             if (
                 outcome.execution_owner is CapabilityExecutionOwner.WORKFLOW
                 and outcome.workflow_result is not None
-                and outcome.workflow_result.status
-                is WorkflowExecutionStatus.WAITING
+                and outcome.workflow_result.status is WorkflowExecutionStatus.WAITING
             ):
                 return StepAttemptStatus.WAITING, ()
             return (
@@ -281,8 +278,7 @@ class StepResultCollector:
             )
 
         if any(
-            item.status is ToolExecutionStatus.UNKNOWN
-            for item in outcome.tool_results
+            item.status is ToolExecutionStatus.UNKNOWN for item in outcome.tool_results
         ):
             return (
                 StepAttemptStatus.UNKNOWN,

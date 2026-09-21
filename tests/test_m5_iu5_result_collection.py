@@ -27,7 +27,6 @@ from runtime.execution.result_collection import (
     StepResultCollector,
 )
 
-
 STARTED_AT = datetime(2026, 9, 21, 9, 0, tzinfo=UTC)
 OBSERVED_AT = STARTED_AT + timedelta(seconds=1)
 
@@ -300,10 +299,7 @@ def test_raw_success_final_unknown_sets_untrusted_success_evidence() -> None:
     assert observation.status is StepAttemptStatus.UNKNOWN
     assert observation.has_untrusted_success_observation is True
     assert observation.tool_journal[0].raw_result is not None
-    assert (
-        observation.tool_journal[0].raw_result.status
-        is ToolExecutionStatus.SUCCESS
-    )
+    assert observation.tool_journal[0].raw_result.status is ToolExecutionStatus.SUCCESS
 
 
 def test_owner_result_inconsistency_becomes_unknown_not_structural_error() -> None:
@@ -336,9 +332,7 @@ def test_workflow_waiting_cannot_hide_behind_executed_top_level() -> None:
     observation = _collect(outcome)
 
     assert observation.status is StepAttemptStatus.UNKNOWN
-    assert "RESULT_COLLECTION_OWNER_RESULT_INCONSISTENT" in (
-        observation.reason_codes
-    )
+    assert "RESULT_COLLECTION_OWNER_RESULT_INCONSISTENT" in (observation.reason_codes)
 
 
 @pytest.mark.parametrize(
@@ -401,7 +395,8 @@ def test_incomparable_timestamps_are_structural_collection_error() -> None:
     with pytest.raises(StepResultCollectionError) as exc_info:
         _collect(
             _skill_outcome(),
-            observed_at=datetime(2026, 9, 21, 9, 0),
+            # 故意使用 naive datetime，验证与 aware started_at 无法比较时走结构错误。
+            observed_at=datetime(2026, 9, 21, 9, 0),  # noqa: DTZ001
         )
 
     assert exc_info.value.reason_code == "RESULT_COLLECTION_TIME_INVALID"

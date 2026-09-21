@@ -10,7 +10,7 @@
 M5-IU6 IMPLEMENTATION DESIGN = COMPLETE
 M5-IU6 IMPLEMENTATION READINESS = NOT_READY
 
-BLOCKERS = 5
+BLOCKERS = 6
 PRODUCTION IMPLEMENTATION = NOT AUTHORIZED
 ~~~
 
@@ -188,9 +188,55 @@ B-M5-IU6-005 = OPEN
 REQUIRES CA-M5-IU6-02
 ~~~
 
+## 7. B-M5-IU6-006 STEP_REPLAY_TOOL_OPERATION_CORRELATION_MISSING
+
+IU6 设计原本希望在 replay-safe 时允许 Skill owner Step retry。
+
+但当前 ApprovedToolInvoker.invoke 只有：
+
+~~~text
+tool_id
+input_payload
+~~~
+
+没有跨 Step attempts 的 stable Tool operation identity。
+
+如果 key 只按：
+
+~~~text
+tool_id + input fingerprint
+~~~
+
+同一个 Skill attempt 内两个合法的相同调用会错误碰撞。
+
+如果 key 包含每次新生成的 logical_tool_call_id：
+
+~~~text
+下一次 Step retry 会产生新 key
+→ 无法 dedupe 前一次可能已经发生的 side effect
+~~~
+
+因此当前无法证明 whole-Skill replay 的 Tool side effects 可跨 Step attempts 安全对齐。
+
+必须先冻结：
+
+~~~text
+ToolOperationCorrelationKey
+~~~
+
+或等价 Core-controlled correlation contract。
+
+结论：
+
+~~~text
+B-M5-IU6-006 = OPEN
+REQUIRES CA-M5-IU6-02
+Skill owner automatic Step replay = NOT AUTHORIZED
+~~~
+
 ## 7. TD-M5-IU5-03 Replay Safety 状态
 
-TD-M5-IU5-03 在 IU6 已经进入 blocking path，但其缺口被 B-M5-IU6-001 / 002 / 003 共同覆盖：
+TD-M5-IU5-03 在 IU6 已经进入 blocking path，其缺口由 B-M5-IU6-001 / 002 / 003 / 006 共同覆盖：
 
 ~~~text
 typed replay-safety policy
@@ -288,6 +334,7 @@ logical Tool call / physical attempt model
 ToolAttemptObservation
 Tool journal attempt history
 stable idempotency key
+ToolOperationCorrelationKey
 IdempotencyRecord provenance
 completed-result recovery
 StepAttemptSequenceAuthority
@@ -336,7 +383,7 @@ M5 internal reliability contracts
 2. CA-M5-IU6-01 four local gates = GREEN
 3. CA-M5-IU6-02 Targeted Amendment Review = PASSED
 4. CA-M5-IU6-02 four local gates = GREEN
-5. 5 个 blocker 全部 CLOSED
+5. 6 个 blocker 全部 CLOSED
 6. max_attempts 明确表示“包含第一次”的总尝试次数
 7. Tool physical attempt 与 Step attempt_number 两套计数不可混用
 8. 不新增 Capability substitution / Replan
@@ -365,6 +412,7 @@ B-M5-IU6-002 = OPEN
 B-M5-IU6-003 = OPEN
 B-M5-IU6-004 = OPEN
 B-M5-IU6-005 = OPEN
+B-M5-IU6-006 = OPEN
 
 NEXT REQUIRED:
 CA-M5-IU6-01

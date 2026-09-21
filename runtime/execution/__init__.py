@@ -4,12 +4,27 @@ from runtime.execution.authority import (
     ApprovedWorkflowAuthority,
     project_workflow_authority,
 )
+from runtime.execution.capability_resolution import (
+    ApprovedCapabilityReference,
+    ApprovedStepCapabilityProjector,
+    ApprovedStepCapabilityReferences,
+    CapabilityKind,
+    CapabilityReferenceSource,
+    CapabilityResolutionDecision,
+    CapabilityResolutionStatus,
+    ResolvedCapability,
+    ResolvedStepCapabilities,
+    StepCapabilityResolver,
+)
 from runtime.execution.control import (
     ExecutionControlSignal,
     ExecutionControlSignalSource,
     ExecutionControlSignalType,
 )
 from runtime.execution.errors import (
+    ExecutionCapabilityDisabledError,
+    ExecutionCapabilityNotFoundError,
+    ExecutionImplementationMissingError,
     ExecutionImplementationTypeError,
     ExecutionReadinessError,
     ExecutionRegistryResolutionError,
@@ -62,7 +77,10 @@ from runtime.execution.protocols import (
     ToolImplementation,
     WorkflowImplementation,
 )
-from runtime.execution.resolution import ExecutionImplementationResolver
+from runtime.execution.resolution import (
+    ExecutionImplementationResolver,
+    ResolvedExecutionImplementation,
+)
 from runtime.execution.runtime_check import (
     ExecutionStateEligibilityEvaluator,
     PolicySnapshotValidityDecision,
@@ -97,10 +115,19 @@ from runtime.execution.stores import (
 __all__ = [
     "ActivityInstance",
     "ActivityStatus",
+    "ApprovedCapabilityReference",
     "ApprovedPlanExecutionError",
     "ApprovedPlanExecutionValidator",
+    "ApprovedStepCapabilityProjector",
+    "ApprovedStepCapabilityReferences",
     "ApprovedWorkflowAuthority",
     "CallableExecutionIdentifierFactory",
+    "CapabilityKind",
+    "CapabilityReferenceSource",
+    "CapabilityResolutionDecision",
+    "CapabilityResolutionStatus",
+    "ExecutionCapabilityDisabledError",
+    "ExecutionCapabilityNotFoundError",
     "ExecutionContextBuildError",
     "ExecutionContextBuilder",
     "ExecutionControlSignal",
@@ -111,6 +138,7 @@ __all__ = [
     "ExecutionEventRecord",
     "ExecutionFoundation",
     "ExecutionFoundationError",
+    "ExecutionImplementationMissingError",
     "ExecutionImplementationResolver",
     "ExecutionImplementationTypeError",
     "ExecutionLifecycleError",
@@ -140,6 +168,9 @@ __all__ = [
     "PolicySnapshotValidityEvaluator",
     "PolicySnapshotValidityStatus",
     "PreparedExecution",
+    "ResolvedCapability",
+    "ResolvedExecutionImplementation",
+    "ResolvedStepCapabilities",
     "ResourceLockProvider",
     "RuntimeExecutionCheckDecision",
     "RuntimeExecutionCheckStatus",
@@ -152,6 +183,7 @@ __all__ = [
     "SkillImplementation",
     "StateEligibilityDecision",
     "StateEligibilityStatus",
+    "StepCapabilityResolver",
     "StepConditionDecision",
     "StepConditionEvaluator",
     "StepConditionStatus",

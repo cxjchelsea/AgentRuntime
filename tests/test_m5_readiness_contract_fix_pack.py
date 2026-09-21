@@ -219,12 +219,18 @@ def test_execution_implementation_resolver_enforces_protocols() -> None:
         tool_registry=tools,
     )
 
-    assert isinstance(resolver.resolve_skill("DOMAIN_SKILL"), SkillImplementation)
     assert isinstance(
-        resolver.resolve_workflow("DOMAIN_WORKFLOW"),
+        resolver.resolve_skill("DOMAIN_SKILL", "1.0.0").implementation_ref,
+        SkillImplementation,
+    )
+    assert isinstance(
+        resolver.resolve_workflow("DOMAIN_WORKFLOW", "1.0.0").implementation_ref,
         WorkflowImplementation,
     )
-    assert isinstance(resolver.resolve_tool("DOMAIN_TOOL"), ToolImplementation)
+    assert isinstance(
+        resolver.resolve_tool("DOMAIN_TOOL", "1.0.0").implementation_ref,
+        ToolImplementation,
+    )
 
 
 def test_execution_implementation_resolver_rejects_wrong_implementation_type() -> None:
@@ -242,20 +248,22 @@ def test_execution_implementation_resolver_rejects_wrong_implementation_type() -
     )
 
     with pytest.raises(ExecutionImplementationTypeError):
-        resolver.resolve_tool("DOMAIN_TOOL")
+        resolver.resolve_tool("DOMAIN_TOOL", "1.0.0")
 
 
-def test_execution_implementation_resolver_rejects_enabled_version_ambiguity() -> None:
+def test_execution_implementation_resolver_uses_exact_approved_version() -> None:
     skills = SkillRegistry()
     workflows = WorkflowRegistry()
     tools = ToolRegistry()
+    v1 = GoodTool()
+    v2 = GoodTool()
     tools.register(
         ToolDefinition(tool_id="DOMAIN_TOOL", version="1.0.0"),
-        implementation_ref=GoodTool(),
+        implementation_ref=v1,
     )
     tools.register(
         ToolDefinition(tool_id="DOMAIN_TOOL", version="2.0.0"),
-        implementation_ref=GoodTool(),
+        implementation_ref=v2,
     )
     resolver = ExecutionImplementationResolver(
         skill_registry=skills,
@@ -263,8 +271,11 @@ def test_execution_implementation_resolver_rejects_enabled_version_ambiguity() -
         tool_registry=tools,
     )
 
-    with pytest.raises(ExecutionRegistryResolutionError, match="exactly one"):
-        resolver.resolve_tool("DOMAIN_TOOL")
+    assert resolver.resolve_tool("DOMAIN_TOOL", "1.0.0").implementation_ref is v1
+    assert resolver.resolve_tool("DOMAIN_TOOL", "2.0.0").implementation_ref is v2
+
+    with pytest.raises(ExecutionRegistryResolutionError):
+        resolver.resolve_tool("DOMAIN_TOOL", "3.0.0")
 
 
 def test_control_signal_distinguishes_cancel_preempt_and_none() -> None:

@@ -1,14 +1,19 @@
-"""Resolve execution implementations from existing registries.
+"""Exact execution implementation resolution for approved capability versions.
 
-M5 never substitutes a different Skill / Workflow / Tool when the approved reference
-cannot resolve. Multiple enabled versions are treated as ambiguous and fail closed.
+M5 resolves only the capability id + version already frozen in ApprovedActionPlan.
+It never selects a newer/current/alternative version and never substitutes another
+Skill / Workflow / Tool.
 """
 
 from __future__ import annotations
 
-from typing import TypeVar
+from dataclasses import dataclass
+from typing import Generic, TypeVar
 
 from runtime.execution.errors import (
+    ExecutionCapabilityDisabledError,
+    ExecutionCapabilityNotFoundError,
+    ExecutionImplementationMissingError,
     ExecutionImplementationTypeError,
     ExecutionRegistryResolutionError,
 )
@@ -17,12 +22,16 @@ from runtime.execution.protocols import (
     ToolImplementation,
     WorkflowImplementation,
 )
-from runtime.registries import SkillRegistry, ToolRegistry, WorkflowRegistry
-from runtime.registries.base import RegistryRecord
-from runtime.registries.definitions import (
+from runtime.registries import (
+    BaseRegistry,
+    RegistryItemNotFoundError,
+    RegistryRecord,
     SkillDefinition,
+    SkillRegistry,
     ToolDefinition,
+    ToolRegistry,
     WorkflowDefinition,
+    WorkflowRegistry,
 )
 
 DefinitionT = TypeVar(
@@ -31,10 +40,24 @@ DefinitionT = TypeVar(
     WorkflowDefinition,
     ToolDefinition,
 )
+ImplementationT = TypeVar(
+    "ImplementationT",
+    SkillImplementation,
+    WorkflowImplementation,
+    ToolImplementation,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedExecutionImplementation(Generic[DefinitionT, ImplementationT]):
+    """Exact Registry definition + runtime implementation binding."""
+
+    definition: DefinitionT
+    implementation_ref: ImplementationT
 
 
 class ExecutionImplementationResolver:
-    """Fail-closed resolution for approved execution references."""
+    """Resolve one exact approved capability id + version, fail closed."""
 
     def __init__(
         self,
@@ -47,68 +70,105 @@ class ExecutionImplementationResolver:
         self._workflow_registry = workflow_registry
         self._tool_registry = tool_registry
 
-    def resolve_skill(self, skill_id: str) -> SkillImplementation:
-        record = self._resolve_one_enabled(
-            self._skill_registry.list(),
+    def resolve_skill(
+        self,
+        skill_id: str,
+        version: str,
+    ) -> ResolvedExecutionImplementation[SkillDefinition, SkillImplementation]:
+        record = self._resolve_exact(
+            self._skill_registry,
             item_id=skill_id,
-            id_attr="skill_id",
+            version=version,
             label="skill",
         )
         implementation = record.implementation_ref
+        if implementation is None:
+            raise ExecutionImplementationMissingError(
+                "skill implementation_ref is missing"
+            )
         if not isinstance(implementation, SkillImplementation):
             raise ExecutionImplementationTypeError(
                 "skill implementation_ref does not satisfy SkillImplementation"
             )
-        return implementation
+        return ResolvedExecutionImplementation(
+            definition=record.definition,
+            implementation_ref=implementation,
+        )
 
-    def resolve_workflow(self, workflow_id: str) -> WorkflowImplementation:
-        record = self._resolve_one_enabled(
-            self._workflow_registry.list(),
+    def resolve_workflow(
+        self,
+        workflow_id: str,
+        version: str,
+    ) -> ResolvedExecutionImplementation[WorkflowDefinition, WorkflowImplementation]:
+        record = self._resolve_exact(
+            self._workflow_registry,
             item_id=workflow_id,
-            id_attr="workflow_id",
+            version=version,
             label="workflow",
         )
         implementation = record.implementation_ref
+        if implementation is None:
+            raise ExecutionImplementationMissingError(
+                "workflow implementation_ref is missing"
+            )
         if not isinstance(implementation, WorkflowImplementation):
             raise ExecutionImplementationTypeError(
                 "workflow implementation_ref does not satisfy WorkflowImplementation"
             )
-        return implementation
+        return ResolvedExecutionImplementation(
+            definition=record.definition,
+            implementation_ref=implementation,
+        )
 
-    def resolve_tool(self, tool_id: str) -> ToolImplementation:
-        record = self._resolve_one_enabled(
-            self._tool_registry.list(),
+    def resolve_tool(
+        self,
+        tool_id: str,
+        version: str,
+    ) -> ResolvedExecutionImplementation[ToolDefinition, ToolImplementation]:
+        record = self._resolve_exact(
+            self._tool_registry,
             item_id=tool_id,
-            id_attr="tool_id",
+            version=version,
             label="tool",
         )
         implementation = record.implementation_ref
+        if implementation is None:
+            raise ExecutionImplementationMissingError(
+                "tool implementation_ref is missing"
+            )
         if not isinstance(implementation, ToolImplementation):
             raise ExecutionImplementationTypeError(
                 "tool implementation_ref does not satisfy ToolImplementation"
             )
-        return implementation
+        return ResolvedExecutionImplementation(
+            definition=record.definition,
+            implementation_ref=implementation,
+        )
 
     @staticmethod
-    def _resolve_one_enabled(
-        records: list[RegistryRecord[DefinitionT]],
+    def _resolve_exact(
+        registry: BaseRegistry[DefinitionT],
         *,
         item_id: str,
-        id_attr: str,
+        version: str,
         label: str,
     ) -> RegistryRecord[DefinitionT]:
         if not item_id.strip():
             raise ExecutionRegistryResolutionError(f"{label} id must not be blank")
-
-        matches = [
-            record
-            for record in records
-            if record.enabled
-            and getattr(record.definition, "enabled", False)
-            and getattr(record.definition, id_attr) == item_id
-        ]
-        if len(matches) != 1:
+        if not version.strip():
             raise ExecutionRegistryResolutionError(
-                f"{label} must resolve to exactly one enabled registered version"
+                f"{label} approved version must not be blank"
             )
-        return matches[0]
+
+        try:
+            record = registry.get(item_id, version)
+        except RegistryItemNotFoundError as exc:
+            raise ExecutionCapabilityNotFoundError(
+                f"{label} approved version is not registered"
+            ) from exc
+
+        if not record.enabled or not getattr(record.definition, "enabled", False):
+            raise ExecutionCapabilityDisabledError(
+                f"{label} approved version is disabled"
+            )
+        return record

@@ -167,6 +167,7 @@ def _preplanning() -> ExecutionPreplanningResult:
                 CapabilityBinding(
                     action_id="DOMAIN_ACTION",
                     skill_id="DOMAIN_SKILL",
+                    skill_version="1.0.0",
                 ),
             ),
             selected_skills=("DOMAIN_SKILL",),
@@ -182,6 +183,7 @@ def _preplanning() -> ExecutionPreplanningResult:
                     retry_policy=None,
                     idempotency_mode=None,
                     side_effect_level=None,
+                    tool_version="1.0.0",
                 ),
             ),
             parallelizable=False,
@@ -299,7 +301,9 @@ def test_assembler_projects_prior_m4_results_into_canonical_draft() -> None:
         "risk": None,
     }
     assert draft.capability_plan is not None
+    assert draft.capability_plan["bindings"][0]["skill_version"] == "1.0.0"
     assert draft.tool_plan is not None
+    assert draft.tool_plan["tool_calls"][0]["tool_version"] == "1.0.0"
     assert draft.confirmation_plan is not None
     assert draft.fallback_plan is not None
     assert draft.stop_conditions == ["DOMAIN_DONE"]
@@ -480,6 +484,69 @@ def test_required_false_cannot_carry_retrieval_or_evidence_plan() -> None:
     )
 
     with pytest.raises(PlanValidationError):
+        PlanValidator().validate(invalid, _validation_context())
+
+
+def test_validator_rejects_capability_version_drift() -> None:
+    draft = ActionPlanDraftAssembler().build(
+        plan_id="plan-iu6",
+        request_id="request-iu6",
+        planning_mode=PlanningMode.AGENT_PLANNED,
+        goals=_goals(),
+        strategy=_strategy(),
+        knowledge_planning=_no_knowledge(),
+        execution_preplanning=_preplanning(),
+        response_strategy=None,
+    )
+    invalid_capability_plan = dict(draft.capability_plan or {})
+    bindings = [dict(item) for item in invalid_capability_plan["bindings"]]
+    bindings[0]["skill_version"] = "2.0.0"
+    invalid_capability_plan["bindings"] = bindings
+    invalid = draft.model_copy(update={"capability_plan": invalid_capability_plan})
+
+    with pytest.raises(PlanValidationError, match="skill_id/version"):
+        PlanValidator().validate(invalid, _validation_context())
+
+
+def test_validator_rejects_missing_capability_version_pin() -> None:
+    draft = ActionPlanDraftAssembler().build(
+        plan_id="plan-iu6",
+        request_id="request-iu6",
+        planning_mode=PlanningMode.AGENT_PLANNED,
+        goals=_goals(),
+        strategy=_strategy(),
+        knowledge_planning=_no_knowledge(),
+        execution_preplanning=_preplanning(),
+        response_strategy=None,
+    )
+    invalid_capability_plan = dict(draft.capability_plan or {})
+    bindings = [dict(item) for item in invalid_capability_plan["bindings"]]
+    bindings[0]["skill_version"] = None
+    invalid_capability_plan["bindings"] = bindings
+    invalid = draft.model_copy(update={"capability_plan": invalid_capability_plan})
+
+    with pytest.raises(PlanValidationError, match="pinned skill_version"):
+        PlanValidator().validate(invalid, _validation_context())
+
+
+def test_validator_rejects_tool_version_drift() -> None:
+    draft = ActionPlanDraftAssembler().build(
+        plan_id="plan-iu6",
+        request_id="request-iu6",
+        planning_mode=PlanningMode.AGENT_PLANNED,
+        goals=_goals(),
+        strategy=_strategy(),
+        knowledge_planning=_no_knowledge(),
+        execution_preplanning=_preplanning(),
+        response_strategy=None,
+    )
+    invalid_tool_plan = dict(draft.tool_plan or {})
+    calls = [dict(item) for item in invalid_tool_plan["tool_calls"]]
+    calls[0]["tool_version"] = "2.0.0"
+    invalid_tool_plan["tool_calls"] = calls
+    invalid = draft.model_copy(update={"tool_plan": invalid_tool_plan})
+
+    with pytest.raises(PlanValidationError, match="tool_id/version"):
         PlanValidator().validate(invalid, _validation_context())
 
 

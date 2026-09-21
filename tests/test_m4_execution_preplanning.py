@@ -220,7 +220,6 @@ def test_capability_planner_selects_unique_registered_skill() -> None:
     assert result.bindings[0].skill_version == "1.0.0"
 
 
-
 def test_binding_rule_version_is_pinned_from_selected_registry_definition() -> None:
     _, skills, workflows, _ = _registries()
     planner = CapabilityPlanner(

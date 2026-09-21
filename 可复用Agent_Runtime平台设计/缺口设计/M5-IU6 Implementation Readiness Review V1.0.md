@@ -45,6 +45,15 @@ RetrySleeper / BackoffCalculator
 
 如果直接实现，只能由开发者临场解释业务字符串、直接调用 wall-clock / asyncio timeout，违反 Core/Domain 边界。
 
+此外 policy reference 当前没有单独的 version pinning contract。CA 必须保证：
+
+~~~text
+exact capability version
+→ deterministic immutable reliability policy
+~~~
+
+不得在 execution time 绑定 mutable latest policy。
+
 结论：
 
 ~~~text
@@ -115,6 +124,8 @@ COMPLETED + result_reference
 没有对应 IdempotencyResultResolver / typed result recovery contract。
 
 若发现已有 COMPLETED key，当前无法既“不重复 invoke”又“恢复可信结果”。
+
+同时现有状态只有 RESERVED / COMPLETED / UNKNOWN，没有“确定无 side effect 的失败 operation 如何结束 reservation”的合同。若 retry 最终停止，RESERVED 可能永久阻塞后续同一 operation。CA 必须冻结 mark_failed / release / abandon 中的一种等价语义，且不得把确定失败误标为 UNKNOWN。
 
 结论：
 

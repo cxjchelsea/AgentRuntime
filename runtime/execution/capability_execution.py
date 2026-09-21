@@ -24,6 +24,7 @@ from runtime.execution.foundation import StepLifecycleSnapshot
 from runtime.execution.invocation import (
     ApprovedToolInvoker,
     CapabilityInvocationIdentifierFactory,
+    ToolAttemptObservation,
     ToolInputValidator,
     ToolInvocationJournalEntry,
     ToolInvocationJournalReader,
@@ -534,6 +535,17 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
         output_status: ToolPayloadValidationStatus | None,
         raw_result: M5ToolResult | None = None,
     ) -> None:
+        attempt_observation = ToolAttemptObservation(
+            logical_tool_call_id=result.tool_call_id,
+            tool_id=result.tool_id,
+            tool_version=resolved.version,
+            physical_attempt=result.attempt,
+            result=result,
+            raw_result=raw_result,
+            permission_status=permission_status,
+            input_validation_status=input_status,
+            output_validation_status=output_status,
+        )
         self._journal.append(
             ToolInvocationJournalEntry(
                 tool_call_id=result.tool_call_id,
@@ -544,6 +556,7 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
                 permission_status=permission_status,
                 input_validation_status=input_status,
                 output_validation_status=output_status,
+                attempts=(attempt_observation,),
             )
         )
 

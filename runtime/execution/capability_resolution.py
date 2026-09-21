@@ -48,6 +48,12 @@ class CapabilityKind(str, Enum):
     TOOL = "TOOL"
 
 
+class CapabilityExecutionOwner(str, Enum):
+    SKILL = "SKILL"
+    WORKFLOW = "WORKFLOW"
+    NONE = "NONE"
+
+
 class CapabilityReferenceSource(str, Enum):
     STEP_SKILL = "STEP_SKILL"
     STEP_WORKFLOW = "STEP_WORKFLOW"
@@ -77,6 +83,7 @@ class ApprovedCapabilityReference:
 @dataclass(frozen=True, slots=True)
 class ApprovedStepCapabilityReferences:
     step_id: str
+    execution_owner: CapabilityExecutionOwner = CapabilityExecutionOwner.NONE
     skill: ApprovedCapabilityReference | None = None
     workflow: ApprovedCapabilityReference | None = None
     tools: tuple[ApprovedCapabilityReference, ...] = ()
@@ -114,6 +121,7 @@ class ResolvedCapability:
 @dataclass(frozen=True, slots=True)
 class ResolvedStepCapabilities:
     step_id: str
+    execution_owner: CapabilityExecutionOwner = CapabilityExecutionOwner.NONE
     skill: ResolvedCapability | None = None
     workflow: ResolvedCapability | None = None
     tools: tuple[ResolvedCapability, ...] = ()
@@ -185,7 +193,9 @@ class ApprovedStepCapabilityProjector:
         skill_ref: ApprovedCapabilityReference | None = None
         workflow_ref: ApprovedCapabilityReference | None = None
 
+        execution_owner = CapabilityExecutionOwner.NONE
         if binding is not None:
+            execution_owner = self._execution_owner(binding, step)
             skill_ref = self._binding_reference(
                 binding,
                 id_field="skill_id",
@@ -208,10 +218,15 @@ class ApprovedStepCapabilityProjector:
                 "step capability reference has no approved capability binding",
             )
 
-        tool_refs = self._tool_references(approved_plan, step)
+        tool_refs = self._tool_references(
+            approved_plan,
+            step,
+            execution_owner=execution_owner,
+        )
 
         return ApprovedStepCapabilityReferences(
             step_id=step.step_id,
+            execution_owner=execution_owner,
             skill=skill_ref,
             workflow=workflow_ref,
             tools=tool_refs,
@@ -267,6 +282,39 @@ class ApprovedStepCapabilityProjector:
         return matches[0]
 
     @staticmethod
+    def _execution_owner(
+        binding: dict[str, object],
+        step: ActionStep,
+    ) -> CapabilityExecutionOwner:
+        raw_owner = binding.get("execution_owner")
+        try:
+            owner = CapabilityExecutionOwner(raw_owner)
+        except (TypeError, ValueError) as exc:
+            raise ApprovedCapabilityProjectionError(
+                "APPROVED_CAPABILITY_PLAN_INCONSISTENT",
+                "approved capability binding requires frozen execution_owner",
+            ) from exc
+
+        if owner is CapabilityExecutionOwner.SKILL and step.skill_id is None:
+            raise ApprovedCapabilityProjectionError(
+                "APPROVED_CAPABILITY_PLAN_INCONSISTENT",
+                "SKILL execution_owner requires approved step skill_id",
+            )
+        if owner is CapabilityExecutionOwner.WORKFLOW and step.workflow_id is None:
+            raise ApprovedCapabilityProjectionError(
+                "APPROVED_CAPABILITY_PLAN_INCONSISTENT",
+                "WORKFLOW execution_owner requires approved step workflow_id",
+            )
+        if owner is CapabilityExecutionOwner.NONE and (
+            step.skill_id is not None or step.workflow_id is not None
+        ):
+            raise ApprovedCapabilityProjectionError(
+                "APPROVED_CAPABILITY_PLAN_INCONSISTENT",
+                "NONE execution_owner cannot carry Skill or Workflow",
+            )
+        return owner
+
+    @staticmethod
     def _binding_reference(
         binding: dict[str, object],
         *,
@@ -308,10 +356,15 @@ class ApprovedStepCapabilityProjector:
     def _tool_references(
         approved_plan: ApprovedActionPlan,
         step: ActionStep,
+        *,
+        execution_owner: CapabilityExecutionOwner,
     ) -> tuple[ApprovedCapabilityReference, ...]:
         tool_plan = approved_plan.tool_plan
         if tool_plan is None:
-            if step.tool_requirement is not None or step.skill_id is not None:
+            if (
+                step.tool_requirement is not None
+                or execution_owner is not CapabilityExecutionOwner.NONE
+            ):
                 raise ApprovedCapabilityProjectionError(
                     "APPROVED_TOOL_PLAN_INCONSISTENT",
                     "approved executable capability requires an explicit tool_plan",
@@ -337,6 +390,7 @@ class ApprovedStepCapabilityProjector:
             tool_id = call.get("tool_id")
             tool_version = call.get("tool_version")
             required_by = call.get("required_by_skills", [])
+            required_by_workflows = call.get("required_by_workflows", [])
 
             if not isinstance(tool_id, str) or not tool_id.strip():
                 raise ApprovedCapabilityProjectionError(
@@ -351,12 +405,33 @@ class ApprovedStepCapabilityProjector:
                     "APPROVED_TOOL_PLAN_INCONSISTENT",
                     "approved tool required_by_skills must be a string list",
                 )
+            if not isinstance(required_by_workflows, list) or any(
+                not isinstance(workflow_id, str) or not workflow_id.strip()
+                for workflow_id in required_by_workflows
+            ):
+                raise ApprovedCapabilityProjectionError(
+                    "APPROVED_TOOL_PLAN_INCONSISTENT",
+                    "approved tool required_by_workflows must be a string list",
+                )
 
-            selected_by_skill = (
-                step.skill_id is not None and step.skill_id in required_by
-            )
+            selected_by_owner = False
+            if execution_owner is CapabilityExecutionOwner.SKILL:
+                selected_by_owner = (
+                    step.skill_id is not None and step.skill_id in required_by
+                )
+            elif execution_owner is CapabilityExecutionOwner.WORKFLOW:
+                selected_by_owner = (
+                    step.workflow_id is not None
+                    and step.workflow_id in required_by_workflows
+                )
+
             selected_by_step = step.tool_requirement == tool_id
-            if not selected_by_skill and not selected_by_step:
+            if selected_by_step and not selected_by_owner:
+                raise ApprovedCapabilityProjectionError(
+                    "APPROVED_TOOL_PLAN_INCONSISTENT",
+                    "ActionStep.tool_requirement does not match execution owner provenance",
+                )
+            if not selected_by_owner:
                 continue
 
             if not isinstance(tool_version, str) or not tool_version.strip():
@@ -365,11 +440,7 @@ class ApprovedStepCapabilityProjector:
                     "approved Tool reference has no pinned version",
                 )
 
-            source = (
-                CapabilityReferenceSource.APPROVED_TOOL_PLAN
-                if selected_by_skill
-                else CapabilityReferenceSource.STEP_TOOL_PROJECTION
-            )
+            source = CapabilityReferenceSource.APPROVED_TOOL_PLAN
             reference = ApprovedCapabilityReference(
                 kind=CapabilityKind.TOOL,
                 capability_id=tool_id,
@@ -432,7 +503,10 @@ class StepCapabilityResolver:
             return CapabilityResolutionDecision(
                 status=CapabilityResolutionStatus.NO_EXTERNAL_CAPABILITY,
                 reason_codes=("NO_EXTERNAL_CAPABILITY",),
-                resolved=ResolvedStepCapabilities(step_id=step.step_id),
+                resolved=ResolvedStepCapabilities(
+                    step_id=step.step_id,
+                    execution_owner=references.execution_owner,
+                ),
             )
 
         if references.workflow is not None:
@@ -524,6 +598,7 @@ class StepCapabilityResolver:
             reason_codes=("CAPABILITIES_RESOLVED",),
             resolved=ResolvedStepCapabilities(
                 step_id=step.step_id,
+                execution_owner=references.execution_owner,
                 skill=resolved_skill,
                 workflow=resolved_workflow,
                 tools=tuple(resolved_tools),

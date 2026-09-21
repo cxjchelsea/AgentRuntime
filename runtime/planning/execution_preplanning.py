@@ -134,7 +134,9 @@ class CapabilityBinding:
 
     action_id: str
     skill_id: str | None = None
+    skill_version: str | None = None
     workflow_id: str | None = None
+    workflow_version: str | None = None
 
 
 class CapabilityBindingRule(Protocol):
@@ -201,8 +203,12 @@ class CapabilityPlanner:
                     raise CapabilityPlanningError(
                         "capability binding rules produced conflicting bindings"
                     )
-                binding = unique[0]
-                self._validate_binding(binding, skills, workflows, policy_decision)
+                binding = self._validate_and_pin_binding(
+                    unique[0],
+                    skills,
+                    workflows,
+                    policy_decision,
+                )
                 bindings.append(binding)
                 continue
 
@@ -224,10 +230,16 @@ class CapabilityPlanner:
                 raise CapabilityPlanningError(
                     "multiple enabled skills support one action; binding rule required"
                 )
+            selected_skill_id = matching_skills[0] if matching_skills else None
             bindings.append(
                 CapabilityBinding(
                     action_id=action_id,
-                    skill_id=matching_skills[0] if matching_skills else None,
+                    skill_id=selected_skill_id,
+                    skill_version=(
+                        skills[selected_skill_id].version
+                        if selected_skill_id is not None
+                        else None
+                    ),
                 )
             )
 
@@ -249,7 +261,9 @@ class CapabilityPlanner:
             bindings[0] = CapabilityBinding(
                 action_id=first.action_id,
                 skill_id=first.skill_id,
+                skill_version=first.skill_version,
                 workflow_id=forced_workflow,
+                workflow_version=workflows[forced_workflow].version,
             )
 
         selected_skills = tuple(
@@ -324,13 +338,16 @@ class CapabilityPlanner:
             output[definition.workflow_id] = definition
         return output
 
-    def _validate_binding(
+    def _validate_and_pin_binding(
         self,
         binding: CapabilityBinding,
         skills: dict[str, SkillDefinition],
         workflows: dict[str, WorkflowDefinition],
         policy_decision: PolicyDecision,
-    ) -> None:
+    ) -> CapabilityBinding:
+        skill_version: str | None = None
+        workflow_version: str | None = None
+
         if binding.skill_id is not None:
             definition = skills.get(binding.skill_id)
             if definition is None:
@@ -343,9 +360,45 @@ class CapabilityPlanner:
                 raise CapabilityPlanningError(
                     "binding references policy-disallowed skill"
                 )
+            if (
+                binding.skill_version is not None
+                and binding.skill_version != definition.version
+            ):
+                raise CapabilityPlanningError(
+                    "binding skill_version does not match selected registry version"
+                )
+            skill_version = definition.version
+        elif binding.skill_version is not None:
+            raise CapabilityPlanningError(
+                "binding without skill_id cannot carry skill_version"
+            )
 
-        if binding.workflow_id is not None and binding.workflow_id not in workflows:
-            raise CapabilityPlanningError("binding references unavailable workflow")
+        if binding.workflow_id is not None:
+            definition = workflows.get(binding.workflow_id)
+            if definition is None:
+                raise CapabilityPlanningError(
+                    "binding references unavailable workflow"
+                )
+            if (
+                binding.workflow_version is not None
+                and binding.workflow_version != definition.version
+            ):
+                raise CapabilityPlanningError(
+                    "binding workflow_version does not match selected registry version"
+                )
+            workflow_version = definition.version
+        elif binding.workflow_version is not None:
+            raise CapabilityPlanningError(
+                "binding without workflow_id cannot carry workflow_version"
+            )
+
+        return CapabilityBinding(
+            action_id=binding.action_id,
+            skill_id=binding.skill_id,
+            skill_version=skill_version,
+            workflow_id=binding.workflow_id,
+            workflow_version=workflow_version,
+        )
 
     @staticmethod
     def _skill_allowed(skill_id: str, policy_decision: PolicyDecision) -> bool:
@@ -367,6 +420,7 @@ class ToolCallPlan:
     retry_policy: str | None
     idempotency_mode: str | None
     side_effect_level: str | None
+    tool_version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -466,6 +520,7 @@ class ToolPlanner:
                     retry_policy=definition.retry_policy,
                     idempotency_mode=definition.idempotency_mode,
                     side_effect_level=definition.side_effect_level,
+                    tool_version=definition.version,
                 )
             )
 

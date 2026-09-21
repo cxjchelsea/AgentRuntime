@@ -422,13 +422,13 @@ class ToolCallPlan:
     """A selected Tool reference; no call is executed."""
 
     tool_id: str
-    tool_version: str
     required: bool
     required_by_skills: tuple[str, ...]
     timeout_policy: str | None
     retry_policy: str | None
     idempotency_mode: str | None
     side_effect_level: str | None
+    tool_version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

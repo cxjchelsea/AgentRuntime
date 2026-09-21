@@ -159,6 +159,8 @@ ExecutionImplementationResolver 通过“同一 ID 仅一个 enabled version”�
 
 这两项不阻塞 M5-IU1，但必须在 Capability Resolution / Tool Executor 实现时继续跟踪。
 
+> 后续状态更新（M5-IU3 Readiness）：TD-M5-02 已在 Capability Resolution 阶段升级为 `B-M5-IU3-001`，必须先完成 Approval-time Capability Version Pinning Controlled Amendment，关闭后才允许开始 IU3 production implementation。
+
 ## 6. Supplement Verification Gate
 
 合并前必须运行：

@@ -2251,7 +2251,7 @@ Tool timeout
 Tool retry
 Tool idempotency
 ExecutionContext.deadline admission
-Skill owner replay（仅 replay-safe）
+Skill owner replay（目标能力；仅 replay-safe 且具备跨 Step attempt 的 Tool operation correlation 后允许）
 Step attempt sequencing
 Step finalization decision
 

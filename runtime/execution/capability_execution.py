@@ -78,6 +78,7 @@ class StepCapabilityExecutionOutcome:
     skill_result: M5SkillResult | None = None
     workflow_result: M5WorkflowResult | None = None
     tool_results: tuple[M5ToolResult, ...] = ()
+    tool_journal: tuple[ToolInvocationJournalEntry, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.step_id.strip() or not self.step_execution_id.strip():
@@ -92,12 +93,15 @@ class StepCapabilityExecutionOutcome:
             raise ValueError("owner capability id/version must be present together")
         if self.skill_result is not None and self.workflow_result is not None:
             raise ValueError("one IU4 outcome cannot carry both Skill and Workflow result")
+        if self.tool_results != tuple(entry.result for entry in self.tool_journal):
+            raise ValueError("tool_results must exactly match the Core Tool journal")
         if self.execution_owner is CapabilityExecutionOwner.NONE:
             if (
                 self.owner_capability_id is not None
                 or self.skill_result is not None
                 or self.workflow_result is not None
                 or self.tool_results
+                or self.tool_journal
             ):
                 raise ValueError("NONE execution_owner cannot carry execution results")
         if self.status is CapabilityExecutionStatus.NO_EXTERNAL_EXECUTION:
@@ -689,9 +693,14 @@ class StepCapabilityExecutor:
                 status=self._fault_status(tool_invoker),
                 reason_codes=reason_codes,
                 tool_results=self._journal_results(tool_invoker),
+                tool_journal=tool_invoker.entries(),
             )
 
-        if not isinstance(result, M5SkillResult) or result.skill_id != skill.capability_id:
+        if (
+            not isinstance(result, M5SkillResult)
+            or not isinstance(result.status, SkillExecutionStatus)
+            or result.skill_id != skill.capability_id
+        ):
             return self._outcome(
                 step=step,
                 step_snapshot=step_snapshot,
@@ -699,6 +708,7 @@ class StepCapabilityExecutor:
                 status=CapabilityExecutionStatus.UNKNOWN,
                 reason_codes=("SKILL_RESULT_INVALID",),
                 tool_results=self._journal_results(tool_invoker),
+                tool_journal=tool_invoker.entries(),
             )
 
         journal_results = self._journal_results(tool_invoker)
@@ -722,6 +732,7 @@ class StepCapabilityExecutor:
                 reason_codes=("CAPABILITY_RESULT_TOOL_TRACE_MISMATCH",),
                 skill_result=result,
                 tool_results=journal_results,
+                tool_journal=tool_invoker.entries(),
             )
 
         normalized = replace(result, tool_results=journal_results)
@@ -734,6 +745,7 @@ class StepCapabilityExecutor:
                 reason_codes=("TOOL_EXECUTION_UNKNOWN",),
                 skill_result=normalized,
                 tool_results=journal_results,
+                tool_journal=tool_invoker.entries(),
             )
 
         return self._outcome(
@@ -744,6 +756,7 @@ class StepCapabilityExecutor:
             reason_codes=("SKILL_EXECUTED",),
             skill_result=normalized,
             tool_results=journal_results,
+            tool_journal=tool_invoker.entries(),
         )
 
     async def _execute_workflow(
@@ -816,10 +829,12 @@ class StepCapabilityExecutor:
                 status=self._fault_status(tool_invoker),
                 reason_codes=reason_codes,
                 tool_results=self._journal_results(tool_invoker),
+                tool_journal=tool_invoker.entries(),
             )
 
         if (
             not isinstance(result, M5WorkflowResult)
+            or not isinstance(result.status, WorkflowExecutionStatus)
             or result.workflow_id != workflow.capability_id
             or result.workflow_instance_id != workflow_instance_id
         ):
@@ -830,6 +845,7 @@ class StepCapabilityExecutor:
                 status=CapabilityExecutionStatus.UNKNOWN,
                 reason_codes=("WORKFLOW_RESULT_INVALID",),
                 tool_results=self._journal_results(tool_invoker),
+                tool_journal=tool_invoker.entries(),
             )
 
         journal_results = self._journal_results(tool_invoker)
@@ -853,6 +869,7 @@ class StepCapabilityExecutor:
                 reason_codes=("CAPABILITY_RESULT_TOOL_TRACE_MISMATCH",),
                 workflow_result=result,
                 tool_results=journal_results,
+                tool_journal=tool_invoker.entries(),
             )
 
         normalized = replace(result, tool_results=journal_results)
@@ -865,6 +882,7 @@ class StepCapabilityExecutor:
                 reason_codes=("TOOL_EXECUTION_UNKNOWN",),
                 workflow_result=normalized,
                 tool_results=journal_results,
+                tool_journal=tool_invoker.entries(),
             )
 
         status = (
@@ -885,6 +903,7 @@ class StepCapabilityExecutor:
             reason_codes=(reason,),
             workflow_result=normalized,
             tool_results=journal_results,
+            tool_journal=tool_invoker.entries(),
         )
 
     @staticmethod
@@ -962,6 +981,7 @@ class StepCapabilityExecutor:
             skill_result=skill_result,
             workflow_result=workflow_result,
             tool_results=tool_results,
+            tool_journal=tool_invoker.entries(),
         )
 
     @staticmethod
@@ -997,6 +1017,7 @@ class StepCapabilityExecutor:
         skill_result: M5SkillResult | None = None,
         workflow_result: M5WorkflowResult | None = None,
         tool_results: tuple[M5ToolResult, ...] = (),
+        tool_journal: tuple[ToolInvocationJournalEntry, ...] = (),
     ) -> StepCapabilityExecutionOutcome:
         owner = resolved.execution_owner
         owner_capability: ResolvedCapability | None
@@ -1024,4 +1045,5 @@ class StepCapabilityExecutor:
             skill_result=skill_result,
             workflow_result=workflow_result,
             tool_results=tool_results,
+            tool_journal=tool_journal,
         )

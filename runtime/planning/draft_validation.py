@@ -198,7 +198,9 @@ class ActionPlanDraftAssembler:
                 {
                     "action_id": binding.action_id,
                     "skill_id": binding.skill_id,
+                    "skill_version": binding.skill_version,
                     "workflow_id": binding.workflow_id,
+                    "workflow_version": binding.workflow_version,
                 }
                 for binding in selection.bindings
             ],
@@ -215,6 +217,7 @@ class ActionPlanDraftAssembler:
             "tool_calls": [
                 {
                     "tool_id": call.tool_id,
+                    "tool_version": call.tool_version,
                     "required": call.required,
                     "required_by_skills": list(call.required_by_skills),
                     "timeout_policy": call.timeout_policy,
@@ -625,7 +628,9 @@ class PlanValidator:
                 raise PlanValidationError("capability binding must be object")
             action_id = binding.get("action_id")
             skill_id = binding.get("skill_id")
+            skill_version = binding.get("skill_version")
             workflow_id = binding.get("workflow_id")
+            workflow_version = binding.get("workflow_version")
             if not isinstance(action_id, str) or action_id not in actions:
                 raise PlanValidationError(
                     "capability binding must reference a Draft Action"
@@ -641,15 +646,46 @@ class PlanValidator:
                     raise PlanValidationError(
                         "capability binding references unavailable Skill"
                     )
-                if action_id not in (skills[skill_id].supported_actions or ()):
+                if not isinstance(skill_version, str) or not skill_version.strip():
+                    raise PlanValidationError(
+                        "capability binding Skill requires pinned skill_version"
+                    )
+                skill = self._exact_enabled_definition(
+                    context.skill_registry,
+                    skill_id,
+                    skill_version,
+                    "Skill",
+                )
+                if action_id not in (skill.supported_actions or ()):
                     raise PlanValidationError(
                         "capability Skill does not support bound Action"
                     )
-            if workflow_id is not None and (
-                not isinstance(workflow_id, str) or workflow_id not in workflows
-            ):
+            elif skill_version is not None:
                 raise PlanValidationError(
-                    "capability binding references unavailable Workflow"
+                    "capability binding skill_version requires skill_id"
+                )
+
+            if workflow_id is not None:
+                if not isinstance(workflow_id, str) or workflow_id not in workflows:
+                    raise PlanValidationError(
+                        "capability binding references unavailable Workflow"
+                    )
+                if (
+                    not isinstance(workflow_version, str)
+                    or not workflow_version.strip()
+                ):
+                    raise PlanValidationError(
+                        "capability binding Workflow requires pinned workflow_version"
+                    )
+                self._exact_enabled_definition(
+                    context.workflow_registry,
+                    workflow_id,
+                    workflow_version,
+                    "Workflow",
+                )
+            elif workflow_version is not None:
+                raise PlanValidationError(
+                    "capability binding workflow_version requires workflow_id"
                 )
 
         if bound_actions != actions:
@@ -705,6 +741,7 @@ class PlanValidator:
             if not isinstance(call, dict):
                 raise PlanValidationError("tool call plan must be object")
             tool_id = call.get("tool_id")
+            tool_version = call.get("tool_version")
             required = call.get("required")
             if not isinstance(required, bool):
                 raise PlanValidationError("tool call required must be bool")
@@ -714,7 +751,16 @@ class PlanValidator:
                 raise PlanValidationError("tool plan must not duplicate tool_id")
             seen.add(tool_id)
 
-            definition = tools[tool_id]
+            if not isinstance(tool_version, str) or not tool_version.strip():
+                raise PlanValidationError(
+                    "tool plan Tool requires pinned tool_version"
+                )
+            definition = self._exact_enabled_definition(
+                context.tool_registry,
+                tool_id,
+                tool_version,
+                "Tool",
+            )
             metadata_pairs = {
                 "timeout_policy": definition.timeout_policy,
                 "retry_policy": definition.retry_policy,
@@ -875,6 +921,35 @@ class PlanValidator:
             raise PlanValidationError("stop_conditions must contain non-blank strings")
         if len(set(draft.stop_conditions)) != len(draft.stop_conditions):
             raise PlanValidationError("stop_conditions must not contain duplicates")
+
+    @staticmethod
+    def _exact_enabled_definition(
+        registry: Any,
+        item_id: str,
+        version: str,
+        label: str,
+    ) -> Any:
+        matches = [
+            record.definition
+            for record in registry.list()
+            if record.enabled
+            and record.definition.enabled
+            and getattr(
+                record.definition,
+                {
+                    "Skill": "skill_id",
+                    "Workflow": "workflow_id",
+                    "Tool": "tool_id",
+                }[label],
+            )
+            == item_id
+            and record.definition.version == version
+        ]
+        if len(matches) != 1:
+            raise PlanValidationError(
+                f"{label} pinned id/version is unavailable or disabled"
+            )
+        return matches[0]
 
     @staticmethod
     def _enabled_definitions(

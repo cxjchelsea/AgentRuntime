@@ -741,6 +741,7 @@ class CoreApprovedToolInvoker(
             or existing.tool_id != result.tool_id
             or existing.tool_version != resolved.version
             or existing.operation_key != operation_key
+            or existing.operation_fingerprint != operation_fingerprint
             or existing.idempotency_key != idempotency_key
             or result.attempt != expected_attempt
         ):

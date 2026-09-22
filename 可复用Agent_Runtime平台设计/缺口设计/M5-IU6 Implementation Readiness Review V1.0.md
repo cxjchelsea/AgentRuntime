@@ -564,19 +564,7 @@ B-M5-IU6-006 = CLOSED
 NEW BLOCKER = NONE
 ~~~
 
-The reverse-boundary audit also confirms:
-
-~~~text
-actual Retry coordinator / retry loop = NOT IMPLEMENTED
-finish_step call = NOT IMPLEMENTED
-Workflow owner auto-retry = NOT IMPLEMENTED
-Registry re-resolution = NONE
-Replan / Capability substitution = NONE
-Aggregation = NONE
-M6 wiring = NONE
-~~~
-
-The only M6 matches in current source are comments/docstrings explicitly stating that M6 is not invoked.
+At readiness time, the reverse-boundary audit confirmed that actual Retry coordination was not yet implemented and therefore could not be mistaken for readiness evidence. This historical readiness statement is now superseded by the later Formal Implementation and Verification Closure. The frozen non-IU6 boundaries remain unchanged: no `finish_step` mutation, Workflow owner auto-retry/resume, Registry re-resolution, Replan/Capability substitution, Aggregation, or M6 wiring.
 
 Therefore:
 
@@ -585,7 +573,7 @@ M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED_AFTER_CA-M5-IU6-04
 M5-IU6 IMPLEMENTATION READINESS = READY
 ~~~
 
-READY means the frozen contracts are sufficient to begin IU6 Formal Implementation. It does not mean Timeout / Retry / Idempotency runtime behavior is implemented or verified.
+READY originally meant the frozen contracts were sufficient to begin IU6 Formal Implementation. Formal Implementation and Verification Closure were subsequently completed; see the current formal status below.
 
 ## 15. Current Formal Status
 
@@ -603,6 +591,11 @@ M5-IU6 INDEPENDENT DESIGN REVIEW = PASSED
 M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED_AFTER_CA-M5-IU6-04
 M5-IU6 IMPLEMENTATION READINESS = READY
 
+M5-IU6 FORMAL IMPLEMENTATION = CODE COMPLETE
+M5-IU6 INDEPENDENT IMPLEMENTATION REVIEW = PASSED
+M5-IU6 VERIFICATION = PASSED
+M5-IU6 = PASSED
+
 CA-M5-IU6-01 = PASSED
 CA-M5-IU6-02 = PASSED
 CA-M5-IU6-03 = PASSED
@@ -619,7 +612,6 @@ B-M5-IU6-008 = CLOSED
 
 NEW BLOCKER = NONE
 
-NEXT REQUIRED = RESUME M5-IU6 FORMAL IMPLEMENTATION
-
+M5-IU6 = CLOSED FOR ITS FROZEN SCOPE
 M5 = IN PROGRESS
 ~~~

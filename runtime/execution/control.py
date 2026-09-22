@@ -37,7 +37,7 @@ class ExecutionControlSignal:
 
     def __post_init__(self) -> None:
         if not isinstance(self.signal_type, ExecutionControlSignalType):
-            raise ValueError("signal_type must be ExecutionControlSignalType")
+            raise ValueError("signal_type must be ExecutionControlSignalType")  # noqa: TRY004
 
         if self.signal_type is ExecutionControlSignalType.NONE:
             if self.reason_code is not None:
@@ -117,7 +117,8 @@ class ExecutionControlLatchDecision:
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, ExecutionControlLatchStatus):
-            raise ValueError("status must be ExecutionControlLatchStatus")
+            # 合同测试与 Targeted Review 都要求非法 status 以 ValueError fail-closed。
+            raise ValueError("status must be ExecutionControlLatchStatus")  # noqa: TRY004
         if not self.reason_codes or any(
             not reason.strip() for reason in self.reason_codes
         ):

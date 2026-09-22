@@ -12,6 +12,7 @@ from enum import Enum
 from typing import Any, Protocol
 
 from runtime.execution.models import M5ToolResult
+from runtime.execution.reliability import ToolReliabilityEvidence
 from runtime.execution.permission import PermissionDecisionStatus
 from runtime.registries.definitions import ToolDefinition
 
@@ -166,6 +167,7 @@ class ToolInvocationJournalEntry:
     operation_key: str | None = None
     operation_fingerprint: str | None = None
     idempotency_key: str | None = None
+    reliability_evidence: ToolReliabilityEvidence | None = None
     attempts: tuple[ToolAttemptObservation, ...] = ()
 
     def __post_init__(self) -> None:
@@ -189,6 +191,14 @@ class ToolInvocationJournalEntry:
             )
         if self.idempotency_key is not None and not self.idempotency_key.strip():
             raise ValueError("idempotency_key must not be blank when present")
+        if (
+            self.reliability_evidence is not None
+            and self.reliability_evidence.invocation_started
+            and not self.attempts
+        ):
+            raise ValueError(
+                "invocation_started Tool reliability evidence requires attempts"
+            )
         if self.attempts:
             expected_attempts = tuple(range(1, len(self.attempts) + 1))
             observed_attempts = tuple(item.physical_attempt for item in self.attempts)

@@ -18,17 +18,22 @@ from runtime.execution import (
 FIXED_TIME = datetime(2026, 9, 22, 12, 0, tzinfo=UTC)
 
 
-def _cancel_signal(**updates) -> ExecutionControlSignal:
-    values = {
-        "signal_type": ExecutionControlSignalType.CANCEL,
-        "reason_code": "USER_STOP",
-        "source": "RUNTIME",
-        "signal_id": "signal-cancel-001",
-        "target_execution_id": "execution-001",
-        "issued_at": FIXED_TIME,
-    }
-    values.update(updates)
-    return ExecutionControlSignal(**values)
+def _cancel_signal(
+    *,
+    reason_code: str | None = "USER_STOP",
+    source: str | None = "RUNTIME",
+    signal_id: str | None = "signal-cancel-001",
+    target_execution_id: str | None = "execution-001",
+    issued_at: datetime | None = FIXED_TIME,
+) -> ExecutionControlSignal:
+    return ExecutionControlSignal(
+        signal_type=ExecutionControlSignalType.CANCEL,
+        reason_code=reason_code,
+        source=source,
+        signal_id=signal_id,
+        target_execution_id=target_execution_id,
+        issued_at=issued_at,
+    )
 
 
 def test_none_signal_carries_no_terminal_authority_identity() -> None:
@@ -42,22 +47,27 @@ def test_none_signal_carries_no_terminal_authority_identity() -> None:
     assert signal.issued_at is None
 
 
-@pytest.mark.parametrize(
-    ("field_name", "value"),
-    [
-        ("reason_code", None),
-        ("source", None),
-        ("signal_id", None),
-        ("target_execution_id", None),
-        ("issued_at", None),
-    ],
-)
-def test_terminal_signal_requires_complete_auditable_envelope(
-    field_name: str,
-    value,
-) -> None:
-    with pytest.raises(ValueError, match="requires"):
-        _cancel_signal(**{field_name: value})
+def test_terminal_signal_requires_complete_auditable_envelope() -> None:
+    missing_cases = (
+        {"reason_code": None},
+        {"source": None},
+        {"signal_id": None},
+        {"target_execution_id": None},
+        {"issued_at": None},
+    )
+
+    for case in missing_cases:
+        with pytest.raises(ValueError, match="requires"):
+            _cancel_signal(
+                reason_code=case.get("reason_code", "USER_STOP"),
+                source=case.get("source", "RUNTIME"),
+                signal_id=case.get("signal_id", "signal-cancel-001"),
+                target_execution_id=case.get(
+                    "target_execution_id",
+                    "execution-001",
+                ),
+                issued_at=case.get("issued_at", FIXED_TIME),
+            )
 
 
 def test_terminal_signal_rejects_naive_issued_at() -> None:
@@ -65,16 +75,26 @@ def test_terminal_signal_rejects_naive_issued_at() -> None:
         _cancel_signal(issued_at=datetime(2026, 9, 22, 12, 0))
 
 
-@pytest.mark.parametrize(
-    "field_name",
-    ("signal_id", "target_execution_id", "issued_at"),
-)
-def test_none_signal_rejects_terminal_authority_fields(field_name: str) -> None:
-    value = FIXED_TIME if field_name == "issued_at" else "unexpected"
-    with pytest.raises(ValueError, match="NONE signal cannot carry"):
+def test_none_signal_rejects_terminal_authority_fields() -> None:
+    with pytest.raises(ValueError, match="NONE signal cannot carry signal_id"):
         ExecutionControlSignal(
             signal_type=ExecutionControlSignalType.NONE,
-            **{field_name: value},
+            signal_id="unexpected",
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="NONE signal cannot carry target_execution_id",
+    ):
+        ExecutionControlSignal(
+            signal_type=ExecutionControlSignalType.NONE,
+            target_execution_id="unexpected",
+        )
+
+    with pytest.raises(ValueError, match="NONE signal cannot carry issued_at"):
+        ExecutionControlSignal(
+            signal_type=ExecutionControlSignalType.NONE,
+            issued_at=FIXED_TIME,
         )
 
 

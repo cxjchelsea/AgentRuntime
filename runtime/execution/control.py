@@ -192,7 +192,6 @@ class ExecutionControlLatch(Protocol):
         """Return the currently latched terminal control, if one is known."""
 
 
-
 class InMemoryExecutionControlLatch:
     """Live-only IU7 latch; durable recovery remains M5-IU9."""
 
@@ -253,6 +252,7 @@ class InMemoryExecutionControlLatch:
         if not isinstance(execution_id, str) or not execution_id.strip():
             return None
         return self._latched.get(execution_id)
+
 
 def _require_aware_datetime(value: datetime, field_name: str) -> None:
     if value.tzinfo is None or value.utcoffset() is None:

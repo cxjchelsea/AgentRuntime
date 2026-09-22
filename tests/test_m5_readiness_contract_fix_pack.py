@@ -387,7 +387,13 @@ def test_idempotency_record_has_unknown_state_for_unconfirmed_side_effect() -> N
         key="request-001:plan-001:step-001:action",
         execution_id="execution-001",
         step_id="step-001",
+        step_execution_id="step-execution-001",
+        tool_id="DOMAIN_TOOL",
+        tool_version="1.0.0",
+        operation_key="operation-001",
+        operation_fingerprint="sha256:operation",
         status=IdempotencyStatus.UNKNOWN,
+        tool_call_id="tool-call-001",
         created_at=datetime.now(UTC),
     )
 
@@ -426,6 +432,8 @@ def test_execution_store_protocols_freeze_required_method_surface() -> None:
         "get",
         "reserve",
         "mark_completed",
+        "mark_failed",
+        "reopen_failed",
         "mark_unknown",
     }
     assert set(ResourceLockProvider.__dict__) >= {"acquire", "release"}

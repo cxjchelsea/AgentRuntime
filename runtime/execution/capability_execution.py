@@ -24,6 +24,8 @@ from runtime.execution.foundation import StepLifecycleSnapshot
 from runtime.execution.invocation import (
     ApprovedToolInvoker,
     CapabilityInvocationIdentifierFactory,
+    PhysicalToolAttemptExecutor,
+    ToolAttemptObservation,
     ToolInputValidator,
     ToolInvocationJournalEntry,
     ToolInvocationJournalReader,
@@ -127,7 +129,11 @@ class ToolInvocationBoundaryError(RuntimeError):
         self.reason_code = reason_code
 
 
-class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
+class CoreApprovedToolInvoker(
+    ApprovedToolInvoker,
+    ToolInvocationJournalReader,
+    PhysicalToolAttemptExecutor,
+):
     """Invoke only IU3 exact-resolved Tools through Core-owned gates."""
 
     def __init__(
@@ -175,6 +181,110 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
             )
 
         tool_call_id = self._new_tool_call_id(tool_id)
+        attempt = await self.execute_physical_attempt(
+            logical_tool_call_id=tool_call_id,
+            tool_id=tool_id,
+            input_payload=input_payload,
+            physical_attempt=1,
+            idempotency_key=None,
+            operation_key=None,
+            operation_fingerprint=None,
+        )
+        return attempt.result
+
+    async def execute_physical_attempt(
+        self,
+        *,
+        logical_tool_call_id: str,
+        tool_id: str,
+        input_payload: dict[str, Any],
+        physical_attempt: int,
+        idempotency_key: str | None,
+        operation_key: str | None,
+        operation_fingerprint: str | None,
+    ) -> ToolAttemptObservation:
+        if self._boundary_faults:
+            raise ToolInvocationBoundaryError(
+                self._boundary_faults[0],
+                "Tool invocation boundary is already fail-closed for this step",
+            )
+        if (
+            not isinstance(logical_tool_call_id, str)
+            or not logical_tool_call_id.strip()
+        ):
+            self._record_fault("TOOL_CALL_ID_INVALID")
+            raise ToolInvocationBoundaryError(
+                "TOOL_CALL_ID_INVALID",
+                "physical Tool attempt requires logical_tool_call_id",
+            )
+        if not isinstance(tool_id, str) or not tool_id.strip():
+            self._record_fault("TOOL_ID_INVALID")
+            raise ToolInvocationBoundaryError(
+                "TOOL_ID_INVALID",
+                "physical Tool attempt requires non-blank tool_id",
+            )
+        if physical_attempt < 1:
+            self._record_fault("TOOL_ATTEMPT_INVALID")
+            raise ToolInvocationBoundaryError(
+                "TOOL_ATTEMPT_INVALID",
+                "physical Tool attempt must be >= 1",
+            )
+        if idempotency_key is not None and not idempotency_key.strip():
+            self._record_fault("IDEMPOTENCY_KEY_INVALID")
+            raise ToolInvocationBoundaryError(
+                "IDEMPOTENCY_KEY_INVALID",
+                "idempotency_key must not be blank when present",
+            )
+        if operation_key is not None and not operation_key.strip():
+            self._record_fault("TOOL_OPERATION_KEY_INVALID")
+            raise ToolInvocationBoundaryError(
+                "TOOL_OPERATION_KEY_INVALID",
+                "operation_key must not be blank when present",
+            )
+        if operation_fingerprint is not None and not operation_fingerprint.strip():
+            self._record_fault("TOOL_OPERATION_FINGERPRINT_INVALID")
+            raise ToolInvocationBoundaryError(
+                "TOOL_OPERATION_FINGERPRINT_INVALID",
+                "operation_fingerprint must not be blank when present",
+            )
+
+        existing = self._journal_entry(logical_tool_call_id)
+        if existing is None:
+            if logical_tool_call_id in self._issued_tool_call_ids:
+                self._record_fault("TOOL_CALL_ID_COLLISION")
+                raise ToolInvocationBoundaryError(
+                    "TOOL_CALL_ID_COLLISION",
+                    "logical Tool call id is already issued",
+                )
+            if physical_attempt != 1:
+                self._record_fault("TOOL_ATTEMPT_SEQUENCE_INVALID")
+                raise ToolInvocationBoundaryError(
+                    "TOOL_ATTEMPT_SEQUENCE_INVALID",
+                    "first local physical Tool attempt must be attempt 1",
+                )
+            self._issued_tool_call_ids.add(logical_tool_call_id)
+        else:
+            expected_attempt = len(existing.attempts) + 1
+            if not existing.attempts:
+                expected_attempt = existing.result.attempt + 1
+            if physical_attempt != expected_attempt:
+                self._record_fault("TOOL_ATTEMPT_SEQUENCE_INVALID")
+                raise ToolInvocationBoundaryError(
+                    "TOOL_ATTEMPT_SEQUENCE_INVALID",
+                    "physical Tool attempts must be contiguous",
+                )
+            if (
+                existing.tool_id != tool_id
+                or existing.operation_key != operation_key
+                or existing.operation_fingerprint != operation_fingerprint
+                or existing.idempotency_key != idempotency_key
+            ):
+                self._record_fault("TOOL_ATTEMPT_IDENTITY_MISMATCH")
+                raise ToolInvocationBoundaryError(
+                    "TOOL_ATTEMPT_IDENTITY_MISMATCH",
+                    "physical Tool attempt changed logical operation identity",
+                )
+
         resolved = self._resolved_tools.get(tool_id)
         if resolved is None:
             self._record_fault("TOOL_NOT_APPROVED_FOR_STEP")
@@ -185,20 +295,23 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
 
         if not isinstance(input_payload, dict):
             result = self._generated_result(
-                tool_call_id=tool_call_id,
+                tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.REJECTED,
                 error_code="INVALID_PARAMETER",
                 reason_codes=("TOOL_INPUT_PAYLOAD_NOT_OBJECT",),
+                attempt=physical_attempt,
             )
-            self._append_journal(
+            return self._append_journal_attempt(
                 resolved=resolved,
                 result=result,
                 permission_status=None,
                 input_status=ToolPayloadValidationStatus.INVALID,
                 output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
-            return result
 
         if (
             resolved.kind is not CapabilityKind.TOOL
@@ -216,75 +329,87 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
         input_decision = self._validate_input(definition, input_payload)
         if input_decision.status is ToolPayloadValidationStatus.INVALID:
             result = self._generated_result(
-                tool_call_id=tool_call_id,
+                tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.REJECTED,
                 error_code="INVALID_PARAMETER",
                 reason_codes=input_decision.reason_codes,
+                attempt=physical_attempt,
             )
-            self._append_journal(
+            return self._append_journal_attempt(
                 resolved=resolved,
                 result=result,
                 permission_status=None,
                 input_status=input_decision.status,
                 output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
-            return result
         if input_decision.status is ToolPayloadValidationStatus.UNKNOWN:
             result = self._generated_result(
-                tool_call_id=tool_call_id,
+                tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
                 error_code="TOOL_INPUT_VALIDATION_UNKNOWN",
                 reason_codes=input_decision.reason_codes,
+                attempt=physical_attempt,
             )
-            self._append_journal(
+            return self._append_journal_attempt(
                 resolved=resolved,
                 result=result,
                 permission_status=None,
                 input_status=input_decision.status,
                 output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
-            return result
 
         permission_status = await self._permission_status(definition)
         if permission_status is PermissionDecisionStatus.DENIED:
             result = self._generated_result(
-                tool_call_id=tool_call_id,
+                tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.REJECTED,
                 error_code="PERMISSION_DENIED",
+                attempt=physical_attempt,
             )
-            self._append_journal(
+            return self._append_journal_attempt(
                 resolved=resolved,
                 result=result,
                 permission_status=permission_status,
                 input_status=input_decision.status,
                 output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
-            return result
         if permission_status is PermissionDecisionStatus.UNKNOWN:
             result = self._generated_result(
-                tool_call_id=tool_call_id,
+                tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
                 error_code="TOOL_PERMISSION_UNKNOWN",
+                attempt=physical_attempt,
             )
-            self._append_journal(
+            return self._append_journal_attempt(
                 resolved=resolved,
                 result=result,
                 permission_status=permission_status,
                 input_status=input_decision.status,
                 output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
-            return result
 
         request = ToolInvocationRequest(
-            tool_call_id=tool_call_id,
+            tool_call_id=logical_tool_call_id,
             tool_id=tool_id,
             input_payload=dict(input_payload),
-            attempt=1,
-            idempotency_key=None,
+            attempt=physical_attempt,
+            idempotency_key=idempotency_key,
         )
 
         try:
@@ -294,98 +419,113 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
             )
         except Exception:  # noqa: BLE001
             result = self._generated_result(
-                tool_call_id=tool_call_id,
+                tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
                 error_code="TOOL_EXECUTION_EXCEPTION",
+                attempt=physical_attempt,
             )
-            self._append_journal(
+            return self._append_journal_attempt(
                 resolved=resolved,
                 result=result,
                 permission_status=permission_status,
                 input_status=input_decision.status,
                 output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
-            return result
 
         if not isinstance(raw_result, M5ToolResult) or not isinstance(
             raw_result.status, ToolExecutionStatus
         ):
             result = self._generated_result(
-                tool_call_id=tool_call_id,
+                tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
                 error_code="TOOL_RESULT_INVALID",
+                attempt=physical_attempt,
             )
-            self._append_journal(
+            return self._append_journal_attempt(
                 resolved=resolved,
                 result=result,
                 permission_status=permission_status,
                 input_status=input_decision.status,
                 output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
-            return result
 
         if (
-            raw_result.tool_call_id != tool_call_id
+            raw_result.tool_call_id != logical_tool_call_id
             or raw_result.tool_id != tool_id
-            or raw_result.attempt != 1
+            or raw_result.attempt != physical_attempt
         ):
             result = self._generated_result(
-                tool_call_id=tool_call_id,
+                tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
                 error_code="TOOL_RESULT_IDENTITY_MISMATCH",
+                attempt=physical_attempt,
             )
-            self._append_journal(
+            return self._append_journal_attempt(
                 resolved=resolved,
                 result=result,
                 permission_status=permission_status,
                 input_status=input_decision.status,
                 output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
-            return result
 
         if raw_result.status is not ToolExecutionStatus.SUCCESS:
-            self._append_journal(
+            return self._append_journal_attempt(
                 resolved=resolved,
                 result=raw_result,
                 raw_result=raw_result,
                 permission_status=permission_status,
                 input_status=input_decision.status,
                 output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
-            return raw_result
 
         output_decision = self._validate_output(definition, raw_result)
         if output_decision.status is ToolPayloadValidationStatus.VALID:
             final_result = raw_result
         elif output_decision.status is ToolPayloadValidationStatus.INVALID:
             final_result = self._generated_result(
-                tool_call_id=tool_call_id,
+                tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
                 error_code="TOOL_INVALID_OUTPUT",
                 reason_codes=output_decision.reason_codes,
+                attempt=physical_attempt,
             )
         else:
             final_result = self._generated_result(
-                tool_call_id=tool_call_id,
+                tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
                 error_code="TOOL_OUTPUT_VALIDATION_UNKNOWN",
                 reason_codes=output_decision.reason_codes,
+                attempt=physical_attempt,
             )
 
-        self._append_journal(
+        return self._append_journal_attempt(
             resolved=resolved,
             result=final_result,
             raw_result=raw_result,
             permission_status=permission_status,
             input_status=input_decision.status,
             output_status=output_decision.status,
+            idempotency_key=idempotency_key,
+            operation_key=operation_key,
+            operation_fingerprint=operation_fingerprint,
         )
-        return final_result
 
     def entries(self) -> tuple[ToolInvocationJournalEntry, ...]:
         return tuple(self._journal)
@@ -441,7 +581,6 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
                 "TOOL_CALL_ID_COLLISION",
                 "Tool call id factory returned a duplicate id",
             )
-        self._issued_tool_call_ids.add(value)
         return value
 
     def _validate_input(
@@ -524,7 +663,16 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
             and context.identity_scope == self._execution_context.identity_scope
         )
 
-    def _append_journal(
+    def _journal_entry(
+        self,
+        logical_tool_call_id: str,
+    ) -> ToolInvocationJournalEntry | None:
+        for entry in self._journal:
+            if entry.tool_call_id == logical_tool_call_id:
+                return entry
+        return None
+
+    def _append_journal_attempt(
         self,
         *,
         resolved: ResolvedCapability,
@@ -532,20 +680,87 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
         permission_status: PermissionDecisionStatus | None,
         input_status: ToolPayloadValidationStatus | None,
         output_status: ToolPayloadValidationStatus | None,
+        idempotency_key: str | None,
+        operation_key: str | None,
+        operation_fingerprint: str | None,
         raw_result: M5ToolResult | None = None,
-    ) -> None:
-        self._journal.append(
-            ToolInvocationJournalEntry(
-                tool_call_id=result.tool_call_id,
-                tool_id=result.tool_id,
-                tool_version=resolved.version,
-                result=result,
-                raw_result=raw_result,
-                permission_status=permission_status,
-                input_validation_status=input_status,
-                output_validation_status=output_status,
-            )
+    ) -> ToolAttemptObservation:
+        attempt_observation = ToolAttemptObservation(
+            logical_tool_call_id=result.tool_call_id,
+            tool_id=result.tool_id,
+            tool_version=resolved.version,
+            physical_attempt=result.attempt,
+            result=result,
+            operation_key=operation_key,
+            operation_fingerprint=operation_fingerprint,
+            idempotency_key=idempotency_key,
+            raw_result=raw_result,
+            permission_status=permission_status,
+            input_validation_status=input_status,
+            output_validation_status=output_status,
+            started_at=result.started_at,
+            finished_at=result.finished_at,
         )
+
+        existing_index: int | None = None
+        existing: ToolInvocationJournalEntry | None = None
+        for index, entry in enumerate(self._journal):
+            if entry.tool_call_id == result.tool_call_id:
+                existing_index = index
+                existing = entry
+                break
+
+        if existing is None:
+            if result.attempt != 1:
+                self._record_fault("TOOL_ATTEMPT_JOURNAL_MISMATCH")
+                raise ToolInvocationBoundaryError(
+                    "TOOL_ATTEMPT_JOURNAL_MISMATCH",
+                    "new logical Tool journal must start at attempt 1",
+                )
+            self._journal.append(
+                ToolInvocationJournalEntry(
+                    tool_call_id=result.tool_call_id,
+                    tool_id=result.tool_id,
+                    tool_version=resolved.version,
+                    result=result,
+                    raw_result=raw_result,
+                    permission_status=permission_status,
+                    input_validation_status=input_status,
+                    output_validation_status=output_status,
+                    operation_key=operation_key,
+                    operation_fingerprint=operation_fingerprint,
+                    idempotency_key=idempotency_key,
+                    attempts=(attempt_observation,),
+                )
+            )
+            return attempt_observation
+
+        expected_attempt = len(existing.attempts) + 1
+        if (
+            existing_index is None
+            or existing.tool_id != result.tool_id
+            or existing.tool_version != resolved.version
+            or existing.operation_key != operation_key
+            or existing.operation_fingerprint != operation_fingerprint
+            or existing.idempotency_key != idempotency_key
+            or result.attempt != expected_attempt
+        ):
+            self._record_fault("TOOL_ATTEMPT_JOURNAL_MISMATCH")
+            raise ToolInvocationBoundaryError(
+                "TOOL_ATTEMPT_JOURNAL_MISMATCH",
+                "physical Tool attempt is inconsistent with logical Tool journal",
+            )
+
+        self._journal[existing_index] = replace(
+            existing,
+            result=result,
+            raw_result=raw_result,
+            permission_status=permission_status,
+            input_validation_status=input_status,
+            output_validation_status=output_status,
+            attempts=(*existing.attempts, attempt_observation),
+        )
+        return attempt_observation
 
     def _record_fault(self, reason_code: str) -> None:
         if reason_code not in self._boundary_faults:
@@ -559,6 +774,7 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
         status: ToolExecutionStatus,
         error_code: str,
         reason_codes: tuple[str, ...] = (),
+        attempt: int = 1,
     ) -> M5ToolResult:
         metadata: dict[str, Any] = {}
         if reason_codes:
@@ -568,7 +784,7 @@ class CoreApprovedToolInvoker(ApprovedToolInvoker, ToolInvocationJournalReader):
             tool_id=tool_id,
             status=status,
             error_code=error_code,
-            attempt=1,
+            attempt=attempt,
             metadata=metadata,
         )
 

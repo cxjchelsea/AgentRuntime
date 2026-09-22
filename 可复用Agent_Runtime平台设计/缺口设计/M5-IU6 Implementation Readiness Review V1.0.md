@@ -9,10 +9,10 @@
 ~~~text
 M5-IU6 IMPLEMENTATION DESIGN = COMPLETE
 M5-IU6 INDEPENDENT DESIGN REVIEW = PASSED
-M5-IU6 IMPLEMENTATION READINESS = NOT_READY
+M5-IU6 IMPLEMENTATION READINESS = READY
 
-BLOCKERS = 6
-PRODUCTION IMPLEMENTATION = NOT AUTHORIZED
+BLOCKERS = 0
+FORMAL IMPLEMENTATION = AUTHORIZED WITHIN FROZEN IU6 SCOPE
 ~~~
 
 原因不是 M5 缺少“重试循环”，而是当前 frozen runtime 仍无法无歧义表达安全 retry / timeout / idempotency。
@@ -58,8 +58,8 @@ exact capability version
 结论：
 
 ~~~text
-B-M5-IU6-001 = OPEN
-REQUIRES CA-M5-IU6-01
+B-M5-IU6-001 = CLOSED
+CLOSED BY CA-M5-IU6-01
 ~~~
 
 ## 3. B-M5-IU6-002 IU4_TOOL_INVOCATION_IS_SINGLE_ATTEMPT_ONLY
@@ -88,8 +88,8 @@ permission-per-physical-attempt evidence
 结论：
 
 ~~~text
-B-M5-IU6-002 = OPEN
-REQUIRES CA-M5-IU6-02
+B-M5-IU6-002 = CLOSED
+CLOSED BY CA-M5-IU6-02
 ~~~
 
 ## 4. B-M5-IU6-003 IDEMPOTENCY_PROVENANCE_AND_RESULT_RECOVERY_INCOMPLETE
@@ -131,8 +131,8 @@ COMPLETED + result_reference
 结论：
 
 ~~~text
-B-M5-IU6-003 = OPEN
-REQUIRES CA-M5-IU6-02
+B-M5-IU6-003 = CLOSED
+CLOSED BY CA-M5-IU6-02
 ~~~
 
 ## 5. B-M5-IU6-004 STEP_ATTEMPT_SEQUENCE_AUTHORITY_MISSING
@@ -156,8 +156,8 @@ max_attempts 计数 authority
 
 ~~~text
 TD-M5-IU5-04 -> B-M5-IU6-004
-B-M5-IU6-004 = OPEN
-REQUIRES CA-M5-IU6-02
+B-M5-IU6-004 = CLOSED
+CLOSED BY CA-M5-IU6-02
 ~~~
 
 ## 6. B-M5-IU6-005 STEP_FINALIZATION_AUTHORITY_NOT_FROZEN
@@ -196,8 +196,8 @@ PARTIAL_SUCCESS -> SUCCESS
 
 ~~~text
 TD-M5-IU5-01 -> B-M5-IU6-005
-B-M5-IU6-005 = OPEN
-REQUIRES CA-M5-IU6-02
+B-M5-IU6-005 = CLOSED
+CLOSED BY CA-M5-IU6-02
 ~~~
 
 ## 7. B-M5-IU6-006 STEP_REPLAY_TOOL_OPERATION_CORRELATION_MISSING
@@ -241,8 +241,8 @@ ToolOperationCorrelationKey
 结论：
 
 ~~~text
-B-M5-IU6-006 = OPEN
-REQUIRES CA-M5-IU6-02
+B-M5-IU6-006 = CLOSED
+CLOSED BY CA-M5-IU6-02
 Skill owner automatic Step replay = NOT AUTHORIZED
 ~~~
 
@@ -405,7 +405,51 @@ M5 internal reliability contracts
 12. Canonical / M6 边界未被破坏
 ~~~
 
-## 14. Current Formal Status
+## 14. Implementation Readiness Re-Review
+
+Re-review evidence:
+
+~~~text
+CA-M5-IU6-01 = PASSED
+CA-M5-IU6-01 four local gates = GREEN
+
+CA-M5-IU6-02 = PASSED
+CA-M5-IU6-02 four local gates = GREEN
+
+B-M5-IU6-001 = CLOSED
+B-M5-IU6-002 = CLOSED
+B-M5-IU6-003 = CLOSED
+B-M5-IU6-004 = CLOSED
+B-M5-IU6-005 = CLOSED
+B-M5-IU6-006 = CLOSED
+
+NEW BLOCKER = NONE
+~~~
+
+The reverse-boundary audit also confirms:
+
+~~~text
+actual Retry coordinator / retry loop = NOT IMPLEMENTED
+finish_step call = NOT IMPLEMENTED
+Workflow owner auto-retry = NOT IMPLEMENTED
+Registry re-resolution = NONE
+Replan / Capability substitution = NONE
+Aggregation = NONE
+M6 wiring = NONE
+~~~
+
+The only M6 matches in current source are comments/docstrings explicitly stating that M6 is not invoked.
+
+Therefore:
+
+~~~text
+M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED
+M5-IU6 IMPLEMENTATION READINESS = READY
+~~~
+
+READY means the frozen contracts are sufficient to begin IU6 Formal Implementation. It does not mean Timeout / Retry / Idempotency runtime behavior is implemented or verified.
+
+## 15. Current Formal Status
 
 ~~~text
 M4 = CLOSED
@@ -418,19 +462,22 @@ M5-IU5 = PASSED
 
 M5-IU6 IMPLEMENTATION DESIGN = COMPLETE
 M5-IU6 INDEPENDENT DESIGN REVIEW = PASSED
-M5-IU6 IMPLEMENTATION READINESS = NOT_READY
+M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED
+M5-IU6 IMPLEMENTATION READINESS = READY
 
-B-M5-IU6-001 = OPEN
-B-M5-IU6-002 = OPEN
-B-M5-IU6-003 = OPEN
-B-M5-IU6-004 = OPEN
-B-M5-IU6-005 = OPEN
-B-M5-IU6-006 = OPEN
+CA-M5-IU6-01 = PASSED
+CA-M5-IU6-02 = PASSED
 
-NEXT REQUIRED:
-CA-M5-IU6-01
-then CA-M5-IU6-02
-then M5-IU6 Readiness Re-Review
+B-M5-IU6-001 = CLOSED
+B-M5-IU6-002 = CLOSED
+B-M5-IU6-003 = CLOSED
+B-M5-IU6-004 = CLOSED
+B-M5-IU6-005 = CLOSED
+B-M5-IU6-006 = CLOSED
+
+NEW BLOCKER = NONE
+
+NEXT REQUIRED = M5-IU6 FORMAL IMPLEMENTATION
 
 M5 = IN PROGRESS
 ~~~

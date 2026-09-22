@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from runtime.execution.invocation import ToolInvocationJournalEntry
 from runtime.execution.models import StepExecutionStatus
@@ -16,7 +16,8 @@ from runtime.execution.reliability import (
     ReplaySafetyDecision,
     RetryDecision,
 )
-from runtime.execution.result_collection import StepAttemptObservation
+if TYPE_CHECKING:
+    from runtime.execution.result_collection import StepAttemptObservation
 from runtime.execution.stores import IdempotencyRecord, IdempotencyStatus
 
 

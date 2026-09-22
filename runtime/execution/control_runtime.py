@@ -137,7 +137,9 @@ class ExecutionControlCoordinator:
             raise ExecutionControlRuntimeError("control latch failed") from exc
 
         if not isinstance(latch_decision, ExecutionControlLatchDecision):
-            raise ExecutionControlRuntimeError("control latch returned invalid decision")
+            raise ExecutionControlRuntimeError(
+                "control latch returned invalid decision"
+            )
 
         if latch_decision.status is ExecutionControlLatchStatus.UNKNOWN:
             return ExecutionControlRuntimeResult(
@@ -197,7 +199,10 @@ class ExecutionControlCoordinator:
             raise ExecutionControlRuntimeError(
                 "control reconciliation requires exact latched authority"
             )
-        if prior_result.application.disposition is not ExecutionControlDisposition.WAITING_IN_FLIGHT:
+        if (
+            prior_result.application.disposition
+            is not ExecutionControlDisposition.WAITING_IN_FLIGHT
+        ):
             raise ExecutionControlRuntimeError(
                 "control reconciliation requires WAITING_IN_FLIGHT"
             )

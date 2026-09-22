@@ -8,6 +8,7 @@ aggregates ExecutionResult, or enters M6.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from runtime.contracts import ApprovedActionPlan
 from runtime.contracts.execution import ExecutionContext
@@ -24,6 +25,7 @@ from runtime.execution.capability_resolution import (
     ResolvedStepCapabilities,
 )
 from runtime.execution.foundation import StepLifecycleSnapshot
+from runtime.execution.invocation import ToolInvocationJournalEntry
 from runtime.execution.reliability import (
     ReliabilityCapabilityKind,
     ReplaySafetyDecision,
@@ -112,7 +114,7 @@ class StepReliabilityCoordinator:
         owner_policy, policy_error = self._resolve_owner_policy(resolved)
         attempts: list[StepAttemptObservation] = []
         attempt_number = 1
-        prior_journal = ()
+        prior_journal: tuple[ToolInvocationJournalEntry, ...] = ()
 
         while True:
             deadline_remaining, deadline_error = self._deadline_remaining(
@@ -524,7 +526,7 @@ class StepReliabilityCoordinator:
         except (TypeError, ValueError):
             return None, "EXECUTION_DEADLINE_COMPARISON_UNKNOWN"
 
-    def _clock_now(self):
+    def _clock_now(self) -> datetime:
         try:
             value = self._runtime.clock.now()
         except Exception as exc:  # noqa: BLE001

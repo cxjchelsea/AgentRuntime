@@ -101,19 +101,13 @@ class ToolAttemptObservation:
             self.operation_fingerprint is not None
             and not self.operation_fingerprint.strip()
         ):
-            raise ValueError(
-                "operation_fingerprint must not be blank when present"
-            )
+            raise ValueError("operation_fingerprint must not be blank when present")
         if (
             self.operation_fingerprint is not None
             and not self.operation_fingerprint.strip()
         ):
-            raise ValueError(
-                "operation_fingerprint must not be blank when present"
-            )
-        if (self.operation_key is None) != (
-            self.operation_fingerprint is None
-        ):
+            raise ValueError("operation_fingerprint must not be blank when present")
+        if (self.operation_key is None) != (self.operation_fingerprint is None):
             raise ValueError(
                 "operation_key and operation_fingerprint must be present together"
             )
@@ -189,9 +183,7 @@ class ToolInvocationJournalEntry:
                 raise ValueError("Tool journal raw_result tool_id must match")
         if self.operation_key is not None and not self.operation_key.strip():
             raise ValueError("operation_key must not be blank when present")
-        if (self.operation_key is None) != (
-            self.operation_fingerprint is None
-        ):
+        if (self.operation_key is None) != (self.operation_fingerprint is None):
             raise ValueError(
                 "operation_key and operation_fingerprint must be present together"
             )
@@ -199,9 +191,7 @@ class ToolInvocationJournalEntry:
             raise ValueError("idempotency_key must not be blank when present")
         if self.attempts:
             expected_attempts = tuple(range(1, len(self.attempts) + 1))
-            observed_attempts = tuple(
-                item.physical_attempt for item in self.attempts
-            )
+            observed_attempts = tuple(item.physical_attempt for item in self.attempts)
             if observed_attempts != expected_attempts:
                 raise ValueError(
                     "Tool journal physical attempts must be contiguous from 1"

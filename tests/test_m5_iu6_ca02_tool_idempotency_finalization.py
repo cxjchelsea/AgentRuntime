@@ -32,6 +32,7 @@ from runtime.execution import (
     ToolAttemptObservation,
     ToolExecutionStatus,
     ToolInvocationBoundaryError,
+    ToolInvocationRequest,
     ToolOperationCorrelationDecision,
     ToolOperationCorrelationKey,
     ToolOperationCorrelationStatus,
@@ -94,7 +95,7 @@ class StaticIdentifierFactory:
 class SequencedTool:
     def __init__(self, statuses: tuple[ToolExecutionStatus, ...]) -> None:
         self.statuses = list(statuses)
-        self.requests = []
+        self.requests: list[ToolInvocationRequest] = []
 
     async def invoke(self, request, execution_context):
         del execution_context
@@ -161,9 +162,7 @@ def _invoker(
 
 
 def test_core_physical_attempts_share_one_logical_journal_entry() -> None:
-    tool = SequencedTool(
-        (ToolExecutionStatus.FAILED, ToolExecutionStatus.SUCCESS)
-    )
+    tool = SequencedTool((ToolExecutionStatus.FAILED, ToolExecutionStatus.SUCCESS))
     invoker, provider, evaluator = _invoker(tool)
 
     first = asyncio.run(
@@ -230,9 +229,7 @@ def test_physical_attempt_cannot_start_at_attempt_two() -> None:
 
 
 def test_physical_attempt_identity_cannot_drift_between_attempts() -> None:
-    tool = SequencedTool(
-        (ToolExecutionStatus.FAILED, ToolExecutionStatus.SUCCESS)
-    )
+    tool = SequencedTool((ToolExecutionStatus.FAILED, ToolExecutionStatus.SUCCESS))
     invoker, _, _ = _invoker(tool)
     asyncio.run(
         invoker.execute_physical_attempt(
@@ -266,9 +263,7 @@ def test_physical_attempt_identity_cannot_drift_between_attempts() -> None:
 
 
 def test_physical_attempt_fingerprint_cannot_drift_between_attempts() -> None:
-    tool = SequencedTool(
-        (ToolExecutionStatus.FAILED, ToolExecutionStatus.SUCCESS)
-    )
+    tool = SequencedTool((ToolExecutionStatus.FAILED, ToolExecutionStatus.SUCCESS))
     invoker, _, _ = _invoker(tool)
     asyncio.run(
         invoker.execute_physical_attempt(

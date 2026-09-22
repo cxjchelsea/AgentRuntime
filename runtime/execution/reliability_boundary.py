@@ -57,7 +57,10 @@ class ToolOperationCorrelationDecision:
         if identified:
             if self.operation_key is None:
                 raise ValueError("identified Tool operation requires operation_key")
-            if self.logical_tool_call_id is None or not self.logical_tool_call_id.strip():
+            if (
+                self.logical_tool_call_id is None
+                or not self.logical_tool_call_id.strip()
+            ):
                 raise ValueError(
                     "identified Tool operation requires logical_tool_call_id"
                 )
@@ -184,9 +187,7 @@ class IdempotencyPreflightDecision:
             IdempotencyPreflightStatus.REJECT_PROVENANCE,
         )
         if needs_existing and self.existing_record is None:
-            raise ValueError(
-                "idempotency preflight status requires existing_record"
-            )
+            raise ValueError("idempotency preflight status requires existing_record")
         if (
             self.status is IdempotencyPreflightStatus.RESERVE_NEW
             and self.existing_record is not None
@@ -340,9 +341,7 @@ class StepFinalizationDecision:
                     "FINALIZE requires an allowed terminal StepExecutionStatus"
                 )
         elif self.terminal_status is not None:
-            raise ValueError(
-                "non-FINALIZE decision must not carry terminal_status"
-            )
+            raise ValueError("non-FINALIZE decision must not carry terminal_status")
 
 
 class StepFinalizationEvaluator(Protocol):

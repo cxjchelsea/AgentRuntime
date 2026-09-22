@@ -208,7 +208,10 @@ class CoreApprovedToolInvoker(
                 self._boundary_faults[0],
                 "Tool invocation boundary is already fail-closed for this step",
             )
-        if not isinstance(logical_tool_call_id, str) or not logical_tool_call_id.strip():
+        if (
+            not isinstance(logical_tool_call_id, str)
+            or not logical_tool_call_id.strip()
+        ):
             self._record_fault("TOOL_CALL_ID_INVALID")
             raise ToolInvocationBoundaryError(
                 "TOOL_CALL_ID_INVALID",
@@ -238,10 +241,7 @@ class CoreApprovedToolInvoker(
                 "TOOL_OPERATION_KEY_INVALID",
                 "operation_key must not be blank when present",
             )
-        if (
-            operation_fingerprint is not None
-            and not operation_fingerprint.strip()
-        ):
+        if operation_fingerprint is not None and not operation_fingerprint.strip():
             self._record_fault("TOOL_OPERATION_FINGERPRINT_INVALID")
             raise ToolInvocationBoundaryError(
                 "TOOL_OPERATION_FINGERPRINT_INVALID",

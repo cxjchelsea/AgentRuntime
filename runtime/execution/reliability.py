@@ -129,6 +129,20 @@ class ReliabilityPolicyResolver(Protocol):
         """
 
 
+@dataclass(frozen=True, slots=True)
+class ToolReliabilityEvidence:
+    """Core-owned reliability facts frozen for one logical Tool invocation."""
+
+    policy_identity: str
+    idempotency_mode: IdempotencyMode
+    side_effect_class: SideEffectClass
+    invocation_started: bool
+
+    def __post_init__(self) -> None:
+        if not self.policy_identity.strip():
+            raise ValueError("Tool reliability policy_identity must not be blank")
+
+
 class ReplaySafetyStatus(str, Enum):
     SAFE = "SAFE"
     UNSAFE = "UNSAFE"

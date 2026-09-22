@@ -225,7 +225,7 @@ class HierarchicalInterruptSummary:
             raise ValueError("interrupt outcomes cannot exceed observed handles")
         for index, outcome in enumerate(self.outcomes):
             if outcome.operation_handle_id != self.handles[index].operation_handle_id:
-                raise ValueError("interrupt outcomes must follow leaf-first handle order")
+                raise ValueError(\n                    "interrupt outcomes must follow leaf-first handle order"\n                )
 
         if self.status is HierarchicalInterruptStatus.ORDERED and (
             not self.handles or len(self.outcomes) != len(self.handles)

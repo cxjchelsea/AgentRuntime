@@ -243,7 +243,9 @@ Tool.invoke
 owner Skill/Workflow = parent
 nested Tool = child/leaf
 no cycles
-no multiple active leaves for IU7 sequential baseline
+no cycles
+one active leaf is expected for IU7 sequential baseline
+multiple active leaves -> AMBIGUOUS_INFLIGHT_GRAPH / fail closed
 ~~~
 
 Control interrupt 顺序冻结为：
@@ -254,6 +256,8 @@ leaf Tool first
 ~~~
 
 原因不是业务 priority，而是执行结构：只停止子 Tool 不足以保证父 Skill/Workflow 不继续执行。
+
+如果 registry 观察到多个并行 leaf operation，IU7 第一版不得自行选择某一个 leaf；应返回 UNKNOWN/WAITING 并 fail closed。多 leaf 并发控制策略正式属于 IU8。
 
 durable registry/recovery 属于 IU9；IU7 第一版只要求 live authority。
 

@@ -56,12 +56,15 @@ owner_policy.capability_kind = SKILL
 
 Tool / Workflow reliability policy 不得作为 whole-Skill replay authority。
 
-Formal Implementation 仍必须验证：
+StepReplaySafetyRequest 自身必须验证：
 
 ~~~text
+observation.execution_owner = SKILL
 owner_policy.capability_id/version
-== exact resolved Skill id/version
+== observation.owner_capability_id/version
 ~~~
+
+因此 caller 不能把另一个 Skill、Tool 或 Workflow 的 policy 拼进当前 Step replay safety envelope。
 
 ## 4. Evidence scope
 
@@ -191,13 +194,14 @@ B-M5-IU6-008 只有以下全部满足才可 CLOSED：
 ~~~text
 1. StepReplaySafetyRequest exists
 2. request only accepts SKILL reliability policy
-3. StepReplaySafetyEvaluator exists
-4. evaluator result remains ReplaySafetyDecision SAFE/UNSAFE/UNKNOWN
-5. UNKNOWN cannot become SAFE by coordinator default
-6. Tool-level ReplaySafetyEvaluator is not reused as Step evaluator
-7. Targeted Amendment Review = PASSED
-8. four local gates = GREEN
-9. no execution/lifecycle/M6 authority leaked into CA-04
+3. request enforces SKILL execution owner + exact observed Skill id/version
+4. StepReplaySafetyEvaluator exists
+5. evaluator result remains ReplaySafetyDecision SAFE/UNSAFE/UNKNOWN
+6. UNKNOWN cannot become SAFE by coordinator default
+7. Tool-level ReplaySafetyEvaluator is not reused as Step evaluator
+8. Targeted Amendment Review = PASSED
+9. four local gates = GREEN
+10. no execution/lifecycle/M6 authority leaked into CA-04
 ~~~
 
 ## 11. Current status

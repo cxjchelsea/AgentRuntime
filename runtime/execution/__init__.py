@@ -50,6 +50,11 @@ from runtime.execution.control_application import (
     InterruptOutcome,
     InterruptOutcomeStatus,
 )
+from runtime.execution.control_lifecycle import (
+    ExecutionControlLifecycleError,
+    ExecutionControlLifecycleService,
+    ExecutionControlLifecycleTransitioner,
+)
 from runtime.execution.errors import (
     ExecutionCapabilityDisabledError,
     ExecutionCapabilityNotFoundError,
@@ -254,6 +259,9 @@ __all__ = [
     "ExecutionControlLatch",
     "ExecutionControlLatchDecision",
     "ExecutionControlLatchStatus",
+    "ExecutionControlLifecycleError",
+    "ExecutionControlLifecycleService",
+    "ExecutionControlLifecycleTransitioner",
     "ExecutionControlSignal",
     "ExecutionControlSignalSource",
     "ExecutionControlSignalType",

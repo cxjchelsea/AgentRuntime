@@ -19,6 +19,10 @@ from runtime.execution.reliability import (
 from runtime.execution.reliability_boundary import (
     IdempotencyKeyFactory,
     IdempotencyPreflightEvaluator,
+    StepAttemptSequenceAuthority,
+    StepFinalizationEvaluator,
+    StepReliabilityEvaluator,
+    StepReplaySafetyEvaluator,
     ToolOperationCorrelator,
     ToolOperationFingerprintFactory,
     ToolOperationOccurrenceAuthority,
@@ -48,3 +52,18 @@ class ToolReliabilityRuntime:
     idempotency_preflight_evaluator: IdempotencyPreflightEvaluator
     idempotency_completion_authority: IdempotencyCompletionAuthority
     idempotency_result_resolver: IdempotencyResultResolver
+
+@dataclass(frozen=True, slots=True)
+class StepReliabilityRuntime:
+    """Injected authorities for Skill-owner Step reliability coordination."""
+
+    policy_resolver: ReliabilityPolicyResolver
+    clock: ExecutionClock
+    timeout_runner: AsyncTimeoutRunner
+    retry_decision_evaluator: RetryDecisionEvaluator
+    retry_sleeper: RetrySleeper
+    replay_safety_evaluator: StepReplaySafetyEvaluator
+    attempt_sequence_authority: StepAttemptSequenceAuthority
+    step_reliability_evaluator: StepReliabilityEvaluator
+    step_finalization_evaluator: StepFinalizationEvaluator
+

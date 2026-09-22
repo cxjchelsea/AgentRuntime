@@ -110,6 +110,52 @@ class IdempotencyStore(Protocol):
         """Record that an external side effect may have happened but is unconfirmed."""
 
 
+class IdempotencyCompletionStatus(str, Enum):
+    COMPLETED = "COMPLETED"
+    CONFLICT = "CONFLICT"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True, slots=True)
+class IdempotencyCompletionDecision:
+    status: IdempotencyCompletionStatus
+    reason_codes: tuple[str, ...]
+    completed_record: IdempotencyRecord | None = None
+
+    def __post_init__(self) -> None:
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
+            raise ValueError("reason_codes must contain non-blank values")
+        if self.status is IdempotencyCompletionStatus.COMPLETED:
+            if (
+                self.completed_record is None
+                or self.completed_record.status is not IdempotencyStatus.COMPLETED
+            ):
+                raise ValueError(
+                    "COMPLETED idempotency completion requires COMPLETED record"
+                )
+        elif self.completed_record is not None:
+            raise ValueError(
+                "non-COMPLETED idempotency completion must not expose record"
+            )
+
+
+class IdempotencyCompletionAuthority(Protocol):
+    async def complete(
+        self,
+        *,
+        reserved_record: IdempotencyRecord,
+        result: M5ToolResult,
+    ) -> IdempotencyCompletionDecision:
+        """Atomically persist trusted result and RESERVED -> COMPLETED.
+
+        The returned COMPLETED record must preserve exact operation provenance and
+        bind result.tool_call_id plus an opaque recoverable result_reference.
+        CONFLICT/UNKNOWN must not claim completion.
+        """
+
+
 class IdempotencyResultResolver(Protocol):
     async def resolve_completed(
         self,

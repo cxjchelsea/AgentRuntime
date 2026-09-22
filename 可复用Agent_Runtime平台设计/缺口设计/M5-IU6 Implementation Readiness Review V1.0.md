@@ -405,6 +405,73 @@ M5 internal reliability contracts
 12. Canonical / M6 边界未被破坏
 ~~~
 
+## 13A. B-M5-IU6-007 IDEMPOTENCY_COMPLETED_RESULT_RECORDING_AUTHORITY_MISSING
+
+Formal Implementation 串联 KEY_BASED idempotency 时发现：
+
+~~~text
+IdempotencyResultResolver.resolve_completed(record)
+~~~
+
+只定义了“之后如何恢复 COMPLETED result”，但当前没有 authority 负责首次成功时：
+
+~~~text
+可信保存 M5ToolResult
++
+生成 recoverable result_reference
++
+原子提交 RESERVED -> COMPLETED
+~~~
+
+如果实现为两步：
+
+~~~text
+save result
+↓
+IdempotencyStore.mark_completed(...)
+~~~
+
+会存在 crash window：result 已保存但 record 仍 RESERVED；反过来先 mark_completed 则可能出现 record=COMPLETED 但 result 尚不可恢复。
+
+因此 Formal Implementation 不能自行假设 result_reference 生成/存储策略。
+
+新增最小 Controlled Amendment：
+
+~~~text
+CA-M5-IU6-03
+Idempotency Completion Atomicity
+~~~
+
+冻结：
+
+~~~text
+IdempotencyCompletionStatus
+IdempotencyCompletionDecision
+IdempotencyCompletionAuthority
+~~~
+
+其中 complete(reserved_record, result) 必须由单一 authority 原子完成：
+
+~~~text
+可信结果持久化
++
+RESERVED -> COMPLETED
++
+生成带 tool_call_id/result_reference 的 COMPLETED record
+~~~
+
+CONFLICT / UNKNOWN 不得伪造 completed record。
+
+结论：
+
+~~~text
+B-M5-IU6-007 = CLOSED
+CLOSED BY CA-M5-IU6-03
+
+CA-M5-IU6-03 = PASSED
+M5-IU6 IMPLEMENTATION READINESS = READY
+FORMAL IMPLEMENTATION = AUTHORIZED
+~~~
 ## 14. Implementation Readiness Re-Review
 
 Re-review evidence:
@@ -443,7 +510,7 @@ The only M6 matches in current source are comments/docstrings explicitly stating
 Therefore:
 
 ~~~text
-M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED
+M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED_AFTER_CA-M5-IU6-03
 M5-IU6 IMPLEMENTATION READINESS = READY
 ~~~
 
@@ -462,11 +529,12 @@ M5-IU5 = PASSED
 
 M5-IU6 IMPLEMENTATION DESIGN = COMPLETE
 M5-IU6 INDEPENDENT DESIGN REVIEW = PASSED
-M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED
+M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED_AFTER_CA-M5-IU6-03
 M5-IU6 IMPLEMENTATION READINESS = READY
 
 CA-M5-IU6-01 = PASSED
 CA-M5-IU6-02 = PASSED
+CA-M5-IU6-03 = PASSED
 
 B-M5-IU6-001 = CLOSED
 B-M5-IU6-002 = CLOSED
@@ -474,10 +542,11 @@ B-M5-IU6-003 = CLOSED
 B-M5-IU6-004 = CLOSED
 B-M5-IU6-005 = CLOSED
 B-M5-IU6-006 = CLOSED
+B-M5-IU6-007 = CLOSED
 
 NEW BLOCKER = NONE
 
-NEXT REQUIRED = M5-IU6 FORMAL IMPLEMENTATION
+NEXT REQUIRED = RESUME M5-IU6 FORMAL IMPLEMENTATION
 
 M5 = IN PROGRESS
 ~~~

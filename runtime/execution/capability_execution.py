@@ -87,6 +87,12 @@ from runtime.execution.stores import (
 from runtime.registries.definitions import ToolDefinition
 
 
+def correlation_key(value: str):
+    from runtime.execution.reliability_boundary import ToolOperationCorrelationKey
+
+    return ToolOperationCorrelationKey(value)
+
+
 class CapabilityExecutionStatus(str, Enum):
     EXECUTED = "EXECUTED"
     WAITING = "WAITING"
@@ -239,6 +245,1154 @@ class CoreApprovedToolInvoker(
             operation_fingerprint=None,
         )
         return attempt.result
+
+    async def _invoke_with_reliability(
+        self,
+        *,
+        tool_id: str,
+        input_payload: dict[str, Any],
+    ) -> M5ToolResult:
+        runtime = self._reliability_runtime
+        if runtime is None:
+            raise RuntimeError("reliability runtime is not configured")
+
+        resolved = self._resolved_tools.get(tool_id)
+        if resolved is None:
+            self._record_fault("TOOL_NOT_APPROVED_FOR_STEP")
+            raise ToolInvocationBoundaryError(
+                "TOOL_NOT_APPROVED_FOR_STEP",
+                "Tool is not approved/resolved for the current step",
+            )
+        if (
+            resolved.kind is not CapabilityKind.TOOL
+            or not isinstance(resolved.definition, ToolDefinition)
+            or not isinstance(resolved.implementation_ref, ToolImplementation)
+        ):
+            self._record_fault("APPROVED_TOOL_BINDING_INVALID")
+            raise ToolInvocationBoundaryError(
+                "APPROVED_TOOL_BINDING_INVALID",
+                "IU3 resolved Tool binding is internally inconsistent",
+            )
+
+        if not isinstance(input_payload, dict):
+            logical_tool_call_id = self._new_tool_call_id(tool_id)
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.REJECTED,
+                error_code="INVALID_PARAMETER",
+                reason_codes=("TOOL_INPUT_PAYLOAD_NOT_OBJECT",),
+            )
+            self._append_logical_result_without_attempt(
+                resolved=resolved,
+                result=result,
+                permission_status=None,
+                input_status=ToolPayloadValidationStatus.INVALID,
+                output_status=None,
+                operation_key=None,
+                operation_fingerprint=None,
+                idempotency_key=None,
+            )
+            return result
+
+        policy, policy_error = self._resolve_tool_reliability_policy(resolved)
+        if policy is None:
+            return self._reliability_unknown_without_attempt(
+                resolved=resolved,
+                tool_id=tool_id,
+                reason_code=policy_error or "TOOL_RELIABILITY_POLICY_UNKNOWN",
+            )
+
+        try:
+            operation_fingerprint = runtime.fingerprint_factory.fingerprint(
+                tool_id=tool_id,
+                tool_version=resolved.version,
+                input_payload=dict(input_payload),
+            )
+        except Exception:  # noqa: BLE001
+            operation_fingerprint = ""
+        if (
+            not isinstance(operation_fingerprint, str)
+            or not operation_fingerprint.strip()
+        ):
+            return self._reliability_unknown_without_attempt(
+                resolved=resolved,
+                tool_id=tool_id,
+                reason_code="TOOL_OPERATION_FINGERPRINT_UNKNOWN",
+            )
+
+        try:
+            occurrence_decision = await runtime.occurrence_authority.claim_next(
+                step_execution_id=self._step_execution_id,
+                step_attempt_number=self._step_attempt_number,
+                tool_id=tool_id,
+                tool_version=resolved.version,
+                operation_fingerprint=operation_fingerprint,
+            )
+        except Exception:  # noqa: BLE001
+            occurrence_decision = None
+        if (
+            not isinstance(occurrence_decision, ToolOperationOccurrenceDecision)
+            or not isinstance(
+                occurrence_decision.status,
+                ToolOperationOccurrenceStatus,
+            )
+            or occurrence_decision.status
+            is not ToolOperationOccurrenceStatus.CLAIMED
+            or occurrence_decision.occurrence is None
+        ):
+            return self._reliability_unknown_without_attempt(
+                resolved=resolved,
+                tool_id=tool_id,
+                reason_code="TOOL_OPERATION_OCCURRENCE_UNKNOWN",
+            )
+        operation_occurrence = occurrence_decision.occurrence
+
+        try:
+            correlation = runtime.correlator.correlate(
+                step_execution_id=self._step_execution_id,
+                step_attempt_number=self._step_attempt_number,
+                tool_id=tool_id,
+                tool_version=resolved.version,
+                operation_fingerprint=operation_fingerprint,
+                operation_occurrence=operation_occurrence,
+                prior_attempt_journal=self._prior_attempt_journal,
+            )
+        except Exception:  # noqa: BLE001
+            correlation = None
+        if (
+            not isinstance(correlation, ToolOperationCorrelationDecision)
+            or not isinstance(
+                correlation.status,
+                ToolOperationCorrelationStatus,
+            )
+            or correlation.status is ToolOperationCorrelationStatus.UNKNOWN
+            or correlation.operation_key is None
+            or correlation.logical_tool_call_id is None
+            or correlation.operation_occurrence != operation_occurrence
+        ):
+            return self._reliability_unknown_without_attempt(
+                resolved=resolved,
+                tool_id=tool_id,
+                reason_code="TOOL_OPERATION_CORRELATION_UNKNOWN",
+            )
+
+        logical_tool_call_id = correlation.logical_tool_call_id
+        operation_key = correlation.operation_key.value
+
+        current_attempt = 1
+        idempotency_key: str | None = None
+        reserved_record: IdempotencyRecord | None = None
+
+        while True:
+            input_decision = self._validate_input(
+                resolved.definition,
+                input_payload,
+            )
+            if input_decision.status is ToolPayloadValidationStatus.INVALID:
+                return self._append_reliable_gate_result(
+                    resolved=resolved,
+                    logical_tool_call_id=logical_tool_call_id,
+                    tool_id=tool_id,
+                    physical_attempt=current_attempt,
+                    status=ToolExecutionStatus.REJECTED,
+                    error_code="INVALID_PARAMETER",
+                    reason_codes=input_decision.reason_codes,
+                    permission_status=None,
+                    input_status=input_decision.status,
+                    operation_key=operation_key,
+                    operation_fingerprint=operation_fingerprint,
+                    idempotency_key=idempotency_key,
+                )
+            if input_decision.status is ToolPayloadValidationStatus.UNKNOWN:
+                return self._append_reliable_gate_result(
+                    resolved=resolved,
+                    logical_tool_call_id=logical_tool_call_id,
+                    tool_id=tool_id,
+                    physical_attempt=current_attempt,
+                    status=ToolExecutionStatus.UNKNOWN,
+                    error_code="TOOL_INPUT_VALIDATION_UNKNOWN",
+                    reason_codes=input_decision.reason_codes,
+                    permission_status=None,
+                    input_status=input_decision.status,
+                    operation_key=operation_key,
+                    operation_fingerprint=operation_fingerprint,
+                    idempotency_key=idempotency_key,
+                )
+
+            permission_status = await self._permission_status(resolved.definition)
+            if permission_status is PermissionDecisionStatus.DENIED:
+                return self._append_reliable_gate_result(
+                    resolved=resolved,
+                    logical_tool_call_id=logical_tool_call_id,
+                    tool_id=tool_id,
+                    physical_attempt=current_attempt,
+                    status=ToolExecutionStatus.REJECTED,
+                    error_code="PERMISSION_DENIED",
+                    reason_codes=("PERMISSION_DENIED",),
+                    permission_status=permission_status,
+                    input_status=input_decision.status,
+                    operation_key=operation_key,
+                    operation_fingerprint=operation_fingerprint,
+                    idempotency_key=idempotency_key,
+                )
+            if permission_status is PermissionDecisionStatus.UNKNOWN:
+                return self._append_reliable_gate_result(
+                    resolved=resolved,
+                    logical_tool_call_id=logical_tool_call_id,
+                    tool_id=tool_id,
+                    physical_attempt=current_attempt,
+                    status=ToolExecutionStatus.UNKNOWN,
+                    error_code="TOOL_PERMISSION_UNKNOWN",
+                    reason_codes=("TOOL_PERMISSION_UNKNOWN",),
+                    permission_status=permission_status,
+                    input_status=input_decision.status,
+                    operation_key=operation_key,
+                    operation_fingerprint=operation_fingerprint,
+                    idempotency_key=idempotency_key,
+                )
+
+            deadline_remaining, deadline_error = self._deadline_remaining_seconds()
+            if deadline_error is not None:
+                return self._append_reliable_gate_result(
+                    resolved=resolved,
+                    logical_tool_call_id=logical_tool_call_id,
+                    tool_id=tool_id,
+                    physical_attempt=current_attempt,
+                    status=ToolExecutionStatus.UNKNOWN,
+                    error_code=deadline_error,
+                    reason_codes=(deadline_error,),
+                    permission_status=permission_status,
+                    input_status=input_decision.status,
+                    operation_key=operation_key,
+                    operation_fingerprint=operation_fingerprint,
+                    idempotency_key=idempotency_key,
+                )
+            if deadline_remaining is not None and deadline_remaining <= 0:
+                return self._append_reliable_gate_result(
+                    resolved=resolved,
+                    logical_tool_call_id=logical_tool_call_id,
+                    tool_id=tool_id,
+                    physical_attempt=current_attempt,
+                    status=ToolExecutionStatus.TIMEOUT,
+                    error_code="EXECUTION_DEADLINE_EXPIRED",
+                    reason_codes=("EXECUTION_DEADLINE_EXPIRED",),
+                    permission_status=permission_status,
+                    input_status=input_decision.status,
+                    operation_key=operation_key,
+                    operation_fingerprint=operation_fingerprint,
+                    idempotency_key=idempotency_key,
+                )
+
+            if (
+                current_attempt == 1
+                and policy.idempotency.mode is IdempotencyMode.KEY_BASED
+            ):
+                (
+                    idempotency_key,
+                    reserved_record,
+                    recovered_result,
+                    idempotency_error,
+                ) = await self._prepare_key_based_idempotency(
+                    resolved=resolved,
+                    logical_tool_call_id=logical_tool_call_id,
+                    operation_key=operation_key,
+                    operation_fingerprint=operation_fingerprint,
+                )
+                if recovered_result is not None:
+                    self._append_logical_result_without_attempt(
+                        resolved=resolved,
+                        result=recovered_result,
+                        permission_status=permission_status,
+                        input_status=input_decision.status,
+                        output_status=None,
+                        operation_key=operation_key,
+                        operation_fingerprint=operation_fingerprint,
+                        idempotency_key=idempotency_key,
+                    )
+                    return recovered_result
+                if idempotency_error is not None:
+                    result = self._generated_result(
+                        tool_call_id=logical_tool_call_id,
+                        tool_id=tool_id,
+                        status=ToolExecutionStatus.UNKNOWN,
+                        error_code=idempotency_error,
+                        reason_codes=(idempotency_error,),
+                    )
+                    self._append_logical_result_without_attempt(
+                        resolved=resolved,
+                        result=result,
+                        permission_status=permission_status,
+                        input_status=input_decision.status,
+                        output_status=None,
+                        operation_key=operation_key,
+                        operation_fingerprint=operation_fingerprint,
+                        idempotency_key=idempotency_key,
+                    )
+                    return result
+
+            effective_timeout = self._effective_timeout_seconds(
+                policy=policy,
+                deadline_remaining_seconds=deadline_remaining,
+            )
+            self._claim_reliable_attempt_identity(
+                logical_tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                physical_attempt=current_attempt,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+                idempotency_key=idempotency_key,
+            )
+            attempt = await self._execute_reliable_tool_attempt(
+                resolved=resolved,
+                logical_tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                input_payload=input_payload,
+                physical_attempt=current_attempt,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+                idempotency_key=idempotency_key,
+                input_decision=input_decision,
+                permission_status=permission_status,
+                timeout_seconds=effective_timeout,
+            )
+            result = attempt.result
+
+            if result.status is ToolExecutionStatus.SUCCESS:
+                if (
+                    policy.idempotency.mode is IdempotencyMode.KEY_BASED
+                    and reserved_record is not None
+                ):
+                    return await self._complete_key_based_idempotency(
+                        reserved_record=reserved_record,
+                        result=result,
+                    )
+                return result
+
+            trigger_status = self._retry_trigger_status(result.status)
+            if (
+                trigger_status is None
+                or not policy.retry.enabled
+                or current_attempt >= policy.retry.max_attempts
+            ):
+                await self._mark_reserved_unknown(reserved_record)
+                return result
+
+            replay_safety = self._evaluate_replay_safety(
+                policy=policy,
+                attempt=attempt,
+            )
+            retry_decision = self._evaluate_retry_decision(
+                policy=policy,
+                attempt=result,
+                current_attempt=current_attempt,
+                trigger_status=trigger_status,
+                replay_safety=replay_safety,
+            )
+
+            if retry_decision.status is RetryDecisionStatus.RETRY:
+                if (
+                    replay_safety.status is not ReplaySafetyStatus.SAFE
+                    or retry_decision.next_attempt != current_attempt + 1
+                    or retry_decision.next_attempt > policy.retry.max_attempts
+                ):
+                    await self._mark_reserved_unknown(reserved_record)
+                    return self._override_last_attempt_as_unknown(
+                        logical_tool_call_id=logical_tool_call_id,
+                        error_code="RETRY_DECISION_INVALID_OR_UNSAFE",
+                    )
+                try:
+                    if retry_decision.backoff_seconds:
+                        await runtime.retry_sleeper.sleep(
+                            retry_decision.backoff_seconds
+                        )
+                except Exception:  # noqa: BLE001
+                    await self._mark_reserved_unknown(reserved_record)
+                    return self._override_last_attempt_as_unknown(
+                        logical_tool_call_id=logical_tool_call_id,
+                        error_code="RETRY_BACKOFF_FAILURE",
+                    )
+                current_attempt = retry_decision.next_attempt
+                continue
+
+            if retry_decision.status is RetryDecisionStatus.UNKNOWN:
+                await self._mark_reserved_unknown(reserved_record)
+                return self._override_last_attempt_as_unknown(
+                    logical_tool_call_id=logical_tool_call_id,
+                    error_code="RETRY_DECISION_UNKNOWN",
+                )
+
+            await self._mark_reserved_unknown(reserved_record)
+            return result
+
+    def _resolve_tool_reliability_policy(
+        self,
+        resolved: ResolvedCapability,
+    ) -> tuple[ResolvedReliabilityPolicy | None, str | None]:
+        runtime = self._reliability_runtime
+        if runtime is None or not isinstance(resolved.definition, ToolDefinition):
+            return None, "TOOL_RELIABILITY_RUNTIME_MISSING"
+        definition = resolved.definition
+        try:
+            policy = runtime.policy_resolver.resolve(
+                capability_kind=ReliabilityCapabilityKind.TOOL,
+                capability_id=resolved.capability_id,
+                capability_version=resolved.version,
+                timeout_policy_ref=definition.timeout_policy,
+                retry_policy_ref=definition.retry_policy,
+                idempotency_policy_ref=definition.idempotency_mode,
+                side_effect_level_ref=definition.side_effect_level,
+            )
+        except Exception:  # noqa: BLE001
+            return None, "TOOL_RELIABILITY_POLICY_RESOLUTION_FAILED"
+        if (
+            not isinstance(policy, ResolvedReliabilityPolicy)
+            or policy.capability_kind is not ReliabilityCapabilityKind.TOOL
+            or policy.capability_id != resolved.capability_id
+            or policy.capability_version != resolved.version
+        ):
+            return None, "TOOL_RELIABILITY_POLICY_IDENTITY_MISMATCH"
+        return policy, None
+
+    async def _prepare_key_based_idempotency(
+        self,
+        *,
+        resolved: ResolvedCapability,
+        logical_tool_call_id: str,
+        operation_key: str,
+        operation_fingerprint: str,
+    ) -> tuple[
+        str | None,
+        IdempotencyRecord | None,
+        M5ToolResult | None,
+        str | None,
+    ]:
+        runtime = self._reliability_runtime
+        step_id = self._step_id
+        if runtime is None or step_id is None:
+            return None, None, None, "IDEMPOTENCY_RUNTIME_MISSING"
+        try:
+            key = runtime.idempotency_key_factory.create(
+                execution_id=self._execution_context.execution_id,
+                step_execution_id=self._step_execution_id,
+                operation_key=correlation_key(operation_key),
+                tool_id=resolved.capability_id,
+                tool_version=resolved.version,
+                operation_fingerprint=operation_fingerprint,
+            )
+        except Exception:  # noqa: BLE001
+            return None, None, None, "IDEMPOTENCY_KEY_UNAVAILABLE"
+        if not isinstance(key, str) or not key.strip():
+            return None, None, None, "IDEMPOTENCY_KEY_UNAVAILABLE"
+
+        try:
+            existing = await runtime.idempotency_store.get(key)
+        except Exception:  # noqa: BLE001
+            return key, None, None, "IDEMPOTENCY_READ_UNKNOWN"
+
+        try:
+            decision = runtime.idempotency_preflight_evaluator.evaluate(
+                existing_record=existing,
+                expected_execution_id=self._execution_context.execution_id,
+                expected_step_execution_id=self._step_execution_id,
+                expected_tool_id=resolved.capability_id,
+                expected_tool_version=resolved.version,
+                expected_operation_key=operation_key,
+                expected_operation_fingerprint=operation_fingerprint,
+            )
+        except Exception:  # noqa: BLE001
+            decision = None
+        if (
+            not isinstance(decision, IdempotencyPreflightDecision)
+            or not isinstance(decision.status, IdempotencyPreflightStatus)
+        ):
+            return key, None, None, "IDEMPOTENCY_PREFLIGHT_UNKNOWN"
+
+        if decision.status is IdempotencyPreflightStatus.RECOVER_COMPLETED:
+            record = decision.existing_record
+            if record is None:
+                return key, None, None, "IDEMPOTENCY_COMPLETED_RECORD_MISSING"
+            try:
+                recovered = await runtime.idempotency_result_resolver.resolve_completed(
+                    record
+                )
+            except Exception:  # noqa: BLE001
+                recovered = None
+            if (
+                not isinstance(recovered, M5ToolResult)
+                or recovered.tool_call_id != logical_tool_call_id
+                or recovered.tool_id != resolved.capability_id
+                or record.tool_call_id != logical_tool_call_id
+            ):
+                return key, None, None, "IDEMPOTENCY_COMPLETED_RESULT_INVALID"
+            return key, None, recovered, None
+
+        if decision.status in (
+            IdempotencyPreflightStatus.WAIT_IN_FLIGHT,
+            IdempotencyPreflightStatus.FAIL_UNKNOWN,
+            IdempotencyPreflightStatus.REJECT_PROVENANCE,
+        ):
+            return key, None, None, f"IDEMPOTENCY_{decision.status.value}"
+
+        now, now_error = self._clock_now()
+        if now_error is not None:
+            return key, None, None, now_error
+        record = IdempotencyRecord(
+            key=key,
+            execution_id=self._execution_context.execution_id,
+            step_id=step_id,
+            step_execution_id=self._step_execution_id,
+            tool_id=resolved.capability_id,
+            tool_version=resolved.version,
+            operation_key=operation_key,
+            operation_fingerprint=operation_fingerprint,
+            status=IdempotencyStatus.RESERVED,
+            created_at=now,
+            updated_at=now,
+        )
+
+        if decision.status is IdempotencyPreflightStatus.REOPEN_FAILED:
+            failed_record = decision.existing_record
+            if failed_record is None:
+                return key, None, None, "IDEMPOTENCY_FAILED_RECORD_MISSING"
+            try:
+                reopened = await runtime.idempotency_store.reopen_failed(
+                    failed_record
+                )
+            except Exception:  # noqa: BLE001
+                reopened = False
+            if not reopened:
+                return key, None, None, "IDEMPOTENCY_REOPEN_CONFLICT"
+            return key, record, None, None
+
+        if decision.status is not IdempotencyPreflightStatus.RESERVE_NEW:
+            return key, None, None, "IDEMPOTENCY_PREFLIGHT_UNKNOWN"
+
+        try:
+            reserved = await runtime.idempotency_store.reserve(record)
+        except Exception:  # noqa: BLE001
+            reserved = False
+        if not reserved:
+            return key, None, None, "IDEMPOTENCY_RESERVE_CONFLICT"
+        return key, record, None, None
+
+    async def _complete_key_based_idempotency(
+        self,
+        *,
+        reserved_record: IdempotencyRecord,
+        result: M5ToolResult,
+    ) -> M5ToolResult:
+        runtime = self._reliability_runtime
+        if runtime is None or reserved_record.status is not IdempotencyStatus.RESERVED:
+            return self._override_last_attempt_as_unknown(
+                logical_tool_call_id=result.tool_call_id,
+                error_code="IDEMPOTENCY_COMPLETION_PRECONDITION_INVALID",
+            )
+        try:
+            decision = await runtime.idempotency_completion_authority.complete(
+                reserved_record=reserved_record,
+                result=result,
+            )
+        except Exception:  # noqa: BLE001
+            decision = None
+        if (
+            not isinstance(decision, IdempotencyCompletionDecision)
+            or not isinstance(decision.status, IdempotencyCompletionStatus)
+            or decision.status is not IdempotencyCompletionStatus.COMPLETED
+            or decision.completed_record is None
+            or not self._completed_record_matches(
+                reserved_record=reserved_record,
+                completed_record=decision.completed_record,
+                result=result,
+            )
+        ):
+            await self._mark_reserved_unknown(reserved_record)
+            return self._override_last_attempt_as_unknown(
+                logical_tool_call_id=result.tool_call_id,
+                error_code="IDEMPOTENCY_COMPLETION_UNKNOWN",
+            )
+        return result
+
+    @staticmethod
+    def _completed_record_matches(
+        *,
+        reserved_record: IdempotencyRecord,
+        completed_record: IdempotencyRecord,
+        result: M5ToolResult,
+    ) -> bool:
+        return (
+            completed_record.status is IdempotencyStatus.COMPLETED
+            and completed_record.key == reserved_record.key
+            and completed_record.execution_id == reserved_record.execution_id
+            and completed_record.step_id == reserved_record.step_id
+            and completed_record.step_execution_id
+            == reserved_record.step_execution_id
+            and completed_record.tool_id == reserved_record.tool_id
+            and completed_record.tool_version == reserved_record.tool_version
+            and completed_record.operation_key == reserved_record.operation_key
+            and completed_record.operation_fingerprint
+            == reserved_record.operation_fingerprint
+            and completed_record.tool_call_id == result.tool_call_id
+            and completed_record.result_reference is not None
+            and bool(completed_record.result_reference.strip())
+        )
+
+    async def _execute_reliable_tool_attempt(
+        self,
+        *,
+        resolved: ResolvedCapability,
+        logical_tool_call_id: str,
+        tool_id: str,
+        input_payload: dict[str, Any],
+        physical_attempt: int,
+        operation_key: str,
+        operation_fingerprint: str,
+        idempotency_key: str | None,
+        input_decision: ToolPayloadValidationDecision,
+        permission_status: PermissionDecisionStatus,
+        timeout_seconds: float | None,
+    ) -> ToolAttemptObservation:
+        request = ToolInvocationRequest(
+            tool_call_id=logical_tool_call_id,
+            tool_id=tool_id,
+            input_payload=dict(input_payload),
+            attempt=physical_attempt,
+            idempotency_key=idempotency_key,
+        )
+
+        raw_result: Any
+        runtime = self._reliability_runtime
+        if runtime is None:
+            raise RuntimeError("reliability runtime is not configured")
+
+        if timeout_seconds is None:
+            try:
+                raw_result = await resolved.implementation_ref.invoke(
+                    request,
+                    self._execution_context,
+                )
+            except Exception:  # noqa: BLE001
+                raw_result = None
+                timeout_status = None
+        else:
+            try:
+                timeout_result = await runtime.timeout_runner.run(
+                    timeout_seconds=timeout_seconds,
+                    operation=lambda: resolved.implementation_ref.invoke(
+                        request,
+                        self._execution_context,
+                    ),
+                )
+            except Exception:  # noqa: BLE001
+                timeout_result = None
+            if timeout_result is None or not isinstance(
+                timeout_result.status,
+                TimeoutRunStatus,
+            ):
+                raw_result = None
+                timeout_status = TimeoutRunStatus.UNKNOWN
+            elif timeout_result.status is TimeoutRunStatus.COMPLETED:
+                raw_result = timeout_result.value
+                timeout_status = TimeoutRunStatus.COMPLETED
+            else:
+                raw_result = None
+                timeout_status = timeout_result.status
+
+        if timeout_seconds is None and raw_result is None:
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code="TOOL_EXECUTION_EXCEPTION",
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        if timeout_seconds is not None and timeout_status is TimeoutRunStatus.TIMED_OUT:
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.TIMEOUT,
+                error_code="TOOL_TIMEOUT",
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        if timeout_seconds is not None and timeout_status is TimeoutRunStatus.UNKNOWN:
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code="TOOL_TIMEOUT_BOUNDARY_UNKNOWN",
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        if not isinstance(raw_result, M5ToolResult) or not isinstance(
+            raw_result.status,
+            ToolExecutionStatus,
+        ):
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code="TOOL_RESULT_INVALID",
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+        if (
+            raw_result.tool_call_id != logical_tool_call_id
+            or raw_result.tool_id != tool_id
+            or raw_result.attempt != physical_attempt
+        ):
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code="TOOL_RESULT_IDENTITY_MISMATCH",
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        if raw_result.status is not ToolExecutionStatus.SUCCESS:
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=raw_result,
+                raw_result=raw_result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        output_decision = self._validate_output(resolved.definition, raw_result)
+        if output_decision.status is ToolPayloadValidationStatus.VALID:
+            final_result = raw_result
+        elif output_decision.status is ToolPayloadValidationStatus.INVALID:
+            final_result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code="TOOL_INVALID_OUTPUT",
+                reason_codes=output_decision.reason_codes,
+                attempt=physical_attempt,
+            )
+        else:
+            final_result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code="TOOL_OUTPUT_VALIDATION_UNKNOWN",
+                reason_codes=output_decision.reason_codes,
+                attempt=physical_attempt,
+            )
+        return self._append_journal_attempt(
+            resolved=resolved,
+            result=final_result,
+            raw_result=raw_result,
+            permission_status=permission_status,
+            input_status=input_decision.status,
+            output_status=output_decision.status,
+            idempotency_key=idempotency_key,
+            operation_key=operation_key,
+            operation_fingerprint=operation_fingerprint,
+        )
+
+    def _append_reliable_gate_result(
+        self,
+        *,
+        resolved: ResolvedCapability,
+        logical_tool_call_id: str,
+        tool_id: str,
+        physical_attempt: int,
+        status: ToolExecutionStatus,
+        error_code: str,
+        reason_codes: tuple[str, ...],
+        permission_status: PermissionDecisionStatus | None,
+        input_status: ToolPayloadValidationStatus | None,
+        operation_key: str,
+        operation_fingerprint: str,
+        idempotency_key: str | None,
+    ) -> M5ToolResult:
+        self._claim_reliable_attempt_identity(
+            logical_tool_call_id=logical_tool_call_id,
+            tool_id=tool_id,
+            physical_attempt=physical_attempt,
+            operation_key=operation_key,
+            operation_fingerprint=operation_fingerprint,
+            idempotency_key=idempotency_key,
+        )
+        result = self._generated_result(
+            tool_call_id=logical_tool_call_id,
+            tool_id=tool_id,
+            status=status,
+            error_code=error_code,
+            reason_codes=reason_codes,
+            attempt=physical_attempt,
+        )
+        return self._append_journal_attempt(
+            resolved=resolved,
+            result=result,
+            permission_status=permission_status,
+            input_status=input_status,
+            output_status=None,
+            idempotency_key=idempotency_key,
+            operation_key=operation_key,
+            operation_fingerprint=operation_fingerprint,
+        ).result
+
+    def _claim_reliable_attempt_identity(
+        self,
+        *,
+        logical_tool_call_id: str,
+        tool_id: str,
+        physical_attempt: int,
+        operation_key: str,
+        operation_fingerprint: str,
+        idempotency_key: str | None,
+    ) -> None:
+        existing = self._journal_entry(logical_tool_call_id)
+        if existing is None:
+            if logical_tool_call_id in self._issued_tool_call_ids:
+                self._record_fault("TOOL_CALL_ID_COLLISION")
+                raise ToolInvocationBoundaryError(
+                    "TOOL_CALL_ID_COLLISION",
+                    "logical Tool call id is already issued",
+                )
+            if physical_attempt != 1:
+                self._record_fault("TOOL_ATTEMPT_SEQUENCE_INVALID")
+                raise ToolInvocationBoundaryError(
+                    "TOOL_ATTEMPT_SEQUENCE_INVALID",
+                    "first physical attempt must be attempt 1",
+                )
+            self._issued_tool_call_ids.add(logical_tool_call_id)
+            return
+
+        expected_attempt = len(existing.attempts) + 1
+        if physical_attempt != expected_attempt:
+            self._record_fault("TOOL_ATTEMPT_SEQUENCE_INVALID")
+            raise ToolInvocationBoundaryError(
+                "TOOL_ATTEMPT_SEQUENCE_INVALID",
+                "physical Tool attempts must be contiguous",
+            )
+        if (
+            existing.tool_id != tool_id
+            or existing.operation_key != operation_key
+            or existing.operation_fingerprint != operation_fingerprint
+            or existing.idempotency_key != idempotency_key
+        ):
+            self._record_fault("TOOL_ATTEMPT_IDENTITY_MISMATCH")
+            raise ToolInvocationBoundaryError(
+                "TOOL_ATTEMPT_IDENTITY_MISMATCH",
+                "physical Tool attempt changed logical operation identity",
+            )
+
+    def _append_logical_result_without_attempt(
+        self,
+        *,
+        resolved: ResolvedCapability,
+        result: M5ToolResult,
+        permission_status: PermissionDecisionStatus | None,
+        input_status: ToolPayloadValidationStatus | None,
+        output_status: ToolPayloadValidationStatus | None,
+        operation_key: str | None,
+        operation_fingerprint: str | None,
+        idempotency_key: str | None,
+    ) -> None:
+        if self._journal_entry(result.tool_call_id) is not None:
+            raise ToolInvocationBoundaryError(
+                "TOOL_CALL_ID_COLLISION",
+                "logical Tool call already has a journal entry",
+            )
+        if result.tool_call_id in self._issued_tool_call_ids:
+            raise ToolInvocationBoundaryError(
+                "TOOL_CALL_ID_COLLISION",
+                "logical Tool call id is already issued",
+            )
+        self._issued_tool_call_ids.add(result.tool_call_id)
+        self._journal.append(
+            ToolInvocationJournalEntry(
+                tool_call_id=result.tool_call_id,
+                tool_id=result.tool_id,
+                tool_version=resolved.version,
+                result=result,
+                permission_status=permission_status,
+                input_validation_status=input_status,
+                output_validation_status=output_status,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+                idempotency_key=idempotency_key,
+                attempts=(),
+            )
+        )
+
+    def _reliability_unknown_without_attempt(
+        self,
+        *,
+        resolved: ResolvedCapability,
+        tool_id: str,
+        reason_code: str,
+    ) -> M5ToolResult:
+        logical_tool_call_id = self._new_tool_call_id(tool_id)
+        result = self._generated_result(
+            tool_call_id=logical_tool_call_id,
+            tool_id=tool_id,
+            status=ToolExecutionStatus.UNKNOWN,
+            error_code=reason_code,
+            reason_codes=(reason_code,),
+        )
+        self._append_logical_result_without_attempt(
+            resolved=resolved,
+            result=result,
+            permission_status=None,
+            input_status=None,
+            output_status=None,
+            operation_key=None,
+            operation_fingerprint=None,
+            idempotency_key=None,
+        )
+        return result
+
+    def _deadline_remaining_seconds(
+        self,
+    ) -> tuple[float | None, str | None]:
+        deadline = self._execution_context.deadline
+        if deadline is None:
+            return None, None
+        now, error = self._clock_now()
+        if error is not None or now is None:
+            return None, error or "EXECUTION_CLOCK_UNKNOWN"
+        try:
+            return (deadline - now).total_seconds(), None
+        except (TypeError, ValueError):
+            return None, "EXECUTION_DEADLINE_COMPARISON_UNKNOWN"
+
+    def _clock_now(self) -> tuple[Any | None, str | None]:
+        runtime = self._reliability_runtime
+        if runtime is None:
+            return None, "EXECUTION_CLOCK_UNKNOWN"
+        try:
+            now = runtime.clock.now()
+        except Exception:  # noqa: BLE001
+            return None, "EXECUTION_CLOCK_UNKNOWN"
+        return now, None
+
+    @staticmethod
+    def _effective_timeout_seconds(
+        *,
+        policy: ResolvedReliabilityPolicy,
+        deadline_remaining_seconds: float | None,
+    ) -> float | None:
+        values = [
+            value
+            for value in (
+                policy.timeout.timeout_seconds,
+                deadline_remaining_seconds,
+            )
+            if value is not None
+        ]
+        return min(values) if values else None
+
+    @staticmethod
+    def _retry_trigger_status(
+        status: ToolExecutionStatus,
+    ) -> RetryTriggerStatus | None:
+        mapping = {
+            ToolExecutionStatus.FAILED: RetryTriggerStatus.FAILED,
+            ToolExecutionStatus.TIMEOUT: RetryTriggerStatus.TIMEOUT,
+            ToolExecutionStatus.UNAVAILABLE: RetryTriggerStatus.UNAVAILABLE,
+        }
+        return mapping.get(status)
+
+    def _evaluate_replay_safety(
+        self,
+        *,
+        policy: ResolvedReliabilityPolicy,
+        attempt: ToolAttemptObservation,
+    ) -> ReplaySafetyDecision:
+        runtime = self._reliability_runtime
+        if runtime is None:
+            return ReplaySafetyDecision(
+                status=ReplaySafetyStatus.UNKNOWN,
+                reason_codes=("REPLAY_SAFETY_RUNTIME_MISSING",),
+            )
+        raw_success = (
+            attempt.raw_result is not None
+            and attempt.raw_result.status is ToolExecutionStatus.SUCCESS
+            and attempt.result.status is ToolExecutionStatus.UNKNOWN
+        )
+        context = ReplaySafetyContext(
+            idempotency_mode=policy.idempotency.mode,
+            side_effect_class=policy.side_effect_class,
+            invocation_started=True,
+            current_status=attempt.result.status,
+            has_unknown_side_effect=attempt.result.status
+            in {
+                ToolExecutionStatus.TIMEOUT,
+                ToolExecutionStatus.UNKNOWN,
+            },
+            has_untrusted_success=raw_success,
+            idempotency_state_unknown=False,
+        )
+        try:
+            decision = runtime.replay_safety_evaluator.evaluate(context)
+        except Exception:  # noqa: BLE001
+            decision = None
+        if (
+            not isinstance(decision, ReplaySafetyDecision)
+            or not isinstance(decision.status, ReplaySafetyStatus)
+        ):
+            return ReplaySafetyDecision(
+                status=ReplaySafetyStatus.UNKNOWN,
+                reason_codes=("REPLAY_SAFETY_EVALUATOR_UNKNOWN",),
+            )
+        return decision
+
+    def _evaluate_retry_decision(
+        self,
+        *,
+        policy: ResolvedReliabilityPolicy,
+        attempt: M5ToolResult,
+        current_attempt: int,
+        trigger_status: RetryTriggerStatus,
+        replay_safety: ReplaySafetyDecision,
+    ) -> RetryDecision:
+        runtime = self._reliability_runtime
+        if runtime is None:
+            return RetryDecision(
+                status=RetryDecisionStatus.UNKNOWN,
+                reason_codes=("RETRY_RUNTIME_MISSING",),
+            )
+        deadline_remaining, deadline_error = self._deadline_remaining_seconds()
+        if deadline_error is not None:
+            return RetryDecision(
+                status=RetryDecisionStatus.UNKNOWN,
+                reason_codes=(deadline_error,),
+            )
+        context = RetryDecisionContext(
+            current_attempt=current_attempt,
+            result_status=trigger_status,
+            error_code=attempt.error_code,
+            replay_safety=replay_safety,
+            deadline_remaining_seconds=(
+                max(deadline_remaining, 0.0)
+                if deadline_remaining is not None
+                else None
+            ),
+        )
+        try:
+            decision = runtime.retry_decision_evaluator.evaluate(
+                policy=policy.retry,
+                context=context,
+            )
+        except Exception:  # noqa: BLE001
+            decision = None
+        if (
+            not isinstance(decision, RetryDecision)
+            or not isinstance(decision.status, RetryDecisionStatus)
+        ):
+            return RetryDecision(
+                status=RetryDecisionStatus.UNKNOWN,
+                reason_codes=("RETRY_DECISION_EVALUATOR_UNKNOWN",),
+            )
+        return decision
+
+    async def _mark_reserved_unknown(
+        self,
+        record: IdempotencyRecord | None,
+    ) -> None:
+        runtime = self._reliability_runtime
+        if runtime is None or record is None:
+            return
+        try:
+            await runtime.idempotency_store.mark_unknown(record.key)
+        except Exception:  # noqa: BLE001
+            return
+
+    def _override_last_attempt_as_unknown(
+        self,
+        *,
+        logical_tool_call_id: str,
+        error_code: str,
+    ) -> M5ToolResult:
+        entry = self._journal_entry(logical_tool_call_id)
+        if entry is None or not entry.attempts:
+            raise ToolInvocationBoundaryError(
+                "TOOL_ATTEMPT_JOURNAL_MISMATCH",
+                "cannot override a missing physical Tool attempt",
+            )
+        last = entry.attempts[-1]
+        result = self._generated_result(
+            tool_call_id=logical_tool_call_id,
+            tool_id=entry.tool_id,
+            status=ToolExecutionStatus.UNKNOWN,
+            error_code=error_code,
+            reason_codes=(error_code,),
+            attempt=last.physical_attempt,
+        )
+        updated_attempt = replace(
+            last,
+            result=result,
+            raw_result=last.raw_result or last.result,
+        )
+        updated_entry = replace(
+            entry,
+            result=result,
+            raw_result=last.raw_result or last.result,
+            attempts=(*entry.attempts[:-1], updated_attempt),
+        )
+        for index, current in enumerate(self._journal):
+            if current.tool_call_id == logical_tool_call_id:
+                self._journal[index] = updated_entry
+                break
+        return result
 
     async def execute_physical_attempt(
         self,

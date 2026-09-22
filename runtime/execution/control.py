@@ -116,6 +116,8 @@ class ExecutionControlLatchDecision:
     latched_control: LatchedExecutionControl | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.status, ExecutionControlLatchStatus):
+            raise ValueError("status must be ExecutionControlLatchStatus")
         if not self.reason_codes or any(
             not reason.strip() for reason in self.reason_codes
         ):

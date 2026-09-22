@@ -648,6 +648,11 @@ class BasicStepReplaySafetyEvaluator:
                 status=ReplaySafetyStatus.SAFE,
                 reason_codes=("NATURAL_SKILL_IDEMPOTENCY",),
             )
+        if not observation.tool_journal:
+            return ReplaySafetyDecision(
+                status=ReplaySafetyStatus.UNKNOWN,
+                reason_codes=("STEP_KEY_BASED_EVIDENCE_MISSING",),
+            )
         for entry in observation.tool_journal:
             if entry.idempotency_key is None:
                 return ReplaySafetyDecision(

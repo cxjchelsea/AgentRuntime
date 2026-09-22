@@ -32,6 +32,7 @@ from runtime.execution import (
     M5SkillResult,
     M5ToolResult,
     ObservedExecutionControl,
+    PreparedExecution,
     SkillExecutionStatus,
     StepCapabilityExecutor,
     StepExecutionStatus,

@@ -362,6 +362,8 @@ ExecutionControlApplication
 - reason_codes
 - running_step_id?
 - interrupt_outcome?
+- nonterminal_step_ids_at_latch
+- affected_step_ids
 - preserve_running_step_result
 - handoff_required
 ~~~
@@ -374,6 +376,59 @@ PREEMPT + terminalized
 ~~~
 
 但 IU7 **不启动**新的 Runtime cycle。
+
+## 10A. Control effect scope
+
+Control signal 的存在不等于它真的改变了当前 execution。
+
+正式区分：
+
+~~~text
+signal accepted
+!= control affected unfinished work
+~~~
+
+Latch 时必须记录：
+
+~~~text
+nonterminal_step_ids_at_latch
+~~~
+
+如果 control 被观察/接受时：
+
+~~~text
+所有 Step 已经 terminal
+~~~
+
+则：
+
+~~~text
+disposition = ALREADY_TERMINAL
+affected_step_ids = ()
+no lifecycle rewrite
+~~~
+
+不能在所有业务动作已经完成后，事后把 execution 改成 CANCELLED/PREEMPTED。
+
+同样，如果 signal 到来时最后一个 RUNNING Step 在 interrupt 生效前已经真实完成，并且没有任何剩余 PENDING Step：
+
+~~~text
+control affected no work
+→ preserve real completion
+→ do not rewrite execution as CANCELLED/PREEMPTED
+~~~
+
+只有 control 确实：
+
+~~~text
+confirmed-stop a RUNNING Step
+或
+prevent at least one PENDING Step from starting
+~~~
+
+才允许 control lifecycle terminalization 把 execution 记为 CANCELLED/PREEMPTED。
+
+PREEMPT 的 `handoff_required` 与 lifecycle rewrite 分离：一个合法 PREEMPT 即使到达得太晚而没有改写当前 execution，也可以返回 `handoff_required = true`；但 IU7 仍不启动新 Runtime cycle。
 
 ## 11. Lifecycle terminalization
 
@@ -453,11 +508,19 @@ PREEMPT -> PREEMPTED
 
 ### Execution
 
-所有 Step terminal 后：
+只有 `affected_step_ids` 非空，并且所有 Step 已 terminal 后：
 
 ~~~text
 CANCEL -> ExecutionPlanStatus.CANCELLED
 PREEMPT -> ExecutionPlanStatus.PREEMPTED
+~~~
+
+如果 control 到达过晚、`affected_step_ids = ()`：
+
+~~~text
+不得写 CANCELLED/PREEMPTED
+→ 保留真实 Step terminal evidence
+→ 后续由 IU10 聚合原执行结果
 ~~~
 
 ## 12. Lifecycle mutation authority
@@ -581,14 +644,17 @@ handoff_required = true
 14. NOT_CANCELLABLE 保持 barrier + wait
 15. UNKNOWN interrupt 不写 CANCELLED/PREEMPTED
 16. terminal Step 永不被 control 重写
-17. remaining PENDING Steps -> CANCELLED/PREEMPTED
-18. completed Tool side effect 保持原 truth
-19. CANCEL -> execution CANCELLED
-20. PREEMPT -> execution PREEMPTED
-21. PREEMPT 只返回 handoff_required，不启动 Runtime cycle
-22. Resource Lock policy 不进入 IU7
-23. Recovery/Checkpoint 不进入 IU7
-24. Aggregation/M6 不进入 IU7
+17. all Steps 已 terminal 时 late control -> ALREADY_TERMINAL / no rewrite
+18. last RUNNING 已完成且无 PENDING -> no retrospective CANCELLED/PREEMPTED
+19. remaining PENDING Steps -> CANCELLED/PREEMPTED
+20. completed Tool side effect 保持原 truth
+21. affected work + CANCEL -> execution CANCELLED
+22. affected work + PREEMPT -> execution PREEMPTED
+23. PREEMPT handoff 与 lifecycle rewrite 分离
+24. PREEMPT 只返回 handoff_required，不启动 Runtime cycle
+25. Resource Lock policy 不进入 IU7
+26. Recovery/Checkpoint 不进入 IU7
+27. Aggregation/M6 不进入 IU7
 ~~~
 
 ## 18. 设计结论

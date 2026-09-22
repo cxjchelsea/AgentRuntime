@@ -171,7 +171,7 @@ class _Controller:
 
 def _summary(
     outcome: InterruptOutcomeStatus,
-) -> tuple[InMemoryInFlightOperationRegistry, _Controller, HierarchicalInterruptSummary]:
+) -> tuple[\n    InMemoryInFlightOperationRegistry, _Controller, HierarchicalInterruptSummary\n]:
     registry = InMemoryInFlightOperationRegistry()
     asyncio.run(registry.register(_owner_handle()))
     controller = _Controller({"owner-001": outcome})

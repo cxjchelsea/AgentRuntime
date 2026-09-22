@@ -290,7 +290,7 @@ def test_release_time_cannot_precede_acquisition() -> None:
 
 
 def test_typed_decisions_reject_invalid_status_or_lease_shape() -> None:
-    with pytest.raises(ValueError, match="ResourceLockAcquireStatus"):
+    with pytest.raises(TypeError, match="ResourceLockAcquireStatus"):
         ResourceLockAcquireDecision(
             status=cast(ResourceLockAcquireStatus, "ACQUIRED"),
             reason_codes=("LOCK_ACQUIRED",),
@@ -314,7 +314,7 @@ def test_typed_decisions_reject_invalid_status_or_lease_shape() -> None:
             ),
         )
 
-    with pytest.raises(ValueError, match="ResourceLockReleaseStatus"):
+    with pytest.raises(TypeError, match="ResourceLockReleaseStatus"):
         ResourceLockReleaseDecision(
             status=cast(ResourceLockReleaseStatus, "RELEASED"),
             reason_codes=("LOCK_RELEASED",),

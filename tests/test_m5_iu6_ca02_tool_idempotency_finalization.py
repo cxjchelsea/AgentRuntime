@@ -29,6 +29,7 @@ from runtime.execution import (
     StepFinalizationDisposition,
     StepReliabilityDecision,
     StepReliabilityDisposition,
+    ToolAttemptObservation,
     ToolExecutionStatus,
     ToolInvocationBoundaryError,
     ToolOperationCorrelationDecision,
@@ -338,8 +339,6 @@ def test_tool_attempt_requires_operation_key_and_fingerprint_together() -> None:
         status=ToolExecutionStatus.SUCCESS,
         attempt=1,
     )
-
-    from runtime.execution import ToolAttemptObservation
 
     with pytest.raises(ValueError, match="present together"):
         ToolAttemptObservation(

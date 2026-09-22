@@ -13,9 +13,12 @@ from typing import TYPE_CHECKING, Any, Protocol
 from runtime.execution.invocation import ToolInvocationJournalEntry
 from runtime.execution.models import StepExecutionStatus
 from runtime.execution.reliability import (
+    ReliabilityCapabilityKind,
     ReplaySafetyDecision,
+    ResolvedReliabilityPolicy,
     RetryDecision,
 )
+
 if TYPE_CHECKING:
     from runtime.execution.result_collection import StepAttemptObservation
 from runtime.execution.stores import IdempotencyRecord, IdempotencyStatus
@@ -274,6 +277,44 @@ class StepAttemptSequenceAuthority(Protocol):
         expected_current_attempt: int,
     ) -> StepAttemptSequenceDecision:
         """Atomically claim expected_current_attempt + 1 or report conflict/unknown."""
+
+
+@dataclass(frozen=True, slots=True)
+class StepReplaySafetyRequest:
+    """Evidence envelope for whole-Skill replay safety evaluation."""
+
+    observation: StepAttemptObservation
+    owner_policy: ResolvedReliabilityPolicy
+
+    def __post_init__(self) -> None:
+        if self.owner_policy.capability_kind is not ReliabilityCapabilityKind.SKILL:
+            raise ValueError(
+                "Step replay safety requires exact SKILL reliability policy"
+            )
+        if getattr(self.observation.execution_owner, "value", None) != "SKILL":
+            raise ValueError("Step replay safety requires SKILL execution owner")
+        if (
+            self.observation.owner_capability_id != self.owner_policy.capability_id
+            or self.observation.owner_capability_version
+            != self.owner_policy.capability_version
+        ):
+            raise ValueError(
+                "Step replay safety owner policy must match exact observed Skill"
+            )
+
+
+class StepReplaySafetyEvaluator(Protocol):
+    async def evaluate(
+        self,
+        request: StepReplaySafetyRequest,
+    ) -> ReplaySafetyDecision:
+        """Evaluate whether the whole Skill Step attempt may be replayed.
+
+        The evaluator owns replay-safety interpretation across the owner attempt,
+        including Tool journal/idempotency evidence available through its injected
+        dependencies. Missing or ambiguous evidence must return UNKNOWN, never SAFE.
+        It must not replan, substitute capabilities, invoke Tools, or mutate lifecycle.
+        """
 
 
 class StepReliabilityDisposition(str, Enum):

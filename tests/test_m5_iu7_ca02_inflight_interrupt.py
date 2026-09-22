@@ -224,9 +224,7 @@ def test_multiple_active_leaves_fail_closed_without_interrupt() -> None:
     asyncio.run(registry.register(_owner_handle()))
     asyncio.run(registry.register(_tool_handle()))
     asyncio.run(
-        registry.register(
-            _tool_handle(handle_id="tool-002", tool_call_id="call-002")
-        )
+        registry.register(_tool_handle(handle_id="tool-002", tool_call_id="call-002"))
     )
     controller = _Controller({})
     summary = asyncio.run(
@@ -373,9 +371,7 @@ def test_already_completed_waits_until_real_lifecycle_commit() -> None:
     )
 
     assert application.disposition is ExecutionControlDisposition.WAITING_IN_FLIGHT
-    assert application.reason_codes == (
-        "OWNER_COMPLETED_AWAITING_LIFECYCLE_COMMIT",
-    )
+    assert application.reason_codes == ("OWNER_COMPLETED_AWAITING_LIFECYCLE_COMMIT",)
     assert application.preserve_running_step_result is True
 
 

@@ -472,6 +472,77 @@ CA-M5-IU6-03 = PASSED
 M5-IU6 IMPLEMENTATION READINESS = READY
 FORMAL IMPLEMENTATION = AUTHORIZED
 ~~~
+## 13B. B-M5-IU6-008 STEP_REPLAY_SAFETY_RUNTIME_CONTRACT_MISSING
+
+Formal Implementation 继续进入 whole-Skill Step replay 时确认：
+
+~~~text
+ReplaySafetyContext.current_status: ToolExecutionStatus
+~~~
+
+是 Tool invocation 侧事实合同，不能把 StepAttemptStatus/Skill owner status 硬转换后复用。
+
+CA-02 已有：
+
+~~~text
+StepReliabilityEvaluator(
+  observation,
+  replay_safety,
+  retry_decision
+)
+~~~
+
+但缺少一个 authority 负责从完整 StepAttemptObservation + exact Skill reliability policy 得出 whole-Step ReplaySafetyDecision。
+
+如果 Formal Implementation 自己写：
+
+~~~text
+FAILED -> SAFE
+TIMEOUT -> UNKNOWN
+PARTIAL_SUCCESS -> ...
+~~~
+
+就会重新把 replay safety 规则藏回 coordinator。
+
+新增最小 Controlled Amendment：
+
+~~~text
+CA-M5-IU6-04
+Step Replay Safety Contract
+~~~
+
+冻结：
+
+~~~text
+StepReplaySafetyRequest
+- observation: StepAttemptObservation
+- owner_policy: exact ResolvedReliabilityPolicy(SKILL)
+
+StepReplaySafetyEvaluator.evaluate(request)
+-> ReplaySafetyDecision
+~~~
+
+要求 evaluator：
+
+~~~text
+必须综合 owner attempt + Tool journal / idempotency evidence
+缺失/歧义 evidence -> UNKNOWN
+UNKNOWN != SAFE
+不得 Replan / Capability substitution
+不得调用 Tool
+不得修改 lifecycle
+~~~
+
+结论：
+
+~~~text
+B-M5-IU6-008 = CLOSED
+CLOSED BY CA-M5-IU6-04
+
+CA-M5-IU6-04 = PASSED
+M5-IU6 IMPLEMENTATION READINESS = READY
+FORMAL IMPLEMENTATION = AUTHORIZED
+~~~
 ## 14. Implementation Readiness Re-Review
 
 Re-review evidence:
@@ -510,7 +581,7 @@ The only M6 matches in current source are comments/docstrings explicitly stating
 Therefore:
 
 ~~~text
-M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED_AFTER_CA-M5-IU6-03
+M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED_AFTER_CA-M5-IU6-04
 M5-IU6 IMPLEMENTATION READINESS = READY
 ~~~
 
@@ -529,12 +600,13 @@ M5-IU5 = PASSED
 
 M5-IU6 IMPLEMENTATION DESIGN = COMPLETE
 M5-IU6 INDEPENDENT DESIGN REVIEW = PASSED
-M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED_AFTER_CA-M5-IU6-03
+M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED_AFTER_CA-M5-IU6-04
 M5-IU6 IMPLEMENTATION READINESS = READY
 
 CA-M5-IU6-01 = PASSED
 CA-M5-IU6-02 = PASSED
 CA-M5-IU6-03 = PASSED
+CA-M5-IU6-04 = PASSED
 
 B-M5-IU6-001 = CLOSED
 B-M5-IU6-002 = CLOSED
@@ -543,6 +615,7 @@ B-M5-IU6-004 = CLOSED
 B-M5-IU6-005 = CLOSED
 B-M5-IU6-006 = CLOSED
 B-M5-IU6-007 = CLOSED
+B-M5-IU6-008 = CLOSED
 
 NEW BLOCKER = NONE
 

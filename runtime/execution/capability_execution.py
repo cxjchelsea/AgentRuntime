@@ -56,6 +56,34 @@ from runtime.execution.protocols import (
     ToolImplementation,
     WorkflowImplementation,
 )
+from runtime.execution.reliability import (
+    IdempotencyMode,
+    ReliabilityCapabilityKind,
+    ReplaySafetyContext,
+    ReplaySafetyDecision,
+    ReplaySafetyStatus,
+    ResolvedReliabilityPolicy,
+    RetryDecision,
+    RetryDecisionContext,
+    RetryDecisionStatus,
+    RetryTriggerStatus,
+    TimeoutRunStatus,
+)
+from runtime.execution.reliability_boundary import (
+    IdempotencyPreflightDecision,
+    IdempotencyPreflightStatus,
+    ToolOperationCorrelationDecision,
+    ToolOperationCorrelationStatus,
+    ToolOperationOccurrenceDecision,
+    ToolOperationOccurrenceStatus,
+)
+from runtime.execution.reliability_runtime import ToolReliabilityRuntime
+from runtime.execution.stores import (
+    IdempotencyCompletionDecision,
+    IdempotencyCompletionStatus,
+    IdempotencyRecord,
+    IdempotencyStatus,
+)
 from runtime.registries.definitions import ToolDefinition
 
 
@@ -147,11 +175,25 @@ class CoreApprovedToolInvoker(
         input_validator: ToolInputValidator,
         output_validator: ToolOutputValidator,
         identifier_factory: CapabilityInvocationIdentifierFactory,
+        step_id: str | None = None,
+        step_attempt_number: int = 1,
+        prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
+        reliability_runtime: ToolReliabilityRuntime | None = None,
     ) -> None:
         if not step_execution_id.strip():
             raise ValueError("step_execution_id must not be blank")
+        if step_attempt_number < 1:
+            raise ValueError("step_attempt_number must be >= 1")
+        if reliability_runtime is not None and (
+            step_id is None or not step_id.strip()
+        ):
+            raise ValueError("reliable Tool invocation requires non-blank step_id")
         self._execution_context = execution_context
         self._step_execution_id = step_execution_id
+        self._step_id = step_id
+        self._step_attempt_number = step_attempt_number
+        self._prior_attempt_journal = prior_attempt_journal
+        self._reliability_runtime = reliability_runtime
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
         self._input_validator = input_validator
@@ -178,6 +220,12 @@ class CoreApprovedToolInvoker(
             raise ToolInvocationBoundaryError(
                 "TOOL_ID_INVALID",
                 "Tool invocation requires non-blank tool_id",
+            )
+
+        if self._reliability_runtime is not None:
+            return await self._invoke_with_reliability(
+                tool_id=tool_id,
+                input_payload=input_payload,
             )
 
         tool_call_id = self._new_tool_call_id(tool_id)

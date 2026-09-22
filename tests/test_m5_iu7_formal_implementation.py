@@ -446,7 +446,10 @@ def test_already_completed_waits_then_reconciles_real_completion() -> None:
             prepared_after_interrupt=reconciled_prepared,
         )
 
-        assert result.application.disposition is ExecutionControlDisposition.READY_TO_TERMINALIZE
+        assert (
+            result.application.disposition
+            is ExecutionControlDisposition.READY_TO_TERMINALIZE
+        )
         assert result.prepared.steps[1] is real_completion
         assert result.prepared.steps[1].status is StepExecutionStatus.SUCCESS
         assert result.prepared.steps[1].output == {"actual": "result"}

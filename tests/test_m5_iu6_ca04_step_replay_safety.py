@@ -39,7 +39,9 @@ def _observation() -> StepAttemptObservation:
 def _policy(kind: ReliabilityCapabilityKind) -> ResolvedReliabilityPolicy:
     return ResolvedReliabilityPolicy(
         capability_kind=kind,
-        capability_id="SKILL_A" if kind is ReliabilityCapabilityKind.SKILL else "TOOL_A",
+        capability_id="SKILL_A"
+        if kind is ReliabilityCapabilityKind.SKILL
+        else "TOOL_A",
         capability_version="1.0.0",
         policy_identity="policy@sha256:abc",
         timeout=ResolvedTimeoutPolicy(timeout_seconds=None),
@@ -86,4 +88,3 @@ def test_step_replay_safety_rejects_policy_identity_mismatch() -> None:
             ),
             owner_policy=_policy(ReliabilityCapabilityKind.SKILL),
         )
-

@@ -311,9 +311,18 @@ class StepReplaySafetyEvaluator(Protocol):
         """Evaluate whether the whole Skill Step attempt may be replayed.
 
         The evaluator owns replay-safety interpretation across the owner attempt,
-        including Tool journal/idempotency evidence available through its injected
-        dependencies. Missing or ambiguous evidence must return UNKNOWN, never SAFE.
-        It must not replan, substitute capabilities, invoke Tools, or mutate lifecycle.
+        including Core Tool journal/idempotency evidence available through its injected
+        dependencies.
+
+        For IU6 whole-Skill replay:
+        - missing ToolReliabilityEvidence is UNKNOWN, never SAFE;
+        - any child Tool with NON_IDEMPOTENT + invocation_started is UNSAFE,
+          regardless of the Skill owner's own idempotency mode;
+        - NATURAL Tool evidence does not require an idempotency key;
+        - KEY_BASED Tool evidence must still be reconciled against idempotency truth.
+
+        Missing or ambiguous evidence must return UNKNOWN, never SAFE. It must not
+        replan, substitute capabilities, invoke Tools, or mutate lifecycle.
         """
 
 

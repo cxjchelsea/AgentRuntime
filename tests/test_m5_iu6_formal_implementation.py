@@ -232,10 +232,10 @@ def test_inmemory_idempotency_completion_is_atomic_and_recoverable() -> None:
         )
     )
     stored = asyncio.run(coordinator.get(record.key))
-    recovered = asyncio.run(coordinator.resolve_completed(stored))  # type: ignore[arg-type]
+    assert stored is not None
+    recovered = asyncio.run(coordinator.resolve_completed(stored))
 
     assert completed.completed_record is not None
     assert completed.completed_record.status is IdempotencyStatus.COMPLETED
-    assert stored is not None
     assert stored.status is IdempotencyStatus.COMPLETED
     assert recovered == result

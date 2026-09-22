@@ -209,8 +209,119 @@ M5-IU7 IMPLEMENTATION READINESS RE-REVIEW = PASSED
 M5-IU7 IMPLEMENTATION READINESS = READY
 
 M5-IU7 FORMAL IMPLEMENTATION = CODE COMPLETE
-M5-IU7 INDEPENDENT IMPLEMENTATION REVIEW = PENDING
-M5-IU7 VERIFICATION = PENDING
+M5-IU7 INDEPENDENT IMPLEMENTATION REVIEW = PASSED
+M5-IU7 VERIFICATION = PASSED
+M5-IU7 = PASSED
+
+NEW BLOCKER = NONE
+M5 = IN PROGRESS
+NEXT REQUIRED = M5-IU8 Step 10 Concurrency / Resource Lock
+~~~
+
+
+---
+
+# 12. Independent Implementation Review Closure
+
+## 12.1 Review finding
+
+Independent review identified one Formal Implementation blocker:
+
+~~~text
+F-M5-IU7-FI-001
+INFLIGHT_OWNER_FALSE_COMPLETION_ON_WAITING_OR_TIMEOUT
+~~~
+
+Original risk:
+
+~~~text
+StepCapabilityExecutor return
+-> owner handle always removed
+~~~
+
+This is unsafe when:
+
+~~~text
+Workflow = CREATED / RUNNING / WAITING / TIMEOUT
+Skill = TIMEOUT
+timeout boundary = UNKNOWN / invalid result
+~~~
+
+because:
+
+~~~text
+executor returned
+!=
+underlying owner definitely stopped
+~~~
+
+The injected AsyncTimeoutRunner contract reports timeout/uncertainty only and does not guarantee physical/business-operation termination.
+
+## 12.2 Targeted remediation
+
+Formal implementation now retains the owner handle whenever owner completion is not authoritative.
+
+Cleanup occurs only when the owner is known to have completed.
+
+The retained handle therefore remains visible to later CANCEL/PREEMPT control.
+
+Added verification scenarios:
+
+~~~text
+Workflow WAITING -> owner handle remains active
+Skill unconfirmed timeout -> owner handle remains active
+~~~
+
+Decision:
+
+~~~text
+F-M5-IU7-FI-001 = CLOSED
+NEW BLOCKER = NONE
+~~~
+
+## 12.3 Exact code-state verification
+
+Verified code state:
+
+~~~text
+870fc008e1cfcecb2ab236466e0a529d4998b2b1
+GitHub Actions run = 35701928761
+~~~
+
+Results:
+
+~~~text
+pytest = PASSED
+690 passed, 1 existing warning
+
+mypy = PASSED
+Success: no issues found in 187 source files
+
+ruff check = PASSED
+All checks passed!
+
+ruff format --check = PASSED
+187 files already formatted
+~~~
+
+The warning is the pre-existing Pydantic deprecation warning and is unrelated to M5-IU7.
+
+## 12.4 Closure decision
+
+~~~text
+M5-IU7 IMPLEMENTATION READINESS RE-REVIEW = PASSED
+M5-IU7 IMPLEMENTATION READINESS = READY
+
+M5-IU7 FORMAL IMPLEMENTATION = CODE COMPLETE
+M5-IU7 INDEPENDENT IMPLEMENTATION REVIEW = PASSED
+M5-IU7 VERIFICATION = PASSED
+M5-IU7 = PASSED
+
+F-M5-IU7-FI-001 = CLOSED
+NEW BLOCKER = NONE
 
 M5 = IN PROGRESS
+NEXT REQUIRED = M5-IU8 Step 10 Concurrency / Resource Lock
 ~~~
+
+This does not close M5 as a whole.

@@ -320,12 +320,32 @@ def test_unsafe_application_cannot_mutate_lifecycle(
 
 
 def test_running_interrupt_evidence_must_match_execution() -> None:
+    other_owner = InFlightOperationHandle(
+        operation_handle_id="owner-other",
+        execution_id="execution-other",
+        step_execution_id="step-exec-002",
+        kind=InFlightOperationKind.SKILL,
+        capability_id="skill-002",
+        capability_version="1.0.0",
+        started_at=START + timedelta(seconds=2),
+    )
+    other_summary = HierarchicalInterruptSummary(
+        execution_id="execution-other",
+        step_execution_id="step-exec-002",
+        status=HierarchicalInterruptStatus.ORDERED,
+        handles=(other_owner,),
+        outcomes=(
+            InterruptOutcome(
+                operation_handle_id="owner-other",
+                status=InterruptOutcomeStatus.CONFIRMED_STOPPED,
+                reason_codes=("INTERRUPT_CONFIRMED_STOPPED",),
+            ),
+        ),
+        reason_codes=("INTERRUPT_CHAIN_OBSERVED",),
+    )
     application = replace(
         _application(),
-        interrupt_summary=replace(
-            _summary(),
-            execution_id="execution-other",
-        ),
+        interrupt_summary=other_summary,
     )
 
     with pytest.raises(ExecutionControlLifecycleError, match="match execution"):

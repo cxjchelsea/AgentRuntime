@@ -139,6 +139,7 @@ InFlightOperationRegistry(active_chain)
 ExecutionInterruptController
 InterruptOutcome
 leaf-first then parent interrupt ordering
+multiple active leaves -> fail closed / deferred to IU8
 ~~~
 
 结论：
@@ -312,6 +313,7 @@ ExecutionControlWatcher
 ExecutionControlLatch
 same-signal idempotency
 conflicting-signal fail-closed
+Core observed_at/latched_at time authority; upstream issued_at is audit-only
 ~~~
 
 不得：

@@ -1889,7 +1889,7 @@ class CoreApprovedToolInvoker(
                 tool_call_id=logical_tool_call_id,
                 physical_attempt=physical_attempt,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_fault("INFLIGHT_TOOL_HANDLE_ID_UNKNOWN")
             raise ToolInvocationBoundaryError(
                 "INFLIGHT_TOOL_HANDLE_ID_UNKNOWN",
@@ -1915,7 +1915,7 @@ class CoreApprovedToolInvoker(
         )
         try:
             registered = await registry.register(handle)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_fault("INFLIGHT_TOOL_REGISTRATION_UNKNOWN")
             raise ToolInvocationBoundaryError(
                 "INFLIGHT_TOOL_REGISTRATION_UNKNOWN",
@@ -1954,7 +1954,7 @@ class CoreApprovedToolInvoker(
     def _inflight_now(self) -> datetime:
         try:
             value = self._inflight_clock()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_fault("INFLIGHT_CLOCK_UNKNOWN")
             raise ToolInvocationBoundaryError(
                 "INFLIGHT_CLOCK_UNKNOWN",

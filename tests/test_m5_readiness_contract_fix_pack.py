@@ -433,6 +433,7 @@ def test_execution_store_protocols_freeze_required_method_surface() -> None:
         "reserve",
         "mark_completed",
         "mark_failed",
+        "reopen_failed",
         "mark_unknown",
     }
     assert set(ResourceLockProvider.__dict__) >= {"acquire", "release"}

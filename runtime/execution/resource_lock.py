@@ -105,8 +105,7 @@ class ResourceLockAcquireDecision:
         if not isinstance(self.status, ResourceLockAcquireStatus):
             raise TypeError("status must be ResourceLockAcquireStatus")
         if not self.reason_codes or any(
-            not isinstance(code, str) or not code.strip()
-            for code in self.reason_codes
+            not isinstance(code, str) or not code.strip() for code in self.reason_codes
         ):
             raise ValueError("reason_codes must contain non-blank values")
         if self.status in {
@@ -114,13 +113,9 @@ class ResourceLockAcquireDecision:
             ResourceLockAcquireStatus.ALREADY_ACQUIRED,
         }:
             if self.lease is None:
-                raise ValueError(
-                    "successful acquire decision requires lease"
-                )
+                raise ValueError("successful acquire decision requires lease")
         elif self.lease is not None:
-            raise ValueError(
-                "BUSY/UNKNOWN acquire decision must not expose lease"
-            )
+            raise ValueError("BUSY/UNKNOWN acquire decision must not expose lease")
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,8 +128,7 @@ class ResourceLockReleaseDecision:
         if not isinstance(self.status, ResourceLockReleaseStatus):
             raise TypeError("status must be ResourceLockReleaseStatus")
         if not self.reason_codes or any(
-            not isinstance(code, str) or not code.strip()
-            for code in self.reason_codes
+            not isinstance(code, str) or not code.strip() for code in self.reason_codes
         ):
             raise ValueError("reason_codes must contain non-blank values")
 
@@ -171,9 +165,7 @@ class InMemoryResourceLockAuthority:
         self,
         request: ResourceLockAcquireRequest,
     ) -> ResourceLockAcquireDecision:
-        existing_by_acquisition = self._acquisition_index.get(
-            request.acquisition_id
-        )
+        existing_by_acquisition = self._acquisition_index.get(request.acquisition_id)
         if existing_by_acquisition is not None:
             if (
                 existing_by_acquisition.lock_key == request.lock_key

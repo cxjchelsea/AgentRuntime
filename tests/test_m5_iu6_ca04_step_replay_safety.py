@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -63,3 +64,26 @@ def test_step_replay_safety_rejects_tool_policy() -> None:
             observation=_observation(),
             owner_policy=_policy(ReliabilityCapabilityKind.TOOL),
         )
+
+
+def test_step_replay_safety_rejects_non_skill_owner() -> None:
+    with pytest.raises(ValueError, match="SKILL execution owner"):
+        StepReplaySafetyRequest(
+            observation=replace(
+                _observation(),
+                execution_owner=CapabilityExecutionOwner.WORKFLOW,
+            ),
+            owner_policy=_policy(ReliabilityCapabilityKind.SKILL),
+        )
+
+
+def test_step_replay_safety_rejects_policy_identity_mismatch() -> None:
+    with pytest.raises(ValueError, match="exact observed Skill"):
+        StepReplaySafetyRequest(
+            observation=replace(
+                _observation(),
+                owner_capability_version="2.0.0",
+            ),
+            owner_policy=_policy(ReliabilityCapabilityKind.SKILL),
+        )
+

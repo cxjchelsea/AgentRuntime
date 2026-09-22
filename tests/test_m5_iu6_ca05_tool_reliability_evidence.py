@@ -8,6 +8,7 @@ from runtime.execution import (
     IdempotencyMode,
     M5ToolResult,
     SideEffectClass,
+    ToolAttemptObservation,
     ToolExecutionStatus,
     ToolInvocationJournalEntry,
     ToolReliabilityEvidence,
@@ -30,8 +31,6 @@ def test_tool_reliability_evidence_freezes_policy_and_idempotency_mode() -> None
         invocation_started=True,
     )
     result = _result()
-    from runtime.execution import ToolAttemptObservation
-
     attempt = ToolAttemptObservation(
         logical_tool_call_id=result.tool_call_id,
         tool_id=result.tool_id,

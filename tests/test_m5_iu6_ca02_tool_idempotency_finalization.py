@@ -169,6 +169,7 @@ def test_core_physical_attempts_share_one_logical_journal_entry() -> None:
             physical_attempt=1,
             idempotency_key="idem-001",
             operation_key="operation-001",
+            operation_fingerprint="sha256:abc",
         )
     )
     second = asyncio.run(
@@ -179,6 +180,7 @@ def test_core_physical_attempts_share_one_logical_journal_entry() -> None:
             physical_attempt=2,
             idempotency_key="idem-001",
             operation_key="operation-001",
+            operation_fingerprint="sha256:abc",
         )
     )
 
@@ -234,6 +236,7 @@ def test_physical_attempt_identity_cannot_drift_between_attempts() -> None:
             physical_attempt=1,
             idempotency_key="idem-001",
             operation_key="operation-001",
+            operation_fingerprint="sha256:abc",
         )
     )
 
@@ -249,10 +252,78 @@ def test_physical_attempt_identity_cannot_drift_between_attempts() -> None:
                 physical_attempt=2,
                 idempotency_key="idem-DIFFERENT",
                 operation_key="operation-001",
+                operation_fingerprint="sha256:abc",
             )
         )
 
     assert len(tool.requests) == 1
+
+
+def test_physical_attempt_fingerprint_cannot_drift_between_attempts() -> None:
+    tool = SequencedTool(
+        (ToolExecutionStatus.FAILED, ToolExecutionStatus.SUCCESS)
+    )
+    invoker, _, _ = _invoker(tool)
+    asyncio.run(
+        invoker.execute_physical_attempt(
+            logical_tool_call_id="logical-call-001",
+            tool_id="DOMAIN_TOOL",
+            input_payload={"value": 1},
+            physical_attempt=1,
+            idempotency_key="idem-001",
+            operation_key="operation-001",
+            operation_fingerprint="sha256:abc",
+        )
+    )
+
+    with pytest.raises(
+        ToolInvocationBoundaryError,
+        match="changed logical operation identity",
+    ):
+        asyncio.run(
+            invoker.execute_physical_attempt(
+                logical_tool_call_id="logical-call-001",
+                tool_id="DOMAIN_TOOL",
+                input_payload={"value": 2},
+                physical_attempt=2,
+                idempotency_key="idem-001",
+                operation_key="operation-001",
+                operation_fingerprint="sha256:DIFFERENT",
+            )
+        )
+
+    assert len(tool.requests) == 1
+
+
+def test_identified_correlation_requires_core_occurrence() -> None:
+    with pytest.raises(ValueError, match="operation_occurrence"):
+        ToolOperationCorrelationDecision(
+            status=ToolOperationCorrelationStatus.CORRELATED,
+            reason_codes=("MATCHED_PRIOR_OPERATION",),
+            operation_key=ToolOperationCorrelationKey("operation-001"),
+            logical_tool_call_id="logical-call-001",
+        )
+
+
+def test_identical_calls_can_have_distinct_core_occurrences() -> None:
+    first = ToolOperationCorrelationDecision(
+        status=ToolOperationCorrelationStatus.NEW,
+        reason_codes=("NEW_OPERATION",),
+        operation_key=ToolOperationCorrelationKey("operation-001"),
+        logical_tool_call_id="logical-call-001",
+        operation_occurrence=1,
+    )
+    second = ToolOperationCorrelationDecision(
+        status=ToolOperationCorrelationStatus.NEW,
+        reason_codes=("NEW_OPERATION",),
+        operation_key=ToolOperationCorrelationKey("operation-002"),
+        logical_tool_call_id="logical-call-002",
+        operation_occurrence=2,
+    )
+
+    assert first.operation_occurrence == 1
+    assert second.operation_occurrence == 2
+    assert first.operation_key != second.operation_key
 
 
 def test_domain_facing_invoke_remains_single_attempt_baseline() -> None:
@@ -327,6 +398,7 @@ def test_correlation_requires_core_identity_or_explicit_unknown() -> None:
         reason_codes=("MATCHED_PRIOR_OPERATION",),
         operation_key=ToolOperationCorrelationKey("operation-001"),
         logical_tool_call_id="logical-call-001",
+        operation_occurrence=1,
     )
     assert correlated.operation_key is not None
 
@@ -342,6 +414,7 @@ def test_correlation_requires_core_identity_or_explicit_unknown() -> None:
             reason_codes=("CORRELATION_UNCERTAIN",),
             operation_key=ToolOperationCorrelationKey("invented"),
             logical_tool_call_id="invented-call",
+            operation_occurrence=1,
         )
 
 

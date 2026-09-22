@@ -331,6 +331,28 @@ def test_identical_calls_can_have_distinct_core_occurrences() -> None:
     assert first.operation_key != second.operation_key
 
 
+def test_tool_attempt_requires_operation_key_and_fingerprint_together() -> None:
+    result = M5ToolResult(
+        tool_call_id="logical-call-001",
+        tool_id="DOMAIN_TOOL",
+        status=ToolExecutionStatus.SUCCESS,
+        attempt=1,
+    )
+
+    from runtime.execution import ToolAttemptObservation
+
+    with pytest.raises(ValueError, match="present together"):
+        ToolAttemptObservation(
+            logical_tool_call_id="logical-call-001",
+            tool_id="DOMAIN_TOOL",
+            tool_version="1.0.0",
+            physical_attempt=1,
+            result=result,
+            operation_key="operation-001",
+            operation_fingerprint=None,
+        )
+
+
 def test_domain_facing_invoke_remains_single_attempt_baseline() -> None:
     tool = SequencedTool((ToolExecutionStatus.SUCCESS,))
     invoker, _, _ = _invoker(tool)

@@ -179,6 +179,9 @@ from runtime.execution.scheduler import (
 )
 from runtime.execution.stores import (
     ExecutionStateStore,
+    IdempotencyCompletionAuthority,
+    IdempotencyCompletionDecision,
+    IdempotencyCompletionStatus,
     IdempotencyRecord,
     IdempotencyResultResolver,
     IdempotencyStatus,
@@ -237,6 +240,9 @@ __all__ = [
     "ExecutionResultProjector",
     "ExecutionStateEligibilityEvaluator",
     "ExecutionStateStore",
+    "IdempotencyCompletionAuthority",
+    "IdempotencyCompletionDecision",
+    "IdempotencyCompletionStatus",
     "IdempotencyKeyFactory",
     "IdempotencyMode",
     "IdempotencyPreflightDecision",

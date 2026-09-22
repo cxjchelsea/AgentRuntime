@@ -83,6 +83,7 @@ Lifecycle mutation requires all of:
 5. affected_step_ids != ()
 6. terminalization time is Core-local timezone-aware
 7. terminalization time does not precede latch/latest lifecycle evidence
+8. RUNNING interrupt summary execution_id matches the current execution
 ~~~
 
 Any mismatch fails closed.
@@ -146,7 +147,7 @@ Only then may the ExecutionRecord become CANCELLED or PREEMPTED.
 
 ## 11. Late control
 
-If CA-02 produced ALREADY_TERMINAL with affected_step_ids = (), CA-03 returns the current PreparedExecution unchanged.
+If CA-02 produced ALREADY_TERMINAL with affected_step_ids = (), CA-03 first verifies that the current PreparedExecution really has no non-terminal Step, then returns it unchanged.
 
 It does not write CANCELLED/PREEMPTED onto already completed work. The original execution result remains for IU10 aggregation.
 
@@ -218,11 +219,17 @@ At that point all original IU7 readiness blockers are closed and an IU7 Implemen
 
 ~~~text
 CA-M5-IU7-03 = CODE COMPLETE
-CA-M5-IU7-03 TARGETED AMENDMENT REVIEW = PENDING
-CA-M5-IU7-03 VERIFICATION = PENDING
+CA-M5-IU7-03 TARGETED AMENDMENT REVIEW = PASSED
+CA-M5-IU7-03 VERIFICATION = PASSED
+CA-M5-IU7-03 = PASSED
 
-B-M5-IU7-004 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+B-M5-IU7-004 = CLOSED
 
-M5-IU7 IMPLEMENTATION READINESS = NOT_READY
+ALL ORIGINAL M5-IU7 READINESS BLOCKERS = CLOSED
+
+M5-IU7 IMPLEMENTATION READINESS = RE_REVIEW_REQUIRED
 M5 = IN PROGRESS
+
+NEXT REQUIRED =
+M5-IU7 Implementation Readiness Re-Review
 ~~~

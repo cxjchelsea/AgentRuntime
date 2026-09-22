@@ -80,6 +80,31 @@ class InFlightOperationHandle:
             raise ValueError("WORKFLOW operation cannot carry tool_call_id")
 
 
+class InFlightOperationIdentifierFactory(Protocol):
+    """Create opaque live operation ids without embedding business policy in Core."""
+
+    def new_owner_handle_id(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str,
+        kind: InFlightOperationKind,
+        capability_id: str,
+    ) -> str:
+        """Create one owner Skill/Workflow in-flight handle id."""
+
+    def new_tool_handle_id(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str,
+        parent_handle_id: str,
+        tool_call_id: str,
+        physical_attempt: int,
+    ) -> str:
+        """Create one nested physical Tool in-flight handle id."""
+
+
 class InFlightOperationRegistry(Protocol):
     async def register(self, handle: InFlightOperationHandle) -> bool:
         """Register one live operation without discovering/substituting capability."""

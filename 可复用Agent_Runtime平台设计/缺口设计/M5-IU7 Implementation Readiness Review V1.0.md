@@ -103,10 +103,20 @@ REQUIRES CA-M5-IU7-01
 
 ~~~text
 active operation registry
-exact in-flight handle
+exact hierarchical in-flight handle chain
 interrupt authority
 confirmed-stop outcome
 ~~~
+
+并且当前 Skill/Workflow 内部调用 Tool 时会形成父子嵌套执行：
+
+~~~text
+Skill/Workflow owner
+→ Core Tool gateway
+→ Tool invocation
+~~~
+
+因此只记录一个 active handle 不足以保证 control 真正停止整个 owner execution。
 
 现有 ToolImplementation / SkillImplementation / WorkflowImplementation 也没有统一 cancellation handle。
 
@@ -124,10 +134,11 @@ confirmed-stop outcome
 需要冻结：
 
 ~~~text
-InFlightOperationHandle
-InFlightOperationRegistry
+InFlightOperationHandle(parent_handle_id)
+InFlightOperationRegistry(active_chain)
 ExecutionInterruptController
 InterruptOutcome
+leaf-first then parent interrupt ordering
 ~~~
 
 结论：
@@ -201,6 +212,7 @@ ALREADY_COMPLETED
 ~~~text
 现在应继续等待
 是否可以 terminalize
+running result 是否已经真正写回 lifecycle
 running result 是否必须保留
 PREEMPT 是否需要 Runtime handoff
 控制冲突是否需要 fail closed
@@ -319,8 +331,10 @@ InFlightOperationHandle
 InFlightOperationRegistry
 ExecutionInterruptController
 InterruptOutcome
+hierarchical interrupt summary
 ExecutionControlDisposition
 ExecutionControlApplication
+ALREADY_COMPLETED lifecycle reconciliation
 side-effect preservation semantics
 preemption handoff_required semantics
 ~~~
@@ -329,9 +343,11 @@ preemption handoff_required semantics
 
 ~~~text
 interrupt requested != interrupt confirmed
+nested execution -> leaf Tool first, then parent owner
 UNKNOWN interrupt != terminal lifecycle
 NOT_CANCELLABLE -> barrier + wait
-ALREADY_COMPLETED -> preserve actual result
+ALREADY_COMPLETED + Step still RUNNING -> WAITING_IN_FLIGHT
+ALREADY_COMPLETED + lifecycle committed -> preserve actual result
 ~~~
 
 ### CA-M5-IU7-03 Control Lifecycle Terminalization Boundary
@@ -389,9 +405,11 @@ M5-IU7 IMPLEMENTATION READINESS = READY
 7. B-M5-IU7-001～005 全部 CLOSED
 8. M5 仍不比较 priority / 不重算 M2
 9. interrupt requested 不能直接映射 terminal
-10. completed side effects/results 不被 control 重写
-11. PREEMPT 不直接启动新 Runtime cycle
-12. IU8/IU9/IU10/M6 边界未被突破
+10. nested Tool/owner chain 必须有确定 interrupt order
+11. ALREADY_COMPLETED 不能绕过真实 lifecycle completion
+12. completed side effects/results 不被 control 重写
+13. PREEMPT 不直接启动新 Runtime cycle
+14. IU8/IU9/IU10/M6 边界未被突破
 ~~~
 
 ## 12. Current Formal Status

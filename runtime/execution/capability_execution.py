@@ -188,6 +188,7 @@ class CoreApprovedToolInvoker(
             physical_attempt=1,
             idempotency_key=None,
             operation_key=None,
+            operation_fingerprint=None,
         )
         return attempt.result
 
@@ -200,6 +201,7 @@ class CoreApprovedToolInvoker(
         physical_attempt: int,
         idempotency_key: str | None,
         operation_key: str | None,
+        operation_fingerprint: str | None,
     ) -> ToolAttemptObservation:
         if self._boundary_faults:
             raise ToolInvocationBoundaryError(
@@ -236,6 +238,15 @@ class CoreApprovedToolInvoker(
                 "TOOL_OPERATION_KEY_INVALID",
                 "operation_key must not be blank when present",
             )
+        if (
+            operation_fingerprint is not None
+            and not operation_fingerprint.strip()
+        ):
+            self._record_fault("TOOL_OPERATION_FINGERPRINT_INVALID")
+            raise ToolInvocationBoundaryError(
+                "TOOL_OPERATION_FINGERPRINT_INVALID",
+                "operation_fingerprint must not be blank when present",
+            )
 
         existing = self._journal_entry(logical_tool_call_id)
         if existing is None:
@@ -265,6 +276,7 @@ class CoreApprovedToolInvoker(
             if (
                 existing.tool_id != tool_id
                 or existing.operation_key != operation_key
+                or existing.operation_fingerprint != operation_fingerprint
                 or existing.idempotency_key != idempotency_key
             ):
                 self._record_fault("TOOL_ATTEMPT_IDENTITY_MISMATCH")
@@ -298,6 +310,7 @@ class CoreApprovedToolInvoker(
                 output_status=None,
                 idempotency_key=idempotency_key,
                 operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
 
         if (
@@ -331,6 +344,7 @@ class CoreApprovedToolInvoker(
                 output_status=None,
                 idempotency_key=idempotency_key,
                 operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
         if input_decision.status is ToolPayloadValidationStatus.UNKNOWN:
             result = self._generated_result(
@@ -349,6 +363,7 @@ class CoreApprovedToolInvoker(
                 output_status=None,
                 idempotency_key=idempotency_key,
                 operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
 
         permission_status = await self._permission_status(definition)
@@ -368,6 +383,7 @@ class CoreApprovedToolInvoker(
                 output_status=None,
                 idempotency_key=idempotency_key,
                 operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
         if permission_status is PermissionDecisionStatus.UNKNOWN:
             result = self._generated_result(
@@ -385,6 +401,7 @@ class CoreApprovedToolInvoker(
                 output_status=None,
                 idempotency_key=idempotency_key,
                 operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
 
         request = ToolInvocationRequest(
@@ -416,6 +433,7 @@ class CoreApprovedToolInvoker(
                 output_status=None,
                 idempotency_key=idempotency_key,
                 operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
 
         if not isinstance(raw_result, M5ToolResult) or not isinstance(
@@ -436,6 +454,7 @@ class CoreApprovedToolInvoker(
                 output_status=None,
                 idempotency_key=idempotency_key,
                 operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
 
         if (
@@ -458,6 +477,7 @@ class CoreApprovedToolInvoker(
                 output_status=None,
                 idempotency_key=idempotency_key,
                 operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
 
         if raw_result.status is not ToolExecutionStatus.SUCCESS:
@@ -470,6 +490,7 @@ class CoreApprovedToolInvoker(
                 output_status=None,
                 idempotency_key=idempotency_key,
                 operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
             )
 
         output_decision = self._validate_output(definition, raw_result)
@@ -669,6 +690,7 @@ class CoreApprovedToolInvoker(
             physical_attempt=result.attempt,
             result=result,
             operation_key=operation_key,
+            operation_fingerprint=operation_fingerprint,
             idempotency_key=idempotency_key,
             raw_result=raw_result,
             permission_status=permission_status,

@@ -297,7 +297,12 @@ class ExecutionControlLifecycleTransitioner:
             raise ExecutionControlLifecycleError(
                 "RUNNING Step requires ordered interrupt evidence"
             )
-        if summary.execution_id != application.signal.target_execution_id:
+        application_signal = application.signal
+        if application_signal is None:
+            raise ExecutionControlLifecycleError(
+                "RUNNING Step requires exact control signal authority"
+            )
+        if summary.execution_id != application_signal.target_execution_id:
             raise ExecutionControlLifecycleError(
                 "interrupt evidence does not match execution"
             )

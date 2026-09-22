@@ -291,6 +291,16 @@ class StepReplaySafetyRequest:
             raise ValueError(
                 "Step replay safety requires exact SKILL reliability policy"
             )
+        if getattr(self.observation.execution_owner, "value", None) != "SKILL":
+            raise ValueError("Step replay safety requires SKILL execution owner")
+        if (
+            self.observation.owner_capability_id != self.owner_policy.capability_id
+            or self.observation.owner_capability_version
+            != self.owner_policy.capability_version
+        ):
+            raise ValueError(
+                "Step replay safety owner policy must match exact observed Skill"
+            )
 
 
 class StepReplaySafetyEvaluator(Protocol):

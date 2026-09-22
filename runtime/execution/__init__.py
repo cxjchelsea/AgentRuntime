@@ -29,10 +29,10 @@ from runtime.execution.control import (
     ExecutionControlLatchDecision,
     ExecutionControlLatchStatus,
     ExecutionControlSignal,
-    InMemoryExecutionControlLatch,
     ExecutionControlSignalSource,
     ExecutionControlSignalType,
     ExecutionControlWatcher,
+    InMemoryExecutionControlLatch,
     LatchedExecutionControl,
     ObservedExecutionControl,
 )

@@ -333,9 +333,7 @@ class StepFinalizationDecision:
             allowed = {
                 StepExecutionStatus.SUCCESS,
                 StepExecutionStatus.FAILED,
-                StepExecutionStatus.CANCELLED,
                 StepExecutionStatus.TIMEOUT,
-                StepExecutionStatus.PREEMPTED,
             }
             if self.terminal_status not in allowed:
                 raise ValueError(
@@ -354,4 +352,8 @@ class StepFinalizationEvaluator(Protocol):
         observation: StepAttemptObservation,
         reliability_decision: StepReliabilityDecision,
     ) -> StepFinalizationDecision:
-        """Authorize terminal mapping without interpreting plan fallback/on_failure."""
+        """Authorize IU6 terminal mapping without fallback/on_failure interpretation.
+
+        Cancellation and preemption terminalization remain owned by the later
+        control unit and are not authorized by this IU6 boundary.
+        """

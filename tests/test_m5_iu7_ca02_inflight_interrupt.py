@@ -17,6 +17,7 @@ from runtime.execution import (
     ExecutionControlSignal,
     ExecutionControlSignalType,
     HierarchicalInterruptStatus,
+    HierarchicalInterruptSummary,
     InFlightInterruptCoordinator,
     InFlightOperationHandle,
     InFlightOperationKind,
@@ -170,7 +171,7 @@ class _Controller:
 
 def _summary(
     outcome: InterruptOutcomeStatus,
-) -> tuple[InMemoryInFlightOperationRegistry, _Controller, object]:
+) -> tuple[InMemoryInFlightOperationRegistry, _Controller, HierarchicalInterruptSummary]:
     registry = InMemoryInFlightOperationRegistry()
     asyncio.run(registry.register(_owner_handle()))
     controller = _Controller({"owner-001": outcome})
@@ -324,7 +325,7 @@ def test_confirmed_stop_is_only_path_that_marks_running_step_affected() -> None:
     application = ExecutionControlApplicationEvaluator().evaluate(
         latched_control=_latched(),
         prepared_at_latch=_prepared(),
-        interrupt_summary=cast(object, summary),
+        interrupt_summary=summary,
     )
 
     assert application.disposition is ExecutionControlDisposition.READY_TO_TERMINALIZE
@@ -338,7 +339,7 @@ def test_not_cancellable_keeps_barrier_and_waits() -> None:
     application = ExecutionControlApplicationEvaluator().evaluate(
         latched_control=_latched(),
         prepared_at_latch=_prepared(),
-        interrupt_summary=cast(object, summary),
+        interrupt_summary=summary,
     )
 
     assert application.disposition is ExecutionControlDisposition.WAITING_IN_FLIGHT
@@ -352,7 +353,7 @@ def test_unknown_interrupt_never_becomes_terminal_authority() -> None:
     application = ExecutionControlApplicationEvaluator().evaluate(
         latched_control=_latched(),
         prepared_at_latch=_prepared(),
-        interrupt_summary=cast(object, summary),
+        interrupt_summary=summary,
     )
 
     assert application.disposition is ExecutionControlDisposition.UNKNOWN
@@ -366,7 +367,7 @@ def test_already_completed_waits_until_real_lifecycle_commit() -> None:
     application = ExecutionControlApplicationEvaluator().evaluate(
         latched_control=_latched(),
         prepared_at_latch=_prepared(),
-        interrupt_summary=cast(object, summary),
+        interrupt_summary=summary,
     )
 
     assert application.disposition is ExecutionControlDisposition.WAITING_IN_FLIGHT
@@ -388,7 +389,7 @@ def test_already_completed_after_lifecycle_commit_preserves_real_result() -> Non
     application = ExecutionControlApplicationEvaluator().evaluate(
         latched_control=_latched(),
         prepared_at_latch=before,
-        interrupt_summary=cast(object, summary),
+        interrupt_summary=summary,
         prepared_after_interrupt=committed,
     )
 
@@ -410,7 +411,7 @@ def test_completed_running_step_with_pending_work_only_affects_pending() -> None
     application = ExecutionControlApplicationEvaluator().evaluate(
         latched_control=_latched(),
         prepared_at_latch=before,
-        interrupt_summary=cast(object, summary),
+        interrupt_summary=summary,
         prepared_after_interrupt=committed,
     )
 

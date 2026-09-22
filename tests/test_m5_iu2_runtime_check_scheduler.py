@@ -43,6 +43,24 @@ from tests.orchestration_stubs import (
 FIXED_TIME = datetime(2026, 9, 20, 8, 30, tzinfo=UTC)
 
 
+def _terminal_signal(
+    signal_type: ExecutionControlSignalType,
+    *,
+    reason_code: str,
+    source: str,
+    target_execution_id: str = "execution-iu2-001",
+    signal_id: str | None = None,
+) -> ExecutionControlSignal:
+    return ExecutionControlSignal(
+        signal_type=signal_type,
+        reason_code=reason_code,
+        source=source,
+        signal_id=signal_id or f"signal-{signal_type.value.lower()}-001",
+        target_execution_id=target_execution_id,
+        issued_at=FIXED_TIME,
+    )
+
+
 class StaticSnapshotProvider:
     def __init__(self, snapshot: RuntimeExecutionSnapshot) -> None:
         self.snapshot = snapshot
@@ -192,8 +210,8 @@ def test_cancel_signal_preempts_other_runtime_checks_without_redeciding_priority
 ):
     plan, prepared = _prepared()
     checker, snapshot_provider = _runtime_checker(
-        signal=ExecutionControlSignal(
-            signal_type=ExecutionControlSignalType.CANCEL,
+        signal=_terminal_signal(
+            ExecutionControlSignalType.CANCEL,
             reason_code="USER_STOP",
             source="RUNTIME",
         )
@@ -214,8 +232,8 @@ def test_cancel_signal_preempts_other_runtime_checks_without_redeciding_priority
 def test_preempt_signal_is_consumed_not_recomputed() -> None:
     plan, prepared = _prepared()
     checker, snapshot_provider = _runtime_checker(
-        signal=ExecutionControlSignal(
-            signal_type=ExecutionControlSignalType.PREEMPT,
+        signal=_terminal_signal(
+            ExecutionControlSignalType.PREEMPT,
             reason_code="HIGH_PRIORITY_PREEMPTION",
             source="M2",
         )
@@ -230,6 +248,29 @@ def test_preempt_signal_is_consumed_not_recomputed() -> None:
 
     assert decision.status is RuntimeExecutionCheckStatus.PREEMPT_REQUIRED
     assert decision.reason_codes == ("HIGH_PRIORITY_PREEMPTION",)
+    assert snapshot_provider.calls == 0
+
+
+def test_control_signal_target_mismatch_fails_closed_before_other_checks() -> None:
+    plan, prepared = _prepared()
+    checker, snapshot_provider = _runtime_checker(
+        signal=_terminal_signal(
+            ExecutionControlSignalType.CANCEL,
+            reason_code="USER_STOP",
+            source="RUNTIME",
+            target_execution_id="different-execution",
+        )
+    )
+
+    decision = asyncio.run(
+        checker.check(
+            step=plan.steps[0],
+            execution_context=prepared.execution_context,
+        )
+    )
+
+    assert decision.status is RuntimeExecutionCheckStatus.UNKNOWN
+    assert decision.reason_codes == ("CONTROL_SIGNAL_TARGET_MISMATCH",)
     assert snapshot_provider.calls == 0
 
 

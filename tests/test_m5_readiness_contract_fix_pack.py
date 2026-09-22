@@ -360,19 +360,30 @@ def test_execution_implementation_resolver_uses_exact_approved_version() -> None
 
 
 def test_control_signal_distinguishes_cancel_preempt_and_none() -> None:
+    # CANCEL/PREEMPT 现在必须带齐可审计 identity，NONE 则不得携带这些字段。
+    issued_at = datetime(2026, 9, 22, 12, 0, tzinfo=UTC)
     none = ExecutionControlSignal(signal_type=ExecutionControlSignalType.NONE)
     cancel = ExecutionControlSignal(
         signal_type=ExecutionControlSignalType.CANCEL,
         reason_code="USER_STOP",
         source="RUNTIME",
+        signal_id="signal-cancel-001",
+        target_execution_id="execution-001",
+        issued_at=issued_at,
     )
     preempt = ExecutionControlSignal(
         signal_type=ExecutionControlSignalType.PREEMPT,
         reason_code="HIGH_PRIORITY_PREEMPTION",
         source="M2",
+        signal_id="signal-preempt-001",
+        target_execution_id="execution-001",
+        issued_at=issued_at,
     )
 
     assert none.signal_type is ExecutionControlSignalType.NONE
+    assert none.signal_id is None
+    assert none.target_execution_id is None
+    assert none.issued_at is None
     assert cancel.signal_type is ExecutionControlSignalType.CANCEL
     assert preempt.signal_type is ExecutionControlSignalType.PREEMPT
 

@@ -103,7 +103,7 @@ class ResourceLockAcquireDecision:
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, ResourceLockAcquireStatus):
-            raise ValueError("status must be ResourceLockAcquireStatus")
+            raise TypeError("status must be ResourceLockAcquireStatus")
         if not self.reason_codes or any(
             not isinstance(code, str) or not code.strip()
             for code in self.reason_codes
@@ -131,7 +131,7 @@ class ResourceLockReleaseDecision:
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, ResourceLockReleaseStatus):
-            raise ValueError("status must be ResourceLockReleaseStatus")
+            raise TypeError("status must be ResourceLockReleaseStatus")
         if not self.reason_codes or any(
             not isinstance(code, str) or not code.strip()
             for code in self.reason_codes

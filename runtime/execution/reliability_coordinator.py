@@ -177,12 +177,9 @@ class StepReliabilityCoordinator:
                 ) from exc
             attempts.append(observation)
 
-            if (
-                attempt_number > 1
-                and not self._tool_operation_sequence_matches(
-                    prior_journal=prior_journal,
-                    current_journal=observation.tool_journal,
-                )
+            if attempt_number > 1 and not self._tool_operation_sequence_matches(
+                prior_journal=prior_journal,
+                current_journal=observation.tool_journal,
             ):
                 reliability_decision = StepReliabilityDecision(
                     disposition=StepReliabilityDisposition.ABORT_UNKNOWN,
@@ -271,18 +268,12 @@ class StepReliabilityCoordinator:
             remaining_after_backoff, deadline_error = self._deadline_remaining(
                 execution_context
             )
-            if (
-                deadline_error is not None
-                or (
-                    remaining_after_backoff is not None
-                    and remaining_after_backoff <= 0
-                )
+            if deadline_error is not None or (
+                remaining_after_backoff is not None and remaining_after_backoff <= 0
             ):
                 reliability_decision = StepReliabilityDecision(
                     disposition=StepReliabilityDisposition.ABORT_UNKNOWN,
-                    reason_codes=(
-                        deadline_error or "STEP_RETRY_DEADLINE_EXPIRED",
-                    ),
+                    reason_codes=(deadline_error or "STEP_RETRY_DEADLINE_EXPIRED",),
                 )
                 return self._finish(
                     attempts=attempts,
@@ -389,9 +380,8 @@ class StepReliabilityCoordinator:
             decision = await self._runtime.replay_safety_evaluator.evaluate(request)
         except Exception:  # noqa: BLE001
             decision = None
-        if (
-            not isinstance(decision, ReplaySafetyDecision)
-            or not isinstance(decision.status, ReplaySafetyStatus)
+        if not isinstance(decision, ReplaySafetyDecision) or not isinstance(
+            decision.status, ReplaySafetyStatus
         ):
             return ReplaySafetyDecision(
                 status=ReplaySafetyStatus.UNKNOWN,
@@ -434,9 +424,8 @@ class StepReliabilityCoordinator:
             )
         except Exception:  # noqa: BLE001
             decision = None
-        if (
-            not isinstance(decision, RetryDecision)
-            or not isinstance(decision.status, RetryDecisionStatus)
+        if not isinstance(decision, RetryDecision) or not isinstance(
+            decision.status, RetryDecisionStatus
         ):
             return RetryDecision(
                 status=RetryDecisionStatus.UNKNOWN,
@@ -459,9 +448,8 @@ class StepReliabilityCoordinator:
             )
         except Exception:  # noqa: BLE001
             decision = None
-        if (
-            not isinstance(decision, StepReliabilityDecision)
-            or not isinstance(decision.disposition, StepReliabilityDisposition)
+        if not isinstance(decision, StepReliabilityDecision) or not isinstance(
+            decision.disposition, StepReliabilityDisposition
         ):
             return StepReliabilityDecision(
                 disposition=StepReliabilityDisposition.ABORT_UNKNOWN,
@@ -484,12 +472,9 @@ class StepReliabilityCoordinator:
             )
         except Exception:  # noqa: BLE001
             finalization = None
-        if (
-            not isinstance(finalization, StepFinalizationDecision)
-            or not isinstance(
-                finalization.disposition,
-                StepFinalizationDisposition,
-            )
+        if not isinstance(finalization, StepFinalizationDecision) or not isinstance(
+            finalization.disposition,
+            StepFinalizationDisposition,
         ):
             finalization = StepFinalizationDecision(
                 disposition=StepFinalizationDisposition.UNKNOWN,
@@ -530,9 +515,8 @@ class StepReliabilityCoordinator:
             )
         except Exception:  # noqa: BLE001
             decision = None
-        if (
-            not isinstance(decision, StepAttemptSequenceDecision)
-            or not isinstance(decision.status, StepAttemptSequenceStatus)
+        if not isinstance(decision, StepAttemptSequenceDecision) or not isinstance(
+            decision.status, StepAttemptSequenceStatus
         ):
             return StepAttemptSequenceDecision(
                 status=StepAttemptSequenceStatus.UNKNOWN,
@@ -560,7 +544,7 @@ class StepReliabilityCoordinator:
     def _clock_now(self) -> datetime:
         try:
             value = self._runtime.clock.now()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise StepReliabilityCoordinationError(
                 "EXECUTION_CLOCK_UNKNOWN",
                 "ExecutionClock failed during result collection",
@@ -574,9 +558,7 @@ class StepReliabilityCoordinator:
         deadline_remaining_seconds: float | None,
     ) -> float | None:
         policy_timeout = (
-            owner_policy.timeout.timeout_seconds
-            if owner_policy is not None
-            else None
+            owner_policy.timeout.timeout_seconds if owner_policy is not None else None
         )
         values = [
             value
@@ -643,10 +625,6 @@ class StepReliabilityCoordinator:
             status=CapabilityExecutionStatus.UNKNOWN,
             execution_owner=resolved.execution_owner,
             reason_codes=(reason_code,),
-            owner_capability_id=(
-                owner.capability_id if owner is not None else None
-            ),
-            owner_capability_version=(
-                owner.version if owner is not None else None
-            ),
+            owner_capability_id=(owner.capability_id if owner is not None else None),
+            owner_capability_version=(owner.version if owner is not None else None),
         )

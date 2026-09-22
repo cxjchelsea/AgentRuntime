@@ -188,9 +188,7 @@ class CoreApprovedToolInvoker(
             raise ValueError("step_execution_id must not be blank")
         if step_attempt_number < 1:
             raise ValueError("step_attempt_number must be >= 1")
-        if reliability_runtime is not None and (
-            step_id is None or not step_id.strip()
-        ):
+        if reliability_runtime is not None and (step_id is None or not step_id.strip()):
             raise ValueError("reliable Tool invocation requires non-blank step_id")
         self._execution_context = execution_context
         self._step_execution_id = step_execution_id
@@ -335,8 +333,7 @@ class CoreApprovedToolInvoker(
                 occurrence_decision.status,
                 ToolOperationOccurrenceStatus,
             )
-            or occurrence_decision.status
-            is not ToolOperationOccurrenceStatus.CLAIMED
+            or occurrence_decision.status is not ToolOperationOccurrenceStatus.CLAIMED
             or occurrence_decision.occurrence is None
         ):
             return self._reliability_unknown_without_attempt(
@@ -700,9 +697,8 @@ class CoreApprovedToolInvoker(
             )
         except Exception:  # noqa: BLE001
             decision = None
-        if (
-            not isinstance(decision, IdempotencyPreflightDecision)
-            or not isinstance(decision.status, IdempotencyPreflightStatus)
+        if not isinstance(decision, IdempotencyPreflightDecision) or not isinstance(
+            decision.status, IdempotencyPreflightStatus
         ):
             return key, None, None, "IDEMPOTENCY_PREFLIGHT_UNKNOWN"
 
@@ -766,9 +762,7 @@ class CoreApprovedToolInvoker(
             if failed_record is None:
                 return key, None, None, "IDEMPOTENCY_FAILED_RECORD_MISSING"
             try:
-                reopened = await runtime.idempotency_store.reopen_failed(
-                    failed_record
-                )
+                reopened = await runtime.idempotency_store.reopen_failed(failed_record)
             except Exception:  # noqa: BLE001
                 reopened = False
             if not reopened:
@@ -855,8 +849,7 @@ class CoreApprovedToolInvoker(
             and completed_record.key == reserved_record.key
             and completed_record.execution_id == reserved_record.execution_id
             and completed_record.step_id == reserved_record.step_id
-            and completed_record.step_execution_id
-            == reserved_record.step_execution_id
+            and completed_record.step_execution_id == reserved_record.step_execution_id
             and completed_record.tool_id == reserved_record.tool_id
             and completed_record.tool_version == reserved_record.tool_version
             and completed_record.operation_key == reserved_record.operation_key
@@ -897,9 +890,23 @@ class CoreApprovedToolInvoker(
         if runtime is None:
             raise RuntimeError("reliability runtime is not configured")
 
+        # 物理尝试入口再次收窄 Tool 绑定，避免 union 类型泄漏到 invoke / 校验。
+        tool_definition = resolved.definition
+        tool_implementation = resolved.implementation_ref
+        if (
+            resolved.kind is not CapabilityKind.TOOL
+            or not isinstance(tool_definition, ToolDefinition)
+            or not isinstance(tool_implementation, ToolImplementation)
+        ):
+            self._record_fault("APPROVED_TOOL_BINDING_INVALID")
+            raise ToolInvocationBoundaryError(
+                "APPROVED_TOOL_BINDING_INVALID",
+                "IU3 resolved Tool binding is internally inconsistent",
+            )
+
         if timeout_seconds is None:
             try:
-                raw_result = await resolved.implementation_ref.invoke(
+                raw_result = await tool_implementation.invoke(
                     request,
                     self._execution_context,
                 )
@@ -910,16 +917,15 @@ class CoreApprovedToolInvoker(
             try:
                 timeout_result = await runtime.timeout_runner.run(
                     timeout_seconds=timeout_seconds,
-                    operation=lambda: resolved.implementation_ref.invoke(
+                    operation=lambda: tool_implementation.invoke(
                         request,
                         self._execution_context,
                     ),
                 )
             except Exception:  # noqa: BLE001
                 timeout_result = None
-            if (
-                not isinstance(timeout_result, TimeoutRunResult)
-                or not isinstance(timeout_result.status, TimeoutRunStatus)
+            if not isinstance(timeout_result, TimeoutRunResult) or not isinstance(
+                timeout_result.status, TimeoutRunStatus
             ):
                 raw_result = None
                 timeout_status = TimeoutRunStatus.UNKNOWN
@@ -1044,7 +1050,7 @@ class CoreApprovedToolInvoker(
                 operation_fingerprint=operation_fingerprint,
             )
 
-        output_decision = self._validate_output(resolved.definition, raw_result)
+        output_decision = self._validate_output(tool_definition, raw_result)
         if output_decision.status is ToolPayloadValidationStatus.VALID:
             final_result = raw_result
         elif output_decision.status is ToolPayloadValidationStatus.INVALID:
@@ -1317,9 +1323,8 @@ class CoreApprovedToolInvoker(
             decision = runtime.replay_safety_evaluator.evaluate(context)
         except Exception:  # noqa: BLE001
             decision = None
-        if (
-            not isinstance(decision, ReplaySafetyDecision)
-            or not isinstance(decision.status, ReplaySafetyStatus)
+        if not isinstance(decision, ReplaySafetyDecision) or not isinstance(
+            decision.status, ReplaySafetyStatus
         ):
             return ReplaySafetyDecision(
                 status=ReplaySafetyStatus.UNKNOWN,
@@ -1354,9 +1359,7 @@ class CoreApprovedToolInvoker(
             error_code=attempt.error_code,
             replay_safety=replay_safety,
             deadline_remaining_seconds=(
-                max(deadline_remaining, 0.0)
-                if deadline_remaining is not None
-                else None
+                max(deadline_remaining, 0.0) if deadline_remaining is not None else None
             ),
         )
         try:
@@ -1366,9 +1369,8 @@ class CoreApprovedToolInvoker(
             )
         except Exception:  # noqa: BLE001
             decision = None
-        if (
-            not isinstance(decision, RetryDecision)
-            or not isinstance(decision.status, RetryDecisionStatus)
+        if not isinstance(decision, RetryDecision) or not isinstance(
+            decision.status, RetryDecisionStatus
         ):
             return RetryDecision(
                 status=RetryDecisionStatus.UNKNOWN,
@@ -1547,10 +1549,12 @@ class CoreApprovedToolInvoker(
                 operation_fingerprint=operation_fingerprint,
             )
 
+        # 基线单次物理尝试同样先收窄 Tool 定义与实现，避免 union 方法调用。
+        tool_implementation = resolved.implementation_ref
         if (
             resolved.kind is not CapabilityKind.TOOL
             or not isinstance(resolved.definition, ToolDefinition)
-            or not isinstance(resolved.implementation_ref, ToolImplementation)
+            or not isinstance(tool_implementation, ToolImplementation)
         ):
             self._record_fault("APPROVED_TOOL_BINDING_INVALID")
             raise ToolInvocationBoundaryError(
@@ -1647,7 +1651,7 @@ class CoreApprovedToolInvoker(
         )
 
         try:
-            raw_result = await resolved.implementation_ref.invoke(
+            raw_result = await tool_implementation.invoke(
                 request,
                 self._execution_context,
             )
@@ -2163,10 +2167,11 @@ class StepCapabilityExecutor:
         owner_timeout_runner: AsyncTimeoutRunner | None,
     ) -> StepCapabilityExecutionOutcome:
         skill = resolved.skill
+        skill_implementation = None if skill is None else skill.implementation_ref
         if (
             skill is None
             or skill.kind is not CapabilityKind.SKILL
-            or not isinstance(skill.implementation_ref, SkillImplementation)
+            or not isinstance(skill_implementation, SkillImplementation)
         ):
             return self._outcome(
                 step=step,
@@ -2186,7 +2191,7 @@ class StepCapabilityExecutor:
 
         try:
             if owner_timeout_seconds is None:
-                result = await skill.implementation_ref.execute(
+                result = await skill_implementation.execute(
                     request,
                     execution_context,
                     tool_invoker,
@@ -2196,15 +2201,14 @@ class StepCapabilityExecutor:
                     raise RuntimeError("owner timeout runner is missing")
                 timeout_result = await owner_timeout_runner.run(
                     timeout_seconds=owner_timeout_seconds,
-                    operation=lambda: skill.implementation_ref.execute(
+                    operation=lambda: skill_implementation.execute(
                         request,
                         execution_context,
                         tool_invoker,
                     ),
                 )
-                if (
-                    not isinstance(timeout_result, TimeoutRunResult)
-                    or not isinstance(timeout_result.status, TimeoutRunStatus)
+                if not isinstance(timeout_result, TimeoutRunResult) or not isinstance(
+                    timeout_result.status, TimeoutRunStatus
                 ):
                     return self._outcome(
                         step=step,
@@ -2234,7 +2238,19 @@ class StepCapabilityExecutor:
                         tool_journal=tool_invoker.entries(),
                     )
                 else:
-                    result = timeout_result.value
+                    # COMPLETED 的 value 仍可能不是 Skill 结果，必须先收窄再赋值。
+                    completed_skill_result = timeout_result.value
+                    if not isinstance(completed_skill_result, M5SkillResult):
+                        return self._outcome(
+                            step=step,
+                            step_snapshot=step_snapshot,
+                            resolved=resolved,
+                            status=CapabilityExecutionStatus.UNKNOWN,
+                            reason_codes=("SKILL_RESULT_INVALID",),
+                            tool_results=self._journal_results(tool_invoker),
+                            tool_journal=tool_invoker.entries(),
+                        )
+                    result = completed_skill_result
         except Exception:  # noqa: BLE001
             reason_codes = self._exception_reasons(
                 tool_invoker,
@@ -2325,10 +2341,13 @@ class StepCapabilityExecutor:
         owner_timeout_runner: AsyncTimeoutRunner | None,
     ) -> StepCapabilityExecutionOutcome:
         workflow = resolved.workflow
+        workflow_implementation = (
+            None if workflow is None else workflow.implementation_ref
+        )
         if (
             workflow is None
             or workflow.kind is not CapabilityKind.WORKFLOW
-            or not isinstance(workflow.implementation_ref, WorkflowImplementation)
+            or not isinstance(workflow_implementation, WorkflowImplementation)
         ):
             return self._outcome(
                 step=step,
@@ -2372,7 +2391,7 @@ class StepCapabilityExecutor:
 
         try:
             if owner_timeout_seconds is None:
-                result = await workflow.implementation_ref.start(
+                result = await workflow_implementation.start(
                     request,
                     execution_context,
                     tool_invoker,
@@ -2382,15 +2401,14 @@ class StepCapabilityExecutor:
                     raise RuntimeError("owner timeout runner is missing")
                 timeout_result = await owner_timeout_runner.run(
                     timeout_seconds=owner_timeout_seconds,
-                    operation=lambda: workflow.implementation_ref.start(
+                    operation=lambda: workflow_implementation.start(
                         request,
                         execution_context,
                         tool_invoker,
                     ),
                 )
-                if (
-                    not isinstance(timeout_result, TimeoutRunResult)
-                    or not isinstance(timeout_result.status, TimeoutRunStatus)
+                if not isinstance(timeout_result, TimeoutRunResult) or not isinstance(
+                    timeout_result.status, TimeoutRunStatus
                 ):
                     return self._outcome(
                         step=step,
@@ -2420,7 +2438,19 @@ class StepCapabilityExecutor:
                         tool_journal=tool_invoker.entries(),
                     )
                 else:
-                    result = timeout_result.value
+                    # COMPLETED 的 value 仍可能不是 Workflow 结果，必须先收窄再赋值。
+                    completed_workflow_result = timeout_result.value
+                    if not isinstance(completed_workflow_result, M5WorkflowResult):
+                        return self._outcome(
+                            step=step,
+                            step_snapshot=step_snapshot,
+                            resolved=resolved,
+                            status=CapabilityExecutionStatus.UNKNOWN,
+                            reason_codes=("WORKFLOW_RESULT_INVALID",),
+                            tool_results=self._journal_results(tool_invoker),
+                            tool_journal=tool_invoker.entries(),
+                        )
+                    result = completed_workflow_result
         except Exception:  # noqa: BLE001
             reason_codes = self._exception_reasons(
                 tool_invoker,

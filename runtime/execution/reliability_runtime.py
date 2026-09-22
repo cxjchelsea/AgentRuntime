@@ -53,6 +53,7 @@ class ToolReliabilityRuntime:
     idempotency_completion_authority: IdempotencyCompletionAuthority
     idempotency_result_resolver: IdempotencyResultResolver
 
+
 @dataclass(frozen=True, slots=True)
 class StepReliabilityRuntime:
     """Injected authorities for Skill-owner Step reliability coordination."""
@@ -66,4 +67,3 @@ class StepReliabilityRuntime:
     attempt_sequence_authority: StepAttemptSequenceAuthority
     step_reliability_evaluator: StepReliabilityEvaluator
     step_finalization_evaluator: StepFinalizationEvaluator
-

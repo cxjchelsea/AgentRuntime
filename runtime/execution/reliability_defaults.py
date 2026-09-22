@@ -10,13 +10,17 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 from runtime.execution.invocation import ToolInvocationJournalEntry
-from runtime.execution.models import M5ToolResult, StepExecutionStatus, ToolExecutionStatus
+from runtime.execution.models import (
+    M5ToolResult,
+    StepExecutionStatus,
+    ToolExecutionStatus,
+)
 from runtime.execution.reliability import (
     ExecutionClock,
     IdempotencyMode,
@@ -46,7 +50,10 @@ from runtime.execution.reliability_boundary import (
     ToolOperationOccurrenceDecision,
     ToolOperationOccurrenceStatus,
 )
-from runtime.execution.result_collection import StepAttemptObservation, StepAttemptStatus
+from runtime.execution.result_collection import (
+    StepAttemptObservation,
+    StepAttemptStatus,
+)
 from runtime.execution.stores import (
     IdempotencyCompletionDecision,
     IdempotencyCompletionStatus,
@@ -241,16 +248,10 @@ class DeterministicIdempotencyKeyFactory:
         tool_version: str,
         operation_fingerprint: str,
     ) -> str:
-        raw = "|".join(
-            (
-                execution_id,
-                step_execution_id,
-                operation_key.value,
-                tool_id,
-                tool_version,
-                operation_fingerprint,
-            )
-        ).encode("utf-8")
+        raw = (
+            f"{execution_id}|{step_execution_id}|{operation_key.value}|"
+            f"{tool_id}|{tool_version}|{operation_fingerprint}"
+        ).encode()
         return f"idem:{hashlib.sha256(raw).hexdigest()}"
 
 
@@ -300,15 +301,10 @@ class DeterministicToolOperationCorrelator:
         operation_fingerprint: str,
         operation_occurrence: int,
     ) -> tuple[ToolOperationCorrelationKey, str]:
-        raw = "|".join(
-            (
-                step_execution_id,
-                tool_id,
-                tool_version,
-                operation_fingerprint,
-                str(operation_occurrence),
-            )
-        ).encode("utf-8")
+        raw = (
+            f"{step_execution_id}|{tool_id}|{tool_version}|"
+            f"{operation_fingerprint}|{operation_occurrence}"
+        ).encode()
         digest = hashlib.sha256(raw).hexdigest()
         return ToolOperationCorrelationKey(f"op:{digest}"), f"tool-call:{digest}"
 
@@ -399,8 +395,7 @@ class BasicIdempotencyPreflightEvaluator:
             and existing_record.tool_id == expected_tool_id
             and existing_record.tool_version == expected_tool_version
             and existing_record.operation_key == expected_operation_key
-            and existing_record.operation_fingerprint
-            == expected_operation_fingerprint
+            and existing_record.operation_fingerprint == expected_operation_fingerprint
         )
         if not provenance_matches:
             return IdempotencyPreflightDecision(

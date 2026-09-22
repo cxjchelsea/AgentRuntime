@@ -317,7 +317,7 @@ class ExecutionControlCoordinator:
             running_step_id=running[0] if len(running) == 1 else None,
             nonterminal_step_ids_at_latch=nonterminal,
             affected_step_ids=(),
-            preserve_running_step_result=bool(running),
+            preserve_running_step_result=len(running) == 1,
             handoff_required=(
                 observed.signal.signal_type is ExecutionControlSignalType.PREEMPT
             ),

@@ -48,26 +48,16 @@ def test_none_signal_carries_no_terminal_authority_identity() -> None:
 
 
 def test_terminal_signal_requires_complete_auditable_envelope() -> None:
-    missing_cases = (
-        {"reason_code": None},
-        {"source": None},
-        {"signal_id": None},
-        {"target_execution_id": None},
-        {"issued_at": None},
-    )
-
-    for case in missing_cases:
-        with pytest.raises(ValueError, match="requires"):
-            _cancel_signal(
-                reason_code=case.get("reason_code", "USER_STOP"),
-                source=case.get("source", "RUNTIME"),
-                signal_id=case.get("signal_id", "signal-cancel-001"),
-                target_execution_id=case.get(
-                    "target_execution_id",
-                    "execution-001",
-                ),
-                issued_at=case.get("issued_at", FIXED_TIME),
-            )
+    with pytest.raises(ValueError, match="requires"):
+        _cancel_signal(reason_code=None)
+    with pytest.raises(ValueError, match="requires"):
+        _cancel_signal(source=None)
+    with pytest.raises(ValueError, match="requires"):
+        _cancel_signal(signal_id=None)
+    with pytest.raises(ValueError, match="requires"):
+        _cancel_signal(target_execution_id=None)
+    with pytest.raises(ValueError, match="requires"):
+        _cancel_signal(issued_at=None)
 
 
 def test_terminal_signal_rejects_naive_issued_at() -> None:

@@ -111,6 +111,12 @@ class ToolAttemptObservation:
             raise ValueError(
                 "operation_fingerprint must not be blank when present"
             )
+        if (self.operation_key is None) != (
+            self.operation_fingerprint is None
+        ):
+            raise ValueError(
+                "operation_key and operation_fingerprint must be present together"
+            )
         if self.idempotency_key is not None and not self.idempotency_key.strip():
             raise ValueError("idempotency_key must not be blank when present")
         if self.result.tool_call_id != self.logical_tool_call_id:
@@ -183,6 +189,12 @@ class ToolInvocationJournalEntry:
                 raise ValueError("Tool journal raw_result tool_id must match")
         if self.operation_key is not None and not self.operation_key.strip():
             raise ValueError("operation_key must not be blank when present")
+        if (self.operation_key is None) != (
+            self.operation_fingerprint is None
+        ):
+            raise ValueError(
+                "operation_key and operation_fingerprint must be present together"
+            )
         if self.idempotency_key is not None and not self.idempotency_key.strip():
             raise ValueError("idempotency_key must not be blank when present")
         if self.attempts:

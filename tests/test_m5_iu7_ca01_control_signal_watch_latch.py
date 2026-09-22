@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 
@@ -196,3 +197,12 @@ def test_latch_unknown_cannot_claim_control_barrier() -> None:
                 latched_at=FIXED_TIME,
             ),
         )
+
+
+def test_latch_decision_rejects_non_enum_status() -> None:
+    with pytest.raises(ValueError, match="ExecutionControlLatchStatus"):
+        ExecutionControlLatchDecision(
+            status=cast(ExecutionControlLatchStatus, "INVALID"),
+            reason_codes=("INVALID_STATUS",),
+        )
+

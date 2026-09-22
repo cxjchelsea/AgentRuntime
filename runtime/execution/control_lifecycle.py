@@ -53,9 +53,7 @@ class ExecutionControlLifecycleTransitioner:
             StepExecutionStatus.PREEMPTED,
         }
     )
-    _TERMINAL_EXECUTION_STATUSES = frozenset(
-        item.value for item in ExecutionPlanStatus
-    )
+    _TERMINAL_EXECUTION_STATUSES = frozenset(item.value for item in ExecutionPlanStatus)
 
     def terminalize(
         self,
@@ -76,7 +74,10 @@ class ExecutionControlLifecycleTransitioner:
 
         if application.disposition is ExecutionControlDisposition.ALREADY_TERMINAL:
             return prepared
-        if application.disposition is not ExecutionControlDisposition.READY_TO_TERMINALIZE:
+        if (
+            application.disposition
+            is not ExecutionControlDisposition.READY_TO_TERMINALIZE
+        ):
             raise ExecutionControlLifecycleError(
                 "control lifecycle requires READY_TO_TERMINALIZE or ALREADY_TERMINAL"
             )
@@ -214,7 +215,10 @@ class ExecutionControlLifecycleTransitioner:
             raise ExecutionControlLifecycleError(
                 "latched control target does not match execution"
             )
-        if prepared.execution_record.execution_id != prepared.execution_context.execution_id:
+        if (
+            prepared.execution_record.execution_id
+            != prepared.execution_context.execution_id
+        ):
             raise ExecutionControlLifecycleError(
                 "prepared execution identity is inconsistent"
             )
@@ -250,7 +254,10 @@ class ExecutionControlLifecycleTransitioner:
                 )
             return
 
-        if application.disposition is not ExecutionControlDisposition.READY_TO_TERMINALIZE:
+        if (
+            application.disposition
+            is not ExecutionControlDisposition.READY_TO_TERMINALIZE
+        ):
             raise ExecutionControlLifecycleError(
                 "unsafe control application cannot mutate lifecycle"
             )

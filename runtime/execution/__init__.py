@@ -124,6 +124,9 @@ from runtime.execution.reliability import (
 )
 from runtime.execution.reliability_boundary import (
     IdempotencyKeyFactory,
+    IdempotencyPreflightDecision,
+    IdempotencyPreflightEvaluator,
+    IdempotencyPreflightStatus,
     StepAttemptSequenceAuthority,
     StepAttemptSequenceDecision,
     StepAttemptSequenceStatus,
@@ -138,6 +141,9 @@ from runtime.execution.reliability_boundary import (
     ToolOperationCorrelationStatus,
     ToolOperationCorrelator,
     ToolOperationFingerprintFactory,
+    ToolOperationOccurrenceAuthority,
+    ToolOperationOccurrenceDecision,
+    ToolOperationOccurrenceStatus,
 )
 from runtime.execution.resolution import (
     ExecutionImplementationResolver,
@@ -233,6 +239,9 @@ __all__ = [
     "ExecutionStateStore",
     "IdempotencyKeyFactory",
     "IdempotencyMode",
+    "IdempotencyPreflightDecision",
+    "IdempotencyPreflightEvaluator",
+    "IdempotencyPreflightStatus",
     "IdempotencyRecord",
     "IdempotencyResultResolver",
     "IdempotencyStatus",
@@ -319,6 +328,9 @@ __all__ = [
     "ToolOperationCorrelationStatus",
     "ToolOperationCorrelator",
     "ToolOperationFingerprintFactory",
+    "ToolOperationOccurrenceAuthority",
+    "ToolOperationOccurrenceDecision",
+    "ToolOperationOccurrenceStatus",
     "ToolOutputValidator",
     "ToolPayloadValidationDecision",
     "ToolPayloadValidationStatus",

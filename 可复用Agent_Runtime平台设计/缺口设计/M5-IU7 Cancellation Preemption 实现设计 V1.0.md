@@ -92,6 +92,11 @@ ExecutionControlSignal
 - reason_code
 - source
 - issued_at
+
+LatchedExecutionControl
+- signal
+- observed_at
+- latched_at
 ~~~
 
 NONE 可以保持无 signal identity；CANCEL/PREEMPT 必须具备 immutable signal identity。
@@ -105,7 +110,7 @@ signal.target_execution_id
 
 否则 fail closed。
 
-`issued_at` 只用于事实排序/审计，不用于 M5 重新决定控制优先级。
+`issued_at` 主要用于上游审计，不作为跨时钟域的唯一排序依据。IU7 自己通过注入式 Core clock 记录 `observed_at / latched_at`；控制与本地 operation/lifecycle evidence 的先后判断优先使用同一 Core time source。M5 仍不利用这些时间重新决定控制优先级。
 
 ## 4. cancellation_token 的正式定位
 
@@ -197,6 +202,7 @@ InFlightOperationHandle
 - operation_handle_id
 - execution_id
 - step_execution_id
+- parent_handle_id?
 - kind
 - capability_id
 - capability_version
@@ -214,10 +220,40 @@ InFlightOperationRegistry
 
 ~~~text
 register active operation
-read exact active operation
+read exact active operation chain
 mark operation completed
 never discover/substitute capabilities
 ~~~
+
+同一个 Step 可能存在嵌套 in-flight 链：
+
+~~~text
+Skill.execute
+  ↓
+CoreApprovedToolInvoker
+  ↓
+Tool.invoke
+~~~
+
+因此 Registry 不能只返回“某一个 active handle”，而必须能返回同一 `step_execution_id` 的**唯一父子 active chain**。
+
+正式要求：
+
+~~~text
+owner Skill/Workflow = parent
+nested Tool = child/leaf
+no cycles
+no multiple active leaves for IU7 sequential baseline
+~~~
+
+Control interrupt 顺序冻结为：
+
+~~~text
+leaf Tool first
+→ then parent owner task/operation
+~~~
+
+原因不是业务 priority，而是执行结构：只停止子 Tool 不足以保证父 Skill/Workflow 不继续执行。
 
 durable registry/recovery 属于 IU9；IU7 第一版只要求 live authority。
 
@@ -253,6 +289,18 @@ UNKNOWN
 operation 在 interrupt 生效前已完成
 → 保留真实 completion/result
 → 只停止后续 Step
+~~~
+
+但 `ALREADY_COMPLETED` **本身不等于 lifecycle 已经完成**。
+
+只有当 owner 的真实 completion/result 已经通过现有 result/lifecycle authority 写回，当前 Step 不再是 RUNNING，IU7 才能继续 terminalize 剩余 PENDING Steps。
+
+如果 interrupt controller 报 `ALREADY_COMPLETED`，但 lifecycle 仍是 RUNNING：
+
+~~~text
+→ WAITING_IN_FLIGHT
+→ 等待真实 completion observation/lifecycle commit
+→ 不得猜测 Step terminal status
 ~~~
 
 ### NOT_CANCELLABLE
@@ -371,7 +419,7 @@ terminalization time
 
 ### RUNNING Step
 
-只有 interrupt = CONFIRMED_STOPPED 时：
+只有整个 in-flight chain 已达到 control-safe boundary，且当前 owner interrupt = CONFIRMED_STOPPED 时：
 
 ~~~text
 CANCEL -> CANCELLED
@@ -381,7 +429,9 @@ PREEMPT -> PREEMPTED
 如果 operation 已 ALREADY_COMPLETED：
 
 ~~~text
-保留实际 terminal result
+先等待/确认真实 lifecycle completion 已提交
+→ 保留实际 terminal result
+→ 不使用 control 覆盖该 Step
 ~~~
 
 如果 NOT_CANCELLABLE / UNKNOWN：
@@ -523,20 +573,22 @@ handoff_required = true
 6. pre-step checker 不比较 priority
 7. runtime watcher 可在 in-flight operation 期间产生 terminal signal
 8. cancellation_token string 不被当成 mutable token
-9. exact in-flight operation handle only
-10. CONFIRMED_STOPPED 才允许 control-terminalize running Step
-11. ALREADY_COMPLETED 保留真实 Step result
-12. NOT_CANCELLABLE 保持 barrier + wait
-13. UNKNOWN interrupt 不写 CANCELLED/PREEMPTED
-14. terminal Step 永不被 control 重写
-15. remaining PENDING Steps -> CANCELLED/PREEMPTED
-16. completed Tool side effect 保持原 truth
-17. CANCEL -> execution CANCELLED
-18. PREEMPT -> execution PREEMPTED
-19. PREEMPT 只返回 handoff_required，不启动 Runtime cycle
-20. Resource Lock policy 不进入 IU7
-21. Recovery/Checkpoint 不进入 IU7
-22. Aggregation/M6 不进入 IU7
+9. exact hierarchical in-flight operation chain only
+10. nested Tool 必须 leaf-first interrupt，再停止 parent owner
+11. CONFIRMED_STOPPED 才允许 control-terminalize running Step
+12. ALREADY_COMPLETED 但 lifecycle 仍 RUNNING -> WAITING，不猜终态
+13. ALREADY_COMPLETED + lifecycle 已提交 -> 保留真实 Step result
+14. NOT_CANCELLABLE 保持 barrier + wait
+15. UNKNOWN interrupt 不写 CANCELLED/PREEMPTED
+16. terminal Step 永不被 control 重写
+17. remaining PENDING Steps -> CANCELLED/PREEMPTED
+18. completed Tool side effect 保持原 truth
+19. CANCEL -> execution CANCELLED
+20. PREEMPT -> execution PREEMPTED
+21. PREEMPT 只返回 handoff_required，不启动 Runtime cycle
+22. Resource Lock policy 不进入 IU7
+23. Recovery/Checkpoint 不进入 IU7
+24. Aggregation/M6 不进入 IU7
 ~~~
 
 ## 18. 设计结论

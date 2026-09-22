@@ -238,9 +238,7 @@ def test_new_acquisition_can_acquire_after_exact_release() -> None:
         )
     )
 
-    second = asyncio.run(
-        authority.acquire(_request(acquisition_id="acq-002"))
-    )
+    second = asyncio.run(authority.acquire(_request(acquisition_id="acq-002")))
 
     assert second.status is ResourceLockAcquireStatus.ACQUIRED
     assert second.lease is not None

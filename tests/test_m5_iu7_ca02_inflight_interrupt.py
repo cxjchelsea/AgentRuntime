@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
@@ -167,11 +168,10 @@ class _Controller:
         )
 
 
-@pytest.mark.asyncio
-async def test_nested_tool_interrupt_is_leaf_first_then_owner() -> None:
+def test_nested_tool_interrupt_is_leaf_first_then_owner() -> None:
     registry = InMemoryInFlightOperationRegistry()
-    await registry.register(_owner_handle())
-    await registry.register(_tool_handle())
+    asyncio.run(registry.register(_owner_handle()))
+    asyncio.run(registry.register(_tool_handle()))
     controller = _Controller(
         {
             "tool-001": InterruptOutcomeStatus.CONFIRMED_STOPPED,
@@ -183,11 +183,11 @@ async def test_nested_tool_interrupt_is_leaf_first_then_owner() -> None:
         interrupt_controller=controller,
     )
 
-    summary = await coordinator.interrupt(
+    summary = asyncio.run(coordinator.interrupt(
         execution_id="execution-001",
         step_execution_id="step-exec-001",
         signal=_signal(),
-    )
+    ))
 
     assert summary.status is HierarchicalInterruptStatus.ORDERED
     assert controller.calls == ["tool-001", "owner-001"]
@@ -197,11 +197,10 @@ async def test_nested_tool_interrupt_is_leaf_first_then_owner() -> None:
     )
 
 
-@pytest.mark.asyncio
-async def test_multiple_active_leaves_fail_closed_without_interrupt() -> None:
+def test_multiple_active_leaves_fail_closed_without_interrupt() -> None:
     registry = InMemoryInFlightOperationRegistry()
-    await registry.register(_owner_handle())
-    await registry.register(_tool_handle())
+    asyncio.run(registry.register(_owner_handle()))
+    asyncio.run(registry.register(_tool_handle()))
     await registry.register(
         _tool_handle(handle_id="tool-002", tool_call_id="call-002")
     )
@@ -211,21 +210,20 @@ async def test_multiple_active_leaves_fail_closed_without_interrupt() -> None:
         interrupt_controller=controller,
     )
 
-    summary = await coordinator.interrupt(
+    summary = asyncio.run(coordinator.interrupt(
         execution_id="execution-001",
         step_execution_id="step-exec-001",
         signal=_signal(),
-    )
+    ))
 
     assert summary.status is HierarchicalInterruptStatus.AMBIGUOUS
     assert summary.reason_codes == ("AMBIGUOUS_INFLIGHT_GRAPH",)
     assert controller.calls == []
 
 
-@pytest.mark.asyncio
-async def test_wrong_target_control_does_not_request_interrupt() -> None:
+def test_wrong_target_control_does_not_request_interrupt() -> None:
     registry = InMemoryInFlightOperationRegistry()
-    await registry.register(_owner_handle())
+    asyncio.run(registry.register(_owner_handle()))
     controller = _Controller({})
     coordinator = InFlightInterruptCoordinator(
         registry=registry,
@@ -236,39 +234,38 @@ async def test_wrong_target_control_does_not_request_interrupt() -> None:
         target_execution_id="execution-other",
     )
 
-    summary = await coordinator.interrupt(
+    summary = asyncio.run(coordinator.interrupt(
         execution_id="execution-001",
         step_execution_id="step-exec-001",
         signal=wrong_target,
-    )
+    ))
 
     assert summary.status is HierarchicalInterruptStatus.UNKNOWN
     assert summary.reason_codes == ("CONTROL_SIGNAL_TARGET_MISMATCH",)
     assert controller.calls == []
 
 
-@pytest.mark.asyncio
-async def test_in_memory_registry_is_live_only_and_identity_safe() -> None:
+def test_in_memory_registry_is_live_only_and_identity_safe() -> None:
     registry = InMemoryInFlightOperationRegistry()
     owner = _owner_handle()
 
-    assert await registry.register(owner) is True
-    assert await registry.register(owner) is False
-    assert await registry.active_chain(
+    assert asyncio.run(registry.register(owner)) is True
+    assert asyncio.run(registry.register(owner)) is False
+    assert asyncio.run(registry.active_chain(
         execution_id="execution-001",
         step_execution_id="step-exec-001",
-    ) == (owner,)
-    assert await registry.complete(
+    )) == (owner,)
+    assert asyncio.run(registry.complete(
         owner.operation_handle_id,
         completed_at=FIXED_TIME,
-    )
+    ))
     assert (
-        await registry.active_chain(
+        asyncio.run(registry.active_chain(
             execution_id="execution-001",
             step_execution_id="step-exec-001",
         )
         == ()
-    )
+    ))
 
 
 def test_handle_rejects_unparented_tool_and_naive_time() -> None:
@@ -296,21 +293,20 @@ def test_handle_rejects_unparented_tool_and_naive_time() -> None:
         )
 
 
-@pytest.mark.asyncio
-async def test_confirmed_stop_is_only_path_that_marks_running_step_affected() -> None:
+def test_confirmed_stop_is_only_path_that_marks_running_step_affected() -> None:
     registry = InMemoryInFlightOperationRegistry()
-    await registry.register(_owner_handle())
+    asyncio.run(registry.register(_owner_handle()))
     controller = _Controller(
         {"owner-001": InterruptOutcomeStatus.CONFIRMED_STOPPED}
     )
-    summary = await InFlightInterruptCoordinator(
+    summary = asyncio.run(InFlightInterruptCoordinator(
         registry=registry,
         interrupt_controller=controller,
     ).interrupt(
         execution_id="execution-001",
         step_execution_id="step-exec-001",
         signal=_signal(),
-    )
+    ))
 
     application = ExecutionControlApplicationEvaluator().evaluate(
         latched_control=_latched(),
@@ -323,21 +319,20 @@ async def test_confirmed_stop_is_only_path_that_marks_running_step_affected() ->
     assert application.preserve_running_step_result is False
 
 
-@pytest.mark.asyncio
-async def test_not_cancellable_keeps_barrier_and_waits() -> None:
+def test_not_cancellable_keeps_barrier_and_waits() -> None:
     registry = InMemoryInFlightOperationRegistry()
-    await registry.register(_owner_handle())
+    asyncio.run(registry.register(_owner_handle()))
     controller = _Controller(
         {"owner-001": InterruptOutcomeStatus.NOT_CANCELLABLE}
     )
-    summary = await InFlightInterruptCoordinator(
+    summary = asyncio.run(InFlightInterruptCoordinator(
         registry=registry,
         interrupt_controller=controller,
     ).interrupt(
         execution_id="execution-001",
         step_execution_id="step-exec-001",
         signal=_signal(),
-    )
+    ))
 
     application = ExecutionControlApplicationEvaluator().evaluate(
         latched_control=_latched(),
@@ -350,19 +345,18 @@ async def test_not_cancellable_keeps_barrier_and_waits() -> None:
     assert application.preserve_running_step_result is True
 
 
-@pytest.mark.asyncio
-async def test_unknown_interrupt_never_becomes_terminal_authority() -> None:
+def test_unknown_interrupt_never_becomes_terminal_authority() -> None:
     registry = InMemoryInFlightOperationRegistry()
-    await registry.register(_owner_handle())
+    asyncio.run(registry.register(_owner_handle()))
     controller = _Controller({"owner-001": InterruptOutcomeStatus.UNKNOWN})
-    summary = await InFlightInterruptCoordinator(
+    summary = asyncio.run(InFlightInterruptCoordinator(
         registry=registry,
         interrupt_controller=controller,
     ).interrupt(
         execution_id="execution-001",
         step_execution_id="step-exec-001",
         signal=_signal(),
-    )
+    ))
 
     application = ExecutionControlApplicationEvaluator().evaluate(
         latched_control=_latched(),
@@ -375,21 +369,20 @@ async def test_unknown_interrupt_never_becomes_terminal_authority() -> None:
     assert application.preserve_running_step_result is True
 
 
-@pytest.mark.asyncio
-async def test_already_completed_waits_until_real_lifecycle_commit() -> None:
+def test_already_completed_waits_until_real_lifecycle_commit() -> None:
     registry = InMemoryInFlightOperationRegistry()
-    await registry.register(_owner_handle())
+    asyncio.run(registry.register(_owner_handle()))
     controller = _Controller(
         {"owner-001": InterruptOutcomeStatus.ALREADY_COMPLETED}
     )
-    summary = await InFlightInterruptCoordinator(
+    summary = asyncio.run(InFlightInterruptCoordinator(
         registry=registry,
         interrupt_controller=controller,
     ).interrupt(
         execution_id="execution-001",
         step_execution_id="step-exec-001",
         signal=_signal(),
-    )
+    ))
 
     application = ExecutionControlApplicationEvaluator().evaluate(
         latched_control=_latched(),
@@ -404,21 +397,20 @@ async def test_already_completed_waits_until_real_lifecycle_commit() -> None:
     assert application.preserve_running_step_result is True
 
 
-@pytest.mark.asyncio
-async def test_already_completed_after_lifecycle_commit_preserves_real_result() -> None:
+def test_already_completed_after_lifecycle_commit_preserves_real_result() -> None:
     registry = InMemoryInFlightOperationRegistry()
-    await registry.register(_owner_handle())
+    asyncio.run(registry.register(_owner_handle()))
     controller = _Controller(
         {"owner-001": InterruptOutcomeStatus.ALREADY_COMPLETED}
     )
-    summary = await InFlightInterruptCoordinator(
+    summary = asyncio.run(InFlightInterruptCoordinator(
         registry=registry,
         interrupt_controller=controller,
     ).interrupt(
         execution_id="execution-001",
         step_execution_id="step-exec-001",
         signal=_signal(),
-    )
+    ))
     before = _prepared(include_pending=False)
     committed = _prepared(
         running_status=StepExecutionStatus.SUCCESS,
@@ -440,21 +432,20 @@ async def test_already_completed_after_lifecycle_commit_preserves_real_result() 
     assert committed.steps[0].output == {"side_effect": "already_happened"}
 
 
-@pytest.mark.asyncio
-async def test_completed_running_step_with_pending_work_only_affects_pending() -> None:
+def test_completed_running_step_with_pending_work_only_affects_pending() -> None:
     registry = InMemoryInFlightOperationRegistry()
-    await registry.register(_owner_handle())
+    asyncio.run(registry.register(_owner_handle()))
     controller = _Controller(
         {"owner-001": InterruptOutcomeStatus.ALREADY_COMPLETED}
     )
-    summary = await InFlightInterruptCoordinator(
+    summary = asyncio.run(InFlightInterruptCoordinator(
         registry=registry,
         interrupt_controller=controller,
     ).interrupt(
         execution_id="execution-001",
         step_execution_id="step-exec-001",
         signal=_signal(),
-    )
+    ))
     before = _prepared()
     committed = _prepared(
         running_status=StepExecutionStatus.SUCCESS,

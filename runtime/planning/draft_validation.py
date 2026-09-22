@@ -198,7 +198,9 @@ class ActionPlanDraftAssembler:
                 {
                     "action_id": binding.action_id,
                     "skill_id": binding.skill_id,
+                    "skill_version": binding.skill_version,
                     "workflow_id": binding.workflow_id,
+                    "workflow_version": binding.workflow_version,
                 }
                 for binding in selection.bindings
             ],
@@ -215,6 +217,7 @@ class ActionPlanDraftAssembler:
             "tool_calls": [
                 {
                     "tool_id": call.tool_id,
+                    "tool_version": call.tool_version,
                     "required": call.required,
                     "required_by_skills": list(call.required_by_skills),
                     "timeout_policy": call.timeout_policy,
@@ -625,7 +628,9 @@ class PlanValidator:
                 raise PlanValidationError("capability binding must be object")
             action_id = binding.get("action_id")
             skill_id = binding.get("skill_id")
+            skill_version = binding.get("skill_version")
             workflow_id = binding.get("workflow_id")
+            workflow_version = binding.get("workflow_version")
             if not isinstance(action_id, str) or action_id not in actions:
                 raise PlanValidationError(
                     "capability binding must reference a Draft Action"
@@ -641,15 +646,42 @@ class PlanValidator:
                     raise PlanValidationError(
                         "capability binding references unavailable Skill"
                     )
+                if not isinstance(skill_version, str) or not skill_version.strip():
+                    raise PlanValidationError(
+                        "capability binding Skill requires pinned skill_version"
+                    )
+                if skills[skill_id].version != skill_version:
+                    raise PlanValidationError(
+                        "capability binding skill_id/version does not match Registry"
+                    )
                 if action_id not in (skills[skill_id].supported_actions or ()):
                     raise PlanValidationError(
                         "capability Skill does not support bound Action"
                     )
-            if workflow_id is not None and (
-                not isinstance(workflow_id, str) or workflow_id not in workflows
-            ):
+            elif skill_version is not None:
                 raise PlanValidationError(
-                    "capability binding references unavailable Workflow"
+                    "capability binding without skill_id cannot carry skill_version"
+                )
+
+            if workflow_id is not None:
+                if not isinstance(workflow_id, str) or workflow_id not in workflows:
+                    raise PlanValidationError(
+                        "capability binding references unavailable Workflow"
+                    )
+                if (
+                    not isinstance(workflow_version, str)
+                    or not workflow_version.strip()
+                ):
+                    raise PlanValidationError(
+                        "capability binding Workflow requires pinned workflow_version"
+                    )
+                if workflows[workflow_id].version != workflow_version:
+                    raise PlanValidationError(
+                        "capability binding workflow_id/version does not match Registry"
+                    )
+            elif workflow_version is not None:
+                raise PlanValidationError(
+                    "capability binding without workflow_id cannot carry workflow_version"
                 )
 
         if bound_actions != actions:
@@ -705,11 +737,18 @@ class PlanValidator:
             if not isinstance(call, dict):
                 raise PlanValidationError("tool call plan must be object")
             tool_id = call.get("tool_id")
+            tool_version = call.get("tool_version")
             required = call.get("required")
             if not isinstance(required, bool):
                 raise PlanValidationError("tool call required must be bool")
             if not isinstance(tool_id, str) or tool_id not in tools:
                 raise PlanValidationError("tool plan references unavailable Tool")
+            if not isinstance(tool_version, str) or not tool_version.strip():
+                raise PlanValidationError("tool plan requires pinned tool_version")
+            if tools[tool_id].version != tool_version:
+                raise PlanValidationError(
+                    "tool plan tool_id/version does not match ToolRegistry"
+                )
             if tool_id in seen:
                 raise PlanValidationError("tool plan must not duplicate tool_id")
             seen.add(tool_id)

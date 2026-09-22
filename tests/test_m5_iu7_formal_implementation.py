@@ -115,10 +115,7 @@ class InFlightIds:
         kind: InFlightOperationKind,
         capability_id: str,
     ) -> str:
-        return (
-            f"{execution_id}:{step_execution_id}:"
-            f"{kind.value}:{capability_id}:owner"
-        )
+        return f"{execution_id}:{step_execution_id}:{kind.value}:{capability_id}:owner"
 
     def new_tool_handle_id(
         self,
@@ -131,8 +128,7 @@ class InFlightIds:
     ) -> str:
         del parent_handle_id
         return (
-            f"{execution_id}:{step_execution_id}:TOOL:"
-            f"{tool_call_id}:{physical_attempt}"
+            f"{execution_id}:{step_execution_id}:TOOL:{tool_call_id}:{physical_attempt}"
         )
 
 
@@ -230,9 +226,7 @@ def _prepared(*, running: bool = True) -> PreparedExecution:
             step_id="step-002",
             action="running" if running else "not-started",
             status=(
-                StepExecutionStatus.RUNNING
-                if running
-                else StepExecutionStatus.PENDING
+                StepExecutionStatus.RUNNING if running else StepExecutionStatus.PENDING
             ),
             skill_id="skill-002",
             started_at=START + timedelta(seconds=2) if running else None,
@@ -336,13 +330,18 @@ def test_formal_cancel_path_interrupts_owner_and_terminalizes_execution() -> Non
 
         result = await coordinator.watch_and_apply(prepared)
 
-        assert result.application.disposition is ExecutionControlDisposition.READY_TO_TERMINALIZE
+        assert (
+            result.application.disposition
+            is ExecutionControlDisposition.READY_TO_TERMINALIZE
+        )
         assert result.lifecycle_mutated is True
         assert result.prepared.execution_record.status == "CANCELLED"
         assert result.prepared.steps[0] is prepared.steps[0]
         assert result.prepared.steps[1].status is StepExecutionStatus.CANCELLED
         assert result.prepared.steps[2].status is StepExecutionStatus.CANCELLED
-        assert [item.operation_handle_id for item in controller.handles] == ["owner-001"]
+        assert [item.operation_handle_id for item in controller.handles] == [
+            "owner-001"
+        ]
         stored = await store.load("execution-001")
         assert stored is not None
         assert stored.status == "CANCELLED"
@@ -419,7 +418,10 @@ def test_already_completed_waits_then_reconciles_real_completion() -> None:
         )
 
         waiting = await coordinator.watch_and_apply(prepared)
-        assert waiting.application.disposition is ExecutionControlDisposition.WAITING_IN_FLIGHT
+        assert (
+            waiting.application.disposition
+            is ExecutionControlDisposition.WAITING_IN_FLIGHT
+        )
         assert waiting.lifecycle_mutated is False
 
         real_completion = replace(
@@ -553,9 +555,12 @@ def test_formal_executor_registers_owner_and_nested_tool_chain() -> None:
         tool.release.set()
         outcome = await task
         assert outcome.status.value == "EXECUTED"
-        assert await registry.active_chain(
-            execution_id="execution-iu4",
-            step_execution_id="step-execution-001",
-        ) == ()
+        assert (
+            await registry.active_chain(
+                execution_id="execution-iu4",
+                step_execution_id="step-execution-001",
+            )
+            == ()
+        )
 
     asyncio.run(scenario())

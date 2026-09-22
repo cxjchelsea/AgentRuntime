@@ -12,12 +12,12 @@ import hashlib
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from runtime.execution.invocation import ToolInvocationJournalEntry
-from runtime.execution.models import M5ToolResult, ToolExecutionStatus
+from runtime.execution.models import M5ToolResult, StepExecutionStatus, ToolExecutionStatus
 from runtime.execution.reliability import (
-    AsyncTimeoutRunner,
     ExecutionClock,
     IdempotencyMode,
     ReplaySafetyContext,
@@ -27,7 +27,6 @@ from runtime.execution.reliability import (
     RetryDecision,
     RetryDecisionContext,
     RetryDecisionStatus,
-    RetrySleeper,
     TimeoutRunResult,
     TimeoutRunStatus,
 )
@@ -47,22 +46,28 @@ from runtime.execution.reliability_boundary import (
     ToolOperationOccurrenceDecision,
     ToolOperationOccurrenceStatus,
 )
-from runtime.execution.result_collection import StepAttemptStatus
+from runtime.execution.result_collection import StepAttemptObservation, StepAttemptStatus
 from runtime.execution.stores import (
     IdempotencyCompletionDecision,
     IdempotencyCompletionStatus,
     IdempotencyRecord,
     IdempotencyStatus,
+    IdempotencyStore,
 )
 
 
-class UtcExecutionClock(ExecutionClock):
+class UtcExecutionClock:
     def now(self) -> datetime:
         return datetime.now(UTC)
 
 
-class AsyncioTimeoutRunner(AsyncTimeoutRunner):
-    async def run(self, *, timeout_seconds: float, operation):
+class AsyncioOperationTimeoutRunner:
+    async def run(
+        self,
+        *,
+        timeout_seconds: float,
+        operation: Callable[[], Awaitable[Any]],
+    ) -> TimeoutRunResult[Any]:
         if timeout_seconds <= 0:
             return TimeoutRunResult(
                 status=TimeoutRunStatus.TIMED_OUT,
@@ -82,7 +87,7 @@ class AsyncioTimeoutRunner(AsyncTimeoutRunner):
         )
 
 
-class AsyncioRetrySleeper(RetrySleeper):
+class AsyncioRetrySleeper:
     async def sleep(self, seconds: float) -> None:
         if seconds < 0:
             raise ValueError("retry sleep seconds must be >= 0")
@@ -106,7 +111,11 @@ class ExponentialBackoffCalculator:
 
 
 class BasicRetryDecisionEvaluator:
-    def __init__(self, *, backoff_calculator=None) -> None:
+    def __init__(
+        self,
+        *,
+        backoff_calculator: ExponentialBackoffCalculator | None = None,
+    ) -> None:
         self._backoff = backoff_calculator or ExponentialBackoffCalculator()
 
     def evaluate(
@@ -616,7 +625,7 @@ class InMemoryStepAttemptSequenceAuthority:
 
 
 class BasicStepReplaySafetyEvaluator:
-    def __init__(self, *, idempotency_store) -> None:
+    def __init__(self, *, idempotency_store: IdempotencyStore) -> None:
         self._idempotency_store = idempotency_store
 
     async def evaluate(self, request: StepReplaySafetyRequest) -> ReplaySafetyDecision:
@@ -675,7 +684,7 @@ class BasicStepReliabilityEvaluator:
     def evaluate(
         self,
         *,
-        observation,
+        observation: StepAttemptObservation,
         replay_safety: ReplaySafetyDecision | None,
         retry_decision: RetryDecision | None,
     ) -> StepReliabilityDecision:
@@ -742,7 +751,7 @@ class BasicStepFinalizationEvaluator:
     def evaluate(
         self,
         *,
-        observation,
+        observation: StepAttemptObservation,
         reliability_decision: StepReliabilityDecision,
     ) -> StepFinalizationDecision:
         if reliability_decision.disposition is StepReliabilityDisposition.KEEP_RUNNING:
@@ -776,8 +785,6 @@ class BasicStepFinalizationEvaluator:
                 disposition=StepFinalizationDisposition.UNKNOWN,
                 reason_codes=("STEP_STATUS_REQUIRES_LATER_AUTHORITY",),
             )
-        from runtime.execution.models import StepExecutionStatus
-
         return StepFinalizationDecision(
             disposition=StepFinalizationDisposition.FINALIZE,
             reason_codes=("STEP_FINALIZATION_AUTHORIZED",),

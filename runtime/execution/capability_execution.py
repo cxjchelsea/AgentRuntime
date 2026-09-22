@@ -682,6 +682,7 @@ class CoreApprovedToolInvoker(
         output_status: ToolPayloadValidationStatus | None,
         idempotency_key: str | None,
         operation_key: str | None,
+        operation_fingerprint: str | None,
         raw_result: M5ToolResult | None = None,
     ) -> ToolAttemptObservation:
         attempt_observation = ToolAttemptObservation(
@@ -727,6 +728,7 @@ class CoreApprovedToolInvoker(
                     input_validation_status=input_status,
                     output_validation_status=output_status,
                     operation_key=operation_key,
+                    operation_fingerprint=operation_fingerprint,
                     idempotency_key=idempotency_key,
                     attempts=(attempt_observation,),
                 )

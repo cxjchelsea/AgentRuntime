@@ -99,6 +99,13 @@ class IdempotencyStore(Protocol):
     async def mark_failed(self, key: str) -> None:
         """Mark a reserved operation as definitively failed with no side effect."""
 
+    async def reopen_failed(self, record: IdempotencyRecord) -> bool:
+        """Atomically transition matching FAILED provenance back to RESERVED.
+
+        The supplied record describes the exact operation provenance to reopen.
+        Return False when the stored record is not FAILED or provenance differs.
+        """
+
     async def mark_unknown(self, key: str) -> None:
         """Record that an external side effect may have happened but is unconfirmed."""
 

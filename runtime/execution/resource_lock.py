@@ -64,9 +64,7 @@ class ResourceLockOwner:
                 "tool_call_id and physical_attempt must be present together"
             )
         if has_tool and self.step_execution_id is None:
-            raise ValueError(
-                "Tool lock owner requires step_execution_id"
-            )
+            raise ValueError("Tool lock owner requires step_execution_id")
 
 
 @dataclass(frozen=True, slots=True)

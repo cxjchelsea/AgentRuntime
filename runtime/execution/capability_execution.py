@@ -69,6 +69,7 @@ from runtime.execution.reliability import (
     RetryDecisionContext,
     RetryDecisionStatus,
     RetryTriggerStatus,
+    TimeoutRunResult,
     TimeoutRunStatus,
 )
 from runtime.execution.reliability_boundary import (
@@ -705,6 +706,18 @@ class CoreApprovedToolInvoker(
         ):
             return key, None, None, "IDEMPOTENCY_PREFLIGHT_UNKNOWN"
 
+        if (
+            decision.existing_record is not None
+            and not self._idempotency_record_matches_expected(
+                record=decision.existing_record,
+                key=key,
+                resolved=resolved,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+        ):
+            return key, None, None, "IDEMPOTENCY_PROVENANCE_MISMATCH"
+
         if decision.status is IdempotencyPreflightStatus.RECOVER_COMPLETED:
             record = decision.existing_record
             if record is None:
@@ -772,6 +785,27 @@ class CoreApprovedToolInvoker(
         if not reserved:
             return key, None, None, "IDEMPOTENCY_RESERVE_CONFLICT"
         return key, record, None, None
+
+    def _idempotency_record_matches_expected(
+        self,
+        *,
+        record: IdempotencyRecord,
+        key: str,
+        resolved: ResolvedCapability,
+        operation_key: str,
+        operation_fingerprint: str,
+    ) -> bool:
+        return (
+            self._step_id is not None
+            and record.key == key
+            and record.execution_id == self._execution_context.execution_id
+            and record.step_id == self._step_id
+            and record.step_execution_id == self._step_execution_id
+            and record.tool_id == resolved.capability_id
+            and record.tool_version == resolved.version
+            and record.operation_key == operation_key
+            and record.operation_fingerprint == operation_fingerprint
+        )
 
     async def _complete_key_based_idempotency(
         self,
@@ -857,6 +891,8 @@ class CoreApprovedToolInvoker(
         )
 
         raw_result: Any
+        timeout_status: TimeoutRunStatus | None = None
+        execution_exception = False
         runtime = self._reliability_runtime
         if runtime is None:
             raise RuntimeError("reliability runtime is not configured")
@@ -869,7 +905,7 @@ class CoreApprovedToolInvoker(
                 )
             except Exception:  # noqa: BLE001
                 raw_result = None
-                timeout_status = None
+                execution_exception = True
         else:
             try:
                 timeout_result = await runtime.timeout_runner.run(
@@ -881,9 +917,9 @@ class CoreApprovedToolInvoker(
                 )
             except Exception:  # noqa: BLE001
                 timeout_result = None
-            if timeout_result is None or not isinstance(
-                timeout_result.status,
-                TimeoutRunStatus,
+            if (
+                not isinstance(timeout_result, TimeoutRunResult)
+                or not isinstance(timeout_result.status, TimeoutRunStatus)
             ):
                 raw_result = None
                 timeout_status = TimeoutRunStatus.UNKNOWN
@@ -894,7 +930,7 @@ class CoreApprovedToolInvoker(
                 raw_result = None
                 timeout_status = timeout_result.status
 
-        if timeout_seconds is None and raw_result is None:
+        if timeout_seconds is None and execution_exception:
             result = self._generated_result(
                 tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
@@ -2166,6 +2202,19 @@ class StepCapabilityExecutor:
                         tool_invoker,
                     ),
                 )
+                if (
+                    not isinstance(timeout_result, TimeoutRunResult)
+                    or not isinstance(timeout_result.status, TimeoutRunStatus)
+                ):
+                    return self._outcome(
+                        step=step,
+                        step_snapshot=step_snapshot,
+                        resolved=resolved,
+                        status=CapabilityExecutionStatus.UNKNOWN,
+                        reason_codes=("SKILL_TIMEOUT_RUNNER_INVALID_RESULT",),
+                        tool_results=self._journal_results(tool_invoker),
+                        tool_journal=tool_invoker.entries(),
+                    )
                 if timeout_result.status is TimeoutRunStatus.TIMED_OUT:
                     journal_results = self._journal_results(tool_invoker)
                     result = M5SkillResult(
@@ -2339,6 +2388,19 @@ class StepCapabilityExecutor:
                         tool_invoker,
                     ),
                 )
+                if (
+                    not isinstance(timeout_result, TimeoutRunResult)
+                    or not isinstance(timeout_result.status, TimeoutRunStatus)
+                ):
+                    return self._outcome(
+                        step=step,
+                        step_snapshot=step_snapshot,
+                        resolved=resolved,
+                        status=CapabilityExecutionStatus.UNKNOWN,
+                        reason_codes=("WORKFLOW_TIMEOUT_RUNNER_INVALID_RESULT",),
+                        tool_results=self._journal_results(tool_invoker),
+                        tool_journal=tool_invoker.entries(),
+                    )
                 if timeout_result.status is TimeoutRunStatus.TIMED_OUT:
                     result = M5WorkflowResult(
                         workflow_instance_id=workflow_instance_id,

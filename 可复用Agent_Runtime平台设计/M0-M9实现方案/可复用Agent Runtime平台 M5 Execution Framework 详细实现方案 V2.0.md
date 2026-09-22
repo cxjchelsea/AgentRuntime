@@ -2469,6 +2469,8 @@ create_help_event
 
 # Step 9：Cancellation / Preemption
 
+> Implementation Unit：**M5-IU7**。IU7 只消费 Runtime/M2 已经解析好的 CANCEL/PREEMPT authority，不比较 priority、不重算 Policy、不重新解释 IU6 timeout/retry policy。
+
 每个 ExecutionContext 必须有：
 
 ```text
@@ -2569,6 +2571,8 @@ Cleanup
 
 # Step 10：Concurrency / Resource Lock
 
+> Implementation Unit：**M5-IU8**。
+
 系统可能同时存在：
 
 ```text
@@ -2642,6 +2646,8 @@ tool_plan.execution_mode
 ---
 
 # Step 11：Persistence / Checkpoint / Recovery
+
+> Implementation Unit：**M5-IU9**。
 
 关键 Execution 不能只存在内存。
 
@@ -2744,6 +2750,8 @@ UNKNOWN
 ---
 
 # Step 12：Execution Aggregation
+
+> Implementation Unit：**M5-IU10**。
 
 所有 Step 完成、失败或中断后：
 

@@ -165,6 +165,12 @@ class IdempotencyResultResolver(Protocol):
 
 
 class ResourceLockProvider(Protocol):
+    """Legacy readiness seed retained for backward compatibility.
+
+    M5-IU8 formal lock authority must use runtime.execution.resource_lock.
+    The bool/None surface is intentionally insufficient for audited lock decisions.
+    """
+
     async def acquire(
         self,
         resource_id: str,

@@ -1997,12 +1997,14 @@ class StepCapabilityExecutor:
         input_validator: ToolInputValidator,
         output_validator: ToolOutputValidator,
         identifier_factory: CapabilityInvocationIdentifierFactory,
+        reliability_runtime: ToolReliabilityRuntime | None = None,
     ) -> None:
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
         self._input_validator = input_validator
         self._output_validator = output_validator
         self._identifier_factory = identifier_factory
+        self._reliability_runtime = reliability_runtime
 
     async def execute(
         self,
@@ -2012,7 +2014,17 @@ class StepCapabilityExecutor:
         step_snapshot: StepLifecycleSnapshot,
         resolved: ResolvedStepCapabilities,
         execution_context: ExecutionContext,
+        attempt_number: int = 1,
+        prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
     ) -> StepCapabilityExecutionOutcome:
+        if attempt_number < 1:
+            return self._outcome(
+                step=step,
+                step_snapshot=step_snapshot,
+                resolved=resolved,
+                status=CapabilityExecutionStatus.UNKNOWN,
+                reason_codes=("STEP_ATTEMPT_NUMBER_INVALID",),
+            )
         authority_error = self._validate_authority(
             approved_plan=approved_plan,
             step=step,
@@ -2048,6 +2060,10 @@ class StepCapabilityExecutor:
                 input_validator=self._input_validator,
                 output_validator=self._output_validator,
                 identifier_factory=self._identifier_factory,
+                step_id=step.step_id,
+                step_attempt_number=attempt_number,
+                prior_attempt_journal=prior_attempt_journal,
+                reliability_runtime=self._reliability_runtime,
             )
         except (TypeError, ValueError):
             return self._outcome(

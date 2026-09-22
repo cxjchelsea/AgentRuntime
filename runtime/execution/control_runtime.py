@@ -83,7 +83,7 @@ class ExecutionControlCoordinator:
                 execution_id=prepared.execution_context.execution_id,
                 cancellation_token=prepared.execution_context.cancellation_token,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ExecutionControlRuntimeError(
                 "control watcher failed before exact authority was observed"
             ) from exc
@@ -133,7 +133,7 @@ class ExecutionControlCoordinator:
                 observed=observed,
                 latched_at=latched_at,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ExecutionControlRuntimeError("control latch failed") from exc
 
         if not isinstance(latch_decision, ExecutionControlLatchDecision):

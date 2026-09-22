@@ -37,17 +37,23 @@ from runtime.execution import (
     StepCapabilityExecutor,
     StepExecutionStatus,
     StepLifecycleSnapshot,
+    TimeoutRunResult,
+    TimeoutRunStatus,
     ToolExecutionStatus,
+    WorkflowExecutionStatus,
 )
 from runtime.execution.models import ExecutionRecord
 from tests.test_m5_iu4_capability_execution import (
     CountingIdentifierFactory,
+    RecordingSkill,
+    RecordingWorkflow,
     StaticPermissionEvaluator,
     StaticPermissionProvider,
     StaticValidator,
     _approved_step,
     _skill_resolved,
     _snapshot,
+    _workflow_resolved,
     _tool,
 )
 
@@ -147,6 +153,15 @@ class BlockingTool:
             status=ToolExecutionStatus.SUCCESS,
             data={"ok": True},
             attempt=request.attempt,
+        )
+
+
+class ReportingTimeoutRunner:
+    async def run(self, *, timeout_seconds: float, operation):
+        del timeout_seconds, operation
+        return TimeoutRunResult(
+            status=TimeoutRunStatus.TIMED_OUT,
+            reason_codes=("TEST_TIMEOUT_UNCONFIRMED",),
         )
 
 
@@ -565,5 +580,94 @@ def test_formal_executor_registers_owner_and_nested_tool_chain() -> None:
             )
             == ()
         )
+
+    asyncio.run(scenario())
+
+
+def test_workflow_waiting_retains_owner_inflight_handle() -> None:
+    async def scenario() -> None:
+        registry = InMemoryInFlightOperationRegistry()
+        workflow = RecordingWorkflow(status=WorkflowExecutionStatus.WAITING)
+        approved_plan, step = _approved_step(owner=CapabilityExecutionOwner.WORKFLOW)
+        resolved = _workflow_resolved(workflow)
+
+        executor = StepCapabilityExecutor(
+            permission_context_provider=StaticPermissionProvider(),
+            permission_evaluator=StaticPermissionEvaluator(),
+            input_validator=StaticValidator(),
+            output_validator=StaticValidator(),
+            identifier_factory=CountingIdentifierFactory(),
+            inflight_registry=registry,
+            inflight_identifier_factory=InFlightIds(),
+            inflight_clock=lambda: START + timedelta(seconds=3),
+        )
+        outcome = await executor.execute(
+            approved_plan=approved_plan,
+            step=step,
+            step_snapshot=_snapshot(step),
+            resolved=resolved,
+            execution_context=ExecutionContext(
+                execution_id="execution-iu4",
+                plan_id=approved_plan.plan_id,
+                request_id=approved_plan.request_id,
+                session_id="session-001",
+                identity_scope="scope-001",
+                policy_snapshot={"allowed": True},
+            ),
+        )
+
+        assert outcome.status.value == "WAITING"
+        chain = await registry.active_chain(
+            execution_id="execution-iu4",
+            step_execution_id="step-execution-001",
+        )
+        assert len(chain) == 1
+        assert chain[0].kind is InFlightOperationKind.WORKFLOW
+
+    asyncio.run(scenario())
+
+
+def test_owner_timeout_without_stop_confirmation_retains_inflight_handle() -> None:
+    async def scenario() -> None:
+        registry = InMemoryInFlightOperationRegistry()
+        skill = RecordingSkill()
+        approved_plan, step = _approved_step(owner=CapabilityExecutionOwner.SKILL)
+        resolved = _skill_resolved(skill)
+
+        executor = StepCapabilityExecutor(
+            permission_context_provider=StaticPermissionProvider(),
+            permission_evaluator=StaticPermissionEvaluator(),
+            input_validator=StaticValidator(),
+            output_validator=StaticValidator(),
+            identifier_factory=CountingIdentifierFactory(),
+            inflight_registry=registry,
+            inflight_identifier_factory=InFlightIds(),
+            inflight_clock=lambda: START + timedelta(seconds=3),
+        )
+        outcome = await executor.execute(
+            approved_plan=approved_plan,
+            step=step,
+            step_snapshot=_snapshot(step),
+            resolved=resolved,
+            execution_context=ExecutionContext(
+                execution_id="execution-iu4",
+                plan_id=approved_plan.plan_id,
+                request_id=approved_plan.request_id,
+                session_id="session-001",
+                identity_scope="scope-001",
+                policy_snapshot={"allowed": True},
+            ),
+            owner_timeout_seconds=1.0,
+            owner_timeout_runner=ReportingTimeoutRunner(),
+        )
+
+        assert outcome.skill_result is not None
+        assert outcome.skill_result.status is SkillExecutionStatus.TIMEOUT
+        chain = await registry.active_chain(
+            execution_id="execution-iu4",
+            step_execution_id="step-execution-001",
+        )
+        assert len(chain) == 1
+        assert chain[0].kind is InFlightOperationKind.SKILL
 
     asyncio.run(scenario())

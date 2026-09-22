@@ -102,6 +102,7 @@ M6 handoff                      -> after M5-IU10 / M5 Closure
 
 ~~~text
 M5 REMAINING IU MAPPING = FROZEN
+M5 REMAINING IU MAPPING INDEPENDENT REVIEW = PASSED
 
 M5-IU7  = STEP 9
 M5-IU8  = STEP 10

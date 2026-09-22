@@ -219,6 +219,7 @@ def test_physical_attempt_cannot_start_at_attempt_two() -> None:
                 physical_attempt=2,
                 idempotency_key="idem-001",
                 operation_key="operation-001",
+                operation_fingerprint="sha256:abc",
             )
         )
 

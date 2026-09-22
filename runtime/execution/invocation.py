@@ -80,6 +80,7 @@ class ToolAttemptObservation:
     physical_attempt: int
     result: M5ToolResult
     operation_key: str | None = None
+    operation_fingerprint: str | None = None
     idempotency_key: str | None = None
     raw_result: M5ToolResult | None = None
     permission_status: PermissionDecisionStatus | None = None
@@ -96,6 +97,20 @@ class ToolAttemptObservation:
             raise ValueError("physical_attempt must be >= 1")
         if self.operation_key is not None and not self.operation_key.strip():
             raise ValueError("operation_key must not be blank when present")
+        if (
+            self.operation_fingerprint is not None
+            and not self.operation_fingerprint.strip()
+        ):
+            raise ValueError(
+                "operation_fingerprint must not be blank when present"
+            )
+        if (
+            self.operation_fingerprint is not None
+            and not self.operation_fingerprint.strip()
+        ):
+            raise ValueError(
+                "operation_fingerprint must not be blank when present"
+            )
         if self.idempotency_key is not None and not self.idempotency_key.strip():
             raise ValueError("idempotency_key must not be blank when present")
         if self.result.tool_call_id != self.logical_tool_call_id:
@@ -133,6 +148,7 @@ class PhysicalToolAttemptExecutor(Protocol):
         physical_attempt: int,
         idempotency_key: str | None,
         operation_key: str | None,
+        operation_fingerprint: str | None,
     ) -> ToolAttemptObservation:
         """Execute exactly one physical attempt; never decide whether to retry."""
 
@@ -148,6 +164,7 @@ class ToolInvocationJournalEntry:
     input_validation_status: ToolPayloadValidationStatus | None = None
     output_validation_status: ToolPayloadValidationStatus | None = None
     operation_key: str | None = None
+    operation_fingerprint: str | None = None
     idempotency_key: str | None = None
     attempts: tuple[ToolAttemptObservation, ...] = ()
 
@@ -189,6 +206,10 @@ class ToolInvocationJournalEntry:
                 if attempt.operation_key != self.operation_key:
                     raise ValueError(
                         "Tool journal attempt operation_key must stay stable"
+                    )
+                if attempt.operation_fingerprint != self.operation_fingerprint:
+                    raise ValueError(
+                        "Tool journal attempt operation_fingerprint must stay stable"
                     )
                 if attempt.idempotency_key != self.idempotency_key:
                     raise ValueError(

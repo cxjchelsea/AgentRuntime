@@ -252,6 +252,13 @@ class ExecutionControlLifecycleTransitioner:
                 raise ExecutionControlLifecycleError(
                     "late control no-op cannot claim affected Steps"
                 )
+            if any(
+                step.status not in self._TERMINAL_STEP_STATUSES
+                for step in prepared.steps
+            ):
+                raise ExecutionControlLifecycleError(
+                    "ALREADY_TERMINAL requires all Steps terminal"
+                )
             return
 
         if (
@@ -289,6 +296,10 @@ class ExecutionControlLifecycleTransitioner:
         if summary.status is not HierarchicalInterruptStatus.ORDERED:
             raise ExecutionControlLifecycleError(
                 "RUNNING Step requires ordered interrupt evidence"
+            )
+        if summary.execution_id != application.signal.target_execution_id:
+            raise ExecutionControlLifecycleError(
+                "interrupt evidence does not match execution"
             )
         if summary.step_execution_id != step.step_execution_id:
             raise ExecutionControlLifecycleError(

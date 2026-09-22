@@ -14,6 +14,8 @@ from runtime.execution import (
     CapabilityReferenceSource,
     CoreApprovedToolInvoker,
     ExecutionPermissionContext,
+    IdempotencyPreflightDecision,
+    IdempotencyPreflightStatus,
     IdempotencyRecord,
     IdempotencyStatus,
     M5ToolResult,
@@ -32,6 +34,8 @@ from runtime.execution import (
     ToolOperationCorrelationDecision,
     ToolOperationCorrelationKey,
     ToolOperationCorrelationStatus,
+    ToolOperationOccurrenceDecision,
+    ToolOperationOccurrenceStatus,
     ToolPayloadValidationDecision,
     ToolPayloadValidationStatus,
 )
@@ -416,6 +420,61 @@ def test_correlation_requires_core_identity_or_explicit_unknown() -> None:
             operation_key=ToolOperationCorrelationKey("invented"),
             logical_tool_call_id="invented-call",
             operation_occurrence=1,
+        )
+
+
+def test_idempotency_preflight_requires_status_record_alignment() -> None:
+    completed = _record(
+        IdempotencyStatus.COMPLETED,
+        result_reference="result://tool/001",
+    )
+    decision = IdempotencyPreflightDecision(
+        status=IdempotencyPreflightStatus.RECOVER_COMPLETED,
+        reason_codes=("IDEMPOTENCY_COMPLETED",),
+        existing_record=completed,
+    )
+    assert decision.existing_record is completed
+
+    with pytest.raises(ValueError, match="does not match record status"):
+        IdempotencyPreflightDecision(
+            status=IdempotencyPreflightStatus.REOPEN_FAILED,
+            reason_codes=("WRONG_STATUS",),
+            existing_record=completed,
+        )
+
+
+def test_reserve_new_preflight_cannot_carry_existing_record() -> None:
+    with pytest.raises(ValueError, match="RESERVE_NEW"):
+        IdempotencyPreflightDecision(
+            status=IdempotencyPreflightStatus.RESERVE_NEW,
+            reason_codes=("NEW_OPERATION",),
+            existing_record=_record(IdempotencyStatus.RESERVED),
+        )
+
+
+def test_unknown_idempotency_preflight_stays_fail_closed() -> None:
+    unknown = _record(IdempotencyStatus.UNKNOWN)
+    decision = IdempotencyPreflightDecision(
+        status=IdempotencyPreflightStatus.FAIL_UNKNOWN,
+        reason_codes=("IDEMPOTENCY_STATE_UNKNOWN",),
+        existing_record=unknown,
+    )
+    assert decision.status is IdempotencyPreflightStatus.FAIL_UNKNOWN
+
+
+def test_occurrence_authority_decision_never_invents_unknown_occurrence() -> None:
+    claimed = ToolOperationOccurrenceDecision(
+        status=ToolOperationOccurrenceStatus.CLAIMED,
+        reason_codes=("OCCURRENCE_CLAIMED",),
+        occurrence=2,
+    )
+    assert claimed.occurrence == 2
+
+    with pytest.raises(ValueError, match="must not invent occurrence"):
+        ToolOperationOccurrenceDecision(
+            status=ToolOperationOccurrenceStatus.UNKNOWN,
+            reason_codes=("OCCURRENCE_UNKNOWN",),
+            occurrence=1,
         )
 
 

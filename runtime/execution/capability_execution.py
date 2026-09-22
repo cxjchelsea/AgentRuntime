@@ -1683,21 +1683,84 @@ class CoreApprovedToolInvoker(
         )
 
         try:
-            raw_result = await tool_implementation.invoke(
-                request,
-                self._execution_context,
+            inflight_handle = await self._begin_tool_inflight(
+                resolved=resolved,
+                logical_tool_call_id=logical_tool_call_id,
+                physical_attempt=physical_attempt,
             )
-        except Exception:  # noqa: BLE001
+        except ToolInvocationBoundaryError as exc:
             result = self._generated_result(
                 tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
-                error_code="TOOL_EXECUTION_EXCEPTION",
+                error_code=exc.reason_code,
+                reason_codes=(exc.reason_code,),
                 attempt=physical_attempt,
             )
             return self._append_journal_attempt(
                 resolved=resolved,
                 result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        try:
+            raw_result = await tool_implementation.invoke(
+                request,
+                self._execution_context,
+            )
+        except Exception:  # noqa: BLE001
+            completion_ok = await self._complete_tool_inflight(inflight_handle)
+            error_code = (
+                "TOOL_EXECUTION_EXCEPTION"
+                if completion_ok
+                else "INFLIGHT_TOOL_COMPLETION_UNKNOWN"
+            )
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code=error_code,
+                reason_codes=(error_code,),
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        completion_ok = await self._complete_tool_inflight(inflight_handle)
+        raw_identity_valid = (
+            isinstance(raw_result, M5ToolResult)
+            and isinstance(raw_result.status, ToolExecutionStatus)
+            and raw_result.tool_call_id == logical_tool_call_id
+            and raw_result.tool_id == tool_id
+            and raw_result.attempt == physical_attempt
+        )
+        if not completion_ok:
+            error_code = "INFLIGHT_TOOL_COMPLETION_UNKNOWN"
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code=error_code,
+                reason_codes=(error_code,),
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                raw_result=raw_result if raw_identity_valid else None,
                 permission_status=permission_status,
                 input_status=input_decision.status,
                 output_status=None,
@@ -1796,6 +1859,118 @@ class CoreApprovedToolInvoker(
             operation_key=operation_key,
             operation_fingerprint=operation_fingerprint,
         )
+
+    async def _begin_tool_inflight(
+        self,
+        *,
+        resolved: ResolvedCapability,
+        logical_tool_call_id: str,
+        physical_attempt: int,
+    ) -> InFlightOperationHandle | None:
+        registry = self._inflight_registry
+        if registry is None:
+            return None
+
+        factory = self._inflight_identifier_factory
+        parent_handle_id = self._inflight_parent_handle_id
+        if factory is None or parent_handle_id is None:
+            self._record_fault("INFLIGHT_TOOL_AUTHORITY_MISSING")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_TOOL_AUTHORITY_MISSING",
+                "Tool in-flight authority is incomplete",
+            )
+
+        started_at = self._inflight_now()
+        try:
+            handle_id = factory.new_tool_handle_id(
+                execution_id=self._execution_context.execution_id,
+                step_execution_id=self._step_execution_id,
+                parent_handle_id=parent_handle_id,
+                tool_call_id=logical_tool_call_id,
+                physical_attempt=physical_attempt,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._record_fault("INFLIGHT_TOOL_HANDLE_ID_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_TOOL_HANDLE_ID_UNKNOWN",
+                "Tool in-flight handle id factory failed",
+            ) from exc
+        if not isinstance(handle_id, str) or not handle_id.strip():
+            self._record_fault("INFLIGHT_TOOL_HANDLE_ID_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_TOOL_HANDLE_ID_UNKNOWN",
+                "Tool in-flight handle id factory returned invalid id",
+            )
+
+        handle = InFlightOperationHandle(
+            operation_handle_id=handle_id,
+            execution_id=self._execution_context.execution_id,
+            step_execution_id=self._step_execution_id,
+            parent_handle_id=parent_handle_id,
+            kind=InFlightOperationKind.TOOL,
+            capability_id=resolved.capability_id,
+            capability_version=resolved.version,
+            tool_call_id=logical_tool_call_id,
+            started_at=started_at,
+        )
+        try:
+            registered = await registry.register(handle)
+        except Exception as exc:  # noqa: BLE001
+            self._record_fault("INFLIGHT_TOOL_REGISTRATION_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_TOOL_REGISTRATION_UNKNOWN",
+                "Tool in-flight registry failed",
+            ) from exc
+        if registered is not True:
+            self._record_fault("INFLIGHT_TOOL_REGISTRATION_CONFLICT")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_TOOL_REGISTRATION_CONFLICT",
+                "Tool in-flight handle could not be uniquely registered",
+            )
+        return handle
+
+    async def _complete_tool_inflight(
+        self,
+        handle: InFlightOperationHandle | None,
+    ) -> bool:
+        if handle is None:
+            return True
+        registry = self._inflight_registry
+        if registry is None:
+            self._record_fault("INFLIGHT_TOOL_AUTHORITY_MISSING")
+            return False
+        try:
+            completed = await registry.complete(
+                handle.operation_handle_id,
+                completed_at=self._inflight_now(),
+            )
+        except Exception:  # noqa: BLE001
+            completed = False
+        if completed is not True:
+            self._record_fault("INFLIGHT_TOOL_COMPLETION_UNKNOWN")
+            return False
+        return True
+
+    def _inflight_now(self) -> datetime:
+        try:
+            value = self._inflight_clock()
+        except Exception as exc:  # noqa: BLE001
+            self._record_fault("INFLIGHT_CLOCK_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_CLOCK_UNKNOWN",
+                "in-flight clock failed",
+            ) from exc
+        if (
+            not isinstance(value, datetime)
+            or value.tzinfo is None
+            or value.utcoffset() is None
+        ):
+            self._record_fault("INFLIGHT_CLOCK_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_CLOCK_UNKNOWN",
+                "in-flight clock must return timezone-aware datetime",
+            )
+        return value
 
     def entries(self) -> tuple[ToolInvocationJournalEntry, ...]:
         return tuple(self._journal)

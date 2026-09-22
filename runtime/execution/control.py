@@ -192,6 +192,68 @@ class ExecutionControlLatch(Protocol):
         """Return the currently latched terminal control, if one is known."""
 
 
+class InMemoryExecutionControlLatch:
+    """Live-only IU7 latch; durable recovery remains M5-IU9."""
+
+    def __init__(self) -> None:
+        self._latched: dict[str, LatchedExecutionControl] = {}
+
+    async def latch(
+        self,
+        *,
+        observed: ObservedExecutionControl,
+        latched_at: datetime,
+    ) -> ExecutionControlLatchDecision:
+        try:
+            candidate = LatchedExecutionControl(
+                signal=observed.signal,
+                observed_at=observed.observed_at,
+                latched_at=latched_at,
+            )
+        except (TypeError, ValueError):
+            return ExecutionControlLatchDecision(
+                status=ExecutionControlLatchStatus.UNKNOWN,
+                reason_codes=("CONTROL_LATCH_INPUT_INVALID",),
+            )
+
+        execution_id = observed.signal.target_execution_id
+        if execution_id is None or not execution_id.strip():
+            return ExecutionControlLatchDecision(
+                status=ExecutionControlLatchStatus.UNKNOWN,
+                reason_codes=("CONTROL_LATCH_TARGET_UNKNOWN",),
+            )
+
+        existing = self._latched.get(execution_id)
+        if existing is None:
+            self._latched[execution_id] = candidate
+            return ExecutionControlLatchDecision(
+                status=ExecutionControlLatchStatus.LATCHED,
+                reason_codes=("CONTROL_LATCHED",),
+                latched_control=candidate,
+            )
+
+        if existing.signal == observed.signal:
+            return ExecutionControlLatchDecision(
+                status=ExecutionControlLatchStatus.ALREADY_LATCHED,
+                reason_codes=("CONTROL_ALREADY_LATCHED",),
+                latched_control=existing,
+            )
+
+        return ExecutionControlLatchDecision(
+            status=ExecutionControlLatchStatus.CONFLICT,
+            reason_codes=("CONTROL_LATCH_CONFLICT",),
+            latched_control=existing,
+        )
+
+    async def get_latched(
+        self,
+        execution_id: str,
+    ) -> LatchedExecutionControl | None:
+        if not isinstance(execution_id, str) or not execution_id.strip():
+            return None
+        return self._latched.get(execution_id)
+
+
 def _require_aware_datetime(value: datetime, field_name: str) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{field_name} must be timezone-aware")

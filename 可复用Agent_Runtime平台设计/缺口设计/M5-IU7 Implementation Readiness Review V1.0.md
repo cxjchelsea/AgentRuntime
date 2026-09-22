@@ -451,3 +451,82 @@ CA-M5-IU7-01 VERIFICATION = PENDING FOUR LOCAL GATES
 NEXT REQUIRED = CA-M5-IU7-01 four local gates
 M5 = IN PROGRESS
 ~~~
+
+---
+
+# M5-IU7 Implementation Readiness Re-Review — 2026-09-22
+
+## Re-Review evidence
+
+Controlled amendments:
+
+~~~text
+CA-M5-IU7-01 = PASSED
+CA-M5-IU7-02 = PASSED
+CA-M5-IU7-03 = PASSED
+~~~
+
+Blockers:
+
+~~~text
+B-M5-IU7-001 = CLOSED
+B-M5-IU7-002 = CLOSED
+B-M5-IU7-003 = CLOSED
+B-M5-IU7-004 = CLOSED
+B-M5-IU7-005 = CLOSED
+NEW BLOCKER = NONE
+~~~
+
+Re-Review checks:
+
+~~~text
+1. auditable signal identity / target / issued_at = SATISFIED
+2. live watcher + latch barrier = SATISFIED
+3. exact in-flight owner / Tool chain = SATISFIED
+4. leaf-first then owner interrupt order = SATISFIED
+5. interrupt requested != interrupt confirmed = PRESERVED
+6. ALREADY_COMPLETED requires lifecycle reconciliation = PRESERVED
+7. completed side effects / results are immutable to control = PRESERVED
+8. affected_step_ids required for lifecycle rewrite = PRESERVED
+9. late control cannot retrospectively rewrite execution = PRESERVED
+10. PREEMPT handoff != new Runtime cycle = PRESERVED
+11. no M2 priority / Policy recomputation = PRESERVED
+12. IU8 ResourceLock boundary = NOT ENTERED
+13. IU9 durable recovery / checkpoint / resume boundary = NOT ENTERED
+14. IU10 aggregation boundary = NOT ENTERED
+15. M6 boundary = NOT ENTERED
+~~~
+
+## Re-Review decision
+
+~~~text
+M5-IU7 IMPLEMENTATION DESIGN = COMPLETE
+M5-IU7 INDEPENDENT DESIGN REVIEW = PASSED
+M5-IU7 IMPLEMENTATION READINESS RE-REVIEW = PASSED
+M5-IU7 IMPLEMENTATION READINESS = READY
+
+FORMAL IMPLEMENTATION = AUTHORIZED
+NEW BLOCKER = NONE
+M5 = IN PROGRESS
+~~~
+
+## Formal Implementation scope
+
+Formal Implementation may now wire the already-frozen IU7 contracts into one runtime path:
+
+~~~text
+ExecutionControlWatcher / observed control
+        ↓
+ExecutionControlLatch
+        ↓
+exact in-flight operation observation
+        ↓
+InFlightInterruptCoordinator
+        ↓
+ExecutionControlApplicationEvaluator
+        ↓
+ExecutionControlLifecycleService
+~~~
+
+Formal Implementation must not introduce new control policy or expand into IU8/IU9/IU10/M6.
+

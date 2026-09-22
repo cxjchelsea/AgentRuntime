@@ -8,7 +8,9 @@ canonical ExecutionResult, or invokes M6.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -20,6 +22,12 @@ from runtime.execution.capability_resolution import (
     CapabilityKind,
     ResolvedCapability,
     ResolvedStepCapabilities,
+)
+from runtime.execution.control_application import (
+    InFlightOperationHandle,
+    InFlightOperationIdentifierFactory,
+    InFlightOperationKind,
+    InFlightOperationRegistry,
 )
 from runtime.execution.foundation import StepLifecycleSnapshot
 from runtime.execution.invocation import (
@@ -183,6 +191,10 @@ class CoreApprovedToolInvoker(
         step_attempt_number: int = 1,
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
         reliability_runtime: ToolReliabilityRuntime | None = None,
+        inflight_registry: InFlightOperationRegistry | None = None,
+        inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
+        inflight_parent_handle_id: str | None = None,
+        inflight_clock: Callable[[], datetime] | None = None,
     ) -> None:
         if not step_execution_id.strip():
             raise ValueError("step_execution_id must not be blank")
@@ -190,12 +202,32 @@ class CoreApprovedToolInvoker(
             raise ValueError("step_attempt_number must be >= 1")
         if reliability_runtime is not None and (step_id is None or not step_id.strip()):
             raise ValueError("reliable Tool invocation requires non-blank step_id")
+        tracking_values = (
+            inflight_registry,
+            inflight_identifier_factory,
+            inflight_parent_handle_id,
+        )
+        if any(value is not None for value in tracking_values) and not all(
+            value is not None for value in tracking_values
+        ):
+            raise ValueError(
+                "Tool in-flight tracking requires registry/factory/parent handle together"
+            )
+        if (
+            inflight_parent_handle_id is not None
+            and not inflight_parent_handle_id.strip()
+        ):
+            raise ValueError("inflight_parent_handle_id must not be blank")
         self._execution_context = execution_context
         self._step_execution_id = step_execution_id
         self._step_id = step_id
         self._step_attempt_number = step_attempt_number
         self._prior_attempt_journal = prior_attempt_journal
         self._reliability_runtime = reliability_runtime
+        self._inflight_registry = inflight_registry
+        self._inflight_identifier_factory = inflight_identifier_factory
+        self._inflight_parent_handle_id = inflight_parent_handle_id
+        self._inflight_clock = inflight_clock or (lambda: datetime.now(UTC))
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
         self._input_validator = input_validator
@@ -1651,21 +1683,84 @@ class CoreApprovedToolInvoker(
         )
 
         try:
-            raw_result = await tool_implementation.invoke(
-                request,
-                self._execution_context,
+            inflight_handle = await self._begin_tool_inflight(
+                resolved=resolved,
+                logical_tool_call_id=logical_tool_call_id,
+                physical_attempt=physical_attempt,
             )
-        except Exception:  # noqa: BLE001
+        except ToolInvocationBoundaryError as exc:
             result = self._generated_result(
                 tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
-                error_code="TOOL_EXECUTION_EXCEPTION",
+                error_code=exc.reason_code,
+                reason_codes=(exc.reason_code,),
                 attempt=physical_attempt,
             )
             return self._append_journal_attempt(
                 resolved=resolved,
                 result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        try:
+            raw_result = await tool_implementation.invoke(
+                request,
+                self._execution_context,
+            )
+        except Exception:  # noqa: BLE001
+            completion_ok = await self._complete_tool_inflight(inflight_handle)
+            error_code = (
+                "TOOL_EXECUTION_EXCEPTION"
+                if completion_ok
+                else "INFLIGHT_TOOL_COMPLETION_UNKNOWN"
+            )
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code=error_code,
+                reason_codes=(error_code,),
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        completion_ok = await self._complete_tool_inflight(inflight_handle)
+        raw_identity_valid = (
+            isinstance(raw_result, M5ToolResult)
+            and isinstance(raw_result.status, ToolExecutionStatus)
+            and raw_result.tool_call_id == logical_tool_call_id
+            and raw_result.tool_id == tool_id
+            and raw_result.attempt == physical_attempt
+        )
+        if not completion_ok:
+            error_code = "INFLIGHT_TOOL_COMPLETION_UNKNOWN"
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code=error_code,
+                reason_codes=(error_code,),
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                raw_result=raw_result if raw_identity_valid else None,
                 permission_status=permission_status,
                 input_status=input_decision.status,
                 output_status=None,
@@ -1764,6 +1859,118 @@ class CoreApprovedToolInvoker(
             operation_key=operation_key,
             operation_fingerprint=operation_fingerprint,
         )
+
+    async def _begin_tool_inflight(
+        self,
+        *,
+        resolved: ResolvedCapability,
+        logical_tool_call_id: str,
+        physical_attempt: int,
+    ) -> InFlightOperationHandle | None:
+        registry = self._inflight_registry
+        if registry is None:
+            return None
+
+        factory = self._inflight_identifier_factory
+        parent_handle_id = self._inflight_parent_handle_id
+        if factory is None or parent_handle_id is None:
+            self._record_fault("INFLIGHT_TOOL_AUTHORITY_MISSING")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_TOOL_AUTHORITY_MISSING",
+                "Tool in-flight authority is incomplete",
+            )
+
+        started_at = self._inflight_now()
+        try:
+            handle_id = factory.new_tool_handle_id(
+                execution_id=self._execution_context.execution_id,
+                step_execution_id=self._step_execution_id,
+                parent_handle_id=parent_handle_id,
+                tool_call_id=logical_tool_call_id,
+                physical_attempt=physical_attempt,
+            )
+        except Exception as exc:
+            self._record_fault("INFLIGHT_TOOL_HANDLE_ID_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_TOOL_HANDLE_ID_UNKNOWN",
+                "Tool in-flight handle id factory failed",
+            ) from exc
+        if not isinstance(handle_id, str) or not handle_id.strip():
+            self._record_fault("INFLIGHT_TOOL_HANDLE_ID_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_TOOL_HANDLE_ID_UNKNOWN",
+                "Tool in-flight handle id factory returned invalid id",
+            )
+
+        handle = InFlightOperationHandle(
+            operation_handle_id=handle_id,
+            execution_id=self._execution_context.execution_id,
+            step_execution_id=self._step_execution_id,
+            parent_handle_id=parent_handle_id,
+            kind=InFlightOperationKind.TOOL,
+            capability_id=resolved.capability_id,
+            capability_version=resolved.version,
+            tool_call_id=logical_tool_call_id,
+            started_at=started_at,
+        )
+        try:
+            registered = await registry.register(handle)
+        except Exception as exc:
+            self._record_fault("INFLIGHT_TOOL_REGISTRATION_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_TOOL_REGISTRATION_UNKNOWN",
+                "Tool in-flight registry failed",
+            ) from exc
+        if registered is not True:
+            self._record_fault("INFLIGHT_TOOL_REGISTRATION_CONFLICT")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_TOOL_REGISTRATION_CONFLICT",
+                "Tool in-flight handle could not be uniquely registered",
+            )
+        return handle
+
+    async def _complete_tool_inflight(
+        self,
+        handle: InFlightOperationHandle | None,
+    ) -> bool:
+        if handle is None:
+            return True
+        registry = self._inflight_registry
+        if registry is None:
+            self._record_fault("INFLIGHT_TOOL_AUTHORITY_MISSING")
+            return False
+        try:
+            completed = await registry.complete(
+                handle.operation_handle_id,
+                completed_at=self._inflight_now(),
+            )
+        except Exception:  # noqa: BLE001
+            completed = False
+        if completed is not True:
+            self._record_fault("INFLIGHT_TOOL_COMPLETION_UNKNOWN")
+            return False
+        return True
+
+    def _inflight_now(self) -> datetime:
+        try:
+            value = self._inflight_clock()
+        except Exception as exc:
+            self._record_fault("INFLIGHT_CLOCK_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_CLOCK_UNKNOWN",
+                "in-flight clock failed",
+            ) from exc
+        if (
+            not isinstance(value, datetime)
+            or value.tzinfo is None
+            or value.utcoffset() is None
+        ):
+            self._record_fault("INFLIGHT_CLOCK_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "INFLIGHT_CLOCK_UNKNOWN",
+                "in-flight clock must return timezone-aware datetime",
+            )
+        return value
 
     def entries(self) -> tuple[ToolInvocationJournalEntry, ...]:
         return tuple(self._journal)
@@ -2039,6 +2246,9 @@ class StepCapabilityExecutor:
         output_validator: ToolOutputValidator,
         identifier_factory: CapabilityInvocationIdentifierFactory,
         reliability_runtime: ToolReliabilityRuntime | None = None,
+        inflight_registry: InFlightOperationRegistry | None = None,
+        inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
+        inflight_clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
@@ -2046,6 +2256,13 @@ class StepCapabilityExecutor:
         self._output_validator = output_validator
         self._identifier_factory = identifier_factory
         self._reliability_runtime = reliability_runtime
+        if (inflight_registry is None) != (inflight_identifier_factory is None):
+            raise ValueError(
+                "owner in-flight tracking requires registry and identifier factory together"
+            )
+        self._inflight_registry = inflight_registry
+        self._inflight_identifier_factory = inflight_identifier_factory
+        self._inflight_clock = inflight_clock or (lambda: datetime.now(UTC))
 
     async def execute(
         self,
@@ -2110,6 +2327,20 @@ class StepCapabilityExecutor:
                 reason_codes=("NO_EXTERNAL_EXECUTION",),
             )
 
+        owner_handle, owner_error = await self._begin_owner_inflight(
+            resolved=resolved,
+            step_snapshot=step_snapshot,
+            execution_context=execution_context,
+        )
+        if owner_error is not None:
+            return self._outcome(
+                step=step,
+                step_snapshot=step_snapshot,
+                resolved=resolved,
+                status=CapabilityExecutionStatus.UNKNOWN,
+                reason_codes=(owner_error,),
+            )
+
         try:
             tool_invoker = CoreApprovedToolInvoker(
                 resolved_tools=resolved.tools,
@@ -2124,18 +2355,48 @@ class StepCapabilityExecutor:
                 step_attempt_number=attempt_number,
                 prior_attempt_journal=prior_attempt_journal,
                 reliability_runtime=self._reliability_runtime,
+                inflight_registry=(
+                    self._inflight_registry if owner_handle is not None else None
+                ),
+                inflight_identifier_factory=(
+                    self._inflight_identifier_factory
+                    if owner_handle is not None
+                    else None
+                ),
+                inflight_parent_handle_id=(
+                    owner_handle.operation_handle_id
+                    if owner_handle is not None
+                    else None
+                ),
+                inflight_clock=self._inflight_clock,
             )
         except (TypeError, ValueError):
+            completion_ok = await self._complete_owner_inflight(owner_handle)
+            reason = (
+                "TOOL_GATEWAY_CONSTRUCTION_FAILED"
+                if completion_ok
+                else "INFLIGHT_OWNER_COMPLETION_UNKNOWN"
+            )
             return self._outcome(
                 step=step,
                 step_snapshot=step_snapshot,
                 resolved=resolved,
                 status=CapabilityExecutionStatus.UNKNOWN,
-                reason_codes=("TOOL_GATEWAY_CONSTRUCTION_FAILED",),
+                reason_codes=(reason,),
             )
 
         if resolved.execution_owner is CapabilityExecutionOwner.SKILL:
-            return await self._execute_skill(
+            outcome = await self._execute_skill(
+                step=step,
+                step_snapshot=step_snapshot,
+                resolved=resolved,
+                execution_context=execution_context,
+                tool_invoker=tool_invoker,
+                owner_timeout_seconds=owner_timeout_seconds,
+                owner_timeout_runner=owner_timeout_runner,
+            )
+        else:
+            outcome = await self._execute_workflow(
                 step=step,
                 step_snapshot=step_snapshot,
                 resolved=resolved,
@@ -2145,15 +2406,136 @@ class StepCapabilityExecutor:
                 owner_timeout_runner=owner_timeout_runner,
             )
 
-        return await self._execute_workflow(
-            step=step,
-            step_snapshot=step_snapshot,
-            resolved=resolved,
-            execution_context=execution_context,
-            tool_invoker=tool_invoker,
-            owner_timeout_seconds=owner_timeout_seconds,
-            owner_timeout_runner=owner_timeout_runner,
+        if self._owner_may_still_be_inflight(outcome):
+            return outcome
+        if not await self._complete_owner_inflight(owner_handle):
+            return replace(
+                outcome,
+                status=CapabilityExecutionStatus.UNKNOWN,
+                reason_codes=("INFLIGHT_OWNER_COMPLETION_UNKNOWN",),
+            )
+        return outcome
+
+    @staticmethod
+    def _owner_may_still_be_inflight(
+        outcome: StepCapabilityExecutionOutcome,
+    ) -> bool:
+        if outcome.skill_result is not None and (
+            outcome.skill_result.status is SkillExecutionStatus.TIMEOUT
+        ):
+            return True
+        if outcome.workflow_result is not None and outcome.workflow_result.status in {
+            WorkflowExecutionStatus.CREATED,
+            WorkflowExecutionStatus.RUNNING,
+            WorkflowExecutionStatus.WAITING,
+            WorkflowExecutionStatus.TIMEOUT,
+        }:
+            return True
+        return bool(
+            set(outcome.reason_codes)
+            & {
+                "SKILL_TIMEOUT_RUNNER_INVALID_RESULT",
+                "SKILL_TIMEOUT_BOUNDARY_UNKNOWN",
+                "WORKFLOW_TIMEOUT_RUNNER_INVALID_RESULT",
+                "WORKFLOW_TIMEOUT_BOUNDARY_UNKNOWN",
+            }
         )
+
+    async def _begin_owner_inflight(
+        self,
+        *,
+        resolved: ResolvedStepCapabilities,
+        step_snapshot: StepLifecycleSnapshot,
+        execution_context: ExecutionContext,
+    ) -> tuple[InFlightOperationHandle | None, str | None]:
+        registry = self._inflight_registry
+        factory = self._inflight_identifier_factory
+        if registry is None and factory is None:
+            return None, None
+        if registry is None or factory is None:
+            return None, "INFLIGHT_OWNER_AUTHORITY_MISSING"
+
+        capability: ResolvedCapability | None
+        kind: InFlightOperationKind
+        if resolved.execution_owner is CapabilityExecutionOwner.SKILL:
+            capability = resolved.skill
+            kind = InFlightOperationKind.SKILL
+        elif resolved.execution_owner is CapabilityExecutionOwner.WORKFLOW:
+            capability = resolved.workflow
+            kind = InFlightOperationKind.WORKFLOW
+        else:
+            return None, "INFLIGHT_OWNER_KIND_INVALID"
+
+        if capability is None:
+            return None, "INFLIGHT_OWNER_BINDING_INVALID"
+
+        started_at = self._owner_inflight_now()
+        if started_at is None:
+            return None, "INFLIGHT_CLOCK_UNKNOWN"
+        try:
+            handle_id = factory.new_owner_handle_id(
+                execution_id=execution_context.execution_id,
+                step_execution_id=step_snapshot.step_execution_id,
+                kind=kind,
+                capability_id=capability.capability_id,
+            )
+        except Exception:  # noqa: BLE001
+            return None, "INFLIGHT_OWNER_HANDLE_ID_UNKNOWN"
+        if not isinstance(handle_id, str) or not handle_id.strip():
+            return None, "INFLIGHT_OWNER_HANDLE_ID_UNKNOWN"
+
+        handle = InFlightOperationHandle(
+            operation_handle_id=handle_id,
+            execution_id=execution_context.execution_id,
+            step_execution_id=step_snapshot.step_execution_id,
+            kind=kind,
+            capability_id=capability.capability_id,
+            capability_version=capability.version,
+            started_at=started_at,
+        )
+        try:
+            registered = await registry.register(handle)
+        except Exception:  # noqa: BLE001
+            registered = False
+        if registered is not True:
+            return None, "INFLIGHT_OWNER_REGISTRATION_UNKNOWN"
+        return handle, None
+
+    async def _complete_owner_inflight(
+        self,
+        handle: InFlightOperationHandle | None,
+    ) -> bool:
+        if handle is None:
+            return True
+        registry = self._inflight_registry
+        if registry is None:
+            return False
+        completed_at = self._owner_inflight_now()
+        if completed_at is None:
+            return False
+        try:
+            return (
+                await registry.complete(
+                    handle.operation_handle_id,
+                    completed_at=completed_at,
+                )
+                is True
+            )
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _owner_inflight_now(self) -> datetime | None:
+        try:
+            value = self._inflight_clock()
+        except Exception:  # noqa: BLE001
+            return None
+        if (
+            not isinstance(value, datetime)
+            or value.tzinfo is None
+            or value.utcoffset() is None
+        ):
+            return None
+        return value
 
     async def _execute_skill(
         self,

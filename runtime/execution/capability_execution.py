@@ -524,6 +524,7 @@ class CoreApprovedToolInvoker(
             output_status=output_decision.status,
             idempotency_key=idempotency_key,
             operation_key=operation_key,
+            operation_fingerprint=operation_fingerprint,
         )
 
     def entries(self) -> tuple[ToolInvocationJournalEntry, ...]:

@@ -319,6 +319,24 @@ def test_unsafe_application_cannot_mutate_lifecycle(
         )
 
 
+def test_running_interrupt_evidence_must_match_execution() -> None:
+    application = replace(
+        _application(),
+        interrupt_summary=replace(
+            _summary(),
+            execution_id="execution-other",
+        ),
+    )
+
+    with pytest.raises(ExecutionControlLifecycleError, match="match execution"):
+        ExecutionControlLifecycleTransitioner().terminalize(
+            _prepared(),
+            latched_control=_latched(),
+            application=application,
+            at=TERMINALIZED,
+        )
+
+
 def test_exact_latched_signal_must_match_application_signal() -> None:
     with pytest.raises(ExecutionControlLifecycleError, match="exact latched signal"):
         ExecutionControlLifecycleTransitioner().terminalize(
@@ -366,6 +384,25 @@ def test_unaffected_nonterminal_step_prevents_execution_terminalization() -> Non
     )
 
     with pytest.raises(ExecutionControlLifecycleError, match="remains non-terminal"):
+        ExecutionControlLifecycleTransitioner().terminalize(
+            _prepared(),
+            latched_control=_latched(),
+            application=application,
+            at=TERMINALIZED,
+        )
+
+
+def test_already_terminal_claim_rejects_nonterminal_lifecycle() -> None:
+    application = ExecutionControlApplication(
+        signal=_signal(),
+        disposition=ExecutionControlDisposition.ALREADY_TERMINAL,
+        reason_codes=("CONTROL_ARRIVED_AFTER_EXECUTION_TERMINAL",),
+        nonterminal_step_ids_at_latch=(),
+        affected_step_ids=(),
+        handoff_required=False,
+    )
+
+    with pytest.raises(ExecutionControlLifecycleError, match="all Steps terminal"):
         ExecutionControlLifecycleTransitioner().terminalize(
             _prepared(),
             latched_control=_latched(),

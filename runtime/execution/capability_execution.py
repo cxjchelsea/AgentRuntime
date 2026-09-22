@@ -1,8 +1,9 @@
 """M5-IU4 exact capability execution.
 
 This module executes only the capability owner already frozen by M4 and exact-resolved
-by IU3. It never replans, re-resolves Registry entries, retries, resumes Workflows,
-manages locks/idempotency, aggregates canonical ExecutionResult, or invokes M6.
+by IU3. IU6 may add reliability coordination inside the same Core Tool gateway, but it
+still never replans, re-resolves Registry entries, resumes Workflows, aggregates
+canonical ExecutionResult, or invokes M6.
 """
 
 from __future__ import annotations
@@ -73,6 +74,7 @@ from runtime.execution.reliability_boundary import (
     IdempotencyPreflightDecision,
     IdempotencyPreflightStatus,
     ToolOperationCorrelationDecision,
+    ToolOperationCorrelationKey,
     ToolOperationCorrelationStatus,
     ToolOperationOccurrenceDecision,
     ToolOperationOccurrenceStatus,
@@ -85,12 +87,6 @@ from runtime.execution.stores import (
     IdempotencyStatus,
 )
 from runtime.registries.definitions import ToolDefinition
-
-
-def correlation_key(value: str):
-    from runtime.execution.reliability_boundary import ToolOperationCorrelationKey
-
-    return ToolOperationCorrelationKey(value)
 
 
 class CapabilityExecutionStatus(str, Enum):
@@ -675,7 +671,7 @@ class CoreApprovedToolInvoker(
             key = runtime.idempotency_key_factory.create(
                 execution_id=self._execution_context.execution_id,
                 step_execution_id=self._step_execution_id,
-                operation_key=correlation_key(operation_key),
+                operation_key=ToolOperationCorrelationKey(operation_key),
                 tool_id=resolved.capability_id,
                 tool_version=resolved.version,
                 operation_fingerprint=operation_fingerprint,
@@ -806,7 +802,6 @@ class CoreApprovedToolInvoker(
                 result=result,
             )
         ):
-            await self._mark_reserved_unknown(reserved_record)
             return self._override_last_attempt_as_unknown(
                 logical_tool_call_id=result.tool_call_id,
                 error_code="IDEMPOTENCY_COMPLETION_UNKNOWN",

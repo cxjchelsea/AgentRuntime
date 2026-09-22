@@ -147,7 +147,15 @@ from runtime.execution.reliability_boundary import (
     ToolOperationOccurrenceDecision,
     ToolOperationOccurrenceStatus,
 )
-from runtime.execution.reliability_runtime import ToolReliabilityRuntime
+from runtime.execution.reliability_coordinator import (
+    StepReliabilityCoordinationError,
+    StepReliabilityCoordinator,
+    StepReliabilityRunResult,
+)
+from runtime.execution.reliability_runtime import (
+    StepReliabilityRuntime,
+    ToolReliabilityRuntime,
+)
 from runtime.execution.resolution import (
     ExecutionImplementationResolver,
     ResolvedExecutionImplementation,
@@ -315,9 +323,13 @@ __all__ = [
     "StepFinalizationDisposition",
     "StepFinalizationEvaluator",
     "StepLifecycleSnapshot",
+    "StepReliabilityCoordinationError",
+    "StepReliabilityCoordinator",
     "StepReliabilityDecision",
     "StepReliabilityDisposition",
     "StepReliabilityEvaluator",
+    "StepReliabilityRunResult",
+    "StepReliabilityRuntime",
     "StepReplaySafetyEvaluator",
     "StepReplaySafetyRequest",
     "StepResultCollectionError",

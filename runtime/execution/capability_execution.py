@@ -2406,6 +2406,8 @@ class StepCapabilityExecutor:
                 owner_timeout_runner=owner_timeout_runner,
             )
 
+        if self._owner_may_still_be_inflight(outcome):
+            return outcome
         if not await self._complete_owner_inflight(owner_handle):
             return replace(
                 outcome,
@@ -2413,6 +2415,31 @@ class StepCapabilityExecutor:
                 reason_codes=("INFLIGHT_OWNER_COMPLETION_UNKNOWN",),
             )
         return outcome
+
+    @staticmethod
+    def _owner_may_still_be_inflight(
+        outcome: StepCapabilityExecutionOutcome,
+    ) -> bool:
+        if outcome.skill_result is not None and (
+            outcome.skill_result.status is SkillExecutionStatus.TIMEOUT
+        ):
+            return True
+        if outcome.workflow_result is not None and outcome.workflow_result.status in {
+            WorkflowExecutionStatus.CREATED,
+            WorkflowExecutionStatus.RUNNING,
+            WorkflowExecutionStatus.WAITING,
+            WorkflowExecutionStatus.TIMEOUT,
+        }:
+            return True
+        return bool(
+            set(outcome.reason_codes)
+            & {
+                "SKILL_TIMEOUT_RUNNER_INVALID_RESULT",
+                "SKILL_TIMEOUT_BOUNDARY_UNKNOWN",
+                "WORKFLOW_TIMEOUT_RUNNER_INVALID_RESULT",
+                "WORKFLOW_TIMEOUT_BOUNDARY_UNKNOWN",
+            }
+        )
 
     async def _begin_owner_inflight(
         self,

@@ -159,6 +159,18 @@ class RuntimeExecutionChecker:
         signal = await self._control_signal_source.get_signal(
             execution_context.execution_id
         )
+        if (
+            signal.signal_type
+            in {
+                ExecutionControlSignalType.CANCEL,
+                ExecutionControlSignalType.PREEMPT,
+            }
+            and signal.target_execution_id != execution_context.execution_id
+        ):
+            return RuntimeExecutionCheckDecision(
+                status=RuntimeExecutionCheckStatus.UNKNOWN,
+                reason_codes=("CONTROL_SIGNAL_TARGET_MISMATCH",),
+            )
         if signal.signal_type is ExecutionControlSignalType.CANCEL:
             return RuntimeExecutionCheckDecision(
                 status=RuntimeExecutionCheckStatus.CANCEL_REQUIRED,

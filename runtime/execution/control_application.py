@@ -481,9 +481,7 @@ class ExecutionControlApplication:
         }:
             raise ValueError("control application requires CANCEL/PREEMPT signal")
 
-        expected_handoff = (
-            self.signal.signal_type is ExecutionControlSignalType.PREEMPT
-        )
+        expected_handoff = self.signal.signal_type is ExecutionControlSignalType.PREEMPT
         if self.handoff_required != expected_handoff:
             raise ValueError("handoff_required must reflect PREEMPT signal authority")
 
@@ -617,10 +615,7 @@ class ExecutionControlApplicationEvaluator:
             prepared_after_interrupt,
             running_step.step_id,
         )
-        if (
-            reconciled is not None
-            and reconciled.status in self._TERMINAL_STEP_STATUSES
-        ):
+        if reconciled is not None and reconciled.status in self._TERMINAL_STEP_STATUSES:
             if pending:
                 return self._application(
                     signal=signal,
@@ -660,8 +655,7 @@ class ExecutionControlApplicationEvaluator:
 
         if (
             interrupt_summary.execution_id != execution_id
-            or interrupt_summary.step_execution_id
-            != running_step.step_execution_id
+            or interrupt_summary.step_execution_id != running_step.step_execution_id
         ):
             return self._application(
                 signal=signal,
@@ -699,10 +693,7 @@ class ExecutionControlApplicationEvaluator:
                 preserve=True,
                 handoff_required=handoff_required,
             )
-        if (
-            interrupt_summary.status
-            is HierarchicalInterruptStatus.NO_ACTIVE_OPERATION
-        ):
+        if interrupt_summary.status is HierarchicalInterruptStatus.NO_ACTIVE_OPERATION:
             return self._application(
                 signal=signal,
                 disposition=ExecutionControlDisposition.WAITING_IN_FLIGHT,
@@ -810,9 +801,7 @@ class ExecutionControlApplicationEvaluator:
             signal=signal,
             disposition=disposition,
             reason_codes=reason_codes,
-            running_step_id=(
-                None if running_step is None else running_step.step_id
-            ),
+            running_step_id=(None if running_step is None else running_step.step_id),
             interrupt_summary=summary,
             nonterminal_step_ids_at_latch=nonterminal,
             affected_step_ids=affected,

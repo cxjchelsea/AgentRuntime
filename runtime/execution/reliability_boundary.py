@@ -17,6 +17,7 @@ from runtime.execution.reliability import (
     RetryDecision,
 )
 from runtime.execution.result_collection import StepAttemptObservation
+from runtime.execution.stores import IdempotencyRecord, IdempotencyStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,42 @@ class ToolOperationCorrelationDecision:
             raise ValueError("UNKNOWN Tool correlation must not invent identity")
 
 
+class ToolOperationOccurrenceStatus(str, Enum):
+    CLAIMED = "CLAIMED"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True, slots=True)
+class ToolOperationOccurrenceDecision:
+    status: ToolOperationOccurrenceStatus
+    reason_codes: tuple[str, ...]
+    occurrence: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
+            raise ValueError("reason_codes must contain non-blank values")
+        if self.status is ToolOperationOccurrenceStatus.CLAIMED:
+            if self.occurrence is None or self.occurrence < 1:
+                raise ValueError("CLAIMED Tool occurrence requires occurrence >= 1")
+        elif self.occurrence is not None:
+            raise ValueError("UNKNOWN Tool occurrence must not invent occurrence")
+
+
+class ToolOperationOccurrenceAuthority(Protocol):
+    async def claim_next(
+        self,
+        *,
+        step_execution_id: str,
+        step_attempt_number: int,
+        tool_id: str,
+        tool_version: str,
+        operation_fingerprint: str,
+    ) -> ToolOperationOccurrenceDecision:
+        """Atomically assign the next Core-owned occurrence for one fingerprint."""
+
+
 class ToolOperationCorrelator(Protocol):
     def correlate(
         self,
@@ -117,6 +154,78 @@ class IdempotencyKeyFactory(Protocol):
         operation_fingerprint: str,
     ) -> str:
         """Create a stable idempotency key for one correlated Tool operation."""
+
+
+class IdempotencyPreflightStatus(str, Enum):
+    RESERVE_NEW = "RESERVE_NEW"
+    RECOVER_COMPLETED = "RECOVER_COMPLETED"
+    WAIT_IN_FLIGHT = "WAIT_IN_FLIGHT"
+    REOPEN_FAILED = "REOPEN_FAILED"
+    FAIL_UNKNOWN = "FAIL_UNKNOWN"
+    REJECT_PROVENANCE = "REJECT_PROVENANCE"
+
+
+@dataclass(frozen=True, slots=True)
+class IdempotencyPreflightDecision:
+    status: IdempotencyPreflightStatus
+    reason_codes: tuple[str, ...]
+    existing_record: IdempotencyRecord | None = None
+
+    def __post_init__(self) -> None:
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
+            raise ValueError("reason_codes must contain non-blank values")
+        needs_existing = self.status in (
+            IdempotencyPreflightStatus.RECOVER_COMPLETED,
+            IdempotencyPreflightStatus.WAIT_IN_FLIGHT,
+            IdempotencyPreflightStatus.REOPEN_FAILED,
+            IdempotencyPreflightStatus.FAIL_UNKNOWN,
+            IdempotencyPreflightStatus.REJECT_PROVENANCE,
+        )
+        if needs_existing and self.existing_record is None:
+            raise ValueError(
+                "idempotency preflight status requires existing_record"
+            )
+        if (
+            self.status is IdempotencyPreflightStatus.RESERVE_NEW
+            and self.existing_record is not None
+        ):
+            raise ValueError("RESERVE_NEW must not carry existing_record")
+
+        expected_status = {
+            IdempotencyPreflightStatus.RECOVER_COMPLETED: IdempotencyStatus.COMPLETED,
+            IdempotencyPreflightStatus.WAIT_IN_FLIGHT: IdempotencyStatus.RESERVED,
+            IdempotencyPreflightStatus.REOPEN_FAILED: IdempotencyStatus.FAILED,
+            IdempotencyPreflightStatus.FAIL_UNKNOWN: IdempotencyStatus.UNKNOWN,
+        }.get(self.status)
+        if (
+            expected_status is not None
+            and self.existing_record is not None
+            and self.existing_record.status is not expected_status
+        ):
+            raise ValueError(
+                "idempotency preflight status does not match record status"
+            )
+
+
+class IdempotencyPreflightEvaluator(Protocol):
+    def evaluate(
+        self,
+        *,
+        existing_record: IdempotencyRecord | None,
+        expected_execution_id: str,
+        expected_step_execution_id: str,
+        expected_tool_id: str,
+        expected_tool_version: str,
+        expected_operation_key: str,
+        expected_operation_fingerprint: str,
+    ) -> IdempotencyPreflightDecision:
+        """Classify existing idempotency state after validation/permission/deadline.
+
+        Provenance mismatch must be REJECT_PROVENANCE. UNKNOWN must never be
+        converted to RESERVE_NEW/REOPEN_FAILED.
+        """
 
 
 class StepAttemptSequenceStatus(str, Enum):

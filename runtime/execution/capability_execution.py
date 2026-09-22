@@ -58,6 +58,7 @@ from runtime.execution.protocols import (
     WorkflowImplementation,
 )
 from runtime.execution.reliability import (
+    AsyncTimeoutRunner,
     IdempotencyMode,
     ReliabilityCapabilityKind,
     ReplaySafetyContext,
@@ -2016,6 +2017,8 @@ class StepCapabilityExecutor:
         execution_context: ExecutionContext,
         attempt_number: int = 1,
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
+        owner_timeout_seconds: float | None = None,
+        owner_timeout_runner: AsyncTimeoutRunner | None = None,
     ) -> StepCapabilityExecutionOutcome:
         if attempt_number < 1:
             return self._outcome(
@@ -2025,6 +2028,23 @@ class StepCapabilityExecutor:
                 status=CapabilityExecutionStatus.UNKNOWN,
                 reason_codes=("STEP_ATTEMPT_NUMBER_INVALID",),
             )
+        if (owner_timeout_seconds is None) != (owner_timeout_runner is None):
+            return self._outcome(
+                step=step,
+                step_snapshot=step_snapshot,
+                resolved=resolved,
+                status=CapabilityExecutionStatus.UNKNOWN,
+                reason_codes=("OWNER_TIMEOUT_CONFIGURATION_INVALID",),
+            )
+        if owner_timeout_seconds is not None and owner_timeout_seconds <= 0:
+            return self._outcome(
+                step=step,
+                step_snapshot=step_snapshot,
+                resolved=resolved,
+                status=CapabilityExecutionStatus.UNKNOWN,
+                reason_codes=("OWNER_TIMEOUT_CONFIGURATION_INVALID",),
+            )
+
         authority_error = self._validate_authority(
             approved_plan=approved_plan,
             step=step,
@@ -2081,6 +2101,8 @@ class StepCapabilityExecutor:
                 resolved=resolved,
                 execution_context=execution_context,
                 tool_invoker=tool_invoker,
+                owner_timeout_seconds=owner_timeout_seconds,
+                owner_timeout_runner=owner_timeout_runner,
             )
 
         return await self._execute_workflow(
@@ -2089,6 +2111,8 @@ class StepCapabilityExecutor:
             resolved=resolved,
             execution_context=execution_context,
             tool_invoker=tool_invoker,
+            owner_timeout_seconds=owner_timeout_seconds,
+            owner_timeout_runner=owner_timeout_runner,
         )
 
     async def _execute_skill(
@@ -2099,6 +2123,8 @@ class StepCapabilityExecutor:
         resolved: ResolvedStepCapabilities,
         execution_context: ExecutionContext,
         tool_invoker: CoreApprovedToolInvoker,
+        owner_timeout_seconds: float | None,
+        owner_timeout_runner: AsyncTimeoutRunner | None,
     ) -> StepCapabilityExecutionOutcome:
         skill = resolved.skill
         if (
@@ -2123,11 +2149,43 @@ class StepCapabilityExecutor:
         )
 
         try:
-            result = await skill.implementation_ref.execute(
-                request,
-                execution_context,
-                tool_invoker,
-            )
+            if owner_timeout_seconds is None:
+                result = await skill.implementation_ref.execute(
+                    request,
+                    execution_context,
+                    tool_invoker,
+                )
+            else:
+                if owner_timeout_runner is None:
+                    raise RuntimeError("owner timeout runner is missing")
+                timeout_result = await owner_timeout_runner.run(
+                    timeout_seconds=owner_timeout_seconds,
+                    operation=lambda: skill.implementation_ref.execute(
+                        request,
+                        execution_context,
+                        tool_invoker,
+                    ),
+                )
+                if timeout_result.status is TimeoutRunStatus.TIMED_OUT:
+                    journal_results = self._journal_results(tool_invoker)
+                    result = M5SkillResult(
+                        skill_id=skill.capability_id,
+                        status=SkillExecutionStatus.TIMEOUT,
+                        tool_results=journal_results,
+                        error="SKILL_TIMEOUT",
+                    )
+                elif timeout_result.status is TimeoutRunStatus.UNKNOWN:
+                    return self._outcome(
+                        step=step,
+                        step_snapshot=step_snapshot,
+                        resolved=resolved,
+                        status=CapabilityExecutionStatus.UNKNOWN,
+                        reason_codes=("SKILL_TIMEOUT_BOUNDARY_UNKNOWN",),
+                        tool_results=self._journal_results(tool_invoker),
+                        tool_journal=tool_invoker.entries(),
+                    )
+                else:
+                    result = timeout_result.value
         except Exception:  # noqa: BLE001
             reason_codes = self._exception_reasons(
                 tool_invoker,
@@ -2214,6 +2272,8 @@ class StepCapabilityExecutor:
         resolved: ResolvedStepCapabilities,
         execution_context: ExecutionContext,
         tool_invoker: CoreApprovedToolInvoker,
+        owner_timeout_seconds: float | None,
+        owner_timeout_runner: AsyncTimeoutRunner | None,
     ) -> StepCapabilityExecutionOutcome:
         workflow = resolved.workflow
         if (
@@ -2262,11 +2322,43 @@ class StepCapabilityExecutor:
         )
 
         try:
-            result = await workflow.implementation_ref.start(
-                request,
-                execution_context,
-                tool_invoker,
-            )
+            if owner_timeout_seconds is None:
+                result = await workflow.implementation_ref.start(
+                    request,
+                    execution_context,
+                    tool_invoker,
+                )
+            else:
+                if owner_timeout_runner is None:
+                    raise RuntimeError("owner timeout runner is missing")
+                timeout_result = await owner_timeout_runner.run(
+                    timeout_seconds=owner_timeout_seconds,
+                    operation=lambda: workflow.implementation_ref.start(
+                        request,
+                        execution_context,
+                        tool_invoker,
+                    ),
+                )
+                if timeout_result.status is TimeoutRunStatus.TIMED_OUT:
+                    result = M5WorkflowResult(
+                        workflow_instance_id=workflow_instance_id,
+                        workflow_id=workflow.capability_id,
+                        status=WorkflowExecutionStatus.TIMEOUT,
+                        tool_results=self._journal_results(tool_invoker),
+                        error="WORKFLOW_START_TIMEOUT",
+                    )
+                elif timeout_result.status is TimeoutRunStatus.UNKNOWN:
+                    return self._outcome(
+                        step=step,
+                        step_snapshot=step_snapshot,
+                        resolved=resolved,
+                        status=CapabilityExecutionStatus.UNKNOWN,
+                        reason_codes=("WORKFLOW_TIMEOUT_BOUNDARY_UNKNOWN",),
+                        tool_results=self._journal_results(tool_invoker),
+                        tool_journal=tool_invoker.entries(),
+                    )
+                else:
+                    result = timeout_result.value
         except Exception:  # noqa: BLE001
             reason_codes = self._exception_reasons(
                 tool_invoker,

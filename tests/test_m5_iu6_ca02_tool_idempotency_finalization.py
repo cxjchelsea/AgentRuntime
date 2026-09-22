@@ -542,6 +542,24 @@ def test_only_explicit_finalize_decision_can_carry_terminal_status() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "status",
+    [
+        StepExecutionStatus.CANCELLED,
+        StepExecutionStatus.PREEMPTED,
+    ],
+)
+def test_iu6_finalization_does_not_claim_control_terminal_status(
+    status: StepExecutionStatus,
+) -> None:
+    with pytest.raises(ValueError, match="allowed terminal"):
+        StepFinalizationDecision(
+            disposition=StepFinalizationDisposition.FINALIZE,
+            reason_codes=("CONTROL_STATUS_REQUIRES_STEP9",),
+            terminal_status=status,
+        )
+
+
 def test_finalization_cannot_use_skipped_as_running_attempt_terminal_mapping() -> None:
     with pytest.raises(ValueError, match="allowed terminal"):
         StepFinalizationDecision(

@@ -665,6 +665,7 @@ handoff_required = true
 
 ~~~text
 M5-IU7 IMPLEMENTATION DESIGN = COMPLETE
+M5-IU7 INDEPENDENT DESIGN REVIEW = PASSED
 ~~~
 
 是否可以直接实现，以 Implementation Readiness Review 为准。

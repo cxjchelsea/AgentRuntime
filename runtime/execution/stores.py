@@ -91,8 +91,8 @@ class IdempotencyStore(Protocol):
         self,
         key: str,
         *,
-        tool_call_id: str | None,
-        result_reference: str | None,
+        tool_call_id: str,
+        result_reference: str,
     ) -> None:
         """Mark a reserved side effect as completed without replaying it."""
 

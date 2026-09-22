@@ -53,8 +53,8 @@ from tests.test_m5_iu4_capability_execution import (
     _approved_step,
     _skill_resolved,
     _snapshot,
-    _workflow_resolved,
     _tool,
+    _workflow_resolved,
 )
 
 START = datetime(2026, 9, 22, 15, 0, tzinfo=UTC)

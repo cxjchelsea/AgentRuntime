@@ -215,6 +215,8 @@ ALREADY_COMPLETED
 running result 是否已经真正写回 lifecycle
 running result 是否必须保留
 PREEMPT 是否需要 Runtime handoff
+control 是否真的影响了 unfinished work
+late control 是否必须 no-op
 控制冲突是否需要 fail closed
 ~~~
 
@@ -334,7 +336,9 @@ InterruptOutcome
 hierarchical interrupt summary
 ExecutionControlDisposition
 ExecutionControlApplication
+nonterminal_step_ids_at_latch / affected_step_ids
 ALREADY_COMPLETED lifecycle reconciliation
+late-control no-retroactive-rewrite rule
 side-effect preservation semantics
 preemption handoff_required semantics
 ~~~
@@ -348,6 +352,8 @@ UNKNOWN interrupt != terminal lifecycle
 NOT_CANCELLABLE -> barrier + wait
 ALREADY_COMPLETED + Step still RUNNING -> WAITING_IN_FLIGHT
 ALREADY_COMPLETED + lifecycle committed -> preserve actual result
+all work already terminal -> ALREADY_TERMINAL / no lifecycle rewrite
+no affected_step_ids -> no retrospective CANCELLED/PREEMPTED
 ~~~
 
 ### CA-M5-IU7-03 Control Lifecycle Terminalization Boundary
@@ -408,8 +414,10 @@ M5-IU7 IMPLEMENTATION READINESS = READY
 10. nested Tool/owner chain 必须有确定 interrupt order
 11. ALREADY_COMPLETED 不能绕过真实 lifecycle completion
 12. completed side effects/results 不被 control 重写
-13. PREEMPT 不直接启动新 Runtime cycle
-14. IU8/IU9/IU10/M6 边界未被突破
+13. late control 不得回写 CANCELLED/PREEMPTED
+14. execution control status 必须有 affected_step_ids 证据
+15. PREEMPT 不直接启动新 Runtime cycle
+16. IU8/IU9/IU10/M6 边界未被突破
 ~~~
 
 ## 12. Current Formal Status

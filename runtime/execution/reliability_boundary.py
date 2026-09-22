@@ -42,6 +42,7 @@ class ToolOperationCorrelationDecision:
     reason_codes: tuple[str, ...]
     operation_key: ToolOperationCorrelationKey | None = None
     logical_tool_call_id: str | None = None
+    operation_occurrence: int | None = None
 
     def __post_init__(self) -> None:
         if not self.reason_codes or any(
@@ -59,7 +60,15 @@ class ToolOperationCorrelationDecision:
                 raise ValueError(
                     "identified Tool operation requires logical_tool_call_id"
                 )
-        elif self.operation_key is not None or self.logical_tool_call_id is not None:
+            if self.operation_occurrence is None or self.operation_occurrence < 1:
+                raise ValueError(
+                    "identified Tool operation requires operation_occurrence >= 1"
+                )
+        elif (
+            self.operation_key is not None
+            or self.logical_tool_call_id is not None
+            or self.operation_occurrence is not None
+        ):
             raise ValueError("UNKNOWN Tool correlation must not invent identity")
 
 
@@ -71,10 +80,18 @@ class ToolOperationCorrelator(Protocol):
         step_attempt_number: int,
         tool_id: str,
         tool_version: str,
-        input_payload: dict[str, Any],
+        operation_fingerprint: str,
+        operation_occurrence: int,
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...],
     ) -> ToolOperationCorrelationDecision:
-        """Correlate a Tool operation across Step attempts without Domain authority."""
+        """Correlate one Tool operation across Step attempts.
+
+        operation_occurrence is Core-owned and counts occurrences among the same
+        tool/version/fingerprint within one Step attempt. This distinguishes two
+        intentional identical calls while allowing occurrence N to correlate to
+        occurrence N from a prior Step attempt. Any divergent/ambiguous sequence
+        must return UNKNOWN rather than inventing a correlation.
+        """
 
 
 class ToolOperationFingerprintFactory(Protocol):

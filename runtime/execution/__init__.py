@@ -145,6 +145,7 @@ from runtime.execution.reliability_boundary import (
     ToolOperationOccurrenceDecision,
     ToolOperationOccurrenceStatus,
 )
+from runtime.execution.reliability_runtime import ToolReliabilityRuntime
 from runtime.execution.resolution import (
     ExecutionImplementationResolver,
     ResolvedExecutionImplementation,
@@ -340,6 +341,7 @@ __all__ = [
     "ToolOutputValidator",
     "ToolPayloadValidationDecision",
     "ToolPayloadValidationStatus",
+    "ToolReliabilityRuntime",
     "WorkflowCheckpoint",
     "WorkflowCheckpointStore",
     "WorkflowExecutionRequest",

@@ -121,6 +121,7 @@ from runtime.execution.reliability import (
     SideEffectClass,
     TimeoutRunResult,
     TimeoutRunStatus,
+    ToolReliabilityEvidence,
 )
 from runtime.execution.reliability_boundary import (
     IdempotencyKeyFactory,
@@ -344,6 +345,7 @@ __all__ = [
     "ToolOutputValidator",
     "ToolPayloadValidationDecision",
     "ToolPayloadValidationStatus",
+    "ToolReliabilityEvidence",
     "WorkflowCheckpoint",
     "WorkflowCheckpointStore",
     "WorkflowExecutionRequest",

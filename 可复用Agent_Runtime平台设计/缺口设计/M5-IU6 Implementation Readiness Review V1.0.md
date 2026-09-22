@@ -9,10 +9,10 @@
 ~~~text
 M5-IU6 IMPLEMENTATION DESIGN = COMPLETE
 M5-IU6 INDEPENDENT DESIGN REVIEW = PASSED
-M5-IU6 IMPLEMENTATION READINESS = READY
+M5-IU6 IMPLEMENTATION READINESS = NOT_READY
 
-BLOCKERS = 0
-FORMAL IMPLEMENTATION = AUTHORIZED WITHIN FROZEN IU6 SCOPE
+BLOCKERS = 1
+FORMAL IMPLEMENTATION = PAUSED AT WHOLE-SKILL REPLAY EVIDENCE BOUNDARY
 ~~~
 
 原因不是 M5 缺少“重试循环”，而是当前 frozen runtime 仍无法无歧义表达安全 retry / timeout / idempotency。
@@ -543,6 +543,73 @@ CA-M5-IU6-04 = PASSED
 M5-IU6 IMPLEMENTATION READINESS = READY
 FORMAL IMPLEMENTATION = AUTHORIZED
 ~~~
+## 13C. B-M5-IU6-009 TOOL_RELIABILITY_EVIDENCE_MISSING_FOR_STEP_REPLAY
+
+Formal Implementation 对 whole-Skill replay 做 evidence audit 时确认：
+
+~~~text
+ToolInvocationJournalEntry.idempotency_key = None
+~~~
+
+无法区分：
+
+~~~text
+Tool policy = NATURAL
+或
+Tool policy = NON_IDEMPOTENT
+~~~
+
+但 frozen IU6 design 明确要求：
+
+~~~text
+NON_IDEMPOTENT + real invocation started
+→ whole-Skill automatic replay must be blocked
+~~~
+
+仅依赖 Skill owner policy 不足以覆盖子 Tool side-effect policy；Skill NATURAL 不得静默覆盖一个已实际执行的 NON_IDEMPOTENT Tool。
+
+新增最小 Controlled Amendment：
+
+~~~text
+CA-M5-IU6-05
+Tool Reliability Evidence for Step Replay
+~~~
+
+冻结 Core-owned logical Tool evidence：
+
+~~~text
+ToolReliabilityEvidence
+- policy_identity
+- idempotency_mode
+- side_effect_class
+- invocation_started
+~~~
+
+并挂到：
+
+~~~text
+ToolInvocationJournalEntry.reliability_evidence
+~~~
+
+规则：
+
+~~~text
+legacy IU4 journal may omit evidence
+IU6 whole-Skill replay evaluator must treat missing evidence as UNKNOWN
+NON_IDEMPOTENT + invocation_started = UNSAFE
+NATURAL and KEY_BASED remain distinguishable
+recovered/gate-only logical result may have invocation_started = false
+~~~
+
+结论：
+
+~~~text
+B-M5-IU6-009 = OPEN
+REQUIRES CA-M5-IU6-05
+
+M5-IU6 IMPLEMENTATION READINESS = NOT_READY
+FORMAL IMPLEMENTATION = PAUSED_AT_WHOLE_SKILL_REPLAY_EVIDENCE_BOUNDARY
+~~~
 ## 14. Implementation Readiness Re-Review
 
 Re-review evidence:
@@ -581,8 +648,8 @@ The only M6 matches in current source are comments/docstrings explicitly stating
 Therefore:
 
 ~~~text
-M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = PASSED_AFTER_CA-M5-IU6-04
-M5-IU6 IMPLEMENTATION READINESS = READY
+M5-IU6 IMPLEMENTATION READINESS RE-REVIEW = SUPERSEDED_BY_B-M5-IU6-009
+M5-IU6 IMPLEMENTATION READINESS = NOT_READY
 ~~~
 
 READY means the frozen contracts are sufficient to begin IU6 Formal Implementation. It does not mean Timeout / Retry / Idempotency runtime behavior is implemented or verified.
@@ -616,10 +683,17 @@ B-M5-IU6-005 = CLOSED
 B-M5-IU6-006 = CLOSED
 B-M5-IU6-007 = CLOSED
 B-M5-IU6-008 = CLOSED
+B-M5-IU6-009 = OPEN
 
-NEW BLOCKER = NONE
+NEW BLOCKER = B-M5-IU6-009
 
-NEXT REQUIRED = RESUME M5-IU6 FORMAL IMPLEMENTATION
+CA-M5-IU6-05 = IN PROGRESS
+
+NEXT REQUIRED:
+CA-M5-IU6-05 Targeted Amendment Review
+→ four local gates
+→ M5-IU6 Readiness Re-Review
+→ resume whole-Skill M5-IU6 Formal Implementation
 
 M5 = IN PROGRESS
 ~~~

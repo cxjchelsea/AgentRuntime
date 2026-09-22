@@ -8,7 +8,9 @@ canonical ExecutionResult, or invokes M6.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -20,6 +22,12 @@ from runtime.execution.capability_resolution import (
     CapabilityKind,
     ResolvedCapability,
     ResolvedStepCapabilities,
+)
+from runtime.execution.control_application import (
+    InFlightOperationHandle,
+    InFlightOperationIdentifierFactory,
+    InFlightOperationKind,
+    InFlightOperationRegistry,
 )
 from runtime.execution.foundation import StepLifecycleSnapshot
 from runtime.execution.invocation import (
@@ -183,6 +191,10 @@ class CoreApprovedToolInvoker(
         step_attempt_number: int = 1,
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
         reliability_runtime: ToolReliabilityRuntime | None = None,
+        inflight_registry: InFlightOperationRegistry | None = None,
+        inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
+        inflight_parent_handle_id: str | None = None,
+        inflight_clock: Callable[[], datetime] | None = None,
     ) -> None:
         if not step_execution_id.strip():
             raise ValueError("step_execution_id must not be blank")
@@ -190,12 +202,32 @@ class CoreApprovedToolInvoker(
             raise ValueError("step_attempt_number must be >= 1")
         if reliability_runtime is not None and (step_id is None or not step_id.strip()):
             raise ValueError("reliable Tool invocation requires non-blank step_id")
+        tracking_values = (
+            inflight_registry,
+            inflight_identifier_factory,
+            inflight_parent_handle_id,
+        )
+        if any(value is not None for value in tracking_values) and not all(
+            value is not None for value in tracking_values
+        ):
+            raise ValueError(
+                "Tool in-flight tracking requires registry/factory/parent handle together"
+            )
+        if (
+            inflight_parent_handle_id is not None
+            and not inflight_parent_handle_id.strip()
+        ):
+            raise ValueError("inflight_parent_handle_id must not be blank")
         self._execution_context = execution_context
         self._step_execution_id = step_execution_id
         self._step_id = step_id
         self._step_attempt_number = step_attempt_number
         self._prior_attempt_journal = prior_attempt_journal
         self._reliability_runtime = reliability_runtime
+        self._inflight_registry = inflight_registry
+        self._inflight_identifier_factory = inflight_identifier_factory
+        self._inflight_parent_handle_id = inflight_parent_handle_id
+        self._inflight_clock = inflight_clock or (lambda: datetime.now(UTC))
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
         self._input_validator = input_validator
@@ -2039,6 +2071,9 @@ class StepCapabilityExecutor:
         output_validator: ToolOutputValidator,
         identifier_factory: CapabilityInvocationIdentifierFactory,
         reliability_runtime: ToolReliabilityRuntime | None = None,
+        inflight_registry: InFlightOperationRegistry | None = None,
+        inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
+        inflight_clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
@@ -2046,6 +2081,13 @@ class StepCapabilityExecutor:
         self._output_validator = output_validator
         self._identifier_factory = identifier_factory
         self._reliability_runtime = reliability_runtime
+        if (inflight_registry is None) != (inflight_identifier_factory is None):
+            raise ValueError(
+                "owner in-flight tracking requires registry and identifier factory together"
+            )
+        self._inflight_registry = inflight_registry
+        self._inflight_identifier_factory = inflight_identifier_factory
+        self._inflight_clock = inflight_clock or (lambda: datetime.now(UTC))
 
     async def execute(
         self,

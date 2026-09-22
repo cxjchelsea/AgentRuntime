@@ -177,6 +177,24 @@ class StepReliabilityCoordinator:
                 ) from exc
             attempts.append(observation)
 
+            if (
+                attempt_number > 1
+                and not self._tool_operation_sequence_matches(
+                    prior_journal=prior_journal,
+                    current_journal=observation.tool_journal,
+                )
+            ):
+                reliability_decision = StepReliabilityDecision(
+                    disposition=StepReliabilityDisposition.ABORT_UNKNOWN,
+                    reason_codes=("STEP_REPLAY_TOOL_SEQUENCE_DRIFT",),
+                )
+                return self._finish(
+                    attempts=attempts,
+                    observation=observation,
+                    reliability_decision=reliability_decision,
+                    owner_policy=owner_policy,
+                )
+
             replay_safety: ReplaySafetyDecision | None = None
             retry_decision: RetryDecision | None = None
             if (
@@ -477,6 +495,19 @@ class StepReliabilityCoordinator:
                 disposition=StepFinalizationDisposition.UNKNOWN,
                 reason_codes=("STEP_FINALIZATION_EVALUATOR_UNKNOWN",),
             )
+        elif (
+            reliability_decision.disposition
+            in {
+                StepReliabilityDisposition.ABORT_UNKNOWN,
+                StepReliabilityDisposition.WAIT_RECOVERY,
+                StepReliabilityDisposition.KEEP_RUNNING,
+            }
+            and finalization.disposition is StepFinalizationDisposition.FINALIZE
+        ):
+            finalization = StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.UNKNOWN,
+                reason_codes=("STEP_FINALIZATION_AUTHORITY_INCONSISTENT",),
+            )
         return StepReliabilityRunResult(
             attempts=tuple(attempts),
             reliability_decision=reliability_decision,
@@ -564,6 +595,32 @@ class StepReliabilityCoordinator:
             StepAttemptStatus.PARTIAL_SUCCESS: RetryTriggerStatus.PARTIAL_SUCCESS,
         }
         return mapping.get(status)
+
+    @staticmethod
+    def _tool_operation_sequence_matches(
+        *,
+        prior_journal: tuple[ToolInvocationJournalEntry, ...],
+        current_journal: tuple[ToolInvocationJournalEntry, ...],
+    ) -> bool:
+        prior = tuple(
+            (
+                entry.tool_id,
+                entry.tool_version,
+                entry.operation_key,
+                entry.operation_fingerprint,
+            )
+            for entry in prior_journal
+        )
+        current = tuple(
+            (
+                entry.tool_id,
+                entry.tool_version,
+                entry.operation_key,
+                entry.operation_fingerprint,
+            )
+            for entry in current_journal
+        )
+        return prior == current
 
     @staticmethod
     def _unknown_outcome(

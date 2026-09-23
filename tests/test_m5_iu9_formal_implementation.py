@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, cast
@@ -16,6 +17,7 @@ from runtime.execution.capability_execution import (
 from runtime.execution.capability_resolution import CapabilityExecutionOwner
 from runtime.execution.models import (
     M5WorkflowResult,
+    StepExecutionStatus,
     WorkflowExecutionStatus,
 )
 from runtime.execution.recovery import (
@@ -452,12 +454,7 @@ class SimpleStepFinalizationEvaluator:
         return StepFinalizationDecision(
             disposition=StepFinalizationDisposition.FINALIZE,
             reason_codes=("FINALIZE_RECOVERED_SUCCESS",),
-            terminal_status=kwargs["observation"].status.to_step_status()
-            if hasattr(kwargs["observation"].status, "to_step_status")
-            else __import__(
-                "runtime.execution.models",
-                fromlist=["StepExecutionStatus"],
-            ).StepExecutionStatus.SUCCESS,
+            terminal_status=StepExecutionStatus.SUCCESS,
         )
 
 
@@ -509,7 +506,7 @@ def test_recovered_skill_retry_claims_next_attempt_through_iu6_authority() -> No
         result = await coordinator.run_recovered_retry(
             approved_plan=plan,
             step=step,
-            step_snapshot=_snapshot(step),
+            step_snapshot=replace(_snapshot(step), started_at=NOW),
             resolved=_skill_resolved(skill),
             execution_context=_context(),
             expected_current_attempt=1,

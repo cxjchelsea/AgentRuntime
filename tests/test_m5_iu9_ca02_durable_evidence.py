@@ -597,8 +597,7 @@ def test_completed_inflight_evidence_is_not_downgraded_to_orphaned() -> None:
         )
         assert recovery.status is InFlightRecoveryTransitionStatus.TRANSITIONED
         by_id = {
-            item.handle.operation_handle_id: item
-            for item in recovery.observations
+            item.handle.operation_handle_id: item for item in recovery.observations
         }
         assert by_id[owner.operation_handle_id].state is (
             InFlightEvidenceState.ORPHANED_UNCONFIRMED

@@ -229,7 +229,9 @@ def test_same_execution_session_lock_exact_replay_is_idempotent() -> None:
     coordinator = _session_coordinator(authority)
     context = _context()
 
-    first = asyncio.run(coordinator.acquire(execution_context=context, requested_at=NOW))
+    first = asyncio.run(
+        coordinator.acquire(execution_context=context, requested_at=NOW)
+    )
     replay = asyncio.run(
         coordinator.acquire(
             execution_context=context,
@@ -317,7 +319,9 @@ def test_session_lock_releases_only_after_authoritative_terminal_execution() -> 
     assert authority.active_lease(acquired.session_lease.lease.lock_key) is None
 
 
-def test_terminal_execution_status_with_nonterminal_step_does_not_release_session() -> None:
+def test_terminal_execution_status_with_nonterminal_step_does_not_release_session() -> (
+    None
+):
     authority = InMemoryResourceLockAuthority()
     coordinator = _session_coordinator(authority)
     acquired = asyncio.run(
@@ -462,9 +466,7 @@ def test_operation_binding_registry_rejects_rebinding() -> None:
     )
     second = replace(
         first,
-        leases=(
-            replace(first.leases[0], lock_key="resource-002"),
-        ),
+        leases=(replace(first.leases[0], lock_key="resource-002"),),
     )
 
     assert asyncio.run(registry.register(first)) is True
@@ -731,8 +733,12 @@ def test_partial_release_uncertainty_keeps_binding_for_safe_retry() -> None:
     )
 
     assert decision.status is OperationResourceReleaseStatus.UNKNOWN
-    assert tuple(item.lock_key for item in decision.released_leases) == ("resource-001",)
-    assert tuple(item.lock_key for item in decision.retained_leases) == ("resource-002",)
+    assert tuple(item.lock_key for item in decision.released_leases) == (
+        "resource-001",
+    )
+    assert tuple(item.lock_key for item in decision.retained_leases) == (
+        "resource-002",
+    )
     assert asyncio.run(registry.get(handle.operation_handle_id)) == binding
 
 

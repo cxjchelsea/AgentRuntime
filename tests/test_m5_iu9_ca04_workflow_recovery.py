@@ -571,3 +571,99 @@ def test_resume_rejects_checkpoint_that_is_no_longer_latest() -> None:
         assert "WORKFLOW_RESUME_CHECKPOINT_IS_NOT_LATEST" in decision.reason_codes
 
     asyncio.run(scenario())
+
+
+class CountingResumableWorkflow(ResumableWorkflow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.resume_calls = 0
+
+    async def resume(self, request, execution_context, tool_invoker):
+        self.resume_calls += 1
+        return await super().resume(request, execution_context, tool_invoker)
+
+
+class EpochAdvancingCheckpointStore:
+    def __init__(
+        self,
+        *,
+        delegate: InMemoryWorkflowRecoveryCheckpointStore,
+        claims: InMemoryRecoveryClaimAuthority,
+    ) -> None:
+        self._delegate = delegate
+        self._claims = claims
+        self._advanced = False
+
+    async def read_latest(self, *, execution_id: str, step_execution_id: str):
+        decision = await self._delegate.read_latest(
+            execution_id=execution_id,
+            step_execution_id=step_execution_id,
+        )
+        if not self._advanced:
+            self._advanced = True
+            current = await self._claims.current(execution_id)
+            assert current is not None
+            takeover = await self._claims.claim(
+                RecoveryClaimRequest(
+                    claim_id="claim-takeover",
+                    execution_id=execution_id,
+                    recovery_owner_id="worker-new",
+                    expected_current_epoch=current.recovery_epoch,
+                    source_snapshot_generation=current.source_snapshot_generation,
+                    requested_at=NOW + timedelta(seconds=1),
+                )
+            )
+            assert takeover.status is RecoveryClaimStatus.CLAIMED
+        return decision
+
+
+def test_resume_rechecks_epoch_immediately_before_external_admission() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(claims)
+        store = InMemoryWorkflowRecoveryCheckpointStore(claim_authority=claims)
+        checkpoint = WorkflowRecoveryCheckpoint(
+            execution_id="exec-1",
+            step_id="step-1",
+            step_execution_id="step-exec-1",
+            workflow_instance_id="wf-instance-1",
+            workflow_id="wf-1",
+            workflow_version="7",
+            checkpoint_id="wf-checkpoint-1",
+            generation=1,
+            material=WorkflowCheckpointMaterial(
+                state_reference="state://wf-1/g1",
+                resume_token="token-g1",
+                state_schema_version="domain-state-v3",
+            ),
+            committed_at=NOW,
+            writer_recovery_epoch=claim.recovery_epoch,
+            writer_recovery_owner_id=claim.recovery_owner_id,
+        )
+        assert (
+            await store.commit(checkpoint, expected_generation=0, required_claim=claim)
+        ).status is WorkflowCheckpointCommitStatus.COMMITTED
+
+        implementation = CountingResumableWorkflow()
+        coordinator = WorkflowResumeCoordinator(
+            claim_authority=claims,
+            checkpoint_store=EpochAdvancingCheckpointStore(
+                delegate=store,
+                claims=claims,
+            ),
+        )
+        decision = await coordinator.resume(
+            checkpoint=checkpoint,
+            resolved=_resolved_workflow(implementation),
+            execution_context=_snapshot().execution_context.restore(),
+            tool_invoker=FakeToolInvoker(),
+            recovery_claim=claim,
+        )
+        assert decision.status is WorkflowResumeStatus.UNKNOWN
+        assert (
+            "WORKFLOW_RESUME_ADMISSION_STALE_RECOVERY_EPOCH"
+            in decision.reason_codes
+        )
+        assert implementation.resume_calls == 0
+
+    asyncio.run(scenario())

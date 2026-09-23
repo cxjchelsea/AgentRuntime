@@ -297,10 +297,15 @@ class ExecutionControlCoordinator:
             at=terminal_at,
         )
         if self._terminal_observer is not None:
-            await self._terminal_observer.on_terminal_execution(
-                terminalized,
-                observed_at=terminal_at,
-            )
+            try:
+                await self._terminal_observer.on_terminal_execution(
+                    terminalized,
+                    observed_at=terminal_at,
+                )
+            except Exception:  # noqa: BLE001
+                # Control lifecycle is already terminal and persisted.
+                # Session-release uncertainty must not undo that truth.
+                pass
         return ExecutionControlRuntimeResult(
             latch_decision=latch_decision,
             application=application,

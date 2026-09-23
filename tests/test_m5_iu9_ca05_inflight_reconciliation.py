@@ -335,10 +335,10 @@ def test_probe_stop_reclaims_resource_and_commits_confirmed_stopped() -> None:
             execution_id=handle.execution_id,
             step_execution_id=handle.step_execution_id,
         )
-        assert observations[0].state is InFlightEvidenceState.FENCED_OUT
+        assert observations[0].state is InFlightEvidenceState.CONFIRMED_STOPPED
         assert (
             observations[0].reconciliation_basis
-            is InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED
+            is InFlightReconciliationBasis.OPERATION_STOPPED_CONFIRMED
         )
 
     asyncio.run(scenario())
@@ -481,10 +481,10 @@ def test_released_binding_tombstone_backfills_orphan_terminal_evidence() -> None
         assert decision.status is ResourceRecoveryStatus.ALREADY_RECLAIMED
 
         observations = await evidence.load_inflight(execution_id=handle.execution_id)
-        assert observations[0].state is InFlightEvidenceState.CONFIRMED_STOPPED
+        assert observations[0].state is InFlightEvidenceState.FENCED_OUT
         assert (
             observations[0].reconciliation_basis
-            is InFlightReconciliationBasis.OPERATION_STOPPED_CONFIRMED
+            is InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED
         )
 
     asyncio.run(scenario())

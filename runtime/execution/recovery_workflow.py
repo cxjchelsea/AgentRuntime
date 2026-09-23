@@ -19,7 +19,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.execution.foundation import StepLifecycleSnapshot
-from runtime.execution.models import StepExecutionStatus
+from runtime.execution.models import M5WorkflowResult, StepExecutionStatus, WorkflowExecutionStatus
 from runtime.execution.recovery import (
     ExecutionRecoveryClaim,
     ExecutionRecoverySnapshot,
@@ -264,6 +264,81 @@ class InMemoryWorkflowRecoveryCheckpointStore:
         async with self._lock:
             value = self._records.get(key)
             return None if value is None else deepcopy(value)
+
+
+class WorkflowCheckpointCoordinator:
+    """Commit WAITING as resumable only after exact durable checkpoint persistence."""
+
+    def __init__(
+        self,
+        *,
+        store: WorkflowRecoveryCheckpointStore,
+        claim_authority: RecoveryClaimAuthority,
+    ) -> None:
+        self._store = store
+        self._claim_authority = claim_authority
+
+    async def commit_waiting(
+        self,
+        *,
+        result: M5WorkflowResult,
+        execution_id: str,
+        step_execution_id: str,
+        workflow_version: str,
+        checkpoint_id: str,
+        generation: int,
+        expected_generation: int,
+        state_reference: str,
+        resume_token: str,
+        committed_at: datetime,
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> WorkflowCheckpointWriteDecision:
+        if result.status is not WorkflowExecutionStatus.WAITING:
+            return WorkflowCheckpointWriteDecision(
+                status=WorkflowCheckpointWriteStatus.CONFLICT,
+                reason_codes=("WORKFLOW_CHECKPOINT_REQUIRES_WAITING_RESULT",),
+            )
+        if recovery_claim.execution_id != execution_id:
+            return WorkflowCheckpointWriteDecision(
+                status=WorkflowCheckpointWriteStatus.CONFLICT,
+                reason_codes=("WORKFLOW_CHECKPOINT_CLAIM_EXECUTION_MISMATCH",),
+            )
+        try:
+            fence = await self._claim_authority.validate_current(recovery_claim)
+        except Exception:  # noqa: BLE001
+            return WorkflowCheckpointWriteDecision(
+                status=WorkflowCheckpointWriteStatus.UNKNOWN,
+                reason_codes=("WORKFLOW_CHECKPOINT_RECOVERY_FENCE_UNKNOWN",),
+            )
+        if fence.status is RecoveryEpochValidationStatus.STALE:
+            return WorkflowCheckpointWriteDecision(
+                status=WorkflowCheckpointWriteStatus.CONFLICT,
+                reason_codes=("WORKFLOW_CHECKPOINT_STALE_RECOVERY_EPOCH",),
+            )
+        if fence.status is not RecoveryEpochValidationStatus.CURRENT:
+            return WorkflowCheckpointWriteDecision(
+                status=WorkflowCheckpointWriteStatus.UNKNOWN,
+                reason_codes=("WORKFLOW_CHECKPOINT_RECOVERY_FENCE_UNKNOWN",),
+            )
+        checkpoint = WorkflowRecoveryCheckpoint(
+            checkpoint_id=checkpoint_id,
+            generation=generation,
+            execution_id=execution_id,
+            step_execution_id=step_execution_id,
+            workflow_instance_id=result.workflow_instance_id,
+            workflow_id=result.workflow_id,
+            workflow_version=workflow_version,
+            state_reference=state_reference,
+            resume_token=resume_token,
+            status=WorkflowRecoveryCheckpointStatus.WAITING_COMMITTED,
+            committed_at=committed_at,
+            writer_recovery_epoch=recovery_claim.recovery_epoch,
+        )
+        return await self._store.commit(
+            checkpoint,
+            expected_generation=expected_generation,
+            required_claim=recovery_claim,
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -971,15 +971,63 @@ class CoreApprovedToolInvoker(
                 "IU3 resolved Tool binding is internally inconsistent",
             )
 
+        (
+            concurrency_admission,
+            inflight_handle,
+            admission_reasons,
+        ) = await self._begin_physical_tool_operation(
+            resolved=resolved,
+            logical_tool_call_id=logical_tool_call_id,
+            physical_attempt=physical_attempt,
+        )
+        if admission_reasons:
+            error_code = (
+                "RESOURCE_LOCK_BUSY"
+                if concurrency_admission is not None
+                and concurrency_admission.status is ToolConcurrencyAdmissionStatus.BUSY
+                else admission_reasons[0]
+            )
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code=error_code,
+                reason_codes=admission_reasons,
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        operation_completion_ok: bool | None = None
         if timeout_seconds is None:
             try:
                 raw_result = await tool_implementation.invoke(
                     request,
                     self._execution_context,
                 )
+                operation_completion_ok = (
+                    await self._complete_physical_tool_operation(
+                        concurrency_admission=concurrency_admission,
+                        inflight_handle=inflight_handle,
+                    )
+                )
             except Exception:  # noqa: BLE001
                 raw_result = None
                 execution_exception = True
+                operation_completion_ok = (
+                    await self._complete_physical_tool_operation(
+                        concurrency_admission=concurrency_admission,
+                        inflight_handle=inflight_handle,
+                    )
+                )
         else:
             try:
                 timeout_result = await runtime.timeout_runner.run(
@@ -999,9 +1047,43 @@ class CoreApprovedToolInvoker(
             elif timeout_result.status is TimeoutRunStatus.COMPLETED:
                 raw_result = timeout_result.value
                 timeout_status = TimeoutRunStatus.COMPLETED
+                operation_completion_ok = (
+                    await self._complete_physical_tool_operation(
+                        concurrency_admission=concurrency_admission,
+                        inflight_handle=inflight_handle,
+                    )
+                )
             else:
                 raw_result = None
                 timeout_status = timeout_result.status
+
+        if operation_completion_ok is False:
+            raw_identity_valid = (
+                isinstance(raw_result, M5ToolResult)
+                and isinstance(raw_result.status, ToolExecutionStatus)
+                and raw_result.tool_call_id == logical_tool_call_id
+                and raw_result.tool_id == tool_id
+                and raw_result.attempt == physical_attempt
+            )
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code="TOOL_CONCURRENCY_COMPLETION_UNKNOWN",
+                reason_codes=("TOOL_CONCURRENCY_COMPLETION_UNKNOWN",),
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                raw_result=raw_result if raw_identity_valid else None,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
 
         if timeout_seconds is None and execution_exception:
             result = self._generated_result(

@@ -591,29 +591,22 @@ class RecoveryCoordinator:
             for step in snapshot.steps
             if step.status is StepExecutionStatus.RUNNING
         )
-        if len(running_steps) > 1:
-            return self._unknown(
-                snapshot.generation,
-                "RECOVERY_OWNER_FRAME_SUPERSESSION_RUNNING_STEP_AMBIGUOUS",
-            )
+        running_owner_ambiguous = False
         if len(running_steps) == 1:
             running_step = running_steps[0]
-            if (
+            running_owner_ambiguous = (
                 running_step.workflow_id is not None
                 and running_step.skill_id is not None
-            ):
-                return self._unknown(
-                    snapshot.generation,
-                    "RECOVERY_RUNNING_STEP_OWNER_AMBIGUOUS",
-                )
+            )
             owner_kind: InFlightOperationKind | None = None
             capability_id: str | None = None
-            if running_step.workflow_id is not None:
-                owner_kind = InFlightOperationKind.WORKFLOW
-                capability_id = running_step.workflow_id
-            elif running_step.skill_id is not None:
-                owner_kind = InFlightOperationKind.SKILL
-                capability_id = running_step.skill_id
+            if not running_owner_ambiguous:
+                if running_step.workflow_id is not None:
+                    owner_kind = InFlightOperationKind.WORKFLOW
+                    capability_id = running_step.workflow_id
+                elif running_step.skill_id is not None:
+                    owner_kind = InFlightOperationKind.SKILL
+                    capability_id = running_step.skill_id
 
             if owner_kind is not None and capability_id is not None:
                 try:
@@ -678,6 +671,11 @@ class RecoveryCoordinator:
 
         if len(running_steps) > 1:
             return self._unknown(snapshot.generation, "RECOVERY_MULTIPLE_RUNNING_STEPS")
+        if running_owner_ambiguous:
+            return self._unknown(
+                snapshot.generation,
+                "RECOVERY_RUNNING_STEP_OWNER_AMBIGUOUS",
+            )
         if len(running_steps) == 1:
             step = running_steps[0]
             if step.workflow_id is not None:

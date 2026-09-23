@@ -226,15 +226,18 @@ class OperationRecoveryStatus(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class OperationRecoveryDecision:
+    operation_handle_id: str
     status: OperationRecoveryStatus
     reason_codes: tuple[str, ...]
     observed_at: datetime
 
     def __post_init__(self) -> None:
+        _require_non_blank(self.operation_handle_id, "operation_handle_id")
         if not isinstance(self.status, OperationRecoveryStatus):
             raise TypeError("status must be OperationRecoveryStatus")
         if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
             raise ValueError("reason_codes must contain non-blank values")
+        # Core-local observation time, not an untrusted provider-clock timestamp.
         _require_aware(self.observed_at, "observed_at")
 
 
@@ -268,6 +271,7 @@ class ProviderFenceEvidence:
     def __post_init__(self) -> None:
         _require_non_blank(self.operation_handle_id, "operation_handle_id")
         _require_non_blank(self.fencing_token, "fencing_token")
+        # Core-local durable observation/commit time, not provider wall-clock time.
         _require_aware(self.established_at, "established_at")
         if self.recovery_epoch < 1:
             raise ValueError("recovery_epoch must be >= 1")
@@ -289,6 +293,34 @@ class ProviderFenceDecision:
                 raise ValueError("ESTABLISHED provider fence requires evidence")
         elif self.evidence is not None:
             raise ValueError("UNSUPPORTED/UNKNOWN provider fence cannot carry evidence")
+
+
+class ProviderFencePersistenceStatus(str, Enum):
+    RECORDED = "RECORDED"
+    ALREADY_CURRENT = "ALREADY_CURRENT"
+    CONFLICT = "CONFLICT"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderFencePersistenceDecision:
+    status: ProviderFencePersistenceStatus
+    reason_codes: tuple[str, ...]
+    evidence: ProviderFenceEvidence | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, ProviderFencePersistenceStatus):
+            raise TypeError("status must be ProviderFencePersistenceStatus")
+        if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
+            raise ValueError("reason_codes must contain non-blank values")
+        if self.status in {
+            ProviderFencePersistenceStatus.RECORDED,
+            ProviderFencePersistenceStatus.ALREADY_CURRENT,
+        }:
+            if self.evidence is None:
+                raise ValueError("successful provider-fence persistence requires evidence")
+        elif self.evidence is not None:
+            raise ValueError("CONFLICT/UNKNOWN cannot claim provider-fence evidence")
 
 
 class ProviderFencingAuthority(Protocol):
@@ -327,11 +359,7 @@ class DurableOperationResourceBindingRecord:
             raise ValueError("writer_recovery_epoch must be >= 1")
         _require_aware(self.updated_at, "updated_at")
         if self.state is DurableOperationResourceBindingState.ACTIVE:
-            if (
-                self.released_at is not None
-                or self.release_basis is not None
-                or self.provider_fence is not None
-            ):
+            if self.released_at is not None or self.release_basis is not None:
                 raise ValueError(
                     "ACTIVE operation-resource binding cannot carry release evidence"
                 )
@@ -344,12 +372,14 @@ class DurableOperationResourceBindingRecord:
             _require_non_blank(self.release_basis, "release_basis")
             if self.released_at < self.binding.handle.started_at:
                 raise ValueError("binding released_at cannot precede operation start")
-        if (
-            self.provider_fence is not None
-            and self.provider_fence.operation_handle_id
-            != self.binding.handle.operation_handle_id
-        ):
-            raise ValueError("provider fence operation identity mismatch")
+        if self.provider_fence is not None:
+            if (
+                self.provider_fence.operation_handle_id
+                != self.binding.handle.operation_handle_id
+            ):
+                raise ValueError("provider fence operation identity mismatch")
+            if self.provider_fence.established_at < self.binding.handle.started_at:
+                raise ValueError("provider fence cannot precede operation start")
 
 
 class DurableOperationResourceBindingReadStatus(str, Enum):
@@ -402,6 +432,16 @@ class DurableOperationResourceBindingStore(Protocol):
         operation_handle_id: str,
     ) -> DurableOperationResourceBindingReadDecision:
         """Read active/released binding history fail-closed."""
+
+    async def record_provider_fence(
+        self,
+        binding: OperationResourceLeaseBinding,
+        *,
+        evidence: ProviderFenceEvidence,
+        recorded_at: datetime,
+        required_claim: ExecutionRecoveryClaim,
+    ) -> ProviderFencePersistenceDecision:
+        """Durably commit provider-fence evidence before any lock release."""
 
     async def mark_released(
         self,
@@ -655,18 +695,34 @@ class ToolResourceRecoveryCoordinator:
 
         strong_basis: str | None = None
         operation_recovery: OperationRecoveryDecision | None = None
-        provider_fence: ProviderFenceEvidence | None = None
+        provider_fence: ProviderFenceEvidence | None = record.provider_fence
 
         if observation.state is InFlightEvidenceState.COMPLETED:
             strong_basis = "DURABLE_INFLIGHT_COMPLETED"
         elif observation.state is InFlightEvidenceState.CONFIRMED_STOPPED:
             strong_basis = "DURABLE_INFLIGHT_CONFIRMED_STOPPED"
+        elif provider_fence is not None:
+            if (
+                provider_fence.operation_handle_id != operation_handle_id
+                or provider_fence.recovery_epoch > recovery_claim.recovery_epoch
+                or provider_fence.established_at < handle.started_at
+                or provider_fence.established_at > recovered_at
+            ):
+                return self._retained(
+                    binding=binding,
+                    operation_handle_id=operation_handle_id,
+                    reason="DURABLE_PROVIDER_FENCE_EVIDENCE_INVALID",
+                )
+            strong_basis = "DURABLE_PROVIDER_FENCE"
         else:
             operation_recovery = await self._probe(handle)
             if operation_recovery is not None and (
                 operation_recovery.status in self._STRONG_RECOVERY
             ):
-                if operation_recovery.observed_at < handle.started_at:
+                if (
+                    operation_recovery.operation_handle_id != operation_handle_id
+                    or operation_recovery.observed_at < handle.started_at
+                ):
                     return self._retained(
                         binding=binding,
                         operation_handle_id=operation_handle_id,
@@ -697,8 +753,33 @@ class ToolResourceRecoveryCoordinator:
                             reason="PROVIDER_FENCE_EVIDENCE_INVALID",
                             operation_recovery=operation_recovery,
                         )
-                    provider_fence = evidence
-                    strong_basis = "PROVIDER_FENCE_ESTABLISHED"
+                    persisted = await self._binding_store.record_provider_fence(
+                        binding,
+                        evidence=evidence,
+                        recorded_at=recovered_at,
+                        required_claim=recovery_claim,
+                    )
+                    if persisted.status not in {
+                        ProviderFencePersistenceStatus.RECORDED,
+                        ProviderFencePersistenceStatus.ALREADY_CURRENT,
+                    } or persisted.evidence is None:
+                        return self._retained(
+                            binding=binding,
+                            operation_handle_id=operation_handle_id,
+                            reason=(
+                                "PROVIDER_FENCE_PERSISTENCE_CONFLICT"
+                                if persisted.status
+                                is ProviderFencePersistenceStatus.CONFLICT
+                                else "PROVIDER_FENCE_PERSISTENCE_UNKNOWN"
+                            ),
+                            operation_recovery=operation_recovery,
+                        )
+                    provider_fence = persisted.evidence
+                    strong_basis = (
+                        "PROVIDER_FENCE_ESTABLISHED"
+                        if persisted.status is ProviderFencePersistenceStatus.RECORDED
+                        else "DURABLE_PROVIDER_FENCE"
+                    )
                 elif fence_decision.status is ProviderFenceStatus.UNKNOWN:
                     return self._retained(
                         binding=binding,
@@ -787,14 +868,23 @@ class ToolResourceRecoveryCoordinator:
             decision = await self._operation_probe.probe(handle=handle)
         except Exception:  # noqa: BLE001
             return OperationRecoveryDecision(
+                operation_handle_id=handle.operation_handle_id,
                 status=OperationRecoveryStatus.UNKNOWN,
                 reason_codes=("OPERATION_RECOVERY_PROBE_EXCEPTION",),
                 observed_at=handle.started_at,
             )
         if not isinstance(decision, OperationRecoveryDecision):
             return OperationRecoveryDecision(
+                operation_handle_id=handle.operation_handle_id,
                 status=OperationRecoveryStatus.UNKNOWN,
                 reason_codes=("OPERATION_RECOVERY_PROBE_INVALID_DECISION",),
+                observed_at=handle.started_at,
+            )
+        if decision.operation_handle_id != handle.operation_handle_id:
+            return OperationRecoveryDecision(
+                operation_handle_id=handle.operation_handle_id,
+                status=OperationRecoveryStatus.UNKNOWN,
+                reason_codes=("OPERATION_RECOVERY_PROBE_IDENTITY_MISMATCH",),
                 observed_at=handle.started_at,
             )
         return decision
@@ -1111,6 +1201,76 @@ class InMemoryDurableResourceRecoveryStore(
                 record=deepcopy(record),
             )
 
+    async def record_provider_fence(
+        self,
+        binding: OperationResourceLeaseBinding,
+        *,
+        evidence: ProviderFenceEvidence,
+        recorded_at: datetime,
+        required_claim: ExecutionRecoveryClaim,
+    ) -> ProviderFencePersistenceDecision:
+        _require_aware(recorded_at, "recorded_at")
+        _require_claim_execution(required_claim, binding.handle.execution_id)
+        if evidence.operation_handle_id != binding.handle.operation_handle_id:
+            return ProviderFencePersistenceDecision(
+                status=ProviderFencePersistenceStatus.CONFLICT,
+                reason_codes=("PROVIDER_FENCE_OPERATION_IDENTITY_MISMATCH",),
+            )
+        if evidence.recovery_epoch != required_claim.recovery_epoch:
+            return ProviderFencePersistenceDecision(
+                status=ProviderFencePersistenceStatus.CONFLICT,
+                reason_codes=("PROVIDER_FENCE_RECOVERY_EPOCH_MISMATCH",),
+            )
+        if (
+            evidence.established_at < binding.handle.started_at
+            or evidence.established_at > recorded_at
+        ):
+            return ProviderFencePersistenceDecision(
+                status=ProviderFencePersistenceStatus.UNKNOWN,
+                reason_codes=("PROVIDER_FENCE_TIME_INVALID",),
+            )
+        async with self._lock:
+            fence_status = self._fence_status(required_claim)
+            if fence_status is RecoveryEpochValidationStatus.STALE:
+                return ProviderFencePersistenceDecision(
+                    status=ProviderFencePersistenceStatus.CONFLICT,
+                    reason_codes=("PROVIDER_FENCE_STALE_RECOVERY_EPOCH",),
+                )
+            if fence_status is not RecoveryEpochValidationStatus.CURRENT:
+                return ProviderFencePersistenceDecision(
+                    status=ProviderFencePersistenceStatus.UNKNOWN,
+                    reason_codes=("PROVIDER_FENCE_RECOVERY_EPOCH_UNKNOWN",),
+                )
+            key = binding.handle.operation_handle_id
+            existing = self._binding_by_handle.get(key)
+            if (
+                existing is None
+                or existing.binding != binding
+                or existing.state is not DurableOperationResourceBindingState.ACTIVE
+            ):
+                return ProviderFencePersistenceDecision(
+                    status=ProviderFencePersistenceStatus.CONFLICT,
+                    reason_codes=("PROVIDER_FENCE_BINDING_NOT_ACTIVE",),
+                )
+            if existing.provider_fence is not None:
+                return ProviderFencePersistenceDecision(
+                    status=ProviderFencePersistenceStatus.ALREADY_CURRENT,
+                    reason_codes=("PROVIDER_FENCE_ALREADY_DURABLE",),
+                    evidence=deepcopy(existing.provider_fence),
+                )
+            self._binding_by_handle[key] = replace(
+                existing,
+                revision=existing.revision + 1,
+                updated_at=recorded_at,
+                writer_recovery_epoch=required_claim.recovery_epoch,
+                provider_fence=deepcopy(evidence),
+            )
+            return ProviderFencePersistenceDecision(
+                status=ProviderFencePersistenceStatus.RECORDED,
+                reason_codes=("PROVIDER_FENCE_DURABLY_RECORDED",),
+                evidence=deepcopy(evidence),
+            )
+
     async def mark_released(
         self,
         binding: OperationResourceLeaseBinding,
@@ -1135,11 +1295,16 @@ class InMemoryDurableResourceRecoveryStore(
                 return False
             if existing.binding != binding:
                 raise ValueError("operation resource binding identity mismatch")
+            effective_fence = (
+                provider_fence
+                if provider_fence is not None
+                else existing.provider_fence
+            )
             if existing.state is DurableOperationResourceBindingState.RELEASED:
                 return (
                     existing.released_at == released_at
                     and existing.release_basis == release_basis
-                    and existing.provider_fence == provider_fence
+                    and existing.provider_fence == effective_fence
                 )
             if any(
                 (record := self._lock_by_acquisition.get(lease.acquisition_id)) is None
@@ -1156,7 +1321,7 @@ class InMemoryDurableResourceRecoveryStore(
                 writer_recovery_epoch=required_claim.recovery_epoch,
                 released_at=released_at,
                 release_basis=release_basis,
-                provider_fence=deepcopy(provider_fence),
+                provider_fence=deepcopy(effective_fence),
             )
             return True
 

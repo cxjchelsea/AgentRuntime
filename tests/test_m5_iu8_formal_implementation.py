@@ -9,6 +9,7 @@ from typing import Any, cast
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.execution import ExecutionContext
 from runtime.execution import (
+    CapabilityExecutionOwner,
     CapabilityExecutionStatus,
     CapabilityKind,
     CapabilityReferenceSource,
@@ -41,6 +42,7 @@ from runtime.execution import (
     ResolvedCapability,
     ResolvedIdempotencyPolicy,
     ResolvedReliabilityPolicy,
+    ResolvedResourceLock,
     ResolvedRetryPolicy,
     ResolvedTimeoutPolicy,
     ResourceLockProjectionStatus,
@@ -59,6 +61,7 @@ from runtime.execution import (
     TimeoutRunResult,
     TimeoutRunStatus,
     ToolConcurrencyRuntime,
+    IdempotencyMode,
     ToolExecutionStatus,
     ToolOperationCorrelationDecision,
     ToolOperationCorrelationKey,
@@ -109,16 +112,10 @@ class StaticResourceResolver:
         return ResourceLockResolutionDecision(
             status=ResourceLockResolutionStatus.RESOLVED,
             reason_codes=("RESOURCE_LOCK_RESOLVED",),
-            resolved_lock=cast(
-                Any,
-                __import__(
-                    "runtime.execution.resource_lock_set",
-                    fromlist=["ResolvedResourceLock"],
-                ).ResolvedResourceLock(
-                    resource_ref=requirement.resource_ref,
-                    lock_key=f"{execution_context.device_id or 'shared'}:exclusive",
-                    provenance=("formal-test-resolver",),
-                ),
+            resolved_lock=ResolvedResourceLock(
+                resource_ref=requirement.resource_ref,
+                lock_key=f"{execution_context.device_id or 'shared'}:exclusive",
+                provenance=("formal-test-resolver",),
             ),
         )
 
@@ -193,8 +190,8 @@ class FixedPolicyResolver:
                 retry_on_statuses=(),
                 backoff_seconds=0.0,
             ),
-            idempotency=ResolvedIdempotencyPolicy(mode="NATURAL"),
-            side_effect_class=SideEffectClass.EXTERNAL_REVERSIBLE,
+            idempotency=ResolvedIdempotencyPolicy(mode=IdempotencyMode.NATURAL),
+            side_effect_class=SideEffectClass.HIGH,
         )
 
 
@@ -392,9 +389,9 @@ def test_session_busy_blocks_step_before_skill_side_effect() -> None:
         assert first.status is ExecutionConcurrencyAdmissionStatus.ADMITTED
 
         skill = RecordingSkill()
-        approved_plan, step = _approved_step(owner=cast(Any, "SKILL"))
-        # Use the established IU4 helper's real enum-backed approved plan.
-        approved_plan, step = _approved_step()
+        approved_plan, step = _approved_step(
+            owner=CapabilityExecutionOwner.SKILL
+        )
         resolved = _skill_resolved(skill)
         snapshot = _snapshot(step)
         executor = StepCapabilityExecutor(

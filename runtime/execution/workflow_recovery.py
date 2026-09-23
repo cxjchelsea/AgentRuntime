@@ -58,7 +58,6 @@ from runtime.execution.reliability_boundary import (
 )
 from runtime.registries.definitions import WorkflowDefinition
 
-
 WORKFLOW_RECOVERY_CHECKPOINT_SCHEMA_VERSION = "m5-iu9-workflow-checkpoint-v1"
 
 

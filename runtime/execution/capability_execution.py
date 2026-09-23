@@ -29,6 +29,14 @@ from runtime.execution.control_application import (
     InFlightOperationKind,
     InFlightOperationRegistry,
 )
+from runtime.execution.concurrency_runtime import (
+    ExecutionConcurrencyAdmissionStatus,
+    ExecutionConcurrencyRuntime,
+    ToolConcurrencyAdmissionDecision,
+    ToolConcurrencyAdmissionStatus,
+    ToolConcurrencyCompletionStatus,
+    ToolConcurrencyRuntime,
+)
 from runtime.execution.foundation import StepLifecycleSnapshot
 from runtime.execution.invocation import (
     ApprovedToolInvoker,
@@ -195,6 +203,7 @@ class CoreApprovedToolInvoker(
         inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
         inflight_parent_handle_id: str | None = None,
         inflight_clock: Callable[[], datetime] | None = None,
+        tool_concurrency_runtime: ToolConcurrencyRuntime | None = None,
     ) -> None:
         if not step_execution_id.strip():
             raise ValueError("step_execution_id must not be blank")
@@ -202,6 +211,31 @@ class CoreApprovedToolInvoker(
             raise ValueError("step_attempt_number must be >= 1")
         if reliability_runtime is not None and (step_id is None or not step_id.strip()):
             raise ValueError("reliable Tool invocation requires non-blank step_id")
+        if tool_concurrency_runtime is not None:
+            if inflight_parent_handle_id is None:
+                raise ValueError(
+                    "Tool concurrency runtime requires owner parent handle"
+                )
+            if (
+                inflight_registry is not None
+                and inflight_registry is not tool_concurrency_runtime.inflight_registry
+            ):
+                raise ValueError(
+                    "Tool concurrency runtime must share IU7 in-flight registry"
+                )
+            if (
+                inflight_identifier_factory is not None
+                and inflight_identifier_factory
+                is not tool_concurrency_runtime.inflight_identifier_factory
+            ):
+                raise ValueError(
+                    "Tool concurrency runtime must share IU7 identifier factory"
+                )
+            inflight_registry = tool_concurrency_runtime.inflight_registry
+            inflight_identifier_factory = (
+                tool_concurrency_runtime.inflight_identifier_factory
+            )
+
         tracking_values = (
             inflight_registry,
             inflight_identifier_factory,
@@ -228,6 +262,7 @@ class CoreApprovedToolInvoker(
         self._inflight_identifier_factory = inflight_identifier_factory
         self._inflight_parent_handle_id = inflight_parent_handle_id
         self._inflight_clock = inflight_clock or (lambda: datetime.now(UTC))
+        self._tool_concurrency_runtime = tool_concurrency_runtime
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
         self._input_validator = input_validator
@@ -2249,6 +2284,8 @@ class StepCapabilityExecutor:
         inflight_registry: InFlightOperationRegistry | None = None,
         inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
         inflight_clock: Callable[[], datetime] | None = None,
+        execution_concurrency_runtime: ExecutionConcurrencyRuntime | None = None,
+        tool_concurrency_runtime: ToolConcurrencyRuntime | None = None,
     ) -> None:
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
@@ -2256,6 +2293,28 @@ class StepCapabilityExecutor:
         self._output_validator = output_validator
         self._identifier_factory = identifier_factory
         self._reliability_runtime = reliability_runtime
+        self._execution_concurrency_runtime = execution_concurrency_runtime
+        self._tool_concurrency_runtime = tool_concurrency_runtime
+        if tool_concurrency_runtime is not None:
+            if (
+                inflight_registry is not None
+                and inflight_registry is not tool_concurrency_runtime.inflight_registry
+            ):
+                raise ValueError(
+                    "Tool concurrency runtime must share owner in-flight registry"
+                )
+            if (
+                inflight_identifier_factory is not None
+                and inflight_identifier_factory
+                is not tool_concurrency_runtime.inflight_identifier_factory
+            ):
+                raise ValueError(
+                    "Tool concurrency runtime must share owner identifier factory"
+                )
+            inflight_registry = tool_concurrency_runtime.inflight_registry
+            inflight_identifier_factory = (
+                tool_concurrency_runtime.inflight_identifier_factory
+            )
         if (inflight_registry is None) != (inflight_identifier_factory is None):
             raise ValueError(
                 "owner in-flight tracking requires registry and identifier factory together"
@@ -2369,6 +2428,7 @@ class StepCapabilityExecutor:
                     else None
                 ),
                 inflight_clock=self._inflight_clock,
+                tool_concurrency_runtime=self._tool_concurrency_runtime,
             )
         except (TypeError, ValueError):
             completion_ok = await self._complete_owner_inflight(owner_handle)

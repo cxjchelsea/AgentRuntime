@@ -983,12 +983,6 @@ class CoreApprovedToolInvoker(
 
         await self._authorize_recovery_side_effect()
 
-        await self._authorize_recovery_side_effect()
-
-        await self._authorize_recovery_side_effect()
-
-        await self._authorize_recovery_side_effect()
-
         (
             concurrency_admission,
             inflight_handle,
@@ -1810,6 +1804,8 @@ class CoreApprovedToolInvoker(
             attempt=physical_attempt,
             idempotency_key=idempotency_key,
         )
+
+        await self._authorize_recovery_side_effect()
 
         (
             concurrency_admission,

@@ -715,3 +715,195 @@ def test_confirmed_stop_control_cleans_tool_lock_before_terminalization() -> Non
         assert owner in chain
 
     asyncio.run(scenario())
+
+
+class ExplodingTerminalObserver:
+    async def on_terminal_execution(
+        self,
+        prepared: PreparedExecution,
+        *,
+        observed_at: datetime,
+    ) -> None:
+        del prepared, observed_at
+        raise RuntimeError("terminal observer unavailable")
+
+
+def test_terminal_observer_failure_does_not_reverse_persisted_execution() -> None:
+    async def scenario() -> None:
+        context = _context(execution_id="execution-observer")
+        step = StepLifecycleSnapshot(
+            step_execution_id="step-exec-observer",
+            step_id="step-observer",
+            action="ACTION_A",
+            status=StepExecutionStatus.PENDING,
+        )
+        prepared = PreparedExecution(
+            execution_context=context,
+            execution_record=ExecutionRecord(
+                execution_id=context.execution_id,
+                plan_id=context.plan_id,
+                request_id=context.request_id,
+                identity_scope=context.identity_scope,
+                status="CREATED",
+                current_step=None,
+                step_results=(),
+                created_at=NOW,
+                updated_at=NOW,
+            ),
+            steps=(step,),
+        )
+        store = InMemoryExecutionStateStore()
+        assert await store.create(prepared.execution_record) is True
+        lifecycle = ExecutionLifecycleService(
+            lifecycle_manager=ExecutionLifecycleManager(),
+            execution_store=store,
+            terminal_observer=ExplodingTerminalObserver(),
+        )
+        running = await lifecycle.start_execution(
+            prepared,
+            at=NOW + timedelta(seconds=1),
+        )
+        running = await lifecycle.start_step(
+            running,
+            step_id="step-observer",
+            at=NOW + timedelta(seconds=2),
+        )
+        running = await lifecycle.finish_step(
+            running,
+            step_id="step-observer",
+            status=StepExecutionStatus.SUCCESS,
+            at=NOW + timedelta(seconds=3),
+        )
+
+        terminal = await lifecycle.finish_execution(
+            running,
+            status=ExecutionPlanStatus.SUCCESS,
+            at=NOW + timedelta(seconds=4),
+        )
+
+        assert terminal.execution_record.status == "SUCCESS"
+        stored = await store.load(context.execution_id)
+        assert stored is not None
+        assert stored.status == "SUCCESS"
+
+    asyncio.run(scenario())
+
+
+def test_concurrency_boundary_rejects_mismatched_tool_definition_identity() -> None:
+    async def scenario() -> None:
+        runtime, authority, inflight, operation_registry, ids = _tool_runtime()
+        del operation_registry
+        context = _context(execution_id="execution-definition-mismatch")
+        parent = await _register_owner(
+            inflight,
+            ids,
+            execution_id=context.execution_id,
+            step_execution_id="step-exec-definition-mismatch",
+        )
+
+        decision = await runtime.admit(
+            tool_definition=ToolDefinition(
+                tool_id="OTHER_TOOL",
+                version="1.0.0",
+                resource_locks=["exclusive-device"],
+            ),
+            tool_id="DOMAIN_TOOL",
+            tool_version="1.0.0",
+            execution_context=context,
+            step_execution_id=parent.step_execution_id,
+            parent_handle_id=parent.operation_handle_id,
+            logical_tool_call_id="logical-mismatch-001",
+            physical_attempt=1,
+        )
+
+        assert decision.status.value == "UNKNOWN"
+        assert decision.reason_codes == (
+            "TOOL_CONCURRENCY_DEFINITION_IDENTITY_MISMATCH",
+        )
+        assert authority.active_lease("device-001:exclusive") is None
+        chain = await inflight.active_chain(
+            execution_id=context.execution_id,
+            step_execution_id=parent.step_execution_id,
+        )
+        assert chain == (parent,)
+
+    asyncio.run(scenario())
+
+
+def test_control_terminal_observer_failure_does_not_reverse_cancellation() -> None:
+    async def scenario() -> None:
+        context = _context(execution_id="execution-control-observer")
+        owner = InFlightOperationHandle(
+            operation_handle_id="owner-control-observer",
+            execution_id=context.execution_id,
+            step_execution_id="step-exec-control-observer",
+            kind=InFlightOperationKind.SKILL,
+            capability_id="SKILL_A",
+            capability_version="1.0.0",
+            started_at=NOW,
+        )
+        inflight = InMemoryInFlightOperationRegistry()
+        assert await inflight.register(owner) is True
+        step = StepLifecycleSnapshot(
+            step_execution_id=owner.step_execution_id,
+            step_id="step-control-observer",
+            action="ACTION_A",
+            status=StepExecutionStatus.RUNNING,
+            skill_id="SKILL_A",
+            started_at=NOW,
+        )
+        prepared = PreparedExecution(
+            execution_context=context,
+            execution_record=ExecutionRecord(
+                execution_id=context.execution_id,
+                plan_id=context.plan_id,
+                request_id=context.request_id,
+                identity_scope=context.identity_scope,
+                status="RUNNING",
+                current_step=step.step_id,
+                step_results=(),
+                created_at=NOW - timedelta(seconds=1),
+                updated_at=NOW,
+            ),
+            steps=(step,),
+            started_at=NOW - timedelta(seconds=1),
+        )
+        store = InMemoryExecutionStateStore()
+        assert await store.create(prepared.execution_record) is True
+        signal = ExecutionControlSignal(
+            signal_type=ExecutionControlSignalType.CANCEL,
+            reason_code="USER_STOP",
+            source="RUNTIME",
+            signal_id="signal-control-observer",
+            target_execution_id=context.execution_id,
+            issued_at=NOW,
+        )
+        coordinator = ExecutionControlCoordinator(
+            watcher=StaticWatcher(
+                ObservedExecutionControl(
+                    signal=signal,
+                    observed_at=NOW + timedelta(seconds=1),
+                )
+            ),
+            latch=InMemoryExecutionControlLatch(),
+            interrupt_coordinator=InFlightInterruptCoordinator(
+                registry=inflight,
+                interrupt_controller=ConfirmingInterruptController(),
+            ),
+            application_evaluator=ExecutionControlApplicationEvaluator(),
+            lifecycle_service=ExecutionControlLifecycleService(
+                transitioner=ExecutionControlLifecycleTransitioner(),
+                execution_store=store,
+            ),
+            clock=lambda: NOW + timedelta(seconds=2),
+            terminal_observer=ExplodingTerminalObserver(),
+        )
+
+        result = await coordinator.watch_and_apply(prepared)
+
+        assert result.prepared.execution_record.status == "CANCELLED"
+        stored = await store.load(context.execution_id)
+        assert stored is not None
+        assert stored.status == "CANCELLED"
+
+    asyncio.run(scenario())

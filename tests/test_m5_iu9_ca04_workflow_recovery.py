@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+
 from runtime.execution import (
     CapabilityExecutionOwner,
     CapabilityKind,
@@ -575,10 +576,14 @@ def test_resume_rejects_checkpoint_that_is_no_longer_latest() -> None:
             writer_recovery_owner_id=claim.recovery_owner_id,
         )
         assert (
-            await store.commit(first, expected_generation=0, writer_fence=_recovery_fence(claim))
+            await store.commit(
+                first, expected_generation=0, writer_fence=_recovery_fence(claim)
+            )
         ).status is WorkflowCheckpointCommitStatus.COMMITTED
         assert (
-            await store.commit(second, expected_generation=1, writer_fence=_recovery_fence(claim))
+            await store.commit(
+                second, expected_generation=1, writer_fence=_recovery_fence(claim)
+            )
         ).status is WorkflowCheckpointCommitStatus.COMMITTED
 
         coordinator = WorkflowResumeCoordinator(
@@ -665,7 +670,9 @@ def test_resume_rechecks_epoch_before_authorization_and_does_not_invoke() -> Non
             writer_recovery_owner_id=claim.recovery_owner_id,
         )
         assert (
-            await store.commit(checkpoint, expected_generation=0, writer_fence=_recovery_fence(claim))
+            await store.commit(
+                checkpoint, expected_generation=0, writer_fence=_recovery_fence(claim)
+            )
         ).status is WorkflowCheckpointCommitStatus.COMMITTED
 
         implementation = CountingResumableWorkflow()
@@ -692,7 +699,9 @@ def test_resume_rechecks_epoch_before_authorization_and_does_not_invoke() -> Non
     asyncio.run(scenario())
 
 
-def test_live_waiting_checkpoint_commits_before_crash_and_recovery_fences_old_writer() -> None:
+def test_live_waiting_checkpoint_commits_before_crash_and_recovery_fences_old_writer() -> (
+    None
+):
     async def scenario() -> None:
         claims = InMemoryRecoveryClaimAuthority()
         store = InMemoryWorkflowRecoveryCheckpointStore(claim_authority=claims)
@@ -743,8 +752,7 @@ def test_live_waiting_checkpoint_commits_before_crash_and_recovery_fences_old_wr
         assert recovery_claim.recovery_epoch == 1
         assert fenced.status is WorkflowCheckpointCommitStatus.CONFLICT
         assert (
-            "WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCED_BY_RECOVERY"
-            in fenced.reason_codes
+            "WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCED_BY_RECOVERY" in fenced.reason_codes
         )
         assert adapter.calls == 1
 

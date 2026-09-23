@@ -144,7 +144,7 @@ ExecutionRecoverySnapshot
 - generation
 - execution_id
 - captured_at
-- execution_context snapshot
+- recovery-safe ExecutionContext projection
 - execution_record snapshot
 - typed step lifecycle snapshots
 - execution_started_at
@@ -154,6 +154,8 @@ ExecutionRecoverySnapshot
 ~~~
 
 该 snapshot 用于重建 Core execution state，不替代 ResourceLock / Idempotency 等独立 authority。
+
+恢复快照不得把整个 Runtime/Tool 上下文原样持久化。`tool_context` 可能包含短期 credential、connection handle 或进程内对象；IU9 只允许保存 recovery-safe projection / opaque reference。恢复后，任何需要实时权限或凭据的 Tool 调用必须重新通过现有 Permission/Tool Context authority 获取当前有效上下文，不能把旧 credential 当作可恢复真值。
 
 ## 6. Snapshot monotonicity / CAS
 
@@ -197,11 +199,13 @@ ExecutionRecoveryClaim
 ~~~text
 only current recovery epoch may mutate recovered execution state
 stale epoch writes -> reject
+current recovery epoch must also be validated before any new external side-effect admission
+stale epoch must not start Skill / Workflow / physical Tool side effect
 claim conflict -> WAIT / UNKNOWN
 recovery epoch does not prove external Tool stopped
 ~~~
 
-Recovery Claim 解决 Core stale-writer 问题，不替代 physical resource fencing。
+Recovery Claim 解决 Core stale-writer / stale-side-effect-admission 问题，不替代 physical resource fencing。仅在持久化写入时检查 epoch 不够；StepCapabilityExecutor / physical Tool admission 等真实副作用入口也必须验证当前 epoch。
 
 ## 8. Reliability evidence must survive restart
 
@@ -608,28 +612,30 @@ fail-closed uncertainty
 1. exact recovery snapshot can reconstruct PreparedExecution
 2. stale snapshot generation rejected
 3. stale recovery epoch cannot mutate current execution
-4. terminal Execution survives restart as terminal
-5. latched CANCEL survives restart and blocks resume
-6. active-at-crash Tool becomes ORPHANED_UNCONFIRMED
-7. orphaned Tool without probe -> WAIT_RECONCILIATION
-8. COMPLETED idempotency result is recovered without Tool invoke
-9. RESERVED / UNKNOWN idempotency never blind-retries
-10. Step attempt sequence survives restart
-11. Tool operation occurrence sequence survives restart
-12. prior Tool journal survives restart and correlates retry
-13. durable session lock exact execution reattach
-14. competing session execution remains BUSY during recovery
-15. stale Tool lock not reclaimed by TTL alone
-16. STOPPED_CONFIRMED permits exact resource reclaim
-17. COMPLETED_CONFIRMED permits exact resource reconciliation
-18. stale recovery fence cannot release newer lease
-19. WAITING Workflow without durable checkpoint is not resumable
-20. exact durable Workflow checkpoint resumes same instance/version
-21. checkpoint identity mismatch -> UNKNOWN_BLOCKED
-22. running Skill replay only when IU6 replay safety SAFE
-23. recovery never creates new ApprovedActionPlan
-24. recovery never bypasses Permission / Idempotency / ResourceLock
-25. no IU10 aggregation / M6 entered
+4. stale recovery epoch cannot admit new Skill / Workflow / Tool side effect
+5. terminal Execution survives restart as terminal
+6. latched CANCEL survives restart and blocks resume
+7. active-at-crash Tool becomes ORPHANED_UNCONFIRMED
+8. orphaned Tool without probe -> WAIT_RECONCILIATION
+9. COMPLETED idempotency result is recovered without Tool invoke
+10. RESERVED / UNKNOWN idempotency never blind-retries
+11. Step attempt sequence survives restart
+12. Tool operation occurrence sequence survives restart
+13. prior Tool journal survives restart and correlates retry
+14. durable session lock exact execution reattach
+15. competing session execution remains BUSY during recovery
+16. stale Tool lock not reclaimed by TTL alone
+17. STOPPED_CONFIRMED permits exact resource reclaim
+18. COMPLETED_CONFIRMED permits exact resource reconciliation
+19. stale recovery fence cannot release newer lease
+20. WAITING Workflow without durable checkpoint is not resumable
+21. exact durable Workflow checkpoint resumes same instance/version
+22. checkpoint identity mismatch -> UNKNOWN_BLOCKED
+23. running Skill replay only when IU6 replay safety SAFE
+24. recovery snapshot does not persist ephemeral credentials / process handles
+25. recovery never creates new ApprovedActionPlan
+26. recovery never bypasses Permission / Idempotency / ResourceLock
+27. no IU10 aggregation / M6 entered
 ~~~
 
 ## 28. Controlled Amendment plan

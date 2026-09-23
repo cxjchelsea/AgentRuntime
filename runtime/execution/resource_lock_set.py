@@ -284,6 +284,7 @@ class ResourceLockAcquisitionIdentifierFactory(Protocol):
         self,
         *,
         lock_set_id: str,
+        lock_set_fingerprint: str,
         lock_key: str,
     ) -> str:
         """Return a deterministic acquisition id for exact lock-set replay."""
@@ -296,11 +297,16 @@ class Sha256ResourceLockAcquisitionIdentifierFactory:
         self,
         *,
         lock_set_id: str,
+        lock_set_fingerprint: str,
         lock_key: str,
     ) -> str:
         _require_non_blank(lock_set_id, "lock_set_id")
+        _require_non_blank(lock_set_fingerprint, "lock_set_fingerprint")
         _require_non_blank(lock_key, "lock_key")
-        payload = f"iu8-lock-acquisition\0{lock_set_id}\0{lock_key}".encode()
+        payload = (
+            f"iu8-lock-acquisition\0{lock_set_id}\0"
+            f"{lock_set_fingerprint}\0{lock_key}"
+        ).encode()
         return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
@@ -329,23 +335,29 @@ class ResourceLockSetCoordinator:
                 reason_codes=("LOCK_SET_EMPTY",),
             )
 
-        acquired: list[ResourceLockLease] = []
+        lock_set_fingerprint = self._lock_set_fingerprint(canonical_locks)
+        leases: list[ResourceLockLease] = []
+        newly_acquired: list[ResourceLockLease] = []
+        replayed: list[ResourceLockLease] = []
         for resolved in canonical_locks:
             try:
                 acquisition_id = self._identifier_factory.new_acquisition_id(
                     lock_set_id=request.lock_set_id,
+                    lock_set_fingerprint=lock_set_fingerprint,
                     lock_key=resolved.lock_key,
                 )
             except Exception:  # noqa: BLE001
                 return await self._failed_with_rollback(
-                    acquired=acquired,
+                    newly_acquired=newly_acquired,
+                    replayed=replayed,
                     failed_lock_key=resolved.lock_key,
                     failure_status=ResourceLockSetStatus.UNKNOWN,
                     reason_codes=("LOCK_ACQUISITION_ID_UNAVAILABLE",),
                 )
             if not isinstance(acquisition_id, str) or not acquisition_id.strip():
                 return await self._failed_with_rollback(
-                    acquired=acquired,
+                    newly_acquired=newly_acquired,
+                    replayed=replayed,
                     failed_lock_key=resolved.lock_key,
                     failure_status=ResourceLockSetStatus.UNKNOWN,
                     reason_codes=("LOCK_ACQUISITION_ID_UNAVAILABLE",),
@@ -361,7 +373,8 @@ class ResourceLockSetCoordinator:
                 decision = await self._authority.acquire(acquire_request)
             except Exception:  # noqa: BLE001
                 return await self._failed_with_rollback(
-                    acquired=acquired,
+                    newly_acquired=newly_acquired,
+                    replayed=replayed,
                     failed_lock_key=resolved.lock_key,
                     failure_status=ResourceLockSetStatus.UNKNOWN,
                     reason_codes=("LOCK_ACQUIRE_AUTHORITY_EXCEPTION",),
@@ -372,7 +385,8 @@ class ResourceLockSetCoordinator:
                 request=acquire_request,
             ):
                 return await self._failed_with_rollback(
-                    acquired=acquired,
+                    newly_acquired=newly_acquired,
+                    replayed=replayed,
                     failed_lock_key=resolved.lock_key,
                     failure_status=ResourceLockSetStatus.UNKNOWN,
                     reason_codes=("LOCK_ACQUIRE_AUTHORITY_INVALID_DECISION",),
@@ -383,7 +397,11 @@ class ResourceLockSetCoordinator:
                 ResourceLockAcquireStatus.ALREADY_ACQUIRED,
             }:
                 assert decision.lease is not None
-                acquired.append(decision.lease)
+                leases.append(decision.lease)
+                if decision.status is ResourceLockAcquireStatus.ACQUIRED:
+                    newly_acquired.append(decision.lease)
+                else:
+                    replayed.append(decision.lease)
                 continue
 
             failure_status = (
@@ -392,7 +410,8 @@ class ResourceLockSetCoordinator:
                 else ResourceLockSetStatus.UNKNOWN
             )
             return await self._failed_with_rollback(
-                acquired=acquired,
+                newly_acquired=newly_acquired,
+                replayed=replayed,
                 failed_lock_key=resolved.lock_key,
                 failure_status=failure_status,
                 reason_codes=decision.reason_codes,
@@ -401,7 +420,7 @@ class ResourceLockSetCoordinator:
         return ResourceLockSetDecision(
             status=ResourceLockSetStatus.ACQUIRED,
             reason_codes=("LOCK_SET_ACQUIRED",),
-            leases=tuple(acquired),
+            leases=tuple(leases),
         )
 
     @staticmethod
@@ -412,6 +431,13 @@ class ResourceLockSetCoordinator:
         for lock in locks:
             by_key.setdefault(lock.lock_key, lock)
         return tuple(by_key[key] for key in sorted(by_key))
+
+    @staticmethod
+    def _lock_set_fingerprint(
+        locks: tuple[ResolvedResourceLock, ...],
+    ) -> str:
+        payload = "\0".join(lock.lock_key for lock in locks).encode()
+        return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
     @staticmethod
     def _valid_acquire_decision(
@@ -440,32 +466,45 @@ class ResourceLockSetCoordinator:
     async def _failed_with_rollback(
         self,
         *,
-        acquired: list[ResourceLockLease],
+        newly_acquired: list[ResourceLockLease],
+        replayed: list[ResourceLockLease],
         failed_lock_key: str,
         failure_status: ResourceLockSetStatus,
         reason_codes: tuple[str, ...],
     ) -> ResourceLockSetDecision:
-        if not acquired:
-            return ResourceLockSetDecision(
-                status=failure_status,
-                reason_codes=reason_codes,
-                failed_lock_key=failed_lock_key,
+        rollback_retained: tuple[ResourceLockLease, ...] = ()
+        rollback_reasons: tuple[str, ...] = ()
+        if newly_acquired:
+            rollback_retained, rollback_reasons = await self._rollback(
+                newly_acquired
             )
 
-        retained, rollback_reasons = await self._rollback(acquired)
+        retained = tuple(replayed) + rollback_retained
         if retained:
+            replay_reason = (
+                ("LOCK_SET_REPLAY_PARTIAL_STATE",) if replayed else ()
+            )
+            rollback_reason = (
+                ("LOCK_SET_ROLLBACK_UNCERTAIN",)
+                if rollback_retained
+                else ()
+            )
             return ResourceLockSetDecision(
                 status=ResourceLockSetStatus.UNKNOWN,
                 reason_codes=reason_codes
-                + ("LOCK_SET_ROLLBACK_UNCERTAIN",)
+                + replay_reason
+                + rollback_reason
                 + rollback_reasons,
                 retained_leases=retained,
                 failed_lock_key=failed_lock_key,
             )
 
+        confirmed_reason = (
+            ("LOCK_SET_ROLLBACK_CONFIRMED",) if newly_acquired else ()
+        )
         return ResourceLockSetDecision(
             status=failure_status,
-            reason_codes=reason_codes + ("LOCK_SET_ROLLBACK_CONFIRMED",),
+            reason_codes=reason_codes + confirmed_reason,
             failed_lock_key=failed_lock_key,
         )
 

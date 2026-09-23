@@ -403,15 +403,22 @@ def test_session_busy_blocks_step_before_skill_side_effect() -> None:
             execution_concurrency_runtime=session_runtime,
         )
 
+        second_context = ExecutionContext(
+            execution_id="execution-002",
+            plan_id=approved_plan.plan_id,
+            request_id=approved_plan.request_id,
+            session_id="session-shared",
+            identity_scope="scope-001",
+            policy_snapshot={"allowed": True},
+            device_id="device-001",
+            cancellation_token="execution-002",
+        )
         outcome = await executor.execute(
             approved_plan=approved_plan,
             step=step,
             step_snapshot=snapshot,
             resolved=resolved,
-            execution_context=_context(
-                execution_id="execution-002",
-                session_id="session-shared",
-            ),
+            execution_context=second_context,
         )
 
         assert outcome.status is CapabilityExecutionStatus.BLOCKED

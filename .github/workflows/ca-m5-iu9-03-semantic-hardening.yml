@@ -1,0 +1,22 @@
+name: CA-M5-IU9-03 semantic hardening verification
+on:
+  push:
+    branches:
+      - verification/ca-m5-iu9-03-2a7ebae
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2a7ebaef9db0c6ec652e5f5b3b1ef591dee3a8d2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pydantic>=2.0,<3" "pytest>=8.0" mypy ruff
+      - run: python -m pytest tests -q
+      - run: python -m mypy runtime tests
+      - run: python -m ruff check runtime tests
+      - run: python -m ruff format --check runtime tests

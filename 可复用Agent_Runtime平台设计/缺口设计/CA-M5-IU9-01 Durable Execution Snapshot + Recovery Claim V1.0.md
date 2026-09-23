@@ -130,6 +130,28 @@ generation jump / time regression
 
 No stale snapshot overwrites a newer one.
 
+Production durable adapter contract:
+
+~~~text
+compare_and_set(
+    snapshot,
+    expected_generation,
+    required_claim
+)
+~~~
+
+must atomically verify in one durable write boundary:
+
+~~~text
+required_claim is still the current recovery fence
++
+expected_generation still matches
++
+new snapshot generation is valid
+~~~
+
+A coordinator-side epoch pre-check alone is insufficient because takeover can occur between check and write.
+
 The in-memory store is a contract/reference mechanism only; it is not a production crash-durable adapter claim.
 
 ## 5. Recovery claim identity
@@ -206,6 +228,17 @@ latest snapshot generation
 ~~~
 
 A claim based on stale snapshot generation cannot become current recovery owner.
+
+To close the load-then-claim race, RecoveryClaimCoordinator also reloads the latest snapshot after a successful claim. If snapshot generation changed during the claim window:
+
+~~~text
+CLAIMED / ALREADY_CLAIMED
+-> not accepted as usable recovery authority
+-> CONFLICT
+-> RECOVERY_CLAIM_SOURCE_CHANGED_DURING_CLAIM
+~~~
+
+This prevents a recovery owner from starting from a snapshot that became stale while the epoch was being acquired.
 
 ## 8. Recovery epoch guard
 
@@ -325,6 +358,8 @@ Covered at minimum:
 18. old claim replay after takeover -> CONFLICT
 19. forged snapshot writer claim fails closed
 20. terminal PreparedExecution restores terminal timing exactly
+21. snapshot store itself rejects stale epoch after takeover
+22. snapshot generation change during claim window -> CONFLICT
 ~~~
 
 ## 13. Blocker mapping
@@ -365,16 +400,141 @@ Execution aggregation
 M6
 ~~~
 
-## 15. Current status
+## 15. Targeted Amendment Review findings
+
+### F-M5-IU9-CA01-001 CLAIM_SOURCE_SNAPSHOT_TOCTOU
+
+Initial flow was:
+
+~~~text
+load latest snapshot generation
+↓
+claim recovery epoch
+~~~
+
+A concurrent current writer could advance the snapshot between those operations, allowing a newly claimed owner to start from stale recovery state.
+
+Fix:
+
+~~~text
+pre-claim generation check
++
+claim epoch
++
+post-claim generation recheck
+~~~
+
+If the generation changed during the claim window:
+
+~~~text
+CONFLICT
+RECOVERY_CLAIM_SOURCE_CHANGED_DURING_CLAIM
+~~~
+
+Status:
+
+~~~text
+F-M5-IU9-CA01-001 = CLOSED
+~~~
+
+### F-M5-IU9-CA01-002 SNAPSHOT_CAS_RECOVERY_FENCE_TOCTOU
+
+Initial coordinator logic validated current recovery epoch and then called snapshot CAS as a separate operation.
+
+Race:
+
+~~~text
+old worker validates CURRENT
+↓
+new worker takeover -> newer epoch
+↓
+old worker writes next snapshot
+~~~
+
+Fix:
+
+~~~text
+ExecutionRecoverySnapshotStore.compare_and_set(
+    snapshot,
+    expected_generation,
+    required_claim
+)
+~~~
+
+The durable store contract must atomically validate:
+
+~~~text
+current recovery fence
++
+snapshot generation CAS
+~~~
+
+The in-memory reference implementation enforces the same contract in one non-await write boundary, and direct-store tests prove a stale epoch cannot bypass the coordinator.
+
+Status:
+
+~~~text
+F-M5-IU9-CA01-002 = CLOSED
+~~~
+
+No new blocker was found.
+
+## 16. Verification
+
+Closure candidate:
+
+~~~text
+exact head =
+4e292d7c81058fbe60c7e1f5c1cf35ef9cbdeaf7
+
+GitHub Actions run =
+35812477010
+~~~
+
+Results:
+
+~~~text
+pytest = PASSED
+769 passed, 1 existing warning
+
+mypy = PASSED
+Success: no issues found in 197 source files
+
+ruff check = PASSED
+All checks passed!
+
+ruff format --check = PASSED
+197 files already formatted
+~~~
+
+The warning is the existing Pydantic deprecation warning and is unrelated to CA-01.
+
+## 17. Current status
 
 ~~~text
 CA-M5-IU9-01 = CODE COMPLETE
-CA-M5-IU9-01 TARGETED AMENDMENT REVIEW = PENDING
-CA-M5-IU9-01 VERIFICATION = PENDING
+CA-M5-IU9-01 TARGETED AMENDMENT REVIEW = PASSED
+CA-M5-IU9-01 VERIFICATION = PASSED
+CA-M5-IU9-01 = PASSED
 
-B-M5-IU9-001 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
-B-M5-IU9-004 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+F-M5-IU9-CA01-001 = CLOSED
+F-M5-IU9-CA01-002 = CLOSED
+
+B-M5-IU9-001 = CLOSED
+B-M5-IU9-004 = CLOSED
+
+B-M5-IU9-002 = OPEN
+B-M5-IU9-003 = OPEN
+B-M5-IU9-005 = OPEN
+B-M5-IU9-006 = OPEN
+B-M5-IU9-007 = OPEN
 
 M5-IU9 IMPLEMENTATION READINESS = NOT_READY
+NEW BLOCKER = NONE
+
 M5 = IN PROGRESS
+
+NEXT REQUIRED =
+CA-M5-IU9-02
+Durable Reliability + Control/InFlight Evidence
 ~~~

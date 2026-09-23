@@ -596,7 +596,14 @@ class ToolResourceRecoveryCoordinator:
         _require_non_blank(operation_handle_id, "operation_handle_id")
         _require_aware(recovered_at, "recovered_at")
 
-        epoch = await self._claim_authority.validate_current(recovery_claim)
+        try:
+            epoch = await self._claim_authority.validate_current(recovery_claim)
+        except Exception:  # noqa: BLE001
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=("RESOURCE_RECOVERY_EPOCH_CHECK_EXCEPTION",),
+                operation_handle_id=operation_handle_id,
+            )
         if epoch.status is not RecoveryEpochValidationStatus.CURRENT:
             return ResourceRecoveryDecision(
                 status=ResourceRecoveryStatus.UNKNOWN,
@@ -608,7 +615,14 @@ class ToolResourceRecoveryCoordinator:
                 operation_handle_id=operation_handle_id,
             )
 
-        binding_read = await self._binding_store.read(operation_handle_id)
+        try:
+            binding_read = await self._binding_store.read(operation_handle_id)
+        except Exception:  # noqa: BLE001
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=("RESOURCE_BINDING_READ_EXCEPTION",),
+                operation_handle_id=operation_handle_id,
+            )
         if binding_read.status is DurableOperationResourceBindingReadStatus.UNKNOWN:
             return ResourceRecoveryDecision(
                 status=ResourceRecoveryStatus.UNKNOWN,
@@ -622,7 +636,14 @@ class ToolResourceRecoveryCoordinator:
                 operation_handle_id=operation_handle_id,
             )
         if binding_read.status is DurableOperationResourceBindingReadStatus.NONE:
-            active = await self._lock_store.active_for_owner(operation_handle_id)
+            try:
+                active = await self._lock_store.active_for_owner(operation_handle_id)
+            except Exception:  # noqa: BLE001
+                return ResourceRecoveryDecision(
+                    status=ResourceRecoveryStatus.UNKNOWN,
+                    reason_codes=("RESOURCE_ACTIVE_OWNER_READ_EXCEPTION",),
+                    operation_handle_id=operation_handle_id,
+                )
             if active:
                 return ResourceRecoveryDecision(
                     status=ResourceRecoveryStatus.RETAINED,
@@ -668,10 +689,17 @@ class ToolResourceRecoveryCoordinator:
                 reason="RESOURCE_RECOVERY_TIME_PRECEDES_OPERATION_EVIDENCE",
             )
 
-        observations = await self._inflight_store.load_inflight(
-            execution_id=handle.execution_id,
-            step_execution_id=handle.step_execution_id,
-        )
+        try:
+            observations = await self._inflight_store.load_inflight(
+                execution_id=handle.execution_id,
+                step_execution_id=handle.step_execution_id,
+            )
+        except Exception:  # noqa: BLE001
+            return self._retained(
+                binding=binding,
+                operation_handle_id=operation_handle_id,
+                reason="RESOURCE_RECOVERY_INFLIGHT_READ_EXCEPTION",
+            )
         matching = tuple(
             item
             for item in observations
@@ -755,12 +783,20 @@ class ToolResourceRecoveryCoordinator:
                             reason="PROVIDER_FENCE_EVIDENCE_INVALID",
                             operation_recovery=operation_recovery,
                         )
-                    persisted = await self._binding_store.record_provider_fence(
-                        binding,
-                        evidence=evidence,
-                        recorded_at=recovered_at,
-                        required_claim=recovery_claim,
-                    )
+                    try:
+                        persisted = await self._binding_store.record_provider_fence(
+                            binding,
+                            evidence=evidence,
+                            recorded_at=recovered_at,
+                            required_claim=recovery_claim,
+                        )
+                    except Exception:  # noqa: BLE001
+                        return self._retained(
+                            binding=binding,
+                            operation_handle_id=operation_handle_id,
+                            reason="PROVIDER_FENCE_PERSISTENCE_EXCEPTION",
+                            operation_recovery=operation_recovery,
+                        )
                     if (
                         persisted.status
                         not in {
@@ -812,11 +848,15 @@ class ToolResourceRecoveryCoordinator:
         released: list[ResourceLockLease] = []
         retained: list[ResourceLockLease] = []
         for lease in reversed(binding.leases):
-            decision = await self._lock_store.release(
-                lease,
-                released_at=recovered_at,
-                required_claim=recovery_claim,
-            )
+            try:
+                decision = await self._lock_store.release(
+                    lease,
+                    released_at=recovered_at,
+                    required_claim=recovery_claim,
+                )
+            except Exception:  # noqa: BLE001
+                retained.append(lease)
+                continue
             if decision.lease == lease and decision.status in {
                 ResourceLockReleaseStatus.RELEASED,
                 ResourceLockReleaseStatus.ALREADY_RELEASED,
@@ -838,13 +878,16 @@ class ToolResourceRecoveryCoordinator:
                 provider_fence=provider_fence,
             )
 
-        marked = await self._binding_store.mark_released(
-            binding,
-            released_at=recovered_at,
-            release_basis=strong_basis,
-            required_claim=recovery_claim,
-            provider_fence=provider_fence,
-        )
+        try:
+            marked = await self._binding_store.mark_released(
+                binding,
+                released_at=recovered_at,
+                release_basis=strong_basis,
+                required_claim=recovery_claim,
+                provider_fence=provider_fence,
+            )
+        except Exception:  # noqa: BLE001
+            marked = False
         if not marked:
             return ResourceRecoveryDecision(
                 status=ResourceRecoveryStatus.UNKNOWN,

@@ -2386,6 +2386,38 @@ class StepCapabilityExecutor:
                 reason_codes=("NO_EXTERNAL_EXECUTION",),
             )
 
+        if self._execution_concurrency_runtime is not None:
+            try:
+                admission = await self._execution_concurrency_runtime.admit(
+                    execution_context
+                )
+            except Exception:  # noqa: BLE001
+                admission = None
+            if admission is None:
+                return self._outcome(
+                    step=step,
+                    step_snapshot=step_snapshot,
+                    resolved=resolved,
+                    status=CapabilityExecutionStatus.UNKNOWN,
+                    reason_codes=("SESSION_EXECUTION_ADMISSION_UNKNOWN",),
+                )
+            if admission.status is ExecutionConcurrencyAdmissionStatus.BUSY:
+                return self._outcome(
+                    step=step,
+                    step_snapshot=step_snapshot,
+                    resolved=resolved,
+                    status=CapabilityExecutionStatus.BLOCKED,
+                    reason_codes=("SESSION_EXECUTION_LOCK_BUSY",),
+                )
+            if admission.status is not ExecutionConcurrencyAdmissionStatus.ADMITTED:
+                return self._outcome(
+                    step=step,
+                    step_snapshot=step_snapshot,
+                    resolved=resolved,
+                    status=CapabilityExecutionStatus.UNKNOWN,
+                    reason_codes=admission.reason_codes,
+                )
+
         owner_handle, owner_error = await self._begin_owner_inflight(
             resolved=resolved,
             step_snapshot=step_snapshot,

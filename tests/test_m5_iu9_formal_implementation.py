@@ -30,10 +30,18 @@ from runtime.execution.recovery import (
     RecoverySideEffectAdmissionStatus,
 )
 from runtime.execution.recovery_evidence import (
+    DurableControlReadDecision,
+    DurableControlReadStatus,
     DurableStepAttemptSequenceAuthority,
+    InFlightRecoveryTransitionDecision,
+    InFlightRecoveryTransitionStatus,
     InMemoryDurableRecoveryEvidenceStore,
 )
-from runtime.execution.recovery_runtime import ApprovedPlanWorkflowVersionAuthority
+from runtime.execution.recovery_runtime import (
+    ApprovedPlanWorkflowVersionAuthority,
+    M5RecoveryRuntime,
+    M5RecoveryRuntimeStatus,
+)
 from runtime.execution.reliability import (
     IdempotencyMode,
     ReliabilityCapabilityKind,
@@ -57,6 +65,8 @@ from runtime.execution.reliability_coordinator import StepReliabilityCoordinator
 from runtime.execution.reliability_runtime import StepReliabilityRuntime
 from runtime.execution.result_collection import StepResultCollector
 from runtime.execution.recovery_workflow import (
+    StepRecoveryReplayDecision,
+    StepRecoveryReplayStatus,
     WorkflowResumeRequest,
 )
 from tests.test_m5_iu4_capability_execution import (
@@ -518,5 +528,157 @@ def test_recovered_skill_retry_claims_next_attempt_through_iu6_authority() -> No
         assert result.prior_attempt_number == 1
         assert result.attempts[0].attempt_number == 2
         assert await sequence.current_attempt("step-execution-001") == 2
+
+    asyncio.run(scenario())
+
+
+
+class RuntimeSnapshot:
+    def __init__(self, *, plan: Any, step: Any) -> None:
+        self.execution_id = "execution-iu4"
+        self.generation = 1
+        self.execution_record = SimpleNamespace(
+            plan_id=plan.plan_id,
+            request_id=plan.request_id,
+            status="RUNNING",
+        )
+        self.steps = (
+            replace(
+                _snapshot(step, status=StepExecutionStatus.PENDING),
+                started_at=None,
+            ),
+        )
+        self._prepared = cast(
+            Any,
+            SimpleNamespace(
+                execution_context=_context(),
+                execution_record=self.execution_record,
+                steps=self.steps,
+                started_at=NOW,
+                finished_at=None,
+            ),
+        )
+
+    def restore_prepared_execution(self) -> Any:
+        return self._prepared
+
+
+class SnapshotStore:
+    def __init__(self, snapshot: Any) -> None:
+        self.snapshot = snapshot
+
+    async def load(self, execution_id: str) -> Any:
+        assert execution_id == "execution-iu4"
+        return self.snapshot
+
+
+class NoControlStore:
+    async def read_latched(self, execution_id: str) -> DurableControlReadDecision:
+        assert execution_id == "execution-iu4"
+        return DurableControlReadDecision(
+            status=DurableControlReadStatus.NONE,
+            reason_codes=("NO_CONTROL",),
+        )
+
+
+class EmptyInflightStore:
+    async def recover_active_as_orphaned(self, **kwargs: Any) -> InFlightRecoveryTransitionDecision:
+        return InFlightRecoveryTransitionDecision(
+            status=InFlightRecoveryTransitionStatus.NO_ACTIVE,
+            reason_codes=("NO_ACTIVE",),
+        )
+
+    async def supersede_orphaned_owner_frame(self, **kwargs: Any) -> InFlightRecoveryTransitionDecision:
+        return InFlightRecoveryTransitionDecision(
+            status=InFlightRecoveryTransitionStatus.NO_ACTIVE,
+            reason_codes=("NO_OWNER",),
+        )
+
+    async def load_inflight(self, **kwargs: Any) -> tuple[Any, ...]:
+        return ()
+
+
+class EmptyResourceBindings:
+    async def active_for_execution(self, execution_id: str) -> tuple[Any, ...]:
+        assert execution_id == "execution-iu4"
+        return ()
+
+
+class EmptyCheckpointStore:
+    async def load(self, **kwargs: Any) -> None:
+        return None
+
+
+class UnusedRecoveryReplay:
+    async def evaluate(self, **kwargs: Any) -> StepRecoveryReplayDecision:
+        return StepRecoveryReplayDecision(
+            status=StepRecoveryReplayStatus.UNKNOWN,
+            reason_codes=("UNUSED",),
+        )
+
+
+class RecordingScheduler:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.prepared: Any = None
+
+    async def next_step(self, *, approved_plan: Any, prepared: Any) -> Any:
+        del approved_plan
+        self.calls += 1
+        self.prepared = prepared
+        return SimpleNamespace(status="READY", reason_codes=("EXISTING_SCHEDULER",))
+
+
+class NeverUsedResolver:
+    async def resolve(self, **kwargs: Any) -> Any:
+        raise AssertionError("scheduler re-entry must not resolve a capability")
+
+
+class NeverUsedBindingsFactory:
+    def create(self, recovery_claim: ExecutionRecoveryClaim) -> Any:
+        del recovery_claim
+        raise AssertionError("scheduler re-entry must not build execution bindings")
+
+
+def test_recovery_runtime_reenters_existing_scheduler_without_selecting_capability() -> None:
+    async def scenario() -> None:
+        plan, step = _approved_step(owner=CapabilityExecutionOwner.SKILL)
+        snapshot = RuntimeSnapshot(plan=plan, step=step)
+        authority = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(
+            authority,
+            claim_id="claim-scheduler",
+            owner="worker-a",
+            expected_epoch=0,
+            source_generation=1,
+            at=NOW,
+        )
+        scheduler = RecordingScheduler()
+        reliability_store = InMemoryDurableRecoveryEvidenceStore(
+            claim_authority=authority
+        )
+        runtime = M5RecoveryRuntime(
+            claim_authority=authority,
+            snapshot_store=cast(Any, SnapshotStore(snapshot)),
+            control_store=cast(Any, NoControlStore()),
+            inflight_store=cast(Any, EmptyInflightStore()),
+            resource_binding_store=cast(Any, EmptyResourceBindings()),
+            workflow_checkpoint_store=cast(Any, EmptyCheckpointStore()),
+            step_replay_evaluator=cast(Any, UnusedRecoveryReplay()),
+            step_resolver=cast(Any, NeverUsedResolver()),
+            execution_bindings_factory=cast(Any, NeverUsedBindingsFactory()),
+            scheduler=cast(Any, scheduler),
+            reliability_store=reliability_store,
+        )
+
+        outcome = await runtime.recover(
+            approved_plan=plan,
+            recovery_claim=claim,
+            recovered_at=NOW + timedelta(seconds=5),
+        )
+
+        assert outcome.status is M5RecoveryRuntimeStatus.SCHEDULER_REENTERED
+        assert scheduler.calls == 1
+        assert scheduler.prepared is snapshot.restore_prepared_execution()
 
     asyncio.run(scenario())

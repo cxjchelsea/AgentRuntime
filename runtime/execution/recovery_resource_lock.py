@@ -790,6 +790,8 @@ class ToolResourceRecoveryCoordinator:
             strong_basis = "DURABLE_INFLIGHT_COMPLETED"
         elif observation.state is InFlightEvidenceState.CONFIRMED_STOPPED:
             strong_basis = "DURABLE_INFLIGHT_CONFIRMED_STOPPED"
+        elif observation.state is InFlightEvidenceState.PROVEN_ABSENT:
+            strong_basis = "DURABLE_INFLIGHT_NOT_FOUND_WITH_PROOF"
         elif provider_fence is not None:
             if (
                 provider_fence.operation_handle_id != operation_handle_id
@@ -1034,6 +1036,7 @@ class ToolResourceRecoveryCoordinator:
             InFlightEvidenceState.COMPLETED,
             InFlightEvidenceState.CONFIRMED_STOPPED,
             InFlightEvidenceState.FENCED_OUT,
+            InFlightEvidenceState.PROVEN_ABSENT,
         }:
             return True
         if observation.state is not InFlightEvidenceState.ORPHANED_UNCONFIRMED:
@@ -1125,6 +1128,7 @@ class ToolResourceRecoveryCoordinator:
             InFlightEvidenceState.COMPLETED,
             InFlightEvidenceState.CONFIRMED_STOPPED,
             InFlightEvidenceState.FENCED_OUT,
+            InFlightEvidenceState.PROVEN_ABSENT,
         }:
             return ResourceRecoveryDecision(
                 status=ResourceRecoveryStatus.NO_RESOURCE_LOCKS,
@@ -1218,7 +1222,7 @@ class ToolResourceRecoveryCoordinator:
                     InFlightReconciliationBasis.OPERATION_STOPPED_CONFIRMED,
                 ),
                 OperationRecoveryStatus.NOT_FOUND_WITH_PROOF: (
-                    InFlightEvidenceState.CONFIRMED_STOPPED,
+                    InFlightEvidenceState.PROVEN_ABSENT,
                     InFlightReconciliationBasis.OPERATION_NOT_FOUND_WITH_PROOF,
                 ),
             }

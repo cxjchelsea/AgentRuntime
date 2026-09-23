@@ -107,6 +107,16 @@ class PreparedExecution:
     finished_at: datetime | None = None
 
 
+class ExecutionTerminalObserver(Protocol):
+    async def on_terminal_execution(
+        self,
+        prepared: PreparedExecution,
+        *,
+        observed_at: datetime,
+    ) -> None:
+        """Observe an already-authoritative terminal execution without rewriting it."""
+
+
 class ExecutionCreationStore(ExecutionStateStore, Protocol):
     """IU1 requires atomic creation in addition to the readiness store surface."""
 
@@ -507,9 +517,11 @@ class ExecutionLifecycleService:
         *,
         lifecycle_manager: ExecutionLifecycleManager,
         execution_store: ExecutionStateStore,
+        terminal_observer: ExecutionTerminalObserver | None = None,
     ) -> None:
         self._lifecycle_manager = lifecycle_manager
         self._execution_store = execution_store
+        self._terminal_observer = terminal_observer
 
     async def start_execution(
         self,
@@ -574,6 +586,11 @@ class ExecutionLifecycleService:
             at=at,
         )
         await self._persist(updated)
+        if self._terminal_observer is not None:
+            await self._terminal_observer.on_terminal_execution(
+                updated,
+                observed_at=at,
+            )
         return updated
 
     async def _persist(self, prepared: PreparedExecution) -> None:

@@ -302,7 +302,7 @@ def test_stale_recovery_epoch_cannot_commit_workflow_checkpoint() -> None:
             workflow_version="7",
             checkpoint_id="wf-checkpoint-1",
             expected_generation=0,
-            recovery_claim=stale,
+            writer_fence=_recovery_fence(stale),
             observed_at=NOW + timedelta(seconds=2),
         )
         assert decision.status is WorkflowCheckpointCommitStatus.CONFLICT

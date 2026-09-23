@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import Any
-
 from runtime.execution import (
     CapabilityExecutionOwner,
     CapabilityKind,
@@ -41,7 +39,6 @@ from runtime.execution.control import (
 )
 from runtime.execution.models import M5WorkflowResult
 from runtime.registries.definitions import WorkflowDefinition
-
 
 NOW = datetime(2026, 9, 23, 6, 0, tzinfo=UTC)
 
@@ -679,7 +676,10 @@ def test_resume_rechecks_epoch_before_authorization_and_does_not_invoke() -> Non
             recovery_claim=claim,
         )
         assert decision.status is WorkflowResumeStatus.UNKNOWN
-        assert "WORKFLOW_RESUME_AUTHORIZATION_STALE_RECOVERY_EPOCH" in decision.reason_codes
+        assert (
+            "WORKFLOW_RESUME_AUTHORIZATION_STALE_RECOVERY_EPOCH"
+            in decision.reason_codes
+        )
         assert implementation.resume_calls == 0
 
     asyncio.run(scenario())

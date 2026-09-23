@@ -556,7 +556,8 @@ class DurableInFlightOperationObservation:
             )
         if (
             self.state is InFlightEvidenceState.OWNER_FRAME_SUPERSEDED
-            and self.handle.kind not in {
+            and self.handle.kind
+            not in {
                 InFlightOperationKind.SKILL,
                 InFlightOperationKind.WORKFLOW,
             }

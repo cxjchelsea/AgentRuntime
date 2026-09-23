@@ -150,6 +150,20 @@ class SafeReplay:
         )
 
 
+def _coordinator(*, claims, snapshot, inflight_store, checkpoint=None):
+    # 与 CA-04 一样：decide() 测试桩只覆盖读取路径，不冒充完整持久化协议。
+    return RecoveryCoordinator(
+        claim_authority=claims,
+        snapshot_store=SnapshotStore(snapshot),
+        control_store=ControlStore(),
+        inflight_store=inflight_store,
+        resource_binding_store=ResourceStore(),
+        workflow_checkpoint_store=CheckpointStore(checkpoint),
+        workflow_version_authority=VersionAuthority(),
+        step_replay_evaluator=SafeReplay(),
+    )
+
+
 def _snapshot(step: StepLifecycleSnapshot):
     return SimpleNamespace(
         execution_id="exec-1",
@@ -238,7 +252,6 @@ def test_owner_supersession_only_transitions_skill_and_workflow_not_tool() -> No
     asyncio.run(scenario())
 
 
-
 def test_tool_kind_is_explicitly_forbidden_from_owner_supersession() -> None:
     async def scenario() -> None:
         claims = InMemoryRecoveryClaimAuthority()
@@ -281,6 +294,7 @@ def test_tool_kind_is_explicitly_forbidden_from_owner_supersession() -> None:
         assert observation.state is InFlightEvidenceState.ORPHANED_UNCONFIRMED
 
     asyncio.run(scenario())
+
 
 def test_owner_supersession_exact_replay_is_idempotent() -> None:
     async def scenario() -> None:
@@ -417,15 +431,11 @@ def test_workflow_owner_supersession_unblocks_exact_checkpoint_resume() -> None:
             workflow_id="wf-1",
             started_at=NOW + timedelta(seconds=1),
         )
-        coordinator = RecoveryCoordinator(
-            claim_authority=claims,
-            snapshot_store=SnapshotStore(_snapshot(step)),
-            control_store=ControlStore(),
+        coordinator = _coordinator(
+            claims=claims,
+            snapshot=_snapshot(step),
             inflight_store=store,
-            resource_binding_store=ResourceStore(),
-            workflow_checkpoint_store=CheckpointStore(_checkpoint()),
-            workflow_version_authority=VersionAuthority(),
-            step_replay_evaluator=SafeReplay(),
+            checkpoint=_checkpoint(),
         )
         decision = await coordinator.decide(
             recovery_claim=recovery,
@@ -470,15 +480,10 @@ def test_skill_owner_supersession_unblocks_iu6_whole_step_replay() -> None:
             skill_id="skill-1",
             started_at=NOW + timedelta(seconds=1),
         )
-        coordinator = RecoveryCoordinator(
-            claim_authority=claims,
-            snapshot_store=SnapshotStore(_snapshot(step)),
-            control_store=ControlStore(),
+        coordinator = _coordinator(
+            claims=claims,
+            snapshot=_snapshot(step),
             inflight_store=store,
-            resource_binding_store=ResourceStore(),
-            workflow_checkpoint_store=CheckpointStore(None),
-            workflow_version_authority=VersionAuthority(),
-            step_replay_evaluator=SafeReplay(),
         )
         decision = await coordinator.decide(
             recovery_claim=recovery,
@@ -525,15 +530,11 @@ def test_nested_tool_orphan_still_blocks_after_owner_frame_supersession() -> Non
             workflow_id="wf-1",
             started_at=NOW + timedelta(seconds=1),
         )
-        coordinator = RecoveryCoordinator(
-            claim_authority=claims,
-            snapshot_store=SnapshotStore(_snapshot(step)),
-            control_store=ControlStore(),
+        coordinator = _coordinator(
+            claims=claims,
+            snapshot=_snapshot(step),
             inflight_store=store,
-            resource_binding_store=ResourceStore(),
-            workflow_checkpoint_store=CheckpointStore(_checkpoint()),
-            workflow_version_authority=VersionAuthority(),
-            step_replay_evaluator=SafeReplay(),
+            checkpoint=_checkpoint(),
         )
         decision = await coordinator.decide(
             recovery_claim=recovery,
@@ -555,7 +556,6 @@ def test_nested_tool_orphan_still_blocks_after_owner_frame_supersession() -> Non
     asyncio.run(scenario())
 
 
-
 def test_external_terminal_reconciliation_rejects_skill_owner_handle() -> None:
     owner = _owner_handle(InFlightOperationKind.SKILL)
 
@@ -569,7 +569,9 @@ def test_external_terminal_reconciliation_rejects_skill_owner_handle() -> None:
     except ValueError as exc:
         assert "only valid for Tool operations" in str(exc)
     else:
-        raise AssertionError("Skill owner must not accept external reconciliation truth")
+        raise AssertionError(
+            "Skill owner must not accept external reconciliation truth"
+        )
 
 
 def test_non_running_orphan_owner_is_not_silently_superseded() -> None:
@@ -610,15 +612,10 @@ def test_non_running_orphan_owner_is_not_silently_superseded() -> None:
             skill_id="skill-1",
             started_at=NOW + timedelta(seconds=1),
         )
-        coordinator = RecoveryCoordinator(
-            claim_authority=claims,
-            snapshot_store=SnapshotStore(_snapshot(step)),
-            control_store=ControlStore(),
+        coordinator = _coordinator(
+            claims=claims,
+            snapshot=_snapshot(step),
             inflight_store=store,
-            resource_binding_store=ResourceStore(),
-            workflow_checkpoint_store=CheckpointStore(None),
-            workflow_version_authority=VersionAuthority(),
-            step_replay_evaluator=SafeReplay(),
         )
         decision = await coordinator.decide(
             recovery_claim=recovery,
@@ -661,15 +658,11 @@ def test_running_step_with_skill_and_workflow_owner_fails_closed() -> None:
             workflow_id="wf-1",
             started_at=NOW + timedelta(seconds=1),
         )
-        coordinator = RecoveryCoordinator(
-            claim_authority=claims,
-            snapshot_store=SnapshotStore(_snapshot(step)),
-            control_store=ControlStore(),
+        coordinator = _coordinator(
+            claims=claims,
+            snapshot=_snapshot(step),
             inflight_store=store,
-            resource_binding_store=ResourceStore(),
-            workflow_checkpoint_store=CheckpointStore(_checkpoint()),
-            workflow_version_authority=VersionAuthority(),
-            step_replay_evaluator=SafeReplay(),
+            checkpoint=_checkpoint(),
         )
         decision = await coordinator.decide(
             recovery_claim=recovery,
@@ -714,15 +707,11 @@ def test_unresolved_tool_precedes_ambiguous_owner_in_recovery_order() -> None:
             workflow_id="wf-1",
             started_at=NOW + timedelta(seconds=1),
         )
-        coordinator = RecoveryCoordinator(
-            claim_authority=claims,
-            snapshot_store=SnapshotStore(_snapshot(step)),
-            control_store=ControlStore(),
+        coordinator = _coordinator(
+            claims=claims,
+            snapshot=_snapshot(step),
             inflight_store=store,
-            resource_binding_store=ResourceStore(),
-            workflow_checkpoint_store=CheckpointStore(_checkpoint()),
-            workflow_version_authority=VersionAuthority(),
-            step_replay_evaluator=SafeReplay(),
+            checkpoint=_checkpoint(),
         )
         decision = await coordinator.decide(
             recovery_claim=recovery,

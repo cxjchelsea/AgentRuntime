@@ -33,7 +33,6 @@ from runtime.execution.recovery import (
 )
 from runtime.execution.recovery_evidence import (
     DurableInFlightEvidenceStore,
-    DurableInFlightOperationObservation,
     InFlightEvidenceState,
 )
 from runtime.execution.resource_lock import (
@@ -345,12 +344,12 @@ class DurableOperationResourceBindingRecord:
             _require_non_blank(self.release_basis, "release_basis")
             if self.released_at < self.binding.handle.started_at:
                 raise ValueError("binding released_at cannot precede operation start")
-        if self.provider_fence is not None:
-            if (
-                self.provider_fence.operation_handle_id
-                != self.binding.handle.operation_handle_id
-            ):
-                raise ValueError("provider fence operation identity mismatch")
+        if (
+            self.provider_fence is not None
+            and self.provider_fence.operation_handle_id
+            != self.binding.handle.operation_handle_id
+        ):
+            raise ValueError("provider fence operation identity mismatch")
 
 
 class DurableOperationResourceBindingReadStatus(str, Enum):

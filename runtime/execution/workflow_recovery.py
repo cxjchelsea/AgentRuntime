@@ -122,8 +122,8 @@ class WorkflowRecoveryCheckpoint:
             _require_non_blank(value, name)
         if self.generation < 1:
             raise ValueError("generation must be >= 1")
-        if self.writer_recovery_epoch < 1:
-            raise ValueError("writer_recovery_epoch must be >= 1")
+        if self.writer_recovery_epoch < 0:
+            raise ValueError("writer_recovery_epoch must be >= 0")
         if not isinstance(self.status, WorkflowRecoveryCheckpointStatus):
             raise TypeError("status must be WorkflowRecoveryCheckpointStatus")
         if self.status is not WorkflowRecoveryCheckpointStatus.COMMITTED:
@@ -185,15 +185,68 @@ class WorkflowCheckpointReadDecision:
             raise ValueError("NONE/UNKNOWN checkpoint read cannot expose checkpoint")
 
 
+@dataclass(frozen=True, slots=True)
+class WorkflowCheckpointWriterFence:
+    """Fence one checkpoint writer across normal execution and recovery takeover.
+
+    recovery_epoch=0 is reserved for the original live execution writer before any
+    recovery claim exists. Once a recovery claim is created, epoch-0 writes fail
+    closed. recovery_epoch>0 requires the exact current ExecutionRecoveryClaim.
+    """
+
+    execution_id: str
+    writer_id: str
+    recovery_epoch: int = 0
+    recovery_claim: ExecutionRecoveryClaim | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_blank(self.execution_id, "execution_id")
+        _require_non_blank(self.writer_id, "writer_id")
+        if self.recovery_epoch < 0:
+            raise ValueError("recovery_epoch must be >= 0")
+        if self.recovery_epoch == 0:
+            if self.recovery_claim is not None:
+                raise ValueError("live epoch-0 writer must not carry recovery claim")
+        else:
+            if self.recovery_claim is None:
+                raise ValueError("recovery writer requires recovery claim")
+            if (
+                self.recovery_claim.execution_id != self.execution_id
+                or self.recovery_claim.recovery_owner_id != self.writer_id
+                or self.recovery_claim.recovery_epoch != self.recovery_epoch
+            ):
+                raise ValueError("writer fence does not match recovery claim")
+
+    @classmethod
+    def live(cls, *, execution_id: str, writer_id: str) -> "WorkflowCheckpointWriterFence":
+        return cls(execution_id=execution_id, writer_id=writer_id)
+
+    @classmethod
+    def from_recovery_claim(
+        cls,
+        claim: ExecutionRecoveryClaim,
+    ) -> "WorkflowCheckpointWriterFence":
+        return cls(
+            execution_id=claim.execution_id,
+            writer_id=claim.recovery_owner_id,
+            recovery_epoch=claim.recovery_epoch,
+            recovery_claim=claim,
+        )
+
+
 class WorkflowRecoveryCheckpointStore(Protocol):
     async def commit(
         self,
         checkpoint: WorkflowRecoveryCheckpoint,
         *,
         expected_generation: int,
-        required_claim: ExecutionRecoveryClaim,
+        writer_fence: WorkflowCheckpointWriterFence,
     ) -> WorkflowCheckpointCommitDecision:
-        """CAS-commit one exact Workflow recovery checkpoint."""
+        """CAS-commit one exact Workflow recovery checkpoint under writer fence.
+
+        Production durable adapters must atomically verify the writer fence and
+        checkpoint generation in the same durable mutation boundary.
+        """
 
     async def read_latest(
         self,
@@ -252,38 +305,25 @@ class InMemoryWorkflowRecoveryCheckpointStore(WorkflowRecoveryCheckpointStore):
         checkpoint: WorkflowRecoveryCheckpoint,
         *,
         expected_generation: int,
-        required_claim: ExecutionRecoveryClaim,
+        writer_fence: WorkflowCheckpointWriterFence,
     ) -> WorkflowCheckpointCommitDecision:
         if expected_generation < 0:
             return WorkflowCheckpointCommitDecision(
                 status=WorkflowCheckpointCommitStatus.UNKNOWN,
                 reason_codes=("WORKFLOW_CHECKPOINT_EXPECTED_GENERATION_INVALID",),
             )
-        if checkpoint.execution_id != required_claim.execution_id:
+        if (
+            checkpoint.execution_id != writer_fence.execution_id
+            or checkpoint.writer_recovery_epoch != writer_fence.recovery_epoch
+            or checkpoint.writer_recovery_owner_id != writer_fence.writer_id
+        ):
             return WorkflowCheckpointCommitDecision(
                 status=WorkflowCheckpointCommitStatus.UNKNOWN,
-                reason_codes=("WORKFLOW_CHECKPOINT_RECOVERY_EXECUTION_MISMATCH",),
+                reason_codes=("WORKFLOW_CHECKPOINT_WRITER_FENCE_MISMATCH",),
             )
-        try:
-            epoch = await self._claim_authority.validate_current(required_claim)
-        except Exception:  # noqa: BLE001
-            return WorkflowCheckpointCommitDecision(
-                status=WorkflowCheckpointCommitStatus.UNKNOWN,
-                reason_codes=("WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_CHECK_EXCEPTION",),
-            )
-        if epoch.status is not RecoveryEpochValidationStatus.CURRENT:
-            return WorkflowCheckpointCommitDecision(
-                status=(
-                    WorkflowCheckpointCommitStatus.CONFLICT
-                    if epoch.status is RecoveryEpochValidationStatus.STALE
-                    else WorkflowCheckpointCommitStatus.UNKNOWN
-                ),
-                reason_codes=(
-                    "WORKFLOW_CHECKPOINT_STALE_RECOVERY_EPOCH"
-                    if epoch.status is RecoveryEpochValidationStatus.STALE
-                    else "WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_UNKNOWN",
-                ),
-            )
+        fence_decision = await self._validate_writer_fence(writer_fence)
+        if fence_decision is not None:
+            return fence_decision
 
         key = (checkpoint.execution_id, checkpoint.step_execution_id)
         async with self._lock:
@@ -339,6 +379,53 @@ class InMemoryWorkflowRecoveryCheckpointStore(WorkflowRecoveryCheckpointStore):
                 checkpoint=deepcopy(checkpoint),
             )
 
+    async def _validate_writer_fence(
+        self,
+        writer_fence: WorkflowCheckpointWriterFence,
+    ) -> WorkflowCheckpointCommitDecision | None:
+        if writer_fence.recovery_epoch == 0:
+            try:
+                current = await self._claim_authority.current(writer_fence.execution_id)
+            except Exception:  # noqa: BLE001
+                return WorkflowCheckpointCommitDecision(
+                    status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                    reason_codes=("WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCE_CHECK_EXCEPTION",),
+                )
+            if current is not None:
+                return WorkflowCheckpointCommitDecision(
+                    status=WorkflowCheckpointCommitStatus.CONFLICT,
+                    reason_codes=("WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCED_BY_RECOVERY",),
+                )
+            return None
+
+        claim = writer_fence.recovery_claim
+        if claim is None:
+            return WorkflowCheckpointCommitDecision(
+                status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                reason_codes=("WORKFLOW_CHECKPOINT_RECOVERY_CLAIM_MISSING",),
+            )
+        try:
+            epoch = await self._claim_authority.validate_current(claim)
+        except Exception:  # noqa: BLE001
+            return WorkflowCheckpointCommitDecision(
+                status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                reason_codes=("WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_CHECK_EXCEPTION",),
+            )
+        if epoch.status is RecoveryEpochValidationStatus.CURRENT:
+            return None
+        return WorkflowCheckpointCommitDecision(
+            status=(
+                WorkflowCheckpointCommitStatus.CONFLICT
+                if epoch.status is RecoveryEpochValidationStatus.STALE
+                else WorkflowCheckpointCommitStatus.UNKNOWN
+            ),
+            reason_codes=(
+                "WORKFLOW_CHECKPOINT_STALE_RECOVERY_EPOCH"
+                if epoch.status is RecoveryEpochValidationStatus.STALE
+                else "WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_UNKNOWN",
+            ),
+        )
+
     async def read_latest(
         self,
         *,
@@ -393,7 +480,7 @@ class WorkflowWaitingCheckpointCoordinator:
         workflow_version: str,
         checkpoint_id: str,
         expected_generation: int,
-        recovery_claim: ExecutionRecoveryClaim,
+        writer_fence: WorkflowCheckpointWriterFence,
         observed_at: datetime,
     ) -> WorkflowCheckpointCommitDecision:
         _require_aware(observed_at, "observed_at")
@@ -415,31 +502,14 @@ class WorkflowWaitingCheckpointCoordinator:
                 status=WorkflowCheckpointCommitStatus.UNKNOWN,
                 reason_codes=("WORKFLOW_CHECKPOINT_EXPECTED_GENERATION_INVALID",),
             )
-        if recovery_claim.execution_id != execution_id:
+        if writer_fence.execution_id != execution_id:
             return WorkflowCheckpointCommitDecision(
                 status=WorkflowCheckpointCommitStatus.UNKNOWN,
-                reason_codes=("WORKFLOW_CHECKPOINT_RECOVERY_EXECUTION_MISMATCH",),
+                reason_codes=("WORKFLOW_CHECKPOINT_WRITER_EXECUTION_MISMATCH",),
             )
-        try:
-            epoch = await self._claim_authority.validate_current(recovery_claim)
-        except Exception:  # noqa: BLE001
-            return WorkflowCheckpointCommitDecision(
-                status=WorkflowCheckpointCommitStatus.UNKNOWN,
-                reason_codes=("WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_CHECK_EXCEPTION",),
-            )
-        if epoch.status is not RecoveryEpochValidationStatus.CURRENT:
-            return WorkflowCheckpointCommitDecision(
-                status=(
-                    WorkflowCheckpointCommitStatus.CONFLICT
-                    if epoch.status is RecoveryEpochValidationStatus.STALE
-                    else WorkflowCheckpointCommitStatus.UNKNOWN
-                ),
-                reason_codes=(
-                    "WORKFLOW_CHECKPOINT_STALE_RECOVERY_EPOCH"
-                    if epoch.status is RecoveryEpochValidationStatus.STALE
-                    else "WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_UNKNOWN",
-                ),
-            )
+        writer_check = await self._validate_writer_fence(writer_fence)
+        if writer_check is not None:
+            return writer_check
 
         try:
             preflight = await self._store.read_latest(
@@ -525,30 +595,9 @@ class WorkflowWaitingCheckpointCoordinator:
                 status=WorkflowCheckpointCommitStatus.UNKNOWN,
                 reason_codes=("WORKFLOW_STATE_PERSISTENCE_INVALID_RESULT",),
             )
-        try:
-            post_persist_epoch = await self._claim_authority.validate_current(
-                recovery_claim
-            )
-        except Exception:  # noqa: BLE001
-            return WorkflowCheckpointCommitDecision(
-                status=WorkflowCheckpointCommitStatus.UNKNOWN,
-                reason_codes=(
-                    "WORKFLOW_CHECKPOINT_POST_PERSIST_EPOCH_CHECK_EXCEPTION",
-                ),
-            )
-        if post_persist_epoch.status is not RecoveryEpochValidationStatus.CURRENT:
-            return WorkflowCheckpointCommitDecision(
-                status=(
-                    WorkflowCheckpointCommitStatus.CONFLICT
-                    if post_persist_epoch.status is RecoveryEpochValidationStatus.STALE
-                    else WorkflowCheckpointCommitStatus.UNKNOWN
-                ),
-                reason_codes=(
-                    "WORKFLOW_CHECKPOINT_STALE_AFTER_DOMAIN_PERSIST"
-                    if post_persist_epoch.status is RecoveryEpochValidationStatus.STALE
-                    else "WORKFLOW_CHECKPOINT_EPOCH_UNKNOWN_AFTER_DOMAIN_PERSIST",
-                ),
-            )
+        post_persist_writer_check = await self._validate_writer_fence(writer_fence)
+        if post_persist_writer_check is not None:
+            return post_persist_writer_check
 
         checkpoint = WorkflowRecoveryCheckpoint(
             execution_id=execution_id,
@@ -561,13 +610,60 @@ class WorkflowWaitingCheckpointCoordinator:
             generation=generation,
             material=material,
             committed_at=observed_at,
-            writer_recovery_epoch=recovery_claim.recovery_epoch,
-            writer_recovery_owner_id=recovery_claim.recovery_owner_id,
+            writer_recovery_epoch=writer_fence.recovery_epoch,
+            writer_recovery_owner_id=writer_fence.writer_id,
         )
         return await self._store.commit(
             checkpoint,
             expected_generation=expected_generation,
-            required_claim=recovery_claim,
+            writer_fence=writer_fence,
+        )
+
+    async def _validate_writer_fence(
+        self,
+        writer_fence: WorkflowCheckpointWriterFence,
+    ) -> WorkflowCheckpointCommitDecision | None:
+        if writer_fence.recovery_epoch == 0:
+            try:
+                current = await self._claim_authority.current(writer_fence.execution_id)
+            except Exception:  # noqa: BLE001
+                return WorkflowCheckpointCommitDecision(
+                    status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                    reason_codes=("WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCE_CHECK_EXCEPTION",),
+                )
+            if current is not None:
+                return WorkflowCheckpointCommitDecision(
+                    status=WorkflowCheckpointCommitStatus.CONFLICT,
+                    reason_codes=("WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCED_BY_RECOVERY",),
+                )
+            return None
+
+        claim = writer_fence.recovery_claim
+        if claim is None:
+            return WorkflowCheckpointCommitDecision(
+                status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                reason_codes=("WORKFLOW_CHECKPOINT_RECOVERY_CLAIM_MISSING",),
+            )
+        try:
+            epoch = await self._claim_authority.validate_current(claim)
+        except Exception:  # noqa: BLE001
+            return WorkflowCheckpointCommitDecision(
+                status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                reason_codes=("WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_CHECK_EXCEPTION",),
+            )
+        if epoch.status is RecoveryEpochValidationStatus.CURRENT:
+            return None
+        return WorkflowCheckpointCommitDecision(
+            status=(
+                WorkflowCheckpointCommitStatus.CONFLICT
+                if epoch.status is RecoveryEpochValidationStatus.STALE
+                else WorkflowCheckpointCommitStatus.UNKNOWN
+            ),
+            reason_codes=(
+                "WORKFLOW_CHECKPOINT_STALE_RECOVERY_EPOCH"
+                if epoch.status is RecoveryEpochValidationStatus.STALE
+                else "WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_UNKNOWN",
+            ),
         )
 
 

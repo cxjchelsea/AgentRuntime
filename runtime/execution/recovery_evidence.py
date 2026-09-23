@@ -1553,6 +1553,11 @@ class InMemoryDurableRecoveryEvidenceStore(
                     status=InFlightRecoveryTransitionStatus.UNKNOWN,
                     reason_codes=("OWNER_FRAME_SUPERSESSION_PRECEDES_OWNER_START",),
                 )
+            if recovered_at < existing.observed_at:
+                return InFlightRecoveryTransitionDecision(
+                    status=InFlightRecoveryTransitionStatus.UNKNOWN,
+                    reason_codes=("OWNER_FRAME_SUPERSESSION_TIME_REGRESSION",),
+                )
             if existing.state is InFlightEvidenceState.OWNER_FRAME_SUPERSEDED:
                 observations = deepcopy(
                     tuple(

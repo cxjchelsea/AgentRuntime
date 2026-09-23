@@ -26,6 +26,7 @@ from runtime.execution.capability_resolution import (
 )
 from runtime.execution.foundation import StepLifecycleSnapshot
 from runtime.execution.invocation import ToolInvocationJournalEntry
+from runtime.execution.recovery import RecoverySideEffectAdmissionGuard
 from runtime.execution.reliability import (
     ReliabilityCapabilityKind,
     ReplaySafetyDecision,
@@ -81,6 +82,34 @@ class StepReliabilityRunResult:
         for attempt in self.attempts:
             if attempt.attempt_number != expected:
                 raise ValueError("Step reliability attempts must be contiguous from 1")
+            expected += 1
+
+    @property
+    def final_observation(self) -> StepAttemptObservation:
+        return self.attempts[-1]
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveredStepReliabilityRunResult:
+    """IU9 recovery segment executed through the existing IU6 authorities."""
+
+    prior_attempt_number: int
+    attempts: tuple[StepAttemptObservation, ...]
+    reliability_decision: StepReliabilityDecision
+    finalization_decision: StepFinalizationDecision
+    owner_policy_identity: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.prior_attempt_number < 1:
+            raise ValueError("prior_attempt_number must be >= 1")
+        if not self.attempts:
+            raise ValueError("recovered reliability result requires attempts")
+        expected = self.prior_attempt_number + 1
+        for attempt in self.attempts:
+            if attempt.attempt_number != expected:
+                raise ValueError(
+                    "recovered attempts must be contiguous after prior attempt"
+                )
             expected += 1
 
     @property
@@ -304,6 +333,261 @@ class StepReliabilityCoordinator:
 
             prior_journal = observation.tool_journal
             attempt_number = sequence.next_attempt
+
+    async def run_recovered_retry(
+        self,
+        *,
+        approved_plan: ApprovedActionPlan,
+        step: ActionStep,
+        step_snapshot: StepLifecycleSnapshot,
+        resolved: ResolvedStepCapabilities,
+        execution_context: ExecutionContext,
+        expected_current_attempt: int,
+        prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...],
+        side_effect_admission_guard: RecoverySideEffectAdmissionGuard,
+    ) -> RecoveredStepReliabilityRunResult:
+        """Continue one crash-recovered Skill through the existing IU6 authorities."""
+
+        if resolved.execution_owner is not CapabilityExecutionOwner.SKILL:
+            raise StepReliabilityCoordinationError(
+                "RECOVERY_RETRY_REQUIRES_SKILL_OWNER",
+                "recovered retry may execute only an exact Skill owner",
+            )
+        if expected_current_attempt < 1:
+            raise StepReliabilityCoordinationError(
+                "RECOVERY_RETRY_ATTEMPT_INVALID",
+                "expected_current_attempt must be >= 1",
+            )
+
+        owner_policy, policy_error = self._resolve_owner_policy(resolved)
+        if owner_policy is None or policy_error is not None:
+            raise StepReliabilityCoordinationError(
+                policy_error or "RECOVERY_SKILL_POLICY_UNKNOWN",
+                "exact Skill reliability policy is required for recovery retry",
+            )
+
+        sequence = await self._claim_next_attempt(
+            step_execution_id=step_snapshot.step_execution_id,
+            expected_current_attempt=expected_current_attempt,
+        )
+        if (
+            sequence.status is not StepAttemptSequenceStatus.CLAIMED
+            or sequence.next_attempt != expected_current_attempt + 1
+        ):
+            raise StepReliabilityCoordinationError(
+                "STEP_ATTEMPT_SEQUENCE_NOT_CLAIMED",
+                "recovery retry could not claim the exact next Step attempt",
+            )
+
+        attempts: list[StepAttemptObservation] = []
+        attempt_number = sequence.next_attempt
+        prior_journal = prior_attempt_journal
+
+        while True:
+            deadline_remaining, deadline_error = self._deadline_remaining(
+                execution_context
+            )
+            if deadline_error is not None:
+                outcome = self._unknown_outcome(
+                    step=step,
+                    step_snapshot=step_snapshot,
+                    resolved=resolved,
+                    reason_code=deadline_error,
+                )
+            elif deadline_remaining is not None and deadline_remaining <= 0:
+                outcome = self._unknown_outcome(
+                    step=step,
+                    step_snapshot=step_snapshot,
+                    resolved=resolved,
+                    reason_code="EXECUTION_DEADLINE_EXPIRED",
+                )
+            else:
+                owner_timeout = self._effective_owner_timeout(
+                    owner_policy=owner_policy,
+                    deadline_remaining_seconds=deadline_remaining,
+                )
+                outcome = await self._step_executor.execute(
+                    approved_plan=approved_plan,
+                    step=step,
+                    step_snapshot=step_snapshot,
+                    resolved=resolved,
+                    execution_context=execution_context,
+                    attempt_number=attempt_number,
+                    prior_attempt_journal=prior_journal,
+                    owner_timeout_seconds=owner_timeout,
+                    owner_timeout_runner=(
+                        self._runtime.timeout_runner
+                        if owner_timeout is not None
+                        else None
+                    ),
+                    side_effect_admission_guard=side_effect_admission_guard,
+                )
+
+            observed_at = self._clock_now()
+            try:
+                observation = self._result_collector.collect(
+                    step_snapshot=step_snapshot,
+                    outcome=outcome,
+                    attempt_number=attempt_number,
+                    observed_at=observed_at,
+                )
+            except StepResultCollectionError as exc:
+                raise StepReliabilityCoordinationError(
+                    exc.reason_code,
+                    "IU5 result collection failed during recovered IU6 retry",
+                ) from exc
+            attempts.append(observation)
+
+            if not self._tool_operation_sequence_matches(
+                prior_journal=prior_journal,
+                current_journal=observation.tool_journal,
+            ):
+                decision = StepReliabilityDecision(
+                    disposition=StepReliabilityDisposition.ABORT_UNKNOWN,
+                    reason_codes=("STEP_REPLAY_TOOL_SEQUENCE_DRIFT",),
+                )
+                return self._finish_recovered(
+                    prior_attempt_number=expected_current_attempt,
+                    attempts=attempts,
+                    observation=observation,
+                    reliability_decision=decision,
+                    owner_policy=owner_policy,
+                )
+
+            replay_safety: ReplaySafetyDecision | None = None
+            retry_decision: RetryDecision | None = None
+            trigger = self._step_retry_trigger(observation.status)
+            if trigger is not None and owner_policy.retry.enabled:
+                replay_safety = await self._step_replay_safety(
+                    observation=observation,
+                    owner_policy=owner_policy,
+                )
+                retry_decision = self._step_retry_decision(
+                    observation=observation,
+                    owner_policy=owner_policy,
+                    trigger=trigger,
+                    replay_safety=replay_safety,
+                    execution_context=execution_context,
+                )
+
+            reliability_decision = self._step_reliability_decision(
+                observation=observation,
+                replay_safety=replay_safety,
+                retry_decision=retry_decision,
+            )
+            if reliability_decision.disposition is not StepReliabilityDisposition.RETRY:
+                return self._finish_recovered(
+                    prior_attempt_number=expected_current_attempt,
+                    attempts=attempts,
+                    observation=observation,
+                    reliability_decision=reliability_decision,
+                    owner_policy=owner_policy,
+                )
+
+            if (
+                replay_safety is None
+                or replay_safety.status is not ReplaySafetyStatus.SAFE
+                or retry_decision is None
+                or retry_decision.status is not RetryDecisionStatus.RETRY
+                or retry_decision.next_attempt != attempt_number + 1
+                or reliability_decision.next_attempt != attempt_number + 1
+                or retry_decision.next_attempt > owner_policy.retry.max_attempts
+            ):
+                inconsistent = StepReliabilityDecision(
+                    disposition=StepReliabilityDisposition.ABORT_UNKNOWN,
+                    reason_codes=("STEP_RETRY_AUTHORITY_INCONSISTENT",),
+                )
+                return self._finish_recovered(
+                    prior_attempt_number=expected_current_attempt,
+                    attempts=attempts,
+                    observation=observation,
+                    reliability_decision=inconsistent,
+                    owner_policy=owner_policy,
+                )
+
+            try:
+                if retry_decision.backoff_seconds:
+                    await self._runtime.retry_sleeper.sleep(
+                        retry_decision.backoff_seconds
+                    )
+            except Exception:  # noqa: BLE001
+                failed = StepReliabilityDecision(
+                    disposition=StepReliabilityDisposition.ABORT_UNKNOWN,
+                    reason_codes=("STEP_RETRY_BACKOFF_FAILURE",),
+                )
+                return self._finish_recovered(
+                    prior_attempt_number=expected_current_attempt,
+                    attempts=attempts,
+                    observation=observation,
+                    reliability_decision=failed,
+                    owner_policy=owner_policy,
+                )
+
+            remaining_after_backoff, deadline_error = self._deadline_remaining(
+                execution_context
+            )
+            if deadline_error is not None or (
+                remaining_after_backoff is not None
+                and remaining_after_backoff <= 0
+            ):
+                expired = StepReliabilityDecision(
+                    disposition=StepReliabilityDisposition.ABORT_UNKNOWN,
+                    reason_codes=(deadline_error or "STEP_RETRY_DEADLINE_EXPIRED",),
+                )
+                return self._finish_recovered(
+                    prior_attempt_number=expected_current_attempt,
+                    attempts=attempts,
+                    observation=observation,
+                    reliability_decision=expired,
+                    owner_policy=owner_policy,
+                )
+
+            sequence = await self._claim_next_attempt(
+                step_execution_id=observation.step_execution_id,
+                expected_current_attempt=attempt_number,
+            )
+            if (
+                sequence.status is not StepAttemptSequenceStatus.CLAIMED
+                or sequence.next_attempt != attempt_number + 1
+                or sequence.next_attempt != retry_decision.next_attempt
+            ):
+                failed = StepReliabilityDecision(
+                    disposition=StepReliabilityDisposition.ABORT_UNKNOWN,
+                    reason_codes=("STEP_ATTEMPT_SEQUENCE_NOT_CLAIMED",),
+                )
+                return self._finish_recovered(
+                    prior_attempt_number=expected_current_attempt,
+                    attempts=attempts,
+                    observation=observation,
+                    reliability_decision=failed,
+                    owner_policy=owner_policy,
+                )
+
+            prior_journal = observation.tool_journal
+            attempt_number = sequence.next_attempt
+
+    def _finish_recovered(
+        self,
+        *,
+        prior_attempt_number: int,
+        attempts: list[StepAttemptObservation],
+        observation: StepAttemptObservation,
+        reliability_decision: StepReliabilityDecision,
+        owner_policy: ResolvedReliabilityPolicy,
+    ) -> RecoveredStepReliabilityRunResult:
+        normal = self._finish(
+            attempts=[observation],
+            observation=observation,
+            reliability_decision=reliability_decision,
+            owner_policy=owner_policy,
+        )
+        return RecoveredStepReliabilityRunResult(
+            prior_attempt_number=prior_attempt_number,
+            attempts=tuple(attempts),
+            reliability_decision=normal.reliability_decision,
+            finalization_decision=normal.finalization_decision,
+            owner_policy_identity=normal.owner_policy_identity,
+        )
 
     def _resolve_owner_policy(
         self,

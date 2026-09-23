@@ -142,6 +142,7 @@ from runtime.execution.protocols import (
     WorkflowImplementation,
 )
 from runtime.execution.recovery import (
+    RECOVERY_SNAPSHOT_SCHEMA_VERSION,
     ExecutionRecoveryClaim,
     ExecutionRecoverySnapshot,
     ExecutionRecoverySnapshotCoordinator,
@@ -149,7 +150,6 @@ from runtime.execution.recovery import (
     ExecutionRecoverySnapshotStore,
     InMemoryExecutionRecoverySnapshotStore,
     InMemoryRecoveryClaimAuthority,
-    RECOVERY_SNAPSHOT_SCHEMA_VERSION,
     RecoveryClaimAuthority,
     RecoveryClaimCoordinator,
     RecoveryClaimDecision,

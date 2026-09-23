@@ -224,10 +224,14 @@ class RecoveryEpochValidationDecision:
             raise TypeError("status must be RecoveryEpochValidationStatus")
         if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
             raise ValueError("reason_codes must contain non-blank values")
-        if self.status in {
-            RecoveryEpochValidationStatus.CURRENT,
-            RecoveryEpochValidationStatus.STALE,
-        } and self.current_claim is None:
+        if (
+            self.status
+            in {
+                RecoveryEpochValidationStatus.CURRENT,
+                RecoveryEpochValidationStatus.STALE,
+            }
+            and self.current_claim is None
+        ):
             raise ValueError("CURRENT/STALE validation requires current_claim")
 
 
@@ -296,8 +300,7 @@ class InMemoryRecoveryClaimAuthority:
             )
         if (
             current is not None
-            and request.source_snapshot_generation
-            < current.source_snapshot_generation
+            and request.source_snapshot_generation < current.source_snapshot_generation
         ):
             return RecoveryClaimDecision(
                 status=RecoveryClaimStatus.CONFLICT,

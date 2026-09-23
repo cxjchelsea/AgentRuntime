@@ -1,0 +1,30 @@
+name: M5-IU8 formal exact-head verification
+on:
+  push:
+    branches:
+      - verification/m5-iu8-formal-4dd831b
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact verified head
+        uses: actions/checkout@v4
+        with:
+          ref: 4dd831bbf825fce1c14ebca06d2a47005880dcc9
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install verification toolchain
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pydantic>=2.0,<3" "pytest>=8.0" mypy ruff
+      - name: pytest
+        run: python -m pytest tests -q
+      - name: mypy
+        run: python -m mypy runtime tests
+      - name: ruff check
+        run: python -m ruff check runtime tests
+      - name: ruff format check
+        run: python -m ruff format --check runtime tests

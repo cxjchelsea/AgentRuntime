@@ -341,6 +341,41 @@ def test_terminal_execution_status_with_nonterminal_step_does_not_release_sessio
     assert decision.status is SessionExecutionReleaseStatus.RETAINED
 
 
+def test_session_release_cannot_precede_latest_execution_observation() -> None:
+    authority = InMemoryResourceLockAuthority()
+    coordinator = _session_coordinator(authority)
+    acquired = asyncio.run(
+        coordinator.acquire(execution_context=_context(), requested_at=NOW)
+    )
+    assert acquired.session_lease is not None
+    prepared = _prepared(
+        execution_status="SUCCESS",
+        step_status=StepExecutionStatus.SUCCESS,
+        terminal=True,
+    )
+    prepared = replace(
+        prepared,
+        execution_record=replace(
+            prepared.execution_record,
+            updated_at=NOW + timedelta(seconds=25),
+        ),
+    )
+
+    decision = asyncio.run(
+        coordinator.release_if_terminal(
+            prepared=prepared,
+            session_lease=acquired.session_lease,
+            released_at=NOW + timedelta(seconds=21),
+        )
+    )
+
+    assert decision.status is SessionExecutionReleaseStatus.UNKNOWN
+    assert decision.reason_codes == (
+        "SESSION_LOCK_RELEASE_PRECEDES_LATEST_OBSERVATION",
+    )
+    assert authority.active_lease(acquired.session_lease.lease.lock_key) is not None
+
+
 def test_forged_session_lease_identity_cannot_release_resource() -> None:
     authority = InMemoryResourceLockAuthority()
     coordinator = _session_coordinator(authority)

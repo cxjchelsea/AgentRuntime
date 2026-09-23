@@ -531,6 +531,12 @@ class DurableInFlightOperationObservation:
             )
         if not terminal and self.reconciliation_basis is not None:
             raise ValueError("nonterminal in-flight evidence cannot carry reconciliation_basis")
+        if (
+            self.state is InFlightEvidenceState.FENCED_OUT
+            and self.reconciliation_basis
+            is not InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED
+        ):
+            raise ValueError("FENCED_OUT requires provider-fence reconciliation basis")
         if self.reconciliation_basis is not None:
             if (
                 self.state is InFlightEvidenceState.COMPLETED

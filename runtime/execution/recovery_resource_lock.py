@@ -318,7 +318,9 @@ class ProviderFencePersistenceDecision:
             ProviderFencePersistenceStatus.ALREADY_CURRENT,
         }:
             if self.evidence is None:
-                raise ValueError("successful provider-fence persistence requires evidence")
+                raise ValueError(
+                    "successful provider-fence persistence requires evidence"
+                )
         elif self.evidence is not None:
             raise ValueError("CONFLICT/UNKNOWN cannot claim provider-fence evidence")
 
@@ -759,10 +761,14 @@ class ToolResourceRecoveryCoordinator:
                         recorded_at=recovered_at,
                         required_claim=recovery_claim,
                     )
-                    if persisted.status not in {
-                        ProviderFencePersistenceStatus.RECORDED,
-                        ProviderFencePersistenceStatus.ALREADY_CURRENT,
-                    } or persisted.evidence is None:
+                    if (
+                        persisted.status
+                        not in {
+                            ProviderFencePersistenceStatus.RECORDED,
+                            ProviderFencePersistenceStatus.ALREADY_CURRENT,
+                        }
+                        or persisted.evidence is None
+                    ):
                         return self._retained(
                             binding=binding,
                             operation_handle_id=operation_handle_id,

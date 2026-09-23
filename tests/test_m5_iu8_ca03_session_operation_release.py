@@ -390,6 +390,25 @@ def test_operation_binding_requires_exact_tool_provenance() -> None:
         )
 
 
+def test_operation_binding_rejects_lease_acquired_after_operation_start() -> None:
+    owner = _tool_owner()
+    handle = _tool_handle()
+
+    with pytest.raises(ValueError, match="acquired before operation start"):
+        OperationResourceLeaseBinding(
+            handle=handle,
+            owner=owner,
+            leases=(
+                ResourceLockLease(
+                    lock_key="resource-001",
+                    owner=owner,
+                    acquisition_id="acq-001",
+                    acquired_at=handle.started_at + timedelta(seconds=1),
+                ),
+            ),
+        )
+
+
 def test_operation_binding_registry_rejects_rebinding() -> None:
     registry = InMemoryOperationResourceLeaseRegistry()
     owner = _tool_owner()

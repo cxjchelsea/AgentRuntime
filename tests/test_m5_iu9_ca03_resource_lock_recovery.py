@@ -39,6 +39,7 @@ from runtime.execution.recovery_resource_lock import (
 from runtime.execution.resource_lock import (
     ResourceLockAcquireRequest,
     ResourceLockAcquireStatus,
+    ResourceLockLease,
     ResourceLockOwner,
     ResourceLockReleaseStatus,
 )
@@ -124,6 +125,42 @@ def _tool_handle(
         parent_handle_id="owner-handle-001",
         tool_call_id="tool-call-001",
     )
+
+
+class FaultingInflightEvidenceStore(InMemoryDurableRecoveryEvidenceStore):
+    async def load_inflight(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str | None = None,
+    ):
+        raise RuntimeError("simulated durable inflight read failure")
+
+
+class FailingReleaseResourceStore(InMemoryDurableResourceRecoveryStore):
+    def __init__(
+        self,
+        *,
+        claim_authority: InMemoryRecoveryClaimAuthority,
+        fail_acquisition_id: str,
+    ) -> None:
+        super().__init__(claim_authority=claim_authority)
+        self._fail_acquisition_id = fail_acquisition_id
+
+    async def release(
+        self,
+        lease: ResourceLockLease,
+        *,
+        released_at: datetime,
+        required_claim: ExecutionRecoveryClaim,
+    ):
+        if lease.acquisition_id == self._fail_acquisition_id:
+            raise RuntimeError("simulated durable lock release failure")
+        return await super().release(
+            lease,
+            released_at=released_at,
+            required_claim=required_claim,
+        )
 
 
 class StaticProbe:
@@ -1061,3 +1098,106 @@ def test_durable_provider_fence_survives_second_recovery_takeover() -> None:
         assert binding_read.record.provider_fence == fence
 
     asyncio.run(scenario())
+
+def test_inflight_store_exception_retains_known_binding_leases() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        first_claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        setup_evidence = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        handle, binding = await _setup_bound_tool(
+            claims=claims,
+            claim=first_claim,
+            resource_store=resource_store,
+            evidence_store=setup_evidence,
+        )
+        recovery_claim = await _takeover_and_orphan(
+            claims=claims,
+            evidence_store=setup_evidence,
+        )
+        faulting_evidence = FaultingInflightEvidenceStore(claim_authority=claims)
+        coordinator = ToolResourceRecoveryCoordinator(
+            claim_authority=claims,
+            lock_store=resource_store,
+            binding_store=resource_store,
+            inflight_store=faulting_evidence,
+        )
+
+        decision = await coordinator.recover(
+            operation_handle_id=handle.operation_handle_id,
+            recovery_claim=recovery_claim,
+            recovered_at=NOW + timedelta(seconds=9),
+        )
+
+        assert decision.status is ResourceRecoveryStatus.RETAINED
+        assert decision.reason_codes == (
+            "RESOURCE_RECOVERY_INFLIGHT_READ_EXCEPTION",
+        )
+        assert decision.retained_leases == binding.leases
+
+    asyncio.run(scenario())
+
+
+def test_single_lock_release_exception_is_typed_partial_reclaim_unknown() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        first_claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        resource_store = FailingReleaseResourceStore(
+            claim_authority=claims,
+            fail_acquisition_id="acq:tool-handle-001:1",
+        )
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        handle, binding = await _setup_bound_tool(
+            claims=claims,
+            claim=first_claim,
+            resource_store=resource_store,
+            evidence_store=evidence_store,
+            lock_keys=("resource:A", "resource:B"),
+        )
+        recovery_claim = await _takeover_and_orphan(
+            claims=claims,
+            evidence_store=evidence_store,
+        )
+        coordinator = ToolResourceRecoveryCoordinator(
+            claim_authority=claims,
+            lock_store=resource_store,
+            binding_store=resource_store,
+            inflight_store=evidence_store,
+            operation_probe=StaticProbe(OperationRecoveryStatus.STOPPED_CONFIRMED),
+        )
+
+        decision = await coordinator.recover(
+            operation_handle_id=handle.operation_handle_id,
+            recovery_claim=recovery_claim,
+            recovered_at=NOW + timedelta(seconds=9),
+        )
+
+        assert decision.status is ResourceRecoveryStatus.UNKNOWN
+        assert decision.reason_codes == ("RESOURCE_RECLAIM_RELEASE_UNCERTAIN",)
+        assert decision.retained_leases == (binding.leases[0],)
+        assert decision.released_leases == (binding.leases[1],)
+
+        first_read = await resource_store.read_by_acquisition(
+            binding.leases[0].acquisition_id
+        )
+        second_read = await resource_store.read_by_acquisition(
+            binding.leases[1].acquisition_id
+        )
+        assert first_read.status is DurableResourceLockReadStatus.ACTIVE
+        assert second_read.status is DurableResourceLockReadStatus.RELEASED
+
+        binding_read = await resource_store.read(handle.operation_handle_id)
+        assert binding_read.status is DurableOperationResourceBindingReadStatus.ACTIVE
+
+    asyncio.run(scenario())
+

@@ -1,0 +1,22 @@
+name: M5-IU8 formal Ruff style diff
+on:
+  push:
+    branches:
+      - verification/m5-iu8-formal-style-4dd831b
+
+jobs:
+  style-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 4dd831bbf825fce1c14ebca06d2a47005880dcc9
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install ruff
+      - name: Ruff autofix and format
+        run: |
+          python -m ruff check runtime tests --fix
+          python -m ruff format runtime tests
+          git diff -- runtime tests

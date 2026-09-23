@@ -5,7 +5,11 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from runtime.execution.foundation import StepLifecycleSnapshot
-from runtime.execution.models import M5WorkflowResult, StepExecutionStatus, WorkflowExecutionStatus
+from runtime.execution.models import (
+    M5WorkflowResult,
+    StepExecutionStatus,
+    WorkflowExecutionStatus,
+)
 from runtime.execution.recovery import (
     ExecutionRecoveryClaim,
     RecoveryEpochValidationDecision,
@@ -97,7 +101,9 @@ def test_workflow_checkpoint_commit_is_fenced_and_exact_replay_idempotent() -> N
     asyncio.run(scenario())
 
 
-def test_waiting_result_becomes_resumable_only_after_checkpoint_coordinator_commit() -> None:
+def test_waiting_result_becomes_resumable_only_after_checkpoint_coordinator_commit() -> (
+    None
+):
     async def scenario() -> None:
         store = InMemoryWorkflowRecoveryCheckpointStore(
             claim_authority=ClaimAuthority(),
@@ -250,7 +256,9 @@ def make_snapshot(*, steps=(), status="RUNNING"):
     )
 
 
-def coordinator(snapshot, *, control=DurableControlReadStatus.NONE, cp=None, version="v7"):
+def coordinator(
+    snapshot, *, control=DurableControlReadStatus.NONE, cp=None, version="v7"
+):
     return RecoveryCoordinator(
         claim_authority=ClaimAuthority(),
         snapshot_store=SnapshotStore(snapshot),

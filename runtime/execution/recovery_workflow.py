@@ -19,7 +19,11 @@ from typing import Any, Protocol, runtime_checkable
 
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.execution.foundation import StepLifecycleSnapshot
-from runtime.execution.models import M5WorkflowResult, StepExecutionStatus, WorkflowExecutionStatus
+from runtime.execution.models import (
+    M5WorkflowResult,
+    StepExecutionStatus,
+    WorkflowExecutionStatus,
+)
 from runtime.execution.recovery import (
     ExecutionRecoveryClaim,
     ExecutionRecoverySnapshot,
@@ -106,7 +110,9 @@ class WorkflowCheckpointWriteDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.status, WorkflowCheckpointWriteStatus):
             raise TypeError("status must be WorkflowCheckpointWriteStatus")
-        if not self.reason_codes or any(not reason.strip() for reason in self.reason_codes):
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
             raise ValueError("reason_codes must contain non-blank values")
         if self.status in {
             WorkflowCheckpointWriteStatus.COMMITTED,
@@ -115,7 +121,9 @@ class WorkflowCheckpointWriteDecision:
             if self.checkpoint is None:
                 raise ValueError("successful checkpoint decision requires checkpoint")
         elif self.checkpoint is not None:
-            raise ValueError("CONFLICT/UNKNOWN checkpoint decision cannot carry checkpoint")
+            raise ValueError(
+                "CONFLICT/UNKNOWN checkpoint decision cannot carry checkpoint"
+            )
 
 
 class WorkflowRecoveryCheckpointStore(Protocol):
@@ -187,7 +195,9 @@ class InMemoryWorkflowRecoveryCheckpointStore:
                 if expected_generation != 0 or checkpoint.generation != 1:
                     return WorkflowCheckpointWriteDecision(
                         status=WorkflowCheckpointWriteStatus.CONFLICT,
-                        reason_codes=("WORKFLOW_CHECKPOINT_CREATE_GENERATION_CONFLICT",),
+                        reason_codes=(
+                            "WORKFLOW_CHECKPOINT_CREATE_GENERATION_CONFLICT",
+                        ),
                     )
                 stored = deepcopy(checkpoint)
                 self._records[key] = stored
@@ -204,7 +214,9 @@ class InMemoryWorkflowRecoveryCheckpointStore:
                 }:
                     return WorkflowCheckpointWriteDecision(
                         status=WorkflowCheckpointWriteStatus.CONFLICT,
-                        reason_codes=("WORKFLOW_CHECKPOINT_REPLAY_GENERATION_CONFLICT",),
+                        reason_codes=(
+                            "WORKFLOW_CHECKPOINT_REPLAY_GENERATION_CONFLICT",
+                        ),
                     )
                 return WorkflowCheckpointWriteDecision(
                     status=WorkflowCheckpointWriteStatus.ALREADY_CURRENT,
@@ -372,7 +384,7 @@ class WorkflowResumeRequest:
     def from_checkpoint(
         cls,
         checkpoint: WorkflowRecoveryCheckpoint,
-    ) -> "WorkflowResumeRequest":
+    ) -> WorkflowResumeRequest:
         return cls(
             execution_id=checkpoint.execution_id,
             step_execution_id=checkpoint.step_execution_id,
@@ -422,7 +434,9 @@ class StepRecoveryReplayDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.status, StepRecoveryReplayStatus):
             raise TypeError("status must be StepRecoveryReplayStatus")
-        if not self.reason_codes or any(not reason.strip() for reason in self.reason_codes):
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
             raise ValueError("reason_codes must contain non-blank values")
 
 
@@ -457,7 +471,9 @@ class RecoveryDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.disposition, RecoveryDisposition):
             raise TypeError("disposition must be RecoveryDisposition")
-        if not self.reason_codes or any(not reason.strip() for reason in self.reason_codes):
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
             raise ValueError("reason_codes must contain non-blank values")
         if self.snapshot_generation < 1:
             raise ValueError("snapshot_generation must be >= 1")
@@ -523,9 +539,13 @@ class RecoveryCoordinator:
         if snapshot is None:
             return self._unknown(1, "RECOVERY_SNAPSHOT_MISSING")
         if snapshot.generation != recovery_claim.source_snapshot_generation:
-            return self._unknown(snapshot.generation, "RECOVERY_SNAPSHOT_GENERATION_DRIFT")
+            return self._unknown(
+                snapshot.generation, "RECOVERY_SNAPSHOT_GENERATION_DRIFT"
+            )
 
-        if snapshot.execution_record.status in {item.value for item in ExecutionPlanStatus}:
+        if snapshot.execution_record.status in {
+            item.value for item in ExecutionPlanStatus
+        }:
             return RecoveryDecision(
                 disposition=RecoveryDisposition.TERMINAL_NO_ACTION,
                 reason_codes=("RECOVERY_EXECUTION_ALREADY_TERMINAL",),
@@ -533,7 +553,9 @@ class RecoveryCoordinator:
             )
 
         try:
-            control = await self._control_store.read_latched(recovery_claim.execution_id)
+            control = await self._control_store.read_latched(
+                recovery_claim.execution_id
+            )
         except Exception:  # noqa: BLE001
             return self._unknown(snapshot.generation, "RECOVERY_CONTROL_LOOKUP_UNKNOWN")
         if control.status is DurableControlReadStatus.UNKNOWN:
@@ -552,19 +574,25 @@ class RecoveryCoordinator:
                 required_claim=recovery_claim,
             )
         except Exception:  # noqa: BLE001
-            return self._unknown(snapshot.generation, "RECOVERY_INFLIGHT_TRANSITION_UNKNOWN")
+            return self._unknown(
+                snapshot.generation, "RECOVERY_INFLIGHT_TRANSITION_UNKNOWN"
+            )
         if orphan_transition.status in {
             InFlightRecoveryTransitionStatus.CONFLICT,
             InFlightRecoveryTransitionStatus.UNKNOWN,
         }:
-            return self._unknown(snapshot.generation, "RECOVERY_INFLIGHT_TRANSITION_UNSAFE")
+            return self._unknown(
+                snapshot.generation, "RECOVERY_INFLIGHT_TRANSITION_UNSAFE"
+            )
 
         try:
             inflight = await self._inflight_store.load_inflight(
                 execution_id=recovery_claim.execution_id,
             )
         except Exception:  # noqa: BLE001
-            return self._unknown(snapshot.generation, "RECOVERY_INFLIGHT_LOOKUP_UNKNOWN")
+            return self._unknown(
+                snapshot.generation, "RECOVERY_INFLIGHT_LOOKUP_UNKNOWN"
+            )
         unresolved_states = {
             InFlightEvidenceState.ACTIVE_AT_CHECKPOINT,
             InFlightEvidenceState.ORPHANED_UNCONFIRMED,
@@ -582,7 +610,9 @@ class RecoveryCoordinator:
                 recovery_claim.execution_id
             )
         except Exception:  # noqa: BLE001
-            return self._unknown(snapshot.generation, "RECOVERY_RESOURCE_BINDING_LOOKUP_UNKNOWN")
+            return self._unknown(
+                snapshot.generation, "RECOVERY_RESOURCE_BINDING_LOOKUP_UNKNOWN"
+            )
         if active_bindings:
             return RecoveryDecision(
                 disposition=RecoveryDisposition.WAIT_RECONCILIATION,
@@ -591,7 +621,9 @@ class RecoveryCoordinator:
             )
 
         running_steps = tuple(
-            step for step in snapshot.steps if step.status is StepExecutionStatus.RUNNING
+            step
+            for step in snapshot.steps
+            if step.status is StepExecutionStatus.RUNNING
         )
         if len(running_steps) > 1:
             return self._unknown(snapshot.generation, "RECOVERY_MULTIPLE_RUNNING_STEPS")
@@ -601,7 +633,9 @@ class RecoveryCoordinator:
                 return await self._decide_workflow(snapshot, step)
             if step.skill_id is not None:
                 return await self._decide_skill(snapshot, step)
-            return self._unknown(snapshot.generation, "RECOVERY_RUNNING_STEP_OWNER_UNKNOWN")
+            return self._unknown(
+                snapshot.generation, "RECOVERY_RUNNING_STEP_OWNER_UNKNOWN"
+            )
 
         return RecoveryDecision(
             disposition=RecoveryDisposition.RESUME_SCHEDULING,
@@ -620,7 +654,9 @@ class RecoveryCoordinator:
                 step_execution_id=step.step_execution_id,
             )
         except Exception:  # noqa: BLE001
-            return self._unknown(snapshot.generation, "WORKFLOW_CHECKPOINT_LOOKUP_UNKNOWN")
+            return self._unknown(
+                snapshot.generation, "WORKFLOW_CHECKPOINT_LOOKUP_UNKNOWN"
+            )
         if checkpoint is None:
             return RecoveryDecision(
                 disposition=RecoveryDisposition.WAIT_RECONCILIATION,
@@ -628,11 +664,17 @@ class RecoveryCoordinator:
                 snapshot_generation=snapshot.generation,
             )
         if checkpoint.status is not WorkflowRecoveryCheckpointStatus.WAITING_COMMITTED:
-            return self._unknown(snapshot.generation, "WORKFLOW_CHECKPOINT_NOT_RESUMABLE")
+            return self._unknown(
+                snapshot.generation, "WORKFLOW_CHECKPOINT_NOT_RESUMABLE"
+            )
         if checkpoint.execution_id != snapshot.execution_id:
-            return self._unknown(snapshot.generation, "WORKFLOW_CHECKPOINT_EXECUTION_MISMATCH")
+            return self._unknown(
+                snapshot.generation, "WORKFLOW_CHECKPOINT_EXECUTION_MISMATCH"
+            )
         if checkpoint.step_execution_id != step.step_execution_id:
-            return self._unknown(snapshot.generation, "WORKFLOW_CHECKPOINT_STEP_MISMATCH")
+            return self._unknown(
+                snapshot.generation, "WORKFLOW_CHECKPOINT_STEP_MISMATCH"
+            )
         if checkpoint.workflow_id != step.workflow_id:
             return self._unknown(snapshot.generation, "WORKFLOW_CHECKPOINT_ID_MISMATCH")
         try:
@@ -644,9 +686,13 @@ class RecoveryCoordinator:
         except Exception:  # noqa: BLE001
             expected_version = None
         if expected_version is None:
-            return self._unknown(snapshot.generation, "WORKFLOW_APPROVED_VERSION_UNKNOWN")
+            return self._unknown(
+                snapshot.generation, "WORKFLOW_APPROVED_VERSION_UNKNOWN"
+            )
         if expected_version != checkpoint.workflow_version:
-            return self._unknown(snapshot.generation, "WORKFLOW_CHECKPOINT_VERSION_MISMATCH")
+            return self._unknown(
+                snapshot.generation, "WORKFLOW_CHECKPOINT_VERSION_MISMATCH"
+            )
         return RecoveryDecision(
             disposition=RecoveryDisposition.RESUME_WORKFLOW,
             reason_codes=("WORKFLOW_EXACT_DURABLE_CHECKPOINT_RESUME_AUTHORIZED",),

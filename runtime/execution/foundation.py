@@ -592,7 +592,7 @@ class ExecutionLifecycleService:
                     updated,
                     observed_at=at,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001,S110
                 # Terminal lifecycle is already authoritative and persisted.
                 # Observer uncertainty must retain its side authority, not
                 # retroactively make the lifecycle transition appear failed.

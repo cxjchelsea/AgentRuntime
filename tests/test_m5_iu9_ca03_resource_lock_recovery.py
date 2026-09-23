@@ -1061,4 +1061,3 @@ def test_durable_provider_fence_survives_second_recovery_takeover() -> None:
         assert binding_read.record.provider_fence == fence
 
     asyncio.run(scenario())
-

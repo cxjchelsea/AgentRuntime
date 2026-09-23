@@ -1039,40 +1039,28 @@ class ToolResourceRecoveryCoordinator:
         if observation.state is not InFlightEvidenceState.ORPHANED_UNCONFIRMED:
             return False
 
-        reconciliation: InFlightTerminalReconciliation | None = None
-        if record.provider_fence is not None:
-            reconciliation = InFlightTerminalReconciliation(
-                handle=handle,
-                state=InFlightEvidenceState.FENCED_OUT,
-                basis=InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED,
-                observed_at=record.provider_fence.established_at,
-            )
-        else:
-            mapping = {
-                "PROBE_COMPLETED_CONFIRMED": (
-                    InFlightEvidenceState.COMPLETED,
-                    InFlightReconciliationBasis.OPERATION_COMPLETED_CONFIRMED,
-                ),
-                "PROBE_STOPPED_CONFIRMED": (
-                    InFlightEvidenceState.CONFIRMED_STOPPED,
-                    InFlightReconciliationBasis.OPERATION_STOPPED_CONFIRMED,
-                ),
-                "PROBE_NOT_FOUND_WITH_PROOF": (
-                    InFlightEvidenceState.CONFIRMED_STOPPED,
-                    InFlightReconciliationBasis.OPERATION_NOT_FOUND_WITH_PROOF,
-                ),
-            }
-            mapped = mapping.get(record.release_basis or "")
-            if mapped is not None and record.released_at is not None:
-                state, basis = mapped
-                reconciliation = InFlightTerminalReconciliation(
-                    handle=handle,
-                    state=state,
-                    basis=basis,
-                    observed_at=record.released_at,
-                )
-        if reconciliation is None:
+        provider_fence = record.provider_fence
+        if provider_fence is None:
+            # A free-form release_basis string is audit metadata, not strong
+            # provider truth. Without typed durable evidence, remain fail-closed.
             return False
+        if (
+            provider_fence.operation_handle_id != handle.operation_handle_id
+            or provider_fence.recovery_epoch > recovery_claim.recovery_epoch
+            or provider_fence.established_at < handle.started_at
+            or (
+                record.released_at is not None
+                and provider_fence.established_at > record.released_at
+            )
+        ):
+            return False
+
+        reconciliation = InFlightTerminalReconciliation(
+            handle=handle,
+            state=InFlightEvidenceState.FENCED_OUT,
+            basis=InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED,
+            observed_at=provider_fence.established_at,
+        )
         try:
             decision = await self._inflight_store.commit_terminal_reconciliation(
                 reconciliation=reconciliation,

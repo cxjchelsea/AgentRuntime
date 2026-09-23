@@ -27,6 +27,8 @@ from runtime.execution.recovery import (
     RecoveryClaimStatus,
 )
 from runtime.execution.recovery_evidence import (
+    DurableControlReadDecision,
+    DurableControlReadStatus,
     DurableEvidenceMutationStatus,
     DurableExecutionControlLatch,
     DurableInFlightOperationRegistry,
@@ -34,6 +36,7 @@ from runtime.execution.recovery_evidence import (
     DurableToolJournalEvidence,
     DurableToolOperationOccurrenceAuthority,
     InFlightEvidenceState,
+    InFlightRecoveryTransitionStatus,
     InMemoryDurableRecoveryEvidenceStore,
     ToolJournalWriteStatus,
 )
@@ -520,11 +523,13 @@ def test_active_at_crash_becomes_orphaned_unconfirmed_not_stopped() -> None:
             expected_epoch=1,
             at=NOW + timedelta(seconds=4),
         )
-        observations = await store.recover_active_as_orphaned(
+        recovery = await store.recover_active_as_orphaned(
             execution_id="execution-001",
             recovered_at=NOW + timedelta(seconds=5),
             required_claim=recovery_claim,
         )
+        assert recovery.status is InFlightRecoveryTransitionStatus.TRANSITIONED
+        observations = recovery.observations
         assert len(observations) == 2
         assert {item.state for item in observations} == {
             InFlightEvidenceState.ORPHANED_UNCONFIRMED
@@ -585,12 +590,16 @@ def test_completed_inflight_evidence_is_not_downgraded_to_orphaned() -> None:
             expected_epoch=1,
             at=NOW + timedelta(seconds=5),
         )
-        observations = await store.recover_active_as_orphaned(
+        recovery = await store.recover_active_as_orphaned(
             execution_id="execution-001",
             recovered_at=NOW + timedelta(seconds=6),
             required_claim=recovery_claim,
         )
-        by_id = {item.handle.operation_handle_id: item for item in observations}
+        assert recovery.status is InFlightRecoveryTransitionStatus.TRANSITIONED
+        by_id = {
+            item.handle.operation_handle_id: item
+            for item in recovery.observations
+        }
         assert by_id[owner.operation_handle_id].state is (
             InFlightEvidenceState.ORPHANED_UNCONFIRMED
         )
@@ -637,6 +646,138 @@ def test_stale_inflight_registry_cannot_complete_after_takeover() -> None:
         observations = await store.load_inflight(execution_id="execution-001")
         assert len(observations) == 1
         assert observations[0].state is InFlightEvidenceState.ACTIVE_AT_CHECKPOINT
+
+    asyncio.run(scenario())
+
+
+def test_step_retry_requires_durable_attempt_one_baseline() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        authority = DurableStepAttemptSequenceAuthority(
+            store=store,
+            execution_id="execution-001",
+            recovery_claim=claim,
+            clock=lambda: NOW + timedelta(seconds=1),
+        )
+
+        decision = await authority.claim_next(
+            step_execution_id="step-exec-001",
+            expected_current_attempt=1,
+        )
+
+        assert decision.status is StepAttemptSequenceStatus.CONFLICT
+        assert decision.reason_codes == ("STEP_ATTEMPT_DURABLE_BASELINE_MISSING",)
+        assert await authority.current_attempt("step-exec-001") is None
+
+    asyncio.run(scenario())
+
+
+def test_durable_control_unknown_read_never_becomes_no_control() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+
+        class UnknownControlStore:
+            async def latch(
+                self,
+                *,
+                observed,
+                latched_at,
+                required_claim,
+            ):
+                raise AssertionError("latch must not be called")
+
+            async def read_latched(self, execution_id: str):
+                assert execution_id == "execution-001"
+                return DurableControlReadDecision(
+                    status=DurableControlReadStatus.UNKNOWN,
+                    reason_codes=("DURABLE_CONTROL_STORE_UNAVAILABLE",),
+                )
+
+        latch = DurableExecutionControlLatch(
+            store=UnknownControlStore(),
+            recovery_claim=claim,
+        )
+
+        with pytest.raises(RuntimeError, match="DURABLE_CONTROL_STORE_UNAVAILABLE"):
+            await latch.get_latched("execution-001")
+
+    asyncio.run(scenario())
+
+
+def test_orphan_transition_stale_epoch_is_conflict_not_empty_success() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        first_claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        registry = DurableInFlightOperationRegistry(
+            store=store,
+            recovery_claim=first_claim,
+            clock=lambda: NOW + timedelta(seconds=2),
+        )
+        await registry.register(_owner_handle())
+
+        await _claim(
+            claims,
+            claim_id="claim-002",
+            owner="worker-b",
+            expected_epoch=1,
+            at=NOW + timedelta(seconds=3),
+        )
+
+        decision = await store.recover_active_as_orphaned(
+            execution_id="execution-001",
+            recovered_at=NOW + timedelta(seconds=4),
+            required_claim=first_claim,
+        )
+
+        assert decision.status is InFlightRecoveryTransitionStatus.CONFLICT
+        assert decision.reason_codes == ("INFLIGHT_RECOVERY_STALE_RECOVERY_EPOCH",)
+        assert decision.observations == ()
+        persisted = await store.load_inflight(execution_id="execution-001")
+        assert len(persisted) == 1
+        assert persisted[0].state is InFlightEvidenceState.ACTIVE_AT_CHECKPOINT
+
+    asyncio.run(scenario())
+
+
+def test_orphan_transition_no_active_is_explicit() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+
+        decision = await store.recover_active_as_orphaned(
+            execution_id="execution-001",
+            recovered_at=NOW + timedelta(seconds=1),
+            required_claim=claim,
+        )
+
+        assert decision.status is InFlightRecoveryTransitionStatus.NO_ACTIVE
+        assert decision.reason_codes == ("INFLIGHT_NO_ACTIVE_AT_RECOVERY",)
+        assert decision.observations == ()
 
     asyncio.run(scenario())
 

@@ -430,6 +430,10 @@ class OperationResourceLeaseBinding:
             raise ValueError("operation resource leases require unique acquisition_id")
         if any(lease.owner != self.owner for lease in self.leases):
             raise ValueError("operation resource lease owner mismatch")
+        if any(lease.acquired_at > self.handle.started_at for lease in self.leases):
+            raise ValueError(
+                "operation resource lease must be acquired before operation start"
+            )
 
 
 class OperationResourceLeaseRegistry(Protocol):

@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from runtime.execution.concurrency_runtime import ToolConcurrencyRuntime
 from runtime.execution.control import (
     ExecutionControlLatch,
     ExecutionControlLatchDecision,
@@ -28,7 +29,7 @@ from runtime.execution.control_application import (
     InFlightInterruptCoordinator,
 )
 from runtime.execution.control_lifecycle import ExecutionControlLifecycleService
-from runtime.execution.foundation import PreparedExecution
+from runtime.execution.foundation import ExecutionTerminalObserver, PreparedExecution
 from runtime.execution.models import StepExecutionStatus
 
 
@@ -62,6 +63,8 @@ class ExecutionControlCoordinator:
         application_evaluator: ExecutionControlApplicationEvaluator,
         lifecycle_service: ExecutionControlLifecycleService,
         clock: Callable[[], datetime] | None = None,
+        tool_concurrency_runtime: ToolConcurrencyRuntime | None = None,
+        terminal_observer: ExecutionTerminalObserver | None = None,
     ) -> None:
         self._watcher = watcher
         self._latch = latch
@@ -69,6 +72,8 @@ class ExecutionControlCoordinator:
         self._application_evaluator = application_evaluator
         self._lifecycle_service = lifecycle_service
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._tool_concurrency_runtime = tool_concurrency_runtime
+        self._terminal_observer = terminal_observer
 
     async def watch_and_apply(
         self,
@@ -241,6 +246,14 @@ class ExecutionControlCoordinator:
                 step_execution_id=running[0].step_execution_id,
                 signal=latched_control.signal,
             )
+            if (
+                self._tool_concurrency_runtime is not None
+                and interrupt_summary is not None
+            ):
+                await self._tool_concurrency_runtime.reconcile_interrupt(
+                    interrupt_summary,
+                    observed_at=self._now(),
+                )
 
         application = self._application_evaluator.evaluate(
             latched_control=latched_control,
@@ -276,12 +289,23 @@ class ExecutionControlCoordinator:
                 lifecycle_mutated=False,
             )
 
+        terminal_at = self._now()
         terminalized = await self._lifecycle_service.terminalize(
             current_prepared,
             latched_control=latched_control,
             application=application,
-            at=self._now(),
+            at=terminal_at,
         )
+        if self._terminal_observer is not None:
+            try:
+                await self._terminal_observer.on_terminal_execution(
+                    terminalized,
+                    observed_at=terminal_at,
+                )
+            except Exception:  # noqa: BLE001,S110
+                # Control lifecycle is already terminal and persisted.
+                # Session-release uncertainty must not undo that truth.
+                pass
         return ExecutionControlRuntimeResult(
             latch_decision=latch_decision,
             application=application,

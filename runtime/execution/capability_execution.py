@@ -23,6 +23,14 @@ from runtime.execution.capability_resolution import (
     ResolvedCapability,
     ResolvedStepCapabilities,
 )
+from runtime.execution.concurrency_runtime import (
+    ExecutionConcurrencyAdmissionStatus,
+    ExecutionConcurrencyRuntime,
+    ToolConcurrencyAdmissionDecision,
+    ToolConcurrencyAdmissionStatus,
+    ToolConcurrencyCompletionStatus,
+    ToolConcurrencyRuntime,
+)
 from runtime.execution.control_application import (
     InFlightOperationHandle,
     InFlightOperationIdentifierFactory,
@@ -195,6 +203,7 @@ class CoreApprovedToolInvoker(
         inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
         inflight_parent_handle_id: str | None = None,
         inflight_clock: Callable[[], datetime] | None = None,
+        tool_concurrency_runtime: ToolConcurrencyRuntime | None = None,
     ) -> None:
         if not step_execution_id.strip():
             raise ValueError("step_execution_id must not be blank")
@@ -202,6 +211,31 @@ class CoreApprovedToolInvoker(
             raise ValueError("step_attempt_number must be >= 1")
         if reliability_runtime is not None and (step_id is None or not step_id.strip()):
             raise ValueError("reliable Tool invocation requires non-blank step_id")
+        if tool_concurrency_runtime is not None:
+            if inflight_parent_handle_id is None:
+                raise ValueError(
+                    "Tool concurrency runtime requires owner parent handle"
+                )
+            if (
+                inflight_registry is not None
+                and inflight_registry is not tool_concurrency_runtime.inflight_registry
+            ):
+                raise ValueError(
+                    "Tool concurrency runtime must share IU7 in-flight registry"
+                )
+            if (
+                inflight_identifier_factory is not None
+                and inflight_identifier_factory
+                is not tool_concurrency_runtime.inflight_identifier_factory
+            ):
+                raise ValueError(
+                    "Tool concurrency runtime must share IU7 identifier factory"
+                )
+            inflight_registry = tool_concurrency_runtime.inflight_registry
+            inflight_identifier_factory = (
+                tool_concurrency_runtime.inflight_identifier_factory
+            )
+
         tracking_values = (
             inflight_registry,
             inflight_identifier_factory,
@@ -228,6 +262,7 @@ class CoreApprovedToolInvoker(
         self._inflight_identifier_factory = inflight_identifier_factory
         self._inflight_parent_handle_id = inflight_parent_handle_id
         self._inflight_clock = inflight_clock or (lambda: datetime.now(UTC))
+        self._tool_concurrency_runtime = tool_concurrency_runtime
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
         self._input_validator = input_validator
@@ -936,15 +971,59 @@ class CoreApprovedToolInvoker(
                 "IU3 resolved Tool binding is internally inconsistent",
             )
 
+        (
+            concurrency_admission,
+            inflight_handle,
+            admission_reasons,
+        ) = await self._begin_physical_tool_operation(
+            resolved=resolved,
+            logical_tool_call_id=logical_tool_call_id,
+            physical_attempt=physical_attempt,
+        )
+        if admission_reasons:
+            error_code = (
+                "RESOURCE_LOCK_BUSY"
+                if concurrency_admission is not None
+                and concurrency_admission.status is ToolConcurrencyAdmissionStatus.BUSY
+                else admission_reasons[0]
+            )
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code=error_code,
+                reason_codes=admission_reasons,
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
+
+        operation_completion_ok: bool | None = None
         if timeout_seconds is None:
             try:
                 raw_result = await tool_implementation.invoke(
                     request,
                     self._execution_context,
                 )
+                operation_completion_ok = await self._complete_physical_tool_operation(
+                    concurrency_admission=concurrency_admission,
+                    inflight_handle=inflight_handle,
+                )
             except Exception:  # noqa: BLE001
                 raw_result = None
                 execution_exception = True
+                operation_completion_ok = await self._complete_physical_tool_operation(
+                    concurrency_admission=concurrency_admission,
+                    inflight_handle=inflight_handle,
+                )
         else:
             try:
                 timeout_result = await runtime.timeout_runner.run(
@@ -964,9 +1043,41 @@ class CoreApprovedToolInvoker(
             elif timeout_result.status is TimeoutRunStatus.COMPLETED:
                 raw_result = timeout_result.value
                 timeout_status = TimeoutRunStatus.COMPLETED
+                operation_completion_ok = await self._complete_physical_tool_operation(
+                    concurrency_admission=concurrency_admission,
+                    inflight_handle=inflight_handle,
+                )
             else:
                 raw_result = None
                 timeout_status = timeout_result.status
+
+        if operation_completion_ok is False:
+            raw_identity_valid = (
+                isinstance(raw_result, M5ToolResult)
+                and isinstance(raw_result.status, ToolExecutionStatus)
+                and raw_result.tool_call_id == logical_tool_call_id
+                and raw_result.tool_id == tool_id
+                and raw_result.attempt == physical_attempt
+            )
+            result = self._generated_result(
+                tool_call_id=logical_tool_call_id,
+                tool_id=tool_id,
+                status=ToolExecutionStatus.UNKNOWN,
+                error_code="TOOL_CONCURRENCY_COMPLETION_UNKNOWN",
+                reason_codes=("TOOL_CONCURRENCY_COMPLETION_UNKNOWN",),
+                attempt=physical_attempt,
+            )
+            return self._append_journal_attempt(
+                resolved=resolved,
+                result=result,
+                raw_result=raw_result if raw_identity_valid else None,
+                permission_status=permission_status,
+                input_status=input_decision.status,
+                output_status=None,
+                idempotency_key=idempotency_key,
+                operation_key=operation_key,
+                operation_fingerprint=operation_fingerprint,
+            )
 
         if timeout_seconds is None and execution_exception:
             result = self._generated_result(
@@ -1682,19 +1793,28 @@ class CoreApprovedToolInvoker(
             idempotency_key=idempotency_key,
         )
 
-        try:
-            inflight_handle = await self._begin_tool_inflight(
-                resolved=resolved,
-                logical_tool_call_id=logical_tool_call_id,
-                physical_attempt=physical_attempt,
+        (
+            concurrency_admission,
+            inflight_handle,
+            admission_reasons,
+        ) = await self._begin_physical_tool_operation(
+            resolved=resolved,
+            logical_tool_call_id=logical_tool_call_id,
+            physical_attempt=physical_attempt,
+        )
+        if admission_reasons:
+            error_code = (
+                "RESOURCE_LOCK_BUSY"
+                if concurrency_admission is not None
+                and concurrency_admission.status is ToolConcurrencyAdmissionStatus.BUSY
+                else admission_reasons[0]
             )
-        except ToolInvocationBoundaryError as exc:
             result = self._generated_result(
                 tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
-                error_code=exc.reason_code,
-                reason_codes=(exc.reason_code,),
+                error_code=error_code,
+                reason_codes=admission_reasons,
                 attempt=physical_attempt,
             )
             return self._append_journal_attempt(
@@ -1714,7 +1834,10 @@ class CoreApprovedToolInvoker(
                 self._execution_context,
             )
         except Exception:  # noqa: BLE001
-            completion_ok = await self._complete_tool_inflight(inflight_handle)
+            completion_ok = await self._complete_physical_tool_operation(
+                concurrency_admission=concurrency_admission,
+                inflight_handle=inflight_handle,
+            )
             error_code = (
                 "TOOL_EXECUTION_EXCEPTION"
                 if completion_ok
@@ -1739,7 +1862,10 @@ class CoreApprovedToolInvoker(
                 operation_fingerprint=operation_fingerprint,
             )
 
-        completion_ok = await self._complete_tool_inflight(inflight_handle)
+        completion_ok = await self._complete_physical_tool_operation(
+            concurrency_admission=concurrency_admission,
+            inflight_handle=inflight_handle,
+        )
         raw_identity_valid = (
             isinstance(raw_result, M5ToolResult)
             and isinstance(raw_result.status, ToolExecutionStatus)
@@ -1859,6 +1985,92 @@ class CoreApprovedToolInvoker(
             operation_key=operation_key,
             operation_fingerprint=operation_fingerprint,
         )
+
+    async def _begin_physical_tool_operation(
+        self,
+        *,
+        resolved: ResolvedCapability,
+        logical_tool_call_id: str,
+        physical_attempt: int,
+    ) -> tuple[
+        ToolConcurrencyAdmissionDecision | None,
+        InFlightOperationHandle | None,
+        tuple[str, ...],
+    ]:
+        concurrency = self._tool_concurrency_runtime
+        if concurrency is not None:
+            parent_handle_id = self._inflight_parent_handle_id
+            definition = resolved.definition
+            if parent_handle_id is None or not isinstance(definition, ToolDefinition):
+                reason = "TOOL_CONCURRENCY_AUTHORITY_MISSING"
+                self._record_fault(reason)
+                return None, None, (reason,)
+            try:
+                admission = await concurrency.admit(
+                    tool_definition=definition,
+                    tool_id=resolved.capability_id,
+                    tool_version=resolved.version,
+                    execution_context=self._execution_context,
+                    step_execution_id=self._step_execution_id,
+                    parent_handle_id=parent_handle_id,
+                    logical_tool_call_id=logical_tool_call_id,
+                    physical_attempt=physical_attempt,
+                )
+            except Exception:  # noqa: BLE001
+                admission = None
+            if admission is None:
+                reason = "TOOL_CONCURRENCY_ADMISSION_UNKNOWN"
+                self._record_fault(reason)
+                return None, None, (reason,)
+            if admission.status is ToolConcurrencyAdmissionStatus.ADMITTED:
+                return admission, admission.handle, ()
+            reasons = admission.reason_codes or ("TOOL_CONCURRENCY_ADMISSION_UNKNOWN",)
+            for reason in reasons:
+                self._record_fault(reason)
+            return admission, admission.handle, reasons
+
+        try:
+            handle = await self._begin_tool_inflight(
+                resolved=resolved,
+                logical_tool_call_id=logical_tool_call_id,
+                physical_attempt=physical_attempt,
+            )
+        except ToolInvocationBoundaryError as exc:
+            return None, None, (exc.reason_code,)
+        return None, handle, ()
+
+    async def _complete_physical_tool_operation(
+        self,
+        *,
+        concurrency_admission: ToolConcurrencyAdmissionDecision | None,
+        inflight_handle: InFlightOperationHandle | None,
+    ) -> bool:
+        if concurrency_admission is not None:
+            concurrency = self._tool_concurrency_runtime
+            if concurrency is None:
+                self._record_fault("TOOL_CONCURRENCY_RUNTIME_MISSING")
+                return False
+            try:
+                decision = await concurrency.complete_after_operation(
+                    concurrency_admission,
+                    completed_at=self._inflight_now(),
+                )
+            except Exception:  # noqa: BLE001
+                decision = None
+            if (
+                decision is not None
+                and decision.status is ToolConcurrencyCompletionStatus.COMPLETED
+            ):
+                return True
+            reasons = (
+                decision.reason_codes
+                if decision is not None
+                else ("TOOL_CONCURRENCY_COMPLETION_UNKNOWN",)
+            )
+            for reason in reasons:
+                self._record_fault(reason)
+            return False
+        return await self._complete_tool_inflight(inflight_handle)
 
     async def _begin_tool_inflight(
         self,
@@ -2249,6 +2461,8 @@ class StepCapabilityExecutor:
         inflight_registry: InFlightOperationRegistry | None = None,
         inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
         inflight_clock: Callable[[], datetime] | None = None,
+        execution_concurrency_runtime: ExecutionConcurrencyRuntime | None = None,
+        tool_concurrency_runtime: ToolConcurrencyRuntime | None = None,
     ) -> None:
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
@@ -2256,6 +2470,28 @@ class StepCapabilityExecutor:
         self._output_validator = output_validator
         self._identifier_factory = identifier_factory
         self._reliability_runtime = reliability_runtime
+        self._execution_concurrency_runtime = execution_concurrency_runtime
+        self._tool_concurrency_runtime = tool_concurrency_runtime
+        if tool_concurrency_runtime is not None:
+            if (
+                inflight_registry is not None
+                and inflight_registry is not tool_concurrency_runtime.inflight_registry
+            ):
+                raise ValueError(
+                    "Tool concurrency runtime must share owner in-flight registry"
+                )
+            if (
+                inflight_identifier_factory is not None
+                and inflight_identifier_factory
+                is not tool_concurrency_runtime.inflight_identifier_factory
+            ):
+                raise ValueError(
+                    "Tool concurrency runtime must share owner identifier factory"
+                )
+            inflight_registry = tool_concurrency_runtime.inflight_registry
+            inflight_identifier_factory = (
+                tool_concurrency_runtime.inflight_identifier_factory
+            )
         if (inflight_registry is None) != (inflight_identifier_factory is None):
             raise ValueError(
                 "owner in-flight tracking requires registry and identifier factory together"
@@ -2327,6 +2563,38 @@ class StepCapabilityExecutor:
                 reason_codes=("NO_EXTERNAL_EXECUTION",),
             )
 
+        if self._execution_concurrency_runtime is not None:
+            try:
+                admission = await self._execution_concurrency_runtime.admit(
+                    execution_context
+                )
+            except Exception:  # noqa: BLE001
+                admission = None
+            if admission is None:
+                return self._outcome(
+                    step=step,
+                    step_snapshot=step_snapshot,
+                    resolved=resolved,
+                    status=CapabilityExecutionStatus.UNKNOWN,
+                    reason_codes=("SESSION_EXECUTION_ADMISSION_UNKNOWN",),
+                )
+            if admission.status is ExecutionConcurrencyAdmissionStatus.BUSY:
+                return self._outcome(
+                    step=step,
+                    step_snapshot=step_snapshot,
+                    resolved=resolved,
+                    status=CapabilityExecutionStatus.BLOCKED,
+                    reason_codes=("SESSION_EXECUTION_LOCK_BUSY",),
+                )
+            if admission.status is not ExecutionConcurrencyAdmissionStatus.ADMITTED:
+                return self._outcome(
+                    step=step,
+                    step_snapshot=step_snapshot,
+                    resolved=resolved,
+                    status=CapabilityExecutionStatus.UNKNOWN,
+                    reason_codes=admission.reason_codes,
+                )
+
         owner_handle, owner_error = await self._begin_owner_inflight(
             resolved=resolved,
             step_snapshot=step_snapshot,
@@ -2369,6 +2637,7 @@ class StepCapabilityExecutor:
                     else None
                 ),
                 inflight_clock=self._inflight_clock,
+                tool_concurrency_runtime=self._tool_concurrency_runtime,
             )
         except (TypeError, ValueError):
             completion_ok = await self._complete_owner_inflight(owner_handle)

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from runtime.execution.foundation import StepLifecycleSnapshot
-from runtime.execution.models import StepExecutionStatus
+from runtime.execution.models import M5WorkflowResult, StepExecutionStatus, WorkflowExecutionStatus
 from runtime.execution.recovery import (
     ExecutionRecoveryClaim,
     RecoveryEpochValidationDecision,
@@ -23,6 +23,7 @@ from runtime.execution.recovery_workflow import (
     RecoveryDisposition,
     StepRecoveryReplayDecision,
     StepRecoveryReplayStatus,
+    WorkflowCheckpointCoordinator,
     WorkflowCheckpointWriteStatus,
     WorkflowRecoveryCheckpoint,
     WorkflowRecoveryCheckpointStatus,
@@ -92,6 +93,78 @@ def test_workflow_checkpoint_commit_is_fenced_and_exact_replay_idempotent() -> N
         )
         assert first.status is WorkflowCheckpointWriteStatus.COMMITTED
         assert second.status is WorkflowCheckpointWriteStatus.ALREADY_CURRENT
+
+    asyncio.run(scenario())
+
+
+def test_waiting_result_becomes_resumable_only_after_checkpoint_coordinator_commit() -> None:
+    async def scenario() -> None:
+        store = InMemoryWorkflowRecoveryCheckpointStore(
+            claim_authority=ClaimAuthority(),
+        )
+        coordinator = WorkflowCheckpointCoordinator(
+            store=store,
+            claim_authority=ClaimAuthority(),
+        )
+        result = M5WorkflowResult(
+            workflow_instance_id="wf-instance-1",
+            workflow_id="wf-1",
+            status=WorkflowExecutionStatus.WAITING,
+            current_step="wait",
+            pending_step="continue",
+        )
+        decision = await coordinator.commit_waiting(
+            result=result,
+            execution_id="exec-1",
+            step_execution_id="step-exec-1",
+            workflow_version="v7",
+            checkpoint_id="cp-wf-1",
+            generation=1,
+            expected_generation=0,
+            state_reference="state://wf/1",
+            resume_token="resume-opaque-1",
+            committed_at=NOW,
+            recovery_claim=claim(),
+        )
+        assert decision.status is WorkflowCheckpointWriteStatus.COMMITTED
+        stored = await store.load(
+            execution_id="exec-1",
+            step_execution_id="step-exec-1",
+        )
+        assert stored is not None
+        assert stored.status is WorkflowRecoveryCheckpointStatus.WAITING_COMMITTED
+
+    asyncio.run(scenario())
+
+
+def test_non_waiting_workflow_result_cannot_create_resumable_checkpoint() -> None:
+    async def scenario() -> None:
+        store = InMemoryWorkflowRecoveryCheckpointStore(
+            claim_authority=ClaimAuthority(),
+        )
+        coordinator = WorkflowCheckpointCoordinator(
+            store=store,
+            claim_authority=ClaimAuthority(),
+        )
+        result = M5WorkflowResult(
+            workflow_instance_id="wf-instance-1",
+            workflow_id="wf-1",
+            status=WorkflowExecutionStatus.COMPLETED,
+        )
+        decision = await coordinator.commit_waiting(
+            result=result,
+            execution_id="exec-1",
+            step_execution_id="step-exec-1",
+            workflow_version="v7",
+            checkpoint_id="cp-wf-1",
+            generation=1,
+            expected_generation=0,
+            state_reference="state://wf/1",
+            resume_token="resume-opaque-1",
+            committed_at=NOW,
+            recovery_claim=claim(),
+        )
+        assert decision.status is WorkflowCheckpointWriteStatus.CONFLICT
 
     asyncio.run(scenario())
 

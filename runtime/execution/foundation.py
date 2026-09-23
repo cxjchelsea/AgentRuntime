@@ -587,10 +587,16 @@ class ExecutionLifecycleService:
         )
         await self._persist(updated)
         if self._terminal_observer is not None:
-            await self._terminal_observer.on_terminal_execution(
-                updated,
-                observed_at=at,
-            )
+            try:
+                await self._terminal_observer.on_terminal_execution(
+                    updated,
+                    observed_at=at,
+                )
+            except Exception:  # noqa: BLE001
+                # Terminal lifecycle is already authoritative and persisted.
+                # Observer uncertainty must retain its side authority, not
+                # retroactively make the lifecycle transition appear failed.
+                pass
         return updated
 
     async def _persist(self, prepared: PreparedExecution) -> None:

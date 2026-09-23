@@ -81,7 +81,7 @@ class M5RecoveryRuntimeStatus(str, Enum):
 class M5RecoveryRuntimeOutcome:
     status: M5RecoveryRuntimeStatus
     reason_codes: tuple[str, ...]
-    recovery_decision: RecoveryDecision
+    recovery_decision: RecoveryDecision | None
     prepared: PreparedExecution | None = None
     capability_outcome: StepCapabilityExecutionOutcome | None = None
     schedule_decision: StepScheduleDecision | None = None
@@ -631,14 +631,9 @@ class M5RecoveryRuntime:
         recovery_claim: ExecutionRecoveryClaim,
         reason: str,
     ) -> M5RecoveryRuntimeOutcome:
-        generation = max(recovery_claim.source_snapshot_generation, 1)
-        decision = RecoveryDecision(
-            disposition=RecoveryDisposition.UNKNOWN_BLOCKED,
-            reason_codes=(reason,),
-            snapshot_generation=generation,
-        )
+        del recovery_claim
         return M5RecoveryRuntimeOutcome(
             status=M5RecoveryRuntimeStatus.UNKNOWN,
             reason_codes=(reason,),
-            recovery_decision=decision,
+            recovery_decision=None,
         )

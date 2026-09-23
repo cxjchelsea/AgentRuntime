@@ -105,7 +105,9 @@ class WorkflowRecoveryCheckpoint:
     committed_at: datetime
     writer_recovery_epoch: int
     writer_recovery_owner_id: str
-    status: WorkflowRecoveryCheckpointStatus = WorkflowRecoveryCheckpointStatus.COMMITTED
+    status: WorkflowRecoveryCheckpointStatus = (
+        WorkflowRecoveryCheckpointStatus.COMMITTED
+    )
     schema_version: str = WORKFLOW_RECOVERY_CHECKPOINT_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -281,8 +283,8 @@ class InMemoryWorkflowRecoveryCheckpointStore(WorkflowRecoveryCheckpointStore):
                 reason_codes=(
                     "WORKFLOW_CHECKPOINT_STALE_RECOVERY_EPOCH"
                     if epoch.status is RecoveryEpochValidationStatus.STALE
-                    else "WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_UNKNOWN"
-                ,),
+                    else "WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_UNKNOWN",
+                ),
             )
 
         key = (checkpoint.execution_id, checkpoint.step_execution_id)
@@ -437,8 +439,8 @@ class WorkflowWaitingCheckpointCoordinator:
                 reason_codes=(
                     "WORKFLOW_CHECKPOINT_STALE_RECOVERY_EPOCH"
                     if epoch.status is RecoveryEpochValidationStatus.STALE
-                    else "WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_UNKNOWN"
-                ,),
+                    else "WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_UNKNOWN",
+                ),
             )
 
         try:
@@ -532,7 +534,9 @@ class WorkflowWaitingCheckpointCoordinator:
         except Exception:  # noqa: BLE001
             return WorkflowCheckpointCommitDecision(
                 status=WorkflowCheckpointCommitStatus.UNKNOWN,
-                reason_codes=("WORKFLOW_CHECKPOINT_POST_PERSIST_EPOCH_CHECK_EXCEPTION",),
+                reason_codes=(
+                    "WORKFLOW_CHECKPOINT_POST_PERSIST_EPOCH_CHECK_EXCEPTION",
+                ),
             )
         if post_persist_epoch.status is not RecoveryEpochValidationStatus.CURRENT:
             return WorkflowCheckpointCommitDecision(
@@ -544,8 +548,8 @@ class WorkflowWaitingCheckpointCoordinator:
                 reason_codes=(
                     "WORKFLOW_CHECKPOINT_STALE_AFTER_DOMAIN_PERSIST"
                     if post_persist_epoch.status is RecoveryEpochValidationStatus.STALE
-                    else "WORKFLOW_CHECKPOINT_EPOCH_UNKNOWN_AFTER_DOMAIN_PERSIST"
-                ,),
+                    else "WORKFLOW_CHECKPOINT_EPOCH_UNKNOWN_AFTER_DOMAIN_PERSIST",
+                ),
             )
 
         checkpoint = WorkflowRecoveryCheckpoint(
@@ -595,7 +599,9 @@ class WorkflowResumeDecision:
                     "WAITING resumed result must require a new durable checkpoint"
                 )
         elif self.result is not None or self.checkpoint_commit_required:
-            raise ValueError("UNKNOWN resume cannot claim result/checkpoint requirement")
+            raise ValueError(
+                "UNKNOWN resume cannot claim result/checkpoint requirement"
+            )
 
 
 class WorkflowResumeCoordinator:
@@ -1061,9 +1067,13 @@ class RecoveryCoordinator:
                 return reconciled
 
         try:
-            active_bindings = await self._binding_store.active_for_execution(execution_id)
+            active_bindings = await self._binding_store.active_for_execution(
+                execution_id
+            )
         except Exception:  # noqa: BLE001
-            return self._unknown(execution_id, "RECOVERY_RESOURCE_BINDING_READ_EXCEPTION")
+            return self._unknown(
+                execution_id, "RECOVERY_RESOURCE_BINDING_READ_EXCEPTION"
+            )
         if active_bindings:
             return RecoveryDecision(
                 disposition=RecoveryDisposition.WAIT_RECONCILIATION,
@@ -1072,7 +1082,9 @@ class RecoveryCoordinator:
             )
 
         running = [
-            item for item in snapshot.steps if item.status is StepExecutionStatus.RUNNING
+            item
+            for item in snapshot.steps
+            if item.status is StepExecutionStatus.RUNNING
         ]
         if len(running) > 1:
             return self._unknown(execution_id, "RECOVERY_MULTIPLE_RUNNING_STEPS")
@@ -1238,7 +1250,9 @@ class RecoveryCoordinator:
                 reason_codes=("RECOVERY_OPERATION_PROBE_EXCEPTION",),
             )
         if not isinstance(probe, OperationRecoveryDecision):
-            return self._unknown(execution_id, "RECOVERY_OPERATION_PROBE_INVALID_RESULT")
+            return self._unknown(
+                execution_id, "RECOVERY_OPERATION_PROBE_INVALID_RESULT"
+            )
         started_at = getattr(handle, "started_at", None)
         if (
             probe.operation_handle_id != operation_handle_id
@@ -1246,7 +1260,9 @@ class RecoveryCoordinator:
             or probe.observed_at < started_at
             or probe.observed_at > recovered_at
         ):
-            return self._unknown(execution_id, "RECOVERY_OPERATION_PROBE_PROVENANCE_INVALID")
+            return self._unknown(
+                execution_id, "RECOVERY_OPERATION_PROBE_PROVENANCE_INVALID"
+            )
 
         strong = probe.status in self._STRONG_OPERATION_RECOVERY
         if not strong:

@@ -128,8 +128,8 @@ def _request(
 
 
 def _claim_and_snapshot_runtime():
-    store = InMemoryExecutionRecoverySnapshotStore()
     authority = InMemoryRecoveryClaimAuthority()
+    store = InMemoryExecutionRecoverySnapshotStore(claim_authority=authority)
     claim_coordinator = RecoveryClaimCoordinator(
         snapshot_store=store,
         claim_authority=authority,
@@ -613,6 +613,136 @@ def test_old_claim_exact_replay_after_takeover_is_conflict_not_success() -> None
         assert replay.status is RecoveryClaimStatus.CONFLICT
         assert replay.reason_codes == ("RECOVERY_CLAIM_SOURCE_SNAPSHOT_STALE",)
         assert replay.current_claim == takeover.claim
+
+    asyncio.run(scenario())
+
+
+def test_snapshot_store_itself_rejects_stale_epoch_after_takeover() -> None:
+    async def scenario() -> None:
+        store, _, claim_coordinator, snapshot_coordinator = (
+            _claim_and_snapshot_runtime()
+        )
+        first = await claim_coordinator.claim(
+            _request(
+                claim_id="claim-001",
+                owner="worker-a",
+                expected_epoch=0,
+                source_generation=0,
+            )
+        )
+        assert first.claim is not None
+        snapshot1 = ExecutionRecoverySnapshotFactory().capture(
+            _prepared(),
+            checkpoint_id="checkpoint-001",
+            generation=1,
+            captured_at=NOW + timedelta(seconds=3),
+            claim=first.claim,
+        )
+        await snapshot_coordinator.save(
+            snapshot1, expected_generation=0, claim=first.claim
+        )
+        takeover = await claim_coordinator.claim(
+            _request(
+                claim_id="claim-002",
+                owner="worker-b",
+                expected_epoch=1,
+                source_generation=1,
+                at=NOW + timedelta(seconds=4),
+            )
+        )
+        assert takeover.claim is not None
+
+        stale_candidate = replace(
+            snapshot1,
+            checkpoint_id="checkpoint-stale",
+            generation=2,
+            captured_at=NOW + timedelta(seconds=5),
+        )
+        decision = await store.compare_and_set(
+            stale_candidate,
+            expected_generation=1,
+            required_claim=first.claim,
+        )
+
+        assert decision.status is RecoverySnapshotWriteStatus.CONFLICT
+        assert decision.reason_codes == ("RECOVERY_SNAPSHOT_STALE_WRITER",)
+        assert await store.load("execution-001") == snapshot1
+
+    asyncio.run(scenario())
+
+
+def test_claim_detects_snapshot_change_during_claim_window() -> None:
+    async def scenario() -> None:
+        store, authority, initial_coordinator, snapshot_coordinator = (
+            _claim_and_snapshot_runtime()
+        )
+        first = await initial_coordinator.claim(
+            _request(
+                claim_id="claim-001",
+                owner="worker-a",
+                expected_epoch=0,
+                source_generation=0,
+            )
+        )
+        assert first.claim is not None
+        factory = ExecutionRecoverySnapshotFactory()
+        snapshot1 = factory.capture(
+            _prepared(),
+            checkpoint_id="checkpoint-001",
+            generation=1,
+            captured_at=NOW + timedelta(seconds=3),
+            claim=first.claim,
+        )
+        await snapshot_coordinator.save(
+            snapshot1, expected_generation=0, claim=first.claim
+        )
+
+        class SnapshotChangingClaimAuthority:
+            async def claim(self, request: RecoveryClaimRequest):
+                if request.claim_id == "claim-002":
+                    snapshot2 = replace(
+                        snapshot1,
+                        checkpoint_id="checkpoint-002",
+                        generation=2,
+                        captured_at=NOW + timedelta(seconds=4),
+                    )
+                    write = await store.compare_and_set(
+                        snapshot2,
+                        expected_generation=1,
+                        required_claim=first.claim,
+                    )
+                    assert write.status is RecoverySnapshotWriteStatus.UPDATED
+                return await authority.claim(request)
+
+            async def current(self, execution_id: str):
+                return await authority.current(execution_id)
+
+            async def validate_current(self, claim):
+                return await authority.validate_current(claim)
+
+        racing = RecoveryClaimCoordinator(
+            snapshot_store=store,
+            claim_authority=SnapshotChangingClaimAuthority(),
+        )
+        decision = await racing.claim(
+            _request(
+                claim_id="claim-002",
+                owner="worker-b",
+                expected_epoch=1,
+                source_generation=1,
+                at=NOW + timedelta(seconds=5),
+            )
+        )
+
+        assert decision.status is RecoveryClaimStatus.CONFLICT
+        assert decision.reason_codes == (
+            "RECOVERY_CLAIM_SOURCE_CHANGED_DURING_CLAIM",
+        )
+        assert decision.current_claim is not None
+        assert decision.current_claim.recovery_epoch == 2
+        latest = await store.load("execution-001")
+        assert latest is not None
+        assert latest.generation == 2
 
     asyncio.run(scenario())
 

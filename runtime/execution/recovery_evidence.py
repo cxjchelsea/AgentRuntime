@@ -628,6 +628,10 @@ class InFlightTerminalReconciliation:
             raise TypeError("state must be InFlightEvidenceState")
         if not isinstance(self.basis, InFlightReconciliationBasis):
             raise TypeError("basis must be InFlightReconciliationBasis")
+        if self.handle.kind is not InFlightOperationKind.TOOL:
+            raise ValueError(
+                "external terminal reconciliation is only valid for Tool operations"
+            )
         _require_aware(self.observed_at, "observed_at")
         if self.observed_at < self.handle.started_at:
             raise ValueError(

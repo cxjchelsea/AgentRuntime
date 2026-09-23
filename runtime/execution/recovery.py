@@ -335,6 +335,12 @@ class InMemoryRecoveryClaimAuthority:
         self,
         claim: ExecutionRecoveryClaim,
     ) -> RecoveryEpochValidationDecision:
+        return self._validate_current_sync(claim)
+
+    def _validate_current_sync(
+        self,
+        claim: ExecutionRecoveryClaim,
+    ) -> RecoveryEpochValidationDecision:
         current = self._current_by_execution.get(claim.execution_id)
         if current is None:
             return RecoveryEpochValidationDecision(
@@ -523,14 +529,24 @@ class ExecutionRecoverySnapshotStore(Protocol):
         snapshot: ExecutionRecoverySnapshot,
         *,
         expected_generation: int,
+        required_claim: ExecutionRecoveryClaim,
     ) -> RecoverySnapshotWriteDecision:
-        """Persist generation + 1 or exact replay without stale overwrite."""
+        """Atomically verify recovery fence + generation CAS.
+
+        A production durable adapter must verify required_claim is still the current
+        recovery fence in the same atomic write boundary as generation CAS.
+        """
 
 
 class InMemoryExecutionRecoverySnapshotStore:
-    """Reference CAS store; not a production durability claim."""
+    """Reference fenced CAS store; not a production durability claim."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        claim_authority: InMemoryRecoveryClaimAuthority,
+    ) -> None:
+        self._claim_authority = claim_authority
         self._snapshots: dict[str, ExecutionRecoverySnapshot] = {}
 
     async def load(self, execution_id: str) -> ExecutionRecoverySnapshot | None:
@@ -544,7 +560,35 @@ class InMemoryExecutionRecoverySnapshotStore:
         snapshot: ExecutionRecoverySnapshot,
         *,
         expected_generation: int,
+        required_claim: ExecutionRecoveryClaim,
     ) -> RecoverySnapshotWriteDecision:
+        if (
+            snapshot.execution_id != required_claim.execution_id
+            or snapshot.writer_recovery_epoch != required_claim.recovery_epoch
+            or snapshot.writer_recovery_owner_id
+            != required_claim.recovery_owner_id
+        ):
+            return RecoverySnapshotWriteDecision(
+                status=RecoverySnapshotWriteStatus.UNKNOWN,
+                reason_codes=("RECOVERY_SNAPSHOT_WRITER_CLAIM_MISMATCH",),
+            )
+        fence = self._claim_authority._validate_current_sync(required_claim)
+        if fence.status is RecoveryEpochValidationStatus.UNKNOWN:
+            return RecoverySnapshotWriteDecision(
+                status=RecoverySnapshotWriteStatus.UNKNOWN,
+                reason_codes=("RECOVERY_SNAPSHOT_FENCE_UNKNOWN",),
+                current_snapshot=deepcopy(
+                    self._snapshots.get(snapshot.execution_id)
+                ),
+            )
+        if fence.status is RecoveryEpochValidationStatus.STALE:
+            return RecoverySnapshotWriteDecision(
+                status=RecoverySnapshotWriteStatus.CONFLICT,
+                reason_codes=("RECOVERY_SNAPSHOT_STALE_WRITER",),
+                current_snapshot=deepcopy(
+                    self._snapshots.get(snapshot.execution_id)
+                ),
+            )
         if expected_generation < 0:
             return RecoverySnapshotWriteDecision(
                 status=RecoverySnapshotWriteStatus.UNKNOWN,
@@ -646,12 +690,52 @@ class RecoveryClaimCoordinator:
                 current_claim=current,
             )
         try:
-            return await self._claim_authority.claim(request)
+            decision = await self._claim_authority.claim(request)
         except Exception:  # noqa: BLE001
             return RecoveryClaimDecision(
                 status=RecoveryClaimStatus.UNKNOWN,
                 reason_codes=("RECOVERY_CLAIM_AUTHORITY_UNKNOWN",),
             )
+        if decision.status not in {
+            RecoveryClaimStatus.CLAIMED,
+            RecoveryClaimStatus.ALREADY_CLAIMED,
+        }:
+            return decision
+        try:
+            latest_after_claim = await self._snapshot_store.load(request.execution_id)
+        except Exception:  # noqa: BLE001
+            latest_after_claim = None
+            lookup_failed = True
+        else:
+            lookup_failed = False
+        if lookup_failed:
+            current = decision.claim or decision.current_claim
+            if current is None:
+                return RecoveryClaimDecision(
+                    status=RecoveryClaimStatus.UNKNOWN,
+                    reason_codes=("RECOVERY_CLAIM_POSTCHECK_UNKNOWN",),
+                )
+            return RecoveryClaimDecision(
+                status=RecoveryClaimStatus.CONFLICT,
+                reason_codes=("RECOVERY_CLAIM_POSTCHECK_UNKNOWN",),
+                current_claim=current,
+            )
+        generation_after_claim = (
+            0 if latest_after_claim is None else latest_after_claim.generation
+        )
+        if generation_after_claim != request.source_snapshot_generation:
+            current = decision.claim or decision.current_claim
+            if current is None:
+                return RecoveryClaimDecision(
+                    status=RecoveryClaimStatus.UNKNOWN,
+                    reason_codes=("RECOVERY_CLAIM_SOURCE_CHANGED_DURING_CLAIM",),
+                )
+            return RecoveryClaimDecision(
+                status=RecoveryClaimStatus.CONFLICT,
+                reason_codes=("RECOVERY_CLAIM_SOURCE_CHANGED_DURING_CLAIM",),
+                current_claim=current,
+            )
+        return decision
 
     async def _safe_current(
         self,
@@ -714,6 +798,7 @@ class ExecutionRecoverySnapshotCoordinator:
             return await self._snapshot_store.compare_and_set(
                 snapshot,
                 expected_generation=expected_generation,
+                required_claim=claim,
             )
         except Exception:  # noqa: BLE001
             return RecoverySnapshotWriteDecision(

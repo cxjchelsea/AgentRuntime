@@ -91,6 +91,8 @@ class SessionExecutionLease:
         _require_non_blank(self.execution_id, "execution_id")
         if self.lease.owner.execution_id != self.execution_id:
             raise ValueError("session lease owner execution_id mismatch")
+        if self.lease.owner.owner_id != self.execution_id:
+            raise ValueError("session lease owner_id must equal execution_id")
         if self.lease.owner.step_execution_id is not None:
             raise ValueError("session lease owner must not carry Step identity")
         if self.lease.owner.tool_call_id is not None:
@@ -366,8 +368,8 @@ class SessionExecutionLockCoordinator:
             )
         )
 
-    @staticmethod
     def _session_identity_error(
+        self,
         *,
         prepared: PreparedExecution,
         session_lease: SessionExecutionLease,
@@ -382,6 +384,20 @@ class SessionExecutionLockCoordinator:
             return "SESSION_LEASE_SESSION_MISMATCH"
         if session_lease.lease.owner.execution_id != context.execution_id:
             return "SESSION_LEASE_OWNER_MISMATCH"
+        try:
+            expected_lock_key = self._identity_factory.lock_key(
+                session_id=context.session_id
+            )
+            expected_acquisition_id = self._identity_factory.acquisition_id(
+                session_id=context.session_id,
+                execution_id=context.execution_id,
+            )
+        except Exception:  # noqa: BLE001
+            return "SESSION_LOCK_IDENTITY_UNAVAILABLE"
+        if session_lease.lease.lock_key != expected_lock_key:
+            return "SESSION_LEASE_LOCK_KEY_MISMATCH"
+        if session_lease.lease.acquisition_id != expected_acquisition_id:
+            return "SESSION_LEASE_ACQUISITION_MISMATCH"
         return None
 
 

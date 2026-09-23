@@ -586,6 +586,26 @@ class RecoveryCoordinator:
             )
 
         try:
+            owner_supersession = (
+                await self._inflight_store.supersede_orphaned_owner_frames(
+                    execution_id=recovery_claim.execution_id,
+                    recovered_at=recovered_at,
+                    required_claim=recovery_claim,
+                )
+            )
+        except Exception:  # noqa: BLE001
+            return self._unknown(
+                snapshot.generation, "RECOVERY_OWNER_FRAME_SUPERSESSION_UNKNOWN"
+            )
+        if owner_supersession.status in {
+            InFlightRecoveryTransitionStatus.CONFLICT,
+            InFlightRecoveryTransitionStatus.UNKNOWN,
+        }:
+            return self._unknown(
+                snapshot.generation, "RECOVERY_OWNER_FRAME_SUPERSESSION_UNSAFE"
+            )
+
+        try:
             inflight = await self._inflight_store.load_inflight(
                 execution_id=recovery_claim.execution_id,
             )

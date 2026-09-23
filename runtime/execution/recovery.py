@@ -565,8 +565,7 @@ class InMemoryExecutionRecoverySnapshotStore:
         if (
             snapshot.execution_id != required_claim.execution_id
             or snapshot.writer_recovery_epoch != required_claim.recovery_epoch
-            or snapshot.writer_recovery_owner_id
-            != required_claim.recovery_owner_id
+            or snapshot.writer_recovery_owner_id != required_claim.recovery_owner_id
         ):
             return RecoverySnapshotWriteDecision(
                 status=RecoverySnapshotWriteStatus.UNKNOWN,
@@ -577,17 +576,13 @@ class InMemoryExecutionRecoverySnapshotStore:
             return RecoverySnapshotWriteDecision(
                 status=RecoverySnapshotWriteStatus.UNKNOWN,
                 reason_codes=("RECOVERY_SNAPSHOT_FENCE_UNKNOWN",),
-                current_snapshot=deepcopy(
-                    self._snapshots.get(snapshot.execution_id)
-                ),
+                current_snapshot=deepcopy(self._snapshots.get(snapshot.execution_id)),
             )
         if fence.status is RecoveryEpochValidationStatus.STALE:
             return RecoverySnapshotWriteDecision(
                 status=RecoverySnapshotWriteStatus.CONFLICT,
                 reason_codes=("RECOVERY_SNAPSHOT_STALE_WRITER",),
-                current_snapshot=deepcopy(
-                    self._snapshots.get(snapshot.execution_id)
-                ),
+                current_snapshot=deepcopy(self._snapshots.get(snapshot.execution_id)),
             )
         if expected_generation < 0:
             return RecoverySnapshotWriteDecision(

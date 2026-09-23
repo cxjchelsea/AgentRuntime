@@ -534,15 +534,98 @@ def test_same_lock_set_id_and_key_is_stable_independent_of_input_order() -> None
 
     first = factory.new_acquisition_id(
         lock_set_id="set-001",
+        lock_set_fingerprint="sha256:set-a",
         lock_key="a-lock",
     )
     second = factory.new_acquisition_id(
         lock_set_id="set-001",
+        lock_set_fingerprint="sha256:set-a",
         lock_key="a-lock",
     )
 
     assert first == second
     assert first.startswith("sha256:")
+
+
+def test_same_lock_set_id_with_changed_membership_is_not_exact_replay() -> None:
+    authority = _RecordingAuthority()
+    coordinator = _coordinator(authority)
+
+    first = asyncio.run(
+        coordinator.acquire(
+            _set_request(
+                _resolved("a-lock"),
+                lock_set_id="shared-set",
+            )
+        )
+    )
+    changed = asyncio.run(
+        coordinator.acquire(
+            _set_request(
+                _resolved("a-lock"),
+                _resolved("b-lock"),
+                lock_set_id="shared-set",
+            )
+        )
+    )
+
+    assert first.status is ResourceLockSetStatus.ACQUIRED
+    assert changed.status is ResourceLockSetStatus.BUSY
+    assert changed.failed_lock_key == "a-lock"
+    assert authority.active_lease("a-lock") is first.leases[0]
+
+
+def test_replayed_lease_is_retained_not_rolled_back_on_later_failure() -> None:
+    class ReplayThenBusyAuthority:
+        def __init__(self) -> None:
+            self.release_order: list[str] = []
+
+        async def acquire(
+            self,
+            request: ResourceLockAcquireRequest,
+        ) -> ResourceLockAcquireDecision:
+            if request.lock_key == "a-lock":
+                return ResourceLockAcquireDecision(
+                    status=ResourceLockAcquireStatus.ALREADY_ACQUIRED,
+                    reason_codes=("LOCK_EXACT_ACQUIRE_REPLAY",),
+                    lease=ResourceLockLease(
+                        lock_key=request.lock_key,
+                        owner=request.owner,
+                        acquisition_id=request.acquisition_id,
+                        acquired_at=request.requested_at,
+                    ),
+                )
+            return ResourceLockAcquireDecision(
+                status=ResourceLockAcquireStatus.BUSY,
+                reason_codes=("LOCK_BUSY",),
+            )
+
+        async def release(
+            self,
+            lease: ResourceLockLease,
+            *,
+            released_at: datetime,
+        ) -> ResourceLockReleaseDecision:
+            del released_at
+            self.release_order.append(lease.lock_key)
+            return ResourceLockReleaseDecision(
+                status=ResourceLockReleaseStatus.RELEASED,
+                reason_codes=("LOCK_RELEASED",),
+                lease=lease,
+            )
+
+    authority = ReplayThenBusyAuthority()
+    decision = asyncio.run(
+        _coordinator(authority).acquire(
+            _set_request(_resolved("a-lock"), _resolved("b-lock"))
+        )
+    )
+
+    assert decision.status is ResourceLockSetStatus.UNKNOWN
+    assert decision.failed_lock_key == "b-lock"
+    assert tuple(item.lock_key for item in decision.retained_leases) == ("a-lock",)
+    assert authority.release_order == []
+    assert "LOCK_SET_REPLAY_PARTIAL_STATE" in decision.reason_codes
 
 
 def test_empty_lock_set_is_safe_noop() -> None:

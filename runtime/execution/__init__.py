@@ -195,6 +195,9 @@ from runtime.execution.recovery_runtime import (
     M5RecoveryRuntime,
     M5RecoveryRuntimeOutcome,
     M5RecoveryRuntimeStatus,
+    RecoveryControlRuntimeFactory,
+    RecoveryExecutionBindings,
+    RecoveryExecutionBindingsFactory,
 )
 from runtime.execution.recovery_resource_lock import (
     DurableOperationResourceBindingReadDecision,
@@ -562,6 +565,9 @@ __all__ = [
     "RecoveryClaimStatus",
     "RecoveryCoordinator",
     "RecoveryDecision",
+    "RecoveryExecutionBindingsFactory",
+    "RecoveryExecutionBindings",
+    "RecoveryControlRuntimeFactory",
     "RecoveryDisposition",
     "RecoveryEpochValidationDecision",
     "RecoveryEpochValidationStatus",

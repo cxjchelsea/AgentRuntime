@@ -170,7 +170,7 @@ async def _bind_resource(
         owner_id=handle.operation_handle_id,
         execution_id=handle.execution_id,
         step_execution_id=handle.step_execution_id,
-        tool_call_id=handle.tool_call_id,
+        tool_call_id="tool-call-001",
         physical_attempt=1,
     )
     authority = DurableResourceLockAuthority(

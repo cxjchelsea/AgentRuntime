@@ -139,7 +139,9 @@ class ResourceLockProjectionDecision:
                         "resolved resource_ref must match projected requirement"
                     )
         elif self.resolved_locks:
-            raise ValueError("UNKNOWN projection must not expose partial resolved locks")
+            raise ValueError(
+                "UNKNOWN projection must not expose partial resolved locks"
+            )
 
 
 class ToolResourceLockProjector:
@@ -197,10 +199,9 @@ class ToolResourceLockProjector:
                     reason_codes=("RESOURCE_LOCK_RESOLUTION_EXCEPTION",),
                     requirements=requirements,
                 )
-            if (
-                not isinstance(decision, ResourceLockResolutionDecision)
-                or not isinstance(decision.status, ResourceLockResolutionStatus)
-            ):
+            if not isinstance(
+                decision, ResourceLockResolutionDecision
+            ) or not isinstance(decision.status, ResourceLockResolutionStatus):
                 return ResourceLockProjectionDecision(
                     status=ResourceLockProjectionStatus.UNKNOWN,
                     reason_codes=("RESOURCE_LOCK_RESOLUTION_INVALID_DECISION",),
@@ -213,10 +214,7 @@ class ToolResourceLockProjector:
                     requirements=requirements,
                 )
             resolved = decision.resolved_lock
-            if (
-                resolved is None
-                or resolved.resource_ref != requirement.resource_ref
-            ):
+            if resolved is None or resolved.resource_ref != requirement.resource_ref:
                 return ResourceLockProjectionDecision(
                     status=ResourceLockProjectionStatus.UNKNOWN,
                     reason_codes=("RESOURCE_LOCK_RESOLUTION_IDENTITY_MISMATCH",),
@@ -304,8 +302,7 @@ class Sha256ResourceLockAcquisitionIdentifierFactory:
         _require_non_blank(lock_set_fingerprint, "lock_set_fingerprint")
         _require_non_blank(lock_key, "lock_key")
         payload = (
-            f"iu8-lock-acquisition\0{lock_set_id}\0"
-            f"{lock_set_fingerprint}\0{lock_key}"
+            f"iu8-lock-acquisition\0{lock_set_id}\0{lock_set_fingerprint}\0{lock_key}"
         ).encode()
         return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
@@ -445,9 +442,8 @@ class ResourceLockSetCoordinator:
         decision: object,
         request: ResourceLockAcquireRequest,
     ) -> bool:
-        if (
-            not isinstance(decision, ResourceLockAcquireDecision)
-            or not isinstance(decision.status, ResourceLockAcquireStatus)
+        if not isinstance(decision, ResourceLockAcquireDecision) or not isinstance(
+            decision.status, ResourceLockAcquireStatus
         ):
             return False
         if decision.status in {
@@ -475,19 +471,13 @@ class ResourceLockSetCoordinator:
         rollback_retained: tuple[ResourceLockLease, ...] = ()
         rollback_reasons: tuple[str, ...] = ()
         if newly_acquired:
-            rollback_retained, rollback_reasons = await self._rollback(
-                newly_acquired
-            )
+            rollback_retained, rollback_reasons = await self._rollback(newly_acquired)
 
         retained = tuple(replayed) + rollback_retained
         if retained:
-            replay_reason = (
-                ("LOCK_SET_REPLAY_PARTIAL_STATE",) if replayed else ()
-            )
+            replay_reason = ("LOCK_SET_REPLAY_PARTIAL_STATE",) if replayed else ()
             rollback_reason = (
-                ("LOCK_SET_ROLLBACK_UNCERTAIN",)
-                if rollback_retained
-                else ()
+                ("LOCK_SET_ROLLBACK_UNCERTAIN",) if rollback_retained else ()
             )
             return ResourceLockSetDecision(
                 status=ResourceLockSetStatus.UNKNOWN,
@@ -499,9 +489,7 @@ class ResourceLockSetCoordinator:
                 failed_lock_key=failed_lock_key,
             )
 
-        confirmed_reason = (
-            ("LOCK_SET_ROLLBACK_CONFIRMED",) if newly_acquired else ()
-        )
+        confirmed_reason = ("LOCK_SET_ROLLBACK_CONFIRMED",) if newly_acquired else ()
         return ResourceLockSetDecision(
             status=failure_status,
             reason_codes=reason_codes + confirmed_reason,

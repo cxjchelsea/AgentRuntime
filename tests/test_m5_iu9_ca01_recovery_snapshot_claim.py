@@ -94,9 +94,7 @@ def _prepared(
         request_id="request-001",
         identity_scope="subject-001",
         status=status,
-        current_step="step-001"
-        if step_status is StepExecutionStatus.RUNNING
-        else None,
+        current_step="step-001" if step_status is StepExecutionStatus.RUNNING else None,
         step_results=(_step_payload(step),),
         created_at=NOW,
         updated_at=NOW + timedelta(seconds=4 if finished else 2),
@@ -105,9 +103,7 @@ def _prepared(
         execution_context=context,
         execution_record=record,
         steps=(step,),
-        started_at=NOW + timedelta(seconds=1)
-        if status != "CREATED"
-        else None,
+        started_at=NOW + timedelta(seconds=1) if status != "CREATED" else None,
         finished_at=NOW + timedelta(seconds=4) if finished else None,
     )
 
@@ -457,9 +453,7 @@ def test_recovery_claim_takeover_fences_old_epoch() -> None:
 
 def test_concurrent_takeover_from_same_epoch_allows_only_one_new_owner() -> None:
     async def scenario() -> None:
-        _, _, claim_coordinator, snapshot_coordinator = (
-            _claim_and_snapshot_runtime()
-        )
+        _, _, claim_coordinator, snapshot_coordinator = _claim_and_snapshot_runtime()
         first = await claim_coordinator.claim(
             _request(
                 claim_id="claim-001",
@@ -476,7 +470,9 @@ def test_concurrent_takeover_from_same_epoch_allows_only_one_new_owner() -> None
             captured_at=NOW + timedelta(seconds=3),
             claim=first.claim,
         )
-        await snapshot_coordinator.save(snapshot, expected_generation=0, claim=first.claim)
+        await snapshot_coordinator.save(
+            snapshot, expected_generation=0, claim=first.claim
+        )
 
         winner = await claim_coordinator.claim(
             _request(
@@ -506,9 +502,7 @@ def test_concurrent_takeover_from_same_epoch_allows_only_one_new_owner() -> None
 
 def test_claim_based_on_stale_snapshot_generation_is_rejected() -> None:
     async def scenario() -> None:
-        _, _, claim_coordinator, snapshot_coordinator = (
-            _claim_and_snapshot_runtime()
-        )
+        _, _, claim_coordinator, snapshot_coordinator = _claim_and_snapshot_runtime()
         first = await claim_coordinator.claim(
             _request(
                 claim_id="claim-001",
@@ -526,14 +520,18 @@ def test_claim_based_on_stale_snapshot_generation_is_rejected() -> None:
             captured_at=NOW + timedelta(seconds=3),
             claim=first.claim,
         )
-        await snapshot_coordinator.save(snapshot1, expected_generation=0, claim=first.claim)
+        await snapshot_coordinator.save(
+            snapshot1, expected_generation=0, claim=first.claim
+        )
         snapshot2 = replace(
             snapshot1,
             checkpoint_id="checkpoint-002",
             generation=2,
             captured_at=NOW + timedelta(seconds=4),
         )
-        await snapshot_coordinator.save(snapshot2, expected_generation=1, claim=first.claim)
+        await snapshot_coordinator.save(
+            snapshot2, expected_generation=1, claim=first.claim
+        )
 
         stale = await claim_coordinator.claim(
             _request(
@@ -580,9 +578,7 @@ def test_reused_claim_id_with_changed_payload_is_unknown() -> None:
 
 def test_old_claim_exact_replay_after_takeover_is_conflict_not_success() -> None:
     async def scenario() -> None:
-        _, _, coordinator, snapshot_coordinator = (
-            _claim_and_snapshot_runtime()
-        )
+        _, _, coordinator, snapshot_coordinator = _claim_and_snapshot_runtime()
         original_request = _request(
             claim_id="claim-001",
             owner="worker-a",
@@ -598,7 +594,9 @@ def test_old_claim_exact_replay_after_takeover_is_conflict_not_success() -> None
             captured_at=NOW + timedelta(seconds=3),
             claim=original.claim,
         )
-        await snapshot_coordinator.save(snapshot, expected_generation=0, claim=original.claim)
+        await snapshot_coordinator.save(
+            snapshot, expected_generation=0, claim=original.claim
+        )
 
         takeover = await coordinator.claim(
             _request(
@@ -621,9 +619,7 @@ def test_old_claim_exact_replay_after_takeover_is_conflict_not_success() -> None
 
 def test_snapshot_writer_claim_identity_mismatch_fails_closed() -> None:
     async def scenario() -> None:
-        _, _, coordinator, snapshot_coordinator = (
-            _claim_and_snapshot_runtime()
-        )
+        _, _, coordinator, snapshot_coordinator = _claim_and_snapshot_runtime()
         first = await coordinator.claim(
             _request(
                 claim_id="claim-001",

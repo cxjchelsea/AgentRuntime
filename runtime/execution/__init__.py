@@ -142,7 +142,6 @@ from runtime.execution.protocols import (
     WorkflowImplementation,
 )
 from runtime.execution.recovery import (
-    RECOVERY_SNAPSHOT_SCHEMA_VERSION,
     ExecutionRecoveryClaim,
     ExecutionRecoverySnapshot,
     ExecutionRecoverySnapshotCoordinator,
@@ -427,7 +426,6 @@ __all__ = [
     "PolicySnapshotValidityEvaluator",
     "PolicySnapshotValidityStatus",
     "PreparedExecution",
-    "RECOVERY_SNAPSHOT_SCHEMA_VERSION",
     "RecoveryClaimAuthority",
     "RecoveryClaimCoordinator",
     "RecoveryClaimDecision",

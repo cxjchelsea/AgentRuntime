@@ -69,6 +69,12 @@ from runtime.execution import (
     ToolReliabilityRuntime,
     ToolResourceLockProjector,
 )
+from runtime.execution.reliability import (
+    ReplaySafetyDecision,
+    ReplaySafetyStatus,
+    RetryDecision,
+    RetryDecisionStatus,
+)
 from runtime.execution.models import ExecutionRecord
 from runtime.registries.definitions import ToolDefinition
 from tests.test_m5_iu4_capability_execution import (
@@ -215,6 +221,75 @@ class Correlator:
             operation_key=ToolOperationCorrelationKey("operation-formal-001"),
             logical_tool_call_id="logical-formal-001",
             operation_occurrence=1,
+        )
+
+
+class RetryingPolicyResolver:
+    def resolve(self, **kwargs):
+        return ResolvedReliabilityPolicy(
+            capability_kind=kwargs["capability_kind"],
+            capability_id=kwargs["capability_id"],
+            capability_version=kwargs["capability_version"],
+            policy_identity="retry-policy@sha256:1",
+            timeout=ResolvedTimeoutPolicy(timeout_seconds=None),
+            retry=ResolvedRetryPolicy(
+                enabled=True,
+                max_attempts=2,
+                retry_on_statuses=(RetryTriggerStatus.FAILED,),
+                backoff_seconds=0.0,
+            ),
+            idempotency=ResolvedIdempotencyPolicy(mode=IdempotencyMode.NATURAL),
+            side_effect_class=SideEffectClass.NONE,
+        )
+
+
+class SafeReplayEvaluator:
+    def evaluate(self, context):
+        del context
+        return ReplaySafetyDecision(
+            status=ReplaySafetyStatus.SAFE,
+            reason_codes=("SAFE_REPLAY",),
+        )
+
+
+class RetryOnceEvaluator:
+    def evaluate(self, *, policy, context):
+        del policy
+        if context.current_attempt == 1:
+            return RetryDecision(
+                status=RetryDecisionStatus.RETRY,
+                reason_codes=("RETRY_SECOND_ATTEMPT",),
+                next_attempt=2,
+            )
+        return RetryDecision(
+            status=RetryDecisionStatus.STOP,
+            reason_codes=("RETRY_BUDGET_EXHAUSTED",),
+        )
+
+
+class NoopRetrySleeper:
+    async def sleep(self, seconds: float) -> None:
+        del seconds
+
+
+class FailThenSucceedTool:
+    def __init__(self) -> None:
+        self.attempts: list[int] = []
+
+    async def invoke(self, request, execution_context):
+        del execution_context
+        self.attempts.append(request.attempt)
+        status = (
+            ToolExecutionStatus.FAILED
+            if request.attempt == 1
+            else ToolExecutionStatus.SUCCESS
+        )
+        return M5ToolResult(
+            tool_call_id=request.tool_call_id,
+            tool_id=request.tool_id,
+            status=status,
+            attempt=request.attempt,
+            data={"attempt": request.attempt},
         )
 
 
@@ -617,6 +692,75 @@ def test_reliability_timeout_keeps_exact_tool_handle_and_resource_lease() -> Non
         binding = await operation_registry.get(tool_handles[0].operation_handle_id)
         assert binding is not None
         assert binding.owner.owner_id == tool_handles[0].operation_handle_id
+
+    asyncio.run(scenario())
+
+
+def test_reliability_retry_reenters_exact_tool_lock_boundary_each_attempt() -> None:
+    async def scenario() -> None:
+        runtime, authority, inflight, operation_registry, ids = _tool_runtime()
+        tool = FailThenSucceedTool()
+        context = _context(execution_id="execution-retry")
+        parent = await _register_owner(
+            inflight,
+            ids,
+            execution_id=context.execution_id,
+            step_execution_id="step-exec-retry",
+        )
+        reliability = ToolReliabilityRuntime(
+            policy_resolver=RetryingPolicyResolver(),
+            clock=StaticClock(),
+            timeout_runner=cast(Any, object()),
+            replay_safety_evaluator=SafeReplayEvaluator(),
+            retry_decision_evaluator=RetryOnceEvaluator(),
+            retry_sleeper=NoopRetrySleeper(),
+            fingerprint_factory=FingerprintFactory(),
+            occurrence_authority=OccurrenceAuthority(),
+            correlator=Correlator(),
+            idempotency_key_factory=cast(Any, object()),
+            idempotency_store=cast(Any, object()),
+            idempotency_preflight_evaluator=cast(Any, object()),
+            idempotency_completion_authority=cast(Any, object()),
+            idempotency_result_resolver=cast(Any, object()),
+        )
+        invoker = _invoker(
+            resolved=_resolved_tool(tool),
+            execution_context=context,
+            parent=parent,
+            inflight=inflight,
+            ids=ids,
+            tool_runtime=runtime,
+            reliability_runtime=reliability,
+        )
+
+        result = await invoker.invoke(
+            tool_id="DOMAIN_TOOL",
+            input_payload={"value": 1},
+        )
+
+        assert result.status is ToolExecutionStatus.SUCCESS
+        assert result.attempt == 2
+        assert tool.attempts == [1, 2]
+        assert authority.active_lease("device-001:exclusive") is None
+        chain = await inflight.active_chain(
+            execution_id=context.execution_id,
+            step_execution_id=parent.step_execution_id,
+        )
+        assert chain == (parent,)
+        assert (
+            await operation_registry.get(
+                f"{context.execution_id}:{parent.step_execution_id}:"
+                "TOOL:logical-formal-001:attempt-1"
+            )
+            is None
+        )
+        assert (
+            await operation_registry.get(
+                f"{context.execution_id}:{parent.step_execution_id}:"
+                "TOOL:logical-formal-001:attempt-2"
+            )
+            is None
+        )
 
     asyncio.run(scenario())
 

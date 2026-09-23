@@ -29,6 +29,7 @@ from runtime.execution import (
     WorkflowExecutionStatus,
     WorkflowRecoveryCheckpoint,
     WorkflowResumeCoordinator,
+    WorkflowResumeRequest,
     WorkflowResumeStatus,
     WorkflowWaitingCheckpointCoordinator,
 )
@@ -66,7 +67,9 @@ async def _claim(
     return decision.claim
 
 
-def _snapshot(*, status: StepExecutionStatus = StepExecutionStatus.RUNNING) -> ExecutionRecoverySnapshot:
+def _snapshot(
+    *, status: StepExecutionStatus = StepExecutionStatus.RUNNING
+) -> ExecutionRecoverySnapshot:
     context = RecoverySafeExecutionContext(
         execution_id="exec-1",
         plan_id="plan-1",
@@ -81,7 +84,9 @@ def _snapshot(*, status: StepExecutionStatus = StepExecutionStatus.RUNNING) -> E
         action="do_work",
         status=status,
         workflow_id="wf-1" if status is StepExecutionStatus.RUNNING else None,
-        started_at=NOW - timedelta(seconds=10) if status is StepExecutionStatus.RUNNING else None,
+        started_at=NOW - timedelta(seconds=10)
+        if status is StepExecutionStatus.RUNNING
+        else None,
     )
     record = ExecutionRecord(
         execution_id="exec-1",
@@ -128,7 +133,9 @@ class StaticCheckpointAdapter:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def persist_waiting_state(self, **kwargs: object) -> WorkflowCheckpointMaterial:
+    async def persist_waiting_state(
+        self, **kwargs: object
+    ) -> WorkflowCheckpointMaterial:
         self.calls += 1
         return WorkflowCheckpointMaterial(
             state_reference="state://wf-1/g1",
@@ -194,7 +201,7 @@ class FakeToolInvoker:
 
 class ResumableWorkflow:
     def __init__(self) -> None:
-        self.last_request = None
+        self.last_request: WorkflowResumeRequest | None = None
 
     async def start(self, request, execution_context, tool_invoker):
         raise AssertionError("recovery must not start a new Workflow instance")
@@ -348,6 +355,7 @@ def test_resume_uses_same_instance_exact_version_and_checkpoint_material() -> No
         )
         assert decision.status is WorkflowResumeStatus.RESUMED
         assert decision.result is not None
+        assert implementation.last_request is not None
         assert implementation.last_request.workflow_instance_id == "wf-instance-1"
         assert implementation.last_request.workflow_version == "7"
         assert implementation.last_request.checkpoint_generation == 1
@@ -402,7 +410,10 @@ def test_running_workflow_without_durable_checkpoint_waits_reconciliation() -> N
             resolved_active_step=_resolved_workflow(ResumableWorkflow()),
         )
         assert decision.disposition is RecoveryDisposition.WAIT_RECONCILIATION
-        assert "RECOVERY_WAITING_WORKFLOW_HAS_NO_DURABLE_CHECKPOINT" in decision.reason_codes
+        assert (
+            "RECOVERY_WAITING_WORKFLOW_HAS_NO_DURABLE_CHECKPOINT"
+            in decision.reason_codes
+        )
 
     asyncio.run(scenario())
 
@@ -676,10 +687,7 @@ def test_resume_rechecks_epoch_immediately_before_external_admission() -> None:
             recovery_claim=claim,
         )
         assert decision.status is WorkflowResumeStatus.UNKNOWN
-        assert (
-            "WORKFLOW_RESUME_ADMISSION_STALE_RECOVERY_EPOCH"
-            in decision.reason_codes
-        )
+        assert "WORKFLOW_RESUME_ADMISSION_STALE_RECOVERY_EPOCH" in decision.reason_codes
         assert implementation.resume_calls == 0
 
     asyncio.run(scenario())

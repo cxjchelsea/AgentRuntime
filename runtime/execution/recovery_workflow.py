@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
 from runtime.contracts.enums import ExecutionPlanStatus
+from runtime.execution.control_application import InFlightOperationKind
 from runtime.execution.foundation import StepLifecycleSnapshot
 from runtime.execution.models import (
     M5WorkflowResult,
@@ -585,25 +586,52 @@ class RecoveryCoordinator:
                 snapshot.generation, "RECOVERY_INFLIGHT_TRANSITION_UNSAFE"
             )
 
-        try:
-            owner_supersession = (
-                await self._inflight_store.supersede_orphaned_owner_frames(
-                    execution_id=recovery_claim.execution_id,
-                    recovered_at=recovered_at,
-                    required_claim=recovery_claim,
-                )
-            )
-        except Exception:  # noqa: BLE001
+        running_steps = tuple(
+            step
+            for step in snapshot.steps
+            if step.status is StepExecutionStatus.RUNNING
+        )
+        if len(running_steps) > 1:
             return self._unknown(
-                snapshot.generation, "RECOVERY_OWNER_FRAME_SUPERSESSION_UNKNOWN"
+                snapshot.generation,
+                "RECOVERY_OWNER_FRAME_SUPERSESSION_RUNNING_STEP_AMBIGUOUS",
             )
-        if owner_supersession.status in {
-            InFlightRecoveryTransitionStatus.CONFLICT,
-            InFlightRecoveryTransitionStatus.UNKNOWN,
-        }:
-            return self._unknown(
-                snapshot.generation, "RECOVERY_OWNER_FRAME_SUPERSESSION_UNSAFE"
-            )
+        if len(running_steps) == 1:
+            running_step = running_steps[0]
+            owner_kind: InFlightOperationKind | None = None
+            capability_id: str | None = None
+            if running_step.workflow_id is not None:
+                owner_kind = InFlightOperationKind.WORKFLOW
+                capability_id = running_step.workflow_id
+            elif running_step.skill_id is not None:
+                owner_kind = InFlightOperationKind.SKILL
+                capability_id = running_step.skill_id
+
+            if owner_kind is not None and capability_id is not None:
+                try:
+                    owner_supersession = (
+                        await self._inflight_store.supersede_orphaned_owner_frame(
+                            execution_id=recovery_claim.execution_id,
+                            step_execution_id=running_step.step_execution_id,
+                            owner_kind=owner_kind,
+                            capability_id=capability_id,
+                            recovered_at=recovered_at,
+                            required_claim=recovery_claim,
+                        )
+                    )
+                except Exception:  # noqa: BLE001
+                    return self._unknown(
+                        snapshot.generation,
+                        "RECOVERY_OWNER_FRAME_SUPERSESSION_UNKNOWN",
+                    )
+                if owner_supersession.status in {
+                    InFlightRecoveryTransitionStatus.CONFLICT,
+                    InFlightRecoveryTransitionStatus.UNKNOWN,
+                }:
+                    return self._unknown(
+                        snapshot.generation,
+                        "RECOVERY_OWNER_FRAME_SUPERSESSION_UNSAFE",
+                    )
 
         try:
             inflight = await self._inflight_store.load_inflight(
@@ -640,11 +668,6 @@ class RecoveryCoordinator:
                 snapshot_generation=snapshot.generation,
             )
 
-        running_steps = tuple(
-            step
-            for step in snapshot.steps
-            if step.status is StepExecutionStatus.RUNNING
-        )
         if len(running_steps) > 1:
             return self._unknown(snapshot.generation, "RECOVERY_MULTIPLE_RUNNING_STEPS")
         if len(running_steps) == 1:

@@ -584,7 +584,9 @@ class ToolResourceRecoveryCoordinator:
             if active:
                 return ResourceRecoveryDecision(
                     status=ResourceRecoveryStatus.RETAINED,
-                    reason_codes=("UNBOUND_ACTIVE_RESOURCE_LEASES_REQUIRE_RECONCILIATION",),
+                    reason_codes=(
+                        "UNBOUND_ACTIVE_RESOURCE_LEASES_REQUIRE_RECONCILIATION",
+                    ),
                     operation_handle_id=operation_handle_id,
                     retained_leases=tuple(item.lease for item in active),
                 )
@@ -709,7 +711,8 @@ class ToolResourceRecoveryCoordinator:
             reason = "RESOURCE_RECONCILIATION_REQUIRED"
             if (
                 operation_recovery is not None
-                and operation_recovery.status is OperationRecoveryStatus.RUNNING_CONFIRMED
+                and operation_recovery.status
+                is OperationRecoveryStatus.RUNNING_CONFIRMED
             ):
                 reason = "OPERATION_RUNNING_RESOURCE_RETAINED"
             return self._retained(
@@ -727,14 +730,10 @@ class ToolResourceRecoveryCoordinator:
                 released_at=recovered_at,
                 required_claim=recovery_claim,
             )
-            if (
-                decision.lease == lease
-                and decision.status
-                in {
-                    ResourceLockReleaseStatus.RELEASED,
-                    ResourceLockReleaseStatus.ALREADY_RELEASED,
-                }
-            ):
+            if decision.lease == lease and decision.status in {
+                ResourceLockReleaseStatus.RELEASED,
+                ResourceLockReleaseStatus.ALREADY_RELEASED,
+            }:
                 released.append(lease)
             else:
                 retained.append(lease)
@@ -883,7 +882,10 @@ class InMemoryDurableResourceRecoveryStore(
     ) -> ResourceLockAcquireDecision:
         _require_claim_execution(required_claim, request.owner.execution_id)
         async with self._lock:
-            if self._fence_status(required_claim) is not RecoveryEpochValidationStatus.CURRENT:
+            if (
+                self._fence_status(required_claim)
+                is not RecoveryEpochValidationStatus.CURRENT
+            ):
                 return ResourceLockAcquireDecision(
                     status=ResourceLockAcquireStatus.UNKNOWN,
                     reason_codes=("DURABLE_LOCK_RECOVERY_EPOCH_NOT_CURRENT",),
@@ -954,7 +956,10 @@ class InMemoryDurableResourceRecoveryStore(
         if released_at < lease.acquired_at:
             raise ValueError("released_at cannot precede acquired_at")
         async with self._lock:
-            if self._fence_status(required_claim) is not RecoveryEpochValidationStatus.CURRENT:
+            if (
+                self._fence_status(required_claim)
+                is not RecoveryEpochValidationStatus.CURRENT
+            ):
                 return ResourceLockReleaseDecision(
                     status=ResourceLockReleaseStatus.UNKNOWN,
                     reason_codes=("DURABLE_LOCK_RELEASE_RECOVERY_EPOCH_NOT_CURRENT",),
@@ -1049,7 +1054,10 @@ class InMemoryDurableResourceRecoveryStore(
         if registered_at < binding.handle.started_at:
             raise ValueError("registered_at cannot precede operation started_at")
         async with self._lock:
-            if self._fence_status(required_claim) is not RecoveryEpochValidationStatus.CURRENT:
+            if (
+                self._fence_status(required_claim)
+                is not RecoveryEpochValidationStatus.CURRENT
+            ):
                 raise RuntimeError("DURABLE_BINDING_RECOVERY_EPOCH_NOT_CURRENT")
             for lease in binding.leases:
                 record = self._lock_by_acquisition.get(lease.acquisition_id)
@@ -1068,7 +1076,9 @@ class InMemoryDurableResourceRecoveryStore(
                     and existing.state is DurableOperationResourceBindingState.ACTIVE
                 ):
                     return False
-                raise ValueError("operation_handle_id resource binding cannot be rebound")
+                raise ValueError(
+                    "operation_handle_id resource binding cannot be rebound"
+                )
             self._binding_by_handle[key] = DurableOperationResourceBindingRecord(
                 binding=deepcopy(binding),
                 state=DurableOperationResourceBindingState.ACTIVE,
@@ -1114,7 +1124,10 @@ class InMemoryDurableResourceRecoveryStore(
         _require_non_blank(release_basis, "release_basis")
         _require_claim_execution(required_claim, binding.handle.execution_id)
         async with self._lock:
-            if self._fence_status(required_claim) is not RecoveryEpochValidationStatus.CURRENT:
+            if (
+                self._fence_status(required_claim)
+                is not RecoveryEpochValidationStatus.CURRENT
+            ):
                 raise RuntimeError("DURABLE_BINDING_RELEASE_RECOVERY_EPOCH_NOT_CURRENT")
             key = binding.handle.operation_handle_id
             existing = self._binding_by_handle.get(key)
@@ -1129,9 +1142,7 @@ class InMemoryDurableResourceRecoveryStore(
                     and existing.provider_fence == provider_fence
                 )
             if any(
-                (
-                    record := self._lock_by_acquisition.get(lease.acquisition_id)
-                ) is None
+                (record := self._lock_by_acquisition.get(lease.acquisition_id)) is None
                 or record.state is not DurableResourceLockState.RELEASED
                 or record.lease != lease
                 for lease in binding.leases

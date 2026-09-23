@@ -12,11 +12,12 @@ in the same durable transaction / CAS boundary as the evidence mutation.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Callable, Protocol
+from typing import Protocol
 
 from runtime.execution.control import (
     ExecutionControlLatch,

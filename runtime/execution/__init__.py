@@ -359,8 +359,8 @@ from runtime.execution.stores import (
 )
 
 from runtime.execution.workflow_recovery import (
-    IU6SkillRecoveryReplayAuthority,
     InMemoryWorkflowRecoveryCheckpointStore,
+    IU6SkillRecoveryReplayAuthority,
     RecoveryCoordinator,
     RecoveryDecision,
     RecoveryDisposition,

@@ -23,12 +23,6 @@ from runtime.execution.capability_resolution import (
     ResolvedCapability,
     ResolvedStepCapabilities,
 )
-from runtime.execution.control_application import (
-    InFlightOperationHandle,
-    InFlightOperationIdentifierFactory,
-    InFlightOperationKind,
-    InFlightOperationRegistry,
-)
 from runtime.execution.concurrency_runtime import (
     ExecutionConcurrencyAdmissionStatus,
     ExecutionConcurrencyRuntime,
@@ -36,6 +30,12 @@ from runtime.execution.concurrency_runtime import (
     ToolConcurrencyAdmissionStatus,
     ToolConcurrencyCompletionStatus,
     ToolConcurrencyRuntime,
+)
+from runtime.execution.control_application import (
+    InFlightOperationHandle,
+    InFlightOperationIdentifierFactory,
+    InFlightOperationKind,
+    InFlightOperationRegistry,
 )
 from runtime.execution.foundation import StepLifecycleSnapshot
 from runtime.execution.invocation import (
@@ -1013,20 +1013,16 @@ class CoreApprovedToolInvoker(
                     request,
                     self._execution_context,
                 )
-                operation_completion_ok = (
-                    await self._complete_physical_tool_operation(
-                        concurrency_admission=concurrency_admission,
-                        inflight_handle=inflight_handle,
-                    )
+                operation_completion_ok = await self._complete_physical_tool_operation(
+                    concurrency_admission=concurrency_admission,
+                    inflight_handle=inflight_handle,
                 )
             except Exception:  # noqa: BLE001
                 raw_result = None
                 execution_exception = True
-                operation_completion_ok = (
-                    await self._complete_physical_tool_operation(
-                        concurrency_admission=concurrency_admission,
-                        inflight_handle=inflight_handle,
-                    )
+                operation_completion_ok = await self._complete_physical_tool_operation(
+                    concurrency_admission=concurrency_admission,
+                    inflight_handle=inflight_handle,
                 )
         else:
             try:
@@ -1047,11 +1043,9 @@ class CoreApprovedToolInvoker(
             elif timeout_result.status is TimeoutRunStatus.COMPLETED:
                 raw_result = timeout_result.value
                 timeout_status = TimeoutRunStatus.COMPLETED
-                operation_completion_ok = (
-                    await self._complete_physical_tool_operation(
-                        concurrency_admission=concurrency_admission,
-                        inflight_handle=inflight_handle,
-                    )
+                operation_completion_ok = await self._complete_physical_tool_operation(
+                    concurrency_admission=concurrency_admission,
+                    inflight_handle=inflight_handle,
                 )
             else:
                 raw_result = None
@@ -2007,10 +2001,7 @@ class CoreApprovedToolInvoker(
         if concurrency is not None:
             parent_handle_id = self._inflight_parent_handle_id
             definition = resolved.definition
-            if (
-                parent_handle_id is None
-                or not isinstance(definition, ToolDefinition)
-            ):
+            if parent_handle_id is None or not isinstance(definition, ToolDefinition):
                 reason = "TOOL_CONCURRENCY_AUTHORITY_MISSING"
                 self._record_fault(reason)
                 return None, None, (reason,)

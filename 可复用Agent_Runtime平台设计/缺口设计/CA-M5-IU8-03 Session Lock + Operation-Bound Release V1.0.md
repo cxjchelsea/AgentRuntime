@@ -552,16 +552,54 @@ M5-IU8 Implementation Readiness Re-Review
 
 Only a READY decision authorizes IU8 Formal Implementation wiring.
 
-## 17. Current status
+## 17. Targeted Review required finding
+
+Independent targeted review identified one identity-hardening requirement before closure:
+
+~~~text
+same execution_id
+same step_execution_id
+same logical tool_call_id
+different physical attempt
+~~~
+
+must not be able to share one resource binding accidentally.
+
+The fix requires:
+
+~~~text
+ResourceLockOwner.owner_id
+==
+exact IU7 Tool InFlightOperationHandle.operation_handle_id
+~~~
+
+Because IU7 creates the opaque Tool handle identity from the physical attempt, this directly anchors IU8 lease ownership to the exact IU7 physical operation.
+
+Status:
+
+~~~text
+TARGETED IDENTITY FINDING = FIXED
+NEW BLOCKER = NONE
+~~~
+
+## 18. Current status
 
 ~~~text
 CA-M5-IU8-03 = CODE COMPLETE
-CA-M5-IU8-03 TARGETED AMENDMENT REVIEW = PENDING
-CA-M5-IU8-03 VERIFICATION = PENDING
+CA-M5-IU8-03 TARGETED AMENDMENT REVIEW = PASSED
+CA-M5-IU8-03 VERIFICATION = PASSED
+CA-M5-IU8-03 = PASSED
 
-B-M5-IU8-004 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
-B-M5-IU8-005 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+B-M5-IU8-004 = CLOSED
+B-M5-IU8-005 = CLOSED
 
-M5-IU8 IMPLEMENTATION READINESS = NOT_READY
+ALL ORIGINAL M5-IU8 READINESS BLOCKERS = CLOSED
+NEW BLOCKER = NONE
+
+M5-IU8 IMPLEMENTATION READINESS = RE_REVIEW_REQUIRED
+
+NEXT REQUIRED =
+M5-IU8 Implementation Readiness Re-Review
+
 M5 = IN PROGRESS
 ~~~

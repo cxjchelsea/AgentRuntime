@@ -612,7 +612,7 @@ def test_old_claim_exact_replay_after_takeover_is_conflict_not_success() -> None
 
         replay = await coordinator.claim(original_request)
         assert replay.status is RecoveryClaimStatus.CONFLICT
-        assert replay.reason_codes == ("RECOVERY_CLAIM_REPLAY_IS_STALE",)
+        assert replay.reason_codes == ("RECOVERY_CLAIM_SOURCE_SNAPSHOT_STALE",)
         assert replay.current_claim == takeover.claim
 
     asyncio.run(scenario())

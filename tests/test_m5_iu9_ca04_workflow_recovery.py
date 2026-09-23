@@ -312,7 +312,17 @@ def test_resume_uses_same_instance_exact_version_and_checkpoint_material() -> No
             writer_recovery_epoch=1,
             writer_recovery_owner_id="worker-a",
         )
-        coordinator = WorkflowResumeCoordinator(claim_authority=claims)
+        store = InMemoryWorkflowRecoveryCheckpointStore(claim_authority=claims)
+        committed = await store.commit(
+            checkpoint,
+            expected_generation=0,
+            required_claim=claim,
+        )
+        assert committed.status is WorkflowCheckpointCommitStatus.COMMITTED
+        coordinator = WorkflowResumeCoordinator(
+            claim_authority=claims,
+            checkpoint_store=store,
+        )
         decision = await coordinator.resume(
             checkpoint=checkpoint,
             resolved=_resolved_workflow(implementation),
@@ -449,5 +459,115 @@ def test_no_running_step_with_pending_work_reenters_existing_scheduler() -> None
             recovered_at=NOW + timedelta(seconds=5),
         )
         assert decision.disposition is RecoveryDisposition.RESUME_SCHEDULING
+
+    asyncio.run(scenario())
+
+
+def test_exact_checkpoint_replay_does_not_repeat_domain_state_persistence() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(claims)
+        store = InMemoryWorkflowRecoveryCheckpointStore(claim_authority=claims)
+        adapter = StaticCheckpointAdapter()
+        coordinator = WorkflowWaitingCheckpointCoordinator(
+            claim_authority=claims,
+            store=store,
+            adapter=adapter,
+        )
+        result = M5WorkflowResult(
+            workflow_instance_id="wf-instance-1",
+            workflow_id="wf-1",
+            status=WorkflowExecutionStatus.WAITING,
+        )
+        first = await coordinator.commit_waiting(
+            result=result,
+            execution_id="exec-1",
+            step_id="step-1",
+            step_execution_id="step-exec-1",
+            workflow_version="7",
+            checkpoint_id="wf-checkpoint-1",
+            expected_generation=0,
+            recovery_claim=claim,
+            observed_at=NOW + timedelta(seconds=1),
+        )
+        second = await coordinator.commit_waiting(
+            result=result,
+            execution_id="exec-1",
+            step_id="step-1",
+            step_execution_id="step-exec-1",
+            workflow_version="7",
+            checkpoint_id="wf-checkpoint-1",
+            expected_generation=0,
+            recovery_claim=claim,
+            observed_at=NOW + timedelta(seconds=2),
+        )
+        assert first.status is WorkflowCheckpointCommitStatus.COMMITTED
+        assert second.status is WorkflowCheckpointCommitStatus.ALREADY_COMMITTED
+        assert adapter.calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_resume_rejects_checkpoint_that_is_no_longer_latest() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(claims)
+        store = InMemoryWorkflowRecoveryCheckpointStore(claim_authority=claims)
+        first = WorkflowRecoveryCheckpoint(
+            execution_id="exec-1",
+            step_id="step-1",
+            step_execution_id="step-exec-1",
+            workflow_instance_id="wf-instance-1",
+            workflow_id="wf-1",
+            workflow_version="7",
+            checkpoint_id="wf-checkpoint-1",
+            generation=1,
+            material=WorkflowCheckpointMaterial(
+                state_reference="state://wf-1/g1",
+                resume_token="token-g1",
+                state_schema_version="domain-state-v3",
+            ),
+            committed_at=NOW,
+            writer_recovery_epoch=claim.recovery_epoch,
+            writer_recovery_owner_id=claim.recovery_owner_id,
+        )
+        second = WorkflowRecoveryCheckpoint(
+            execution_id="exec-1",
+            step_id="step-1",
+            step_execution_id="step-exec-1",
+            workflow_instance_id="wf-instance-1",
+            workflow_id="wf-1",
+            workflow_version="7",
+            checkpoint_id="wf-checkpoint-2",
+            generation=2,
+            material=WorkflowCheckpointMaterial(
+                state_reference="state://wf-1/g2",
+                resume_token="token-g2",
+                state_schema_version="domain-state-v3",
+            ),
+            committed_at=NOW + timedelta(seconds=1),
+            writer_recovery_epoch=claim.recovery_epoch,
+            writer_recovery_owner_id=claim.recovery_owner_id,
+        )
+        assert (
+            await store.commit(first, expected_generation=0, required_claim=claim)
+        ).status is WorkflowCheckpointCommitStatus.COMMITTED
+        assert (
+            await store.commit(second, expected_generation=1, required_claim=claim)
+        ).status is WorkflowCheckpointCommitStatus.COMMITTED
+
+        coordinator = WorkflowResumeCoordinator(
+            claim_authority=claims,
+            checkpoint_store=store,
+        )
+        decision = await coordinator.resume(
+            checkpoint=first,
+            resolved=_resolved_workflow(ResumableWorkflow()),
+            execution_context=_snapshot().execution_context.restore(),
+            tool_invoker=FakeToolInvoker(),
+            recovery_claim=claim,
+        )
+        assert decision.status is WorkflowResumeStatus.UNKNOWN
+        assert "WORKFLOW_RESUME_CHECKPOINT_IS_NOT_LATEST" in decision.reason_codes
 
     asyncio.run(scenario())

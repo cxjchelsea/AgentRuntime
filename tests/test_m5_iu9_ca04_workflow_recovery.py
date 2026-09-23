@@ -24,6 +24,7 @@ from runtime.execution import (
     WorkflowCheckpointCommitStatus,
     WorkflowCheckpointMaterial,
     WorkflowCheckpointReadStatus,
+    WorkflowCheckpointWriterFence,
     WorkflowExecutionStatus,
     WorkflowRecoveryCheckpoint,
     WorkflowResumeCoordinator,
@@ -124,6 +125,12 @@ def _snapshot(
         writer_recovery_epoch=1,
         writer_recovery_owner_id="prior-worker",
     )
+
+
+def _recovery_fence(
+    claim: ExecutionRecoveryClaim,
+) -> WorkflowCheckpointWriterFence:
+    return WorkflowCheckpointWriterFence.from_recovery_claim(claim)
 
 
 class StaticCheckpointAdapter:
@@ -260,7 +267,7 @@ def test_waiting_workflow_becomes_recoverable_only_after_exact_durable_commit() 
             workflow_version="7",
             checkpoint_id="wf-checkpoint-1",
             expected_generation=0,
-            recovery_claim=claim,
+            writer_fence=_recovery_fence(claim),
             observed_at=NOW + timedelta(seconds=1),
         )
         assert committed.status is WorkflowCheckpointCommitStatus.COMMITTED
@@ -331,7 +338,7 @@ def test_resume_uses_same_instance_exact_version_and_checkpoint_material() -> No
         committed = await store.commit(
             checkpoint,
             expected_generation=0,
-            required_claim=claim,
+            writer_fence=_recovery_fence(claim),
         )
         assert committed.status is WorkflowCheckpointCommitStatus.COMMITTED
         coordinator = WorkflowResumeCoordinator(
@@ -435,7 +442,7 @@ def test_exact_checkpoint_authorizes_resume_workflow_disposition() -> None:
         committed = await store.commit(
             checkpoint,
             expected_generation=0,
-            required_claim=claim,
+            writer_fence=_recovery_fence(claim),
         )
         assert committed.status is WorkflowCheckpointCommitStatus.COMMITTED
 
@@ -505,7 +512,7 @@ def test_exact_checkpoint_replay_does_not_repeat_domain_state_persistence() -> N
             workflow_version="7",
             checkpoint_id="wf-checkpoint-1",
             expected_generation=0,
-            recovery_claim=claim,
+            writer_fence=_recovery_fence(claim),
             observed_at=NOW + timedelta(seconds=1),
         )
         second = await coordinator.commit_waiting(
@@ -516,7 +523,7 @@ def test_exact_checkpoint_replay_does_not_repeat_domain_state_persistence() -> N
             workflow_version="7",
             checkpoint_id="wf-checkpoint-1",
             expected_generation=0,
-            recovery_claim=claim,
+            writer_fence=_recovery_fence(claim),
             observed_at=NOW + timedelta(seconds=2),
         )
         assert first.status is WorkflowCheckpointCommitStatus.COMMITTED
@@ -568,10 +575,10 @@ def test_resume_rejects_checkpoint_that_is_no_longer_latest() -> None:
             writer_recovery_owner_id=claim.recovery_owner_id,
         )
         assert (
-            await store.commit(first, expected_generation=0, required_claim=claim)
+            await store.commit(first, expected_generation=0, writer_fence=_recovery_fence(claim))
         ).status is WorkflowCheckpointCommitStatus.COMMITTED
         assert (
-            await store.commit(second, expected_generation=1, required_claim=claim)
+            await store.commit(second, expected_generation=1, writer_fence=_recovery_fence(claim))
         ).status is WorkflowCheckpointCommitStatus.COMMITTED
 
         coordinator = WorkflowResumeCoordinator(
@@ -658,7 +665,7 @@ def test_resume_rechecks_epoch_before_authorization_and_does_not_invoke() -> Non
             writer_recovery_owner_id=claim.recovery_owner_id,
         )
         assert (
-            await store.commit(checkpoint, expected_generation=0, required_claim=claim)
+            await store.commit(checkpoint, expected_generation=0, writer_fence=_recovery_fence(claim))
         ).status is WorkflowCheckpointCommitStatus.COMMITTED
 
         implementation = CountingResumableWorkflow()
@@ -681,5 +688,64 @@ def test_resume_rechecks_epoch_before_authorization_and_does_not_invoke() -> Non
             in decision.reason_codes
         )
         assert implementation.resume_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_live_waiting_checkpoint_commits_before_crash_and_recovery_fences_old_writer() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        store = InMemoryWorkflowRecoveryCheckpointStore(claim_authority=claims)
+        adapter = StaticCheckpointAdapter()
+        coordinator = WorkflowWaitingCheckpointCoordinator(
+            claim_authority=claims,
+            store=store,
+            adapter=adapter,
+        )
+        live_fence = WorkflowCheckpointWriterFence.live(
+            execution_id="exec-1",
+            writer_id="runtime-worker-live",
+        )
+        result = M5WorkflowResult(
+            workflow_instance_id="wf-instance-1",
+            workflow_id="wf-1",
+            status=WorkflowExecutionStatus.WAITING,
+        )
+
+        first = await coordinator.commit_waiting(
+            result=result,
+            execution_id="exec-1",
+            step_id="step-1",
+            step_execution_id="step-exec-1",
+            workflow_version="7",
+            checkpoint_id="wf-checkpoint-live-1",
+            expected_generation=0,
+            writer_fence=live_fence,
+            observed_at=NOW + timedelta(seconds=1),
+        )
+        assert first.status is WorkflowCheckpointCommitStatus.COMMITTED
+        assert first.checkpoint is not None
+        assert first.checkpoint.writer_recovery_epoch == 0
+        assert adapter.calls == 1
+
+        recovery_claim = await _claim(claims, owner="recovery-worker")
+        fenced = await coordinator.commit_waiting(
+            result=result,
+            execution_id="exec-1",
+            step_id="step-1",
+            step_execution_id="step-exec-1",
+            workflow_version="7",
+            checkpoint_id="wf-checkpoint-live-2",
+            expected_generation=1,
+            writer_fence=live_fence,
+            observed_at=NOW + timedelta(seconds=2),
+        )
+        assert recovery_claim.recovery_epoch == 1
+        assert fenced.status is WorkflowCheckpointCommitStatus.CONFLICT
+        assert (
+            "WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCED_BY_RECOVERY"
+            in fenced.reason_codes
+        )
+        assert adapter.calls == 1
 
     asyncio.run(scenario())

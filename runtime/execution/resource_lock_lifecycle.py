@@ -420,6 +420,10 @@ class OperationResourceLeaseBinding:
             raise ValueError("TOOL handle requires tool_call_id")
         if not self.leases:
             raise ValueError("operation resource binding requires at least one lease")
+        if self.owner.owner_id != self.handle.operation_handle_id:
+            raise ValueError(
+                "resource owner_id must equal exact Tool operation_handle_id"
+            )
         if self.owner.execution_id != self.handle.execution_id:
             raise ValueError("resource owner execution_id mismatch")
         if self.owner.step_execution_id != self.handle.step_execution_id:

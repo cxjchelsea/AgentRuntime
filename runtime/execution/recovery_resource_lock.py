@@ -20,7 +20,7 @@ import asyncio
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Protocol
 
@@ -434,11 +434,9 @@ class DurableOperationResourceLeaseRegistry(OperationResourceLeaseRegistry):
     ) -> None:
         self._store = store
         self._claim = recovery_claim
-        self._clock = clock
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     def _now(self) -> datetime:
-        if self._clock is None:
-            return self._claim.claimed_at
         value = self._clock()
         if not isinstance(value, datetime):
             raise TypeError("binding registry clock returned invalid time")

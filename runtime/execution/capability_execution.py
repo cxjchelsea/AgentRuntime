@@ -1895,6 +1895,95 @@ class CoreApprovedToolInvoker(
             operation_fingerprint=operation_fingerprint,
         )
 
+    async def _begin_physical_tool_operation(
+        self,
+        *,
+        resolved: ResolvedCapability,
+        logical_tool_call_id: str,
+        physical_attempt: int,
+    ) -> tuple[
+        ToolConcurrencyAdmissionDecision | None,
+        InFlightOperationHandle | None,
+        tuple[str, ...],
+    ]:
+        concurrency = self._tool_concurrency_runtime
+        if concurrency is not None:
+            parent_handle_id = self._inflight_parent_handle_id
+            definition = resolved.definition
+            if (
+                parent_handle_id is None
+                or not isinstance(definition, ToolDefinition)
+            ):
+                reason = "TOOL_CONCURRENCY_AUTHORITY_MISSING"
+                self._record_fault(reason)
+                return None, None, (reason,)
+            try:
+                admission = await concurrency.admit(
+                    tool_definition=definition,
+                    tool_id=resolved.capability_id,
+                    tool_version=resolved.version,
+                    execution_context=self._execution_context,
+                    step_execution_id=self._step_execution_id,
+                    parent_handle_id=parent_handle_id,
+                    logical_tool_call_id=logical_tool_call_id,
+                    physical_attempt=physical_attempt,
+                )
+            except Exception:  # noqa: BLE001
+                admission = None
+            if admission is None:
+                reason = "TOOL_CONCURRENCY_ADMISSION_UNKNOWN"
+                self._record_fault(reason)
+                return None, None, (reason,)
+            if admission.status is ToolConcurrencyAdmissionStatus.ADMITTED:
+                return admission, admission.handle, ()
+            reasons = admission.reason_codes or ("TOOL_CONCURRENCY_ADMISSION_UNKNOWN",)
+            for reason in reasons:
+                self._record_fault(reason)
+            return admission, admission.handle, reasons
+
+        try:
+            handle = await self._begin_tool_inflight(
+                resolved=resolved,
+                logical_tool_call_id=logical_tool_call_id,
+                physical_attempt=physical_attempt,
+            )
+        except ToolInvocationBoundaryError as exc:
+            return None, None, (exc.reason_code,)
+        return None, handle, ()
+
+    async def _complete_physical_tool_operation(
+        self,
+        *,
+        concurrency_admission: ToolConcurrencyAdmissionDecision | None,
+        inflight_handle: InFlightOperationHandle | None,
+    ) -> bool:
+        if concurrency_admission is not None:
+            concurrency = self._tool_concurrency_runtime
+            if concurrency is None:
+                self._record_fault("TOOL_CONCURRENCY_RUNTIME_MISSING")
+                return False
+            try:
+                decision = await concurrency.complete_after_operation(
+                    concurrency_admission,
+                    completed_at=self._inflight_now(),
+                )
+            except Exception:  # noqa: BLE001
+                decision = None
+            if (
+                decision is not None
+                and decision.status is ToolConcurrencyCompletionStatus.COMPLETED
+            ):
+                return True
+            reasons = (
+                decision.reason_codes
+                if decision is not None
+                else ("TOOL_CONCURRENCY_COMPLETION_UNKNOWN",)
+            )
+            for reason in reasons:
+                self._record_fault(reason)
+            return False
+        return await self._complete_tool_inflight(inflight_handle)
+
     async def _begin_tool_inflight(
         self,
         *,

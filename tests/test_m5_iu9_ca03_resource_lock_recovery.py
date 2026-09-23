@@ -1098,6 +1098,7 @@ def test_reclaimed_lock_can_be_acquired_by_new_exact_acquisition() -> None:
 
     asyncio.run(scenario())
 
+
 def test_probe_evidence_for_different_operation_cannot_authorize_reclaim() -> None:
     async def scenario() -> None:
         claims = InMemoryRecoveryClaimAuthority()
@@ -1215,6 +1216,7 @@ def test_durable_provider_fence_survives_second_recovery_takeover() -> None:
         assert binding_read.record.provider_fence == fence
 
     asyncio.run(scenario())
+
 
 def test_inflight_store_exception_retains_known_binding_leases() -> None:
     async def scenario() -> None:

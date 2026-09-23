@@ -145,6 +145,41 @@ class WorkflowExecutionRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowResumeRequest:
+    execution_id: str
+    step_execution_id: str
+    workflow_instance_id: str
+    workflow_id: str
+    workflow_version: str
+    checkpoint_id: str
+    checkpoint_generation: int
+    state_reference: str
+    resume_token: str
+    checkpoint_schema_version: str
+    event: str | None = None
+    inputs: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        values = (
+            self.execution_id,
+            self.step_execution_id,
+            self.workflow_instance_id,
+            self.workflow_id,
+            self.workflow_version,
+            self.checkpoint_id,
+            self.state_reference,
+            self.resume_token,
+            self.checkpoint_schema_version,
+        )
+        if any(not value.strip() for value in values):
+            raise ValueError("workflow resume provenance must not be blank")
+        if self.checkpoint_generation < 1:
+            raise ValueError("checkpoint_generation must be >= 1")
+        if self.event is not None and not self.event.strip():
+            raise ValueError("event must not be blank")
+
+
+@dataclass(frozen=True, slots=True)
 class M5WorkflowResult:
     workflow_instance_id: str
     workflow_id: str

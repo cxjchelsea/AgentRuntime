@@ -302,7 +302,7 @@ class ExecutionControlCoordinator:
                     terminalized,
                     observed_at=terminal_at,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001,S110
                 # Control lifecycle is already terminal and persisted.
                 # Session-release uncertainty must not undo that truth.
                 pass

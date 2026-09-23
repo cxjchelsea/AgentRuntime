@@ -677,6 +677,18 @@ class ToolResourceRecoveryCoordinator:
                     operation_handle_id=operation_handle_id,
                     retained_leases=tuple(active_leases),
                 )
+            reconciled = await self._reconcile_released_binding(
+                record=record,
+                recovery_claim=recovery_claim,
+            )
+            if not reconciled:
+                return ResourceRecoveryDecision(
+                    status=ResourceRecoveryStatus.UNKNOWN,
+                    reason_codes=(
+                        "RELEASED_RESOURCE_BINDING_INFLIGHT_RECONCILIATION_UNKNOWN",
+                    ),
+                    operation_handle_id=operation_handle_id,
+                )
             return ResourceRecoveryDecision(
                 status=ResourceRecoveryStatus.ALREADY_RECLAIMED,
                 reason_codes=("RESOURCE_BINDING_ALREADY_RELEASED",),
@@ -995,6 +1007,83 @@ class ToolResourceRecoveryCoordinator:
             operation_recovery=operation_recovery,
             provider_fence=provider_fence,
         )
+
+    async def _reconcile_released_binding(
+        self,
+        *,
+        record: DurableOperationResourceBindingRecord,
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> bool:
+        handle = record.binding.handle
+        try:
+            observations = await self._inflight_store.load_inflight(
+                execution_id=handle.execution_id,
+                step_execution_id=handle.step_execution_id,
+            )
+        except Exception:  # noqa: BLE001
+            return False
+        matching = tuple(
+            item
+            for item in observations
+            if item.handle.operation_handle_id == handle.operation_handle_id
+        )
+        if len(matching) != 1 or matching[0].handle != handle:
+            return False
+        observation = matching[0]
+        if observation.state in {
+            InFlightEvidenceState.COMPLETED,
+            InFlightEvidenceState.CONFIRMED_STOPPED,
+            InFlightEvidenceState.FENCED_OUT,
+        }:
+            return True
+        if observation.state is not InFlightEvidenceState.ORPHANED_UNCONFIRMED:
+            return False
+
+        reconciliation: InFlightTerminalReconciliation | None = None
+        if record.provider_fence is not None:
+            reconciliation = InFlightTerminalReconciliation(
+                handle=handle,
+                state=InFlightEvidenceState.FENCED_OUT,
+                basis=InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED,
+                observed_at=record.provider_fence.established_at,
+            )
+        else:
+            mapping = {
+                "PROBE_COMPLETED_CONFIRMED": (
+                    InFlightEvidenceState.COMPLETED,
+                    InFlightReconciliationBasis.OPERATION_COMPLETED_CONFIRMED,
+                ),
+                "PROBE_STOPPED_CONFIRMED": (
+                    InFlightEvidenceState.CONFIRMED_STOPPED,
+                    InFlightReconciliationBasis.OPERATION_STOPPED_CONFIRMED,
+                ),
+                "PROBE_NOT_FOUND_WITH_PROOF": (
+                    InFlightEvidenceState.CONFIRMED_STOPPED,
+                    InFlightReconciliationBasis.OPERATION_NOT_FOUND_WITH_PROOF,
+                ),
+            }
+            mapped = mapping.get(record.release_basis or "")
+            if mapped is not None and record.released_at is not None:
+                state, basis = mapped
+                reconciliation = InFlightTerminalReconciliation(
+                    handle=handle,
+                    state=state,
+                    basis=basis,
+                    observed_at=record.released_at,
+                )
+        if reconciliation is None:
+            return False
+        try:
+            decision = await self._inflight_store.commit_terminal_reconciliation(
+                reconciliation=reconciliation,
+                required_claim=recovery_claim,
+            )
+        except Exception:  # noqa: BLE001
+            return False
+        return decision.status in {
+            DurableEvidenceMutationStatus.RECORDED,
+            DurableEvidenceMutationStatus.ALREADY_CURRENT,
+        }
 
     async def _reconcile_without_binding(
         self,

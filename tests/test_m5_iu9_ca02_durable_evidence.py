@@ -477,9 +477,7 @@ def test_stale_worker_cannot_latch_new_terminal_control_after_takeover() -> None
             latched_at=NOW + timedelta(seconds=2),
         )
         assert decision.status is ExecutionControlLatchStatus.UNKNOWN
-        assert decision.reason_codes == (
-            "CONTROL_LATCH_RECOVERY_EPOCH_NOT_CURRENT",
-        )
+        assert decision.reason_codes == ("CONTROL_LATCH_RECOVERY_EPOCH_NOT_CURRENT",)
         assert await stale_latch.get_latched("execution-001") is None
 
     asyncio.run(scenario())
@@ -628,7 +626,9 @@ def test_stale_inflight_registry_cannot_complete_after_takeover() -> None:
             at=NOW + timedelta(seconds=3),
         )
 
-        with pytest.raises(RuntimeError, match="INFLIGHT_COMPLETION_STALE_RECOVERY_EPOCH"):
+        with pytest.raises(
+            RuntimeError, match="INFLIGHT_COMPLETION_STALE_RECOVERY_EPOCH"
+        ):
             await stale.complete(
                 owner.operation_handle_id,
                 completed_at=NOW + timedelta(seconds=4),
@@ -660,7 +660,9 @@ def test_inflight_handle_identity_cannot_be_rebound() -> None:
         assert await registry.register(original)
 
         rebound = replace(original, capability_id="skill-B")
-        with pytest.raises(RuntimeError, match="INFLIGHT_HANDLE_REBIND_OR_STATE_CONFLICT"):
+        with pytest.raises(
+            RuntimeError, match="INFLIGHT_HANDLE_REBIND_OR_STATE_CONFLICT"
+        ):
             await registry.register(rebound)
 
         observations = await store.load_inflight(execution_id="execution-001")

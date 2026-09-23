@@ -221,6 +221,7 @@ exact ResourceLockLease set
 Binding invariants:
 
 ~~~text
+owner.owner_id == exact Tool operation_handle_id
 handle execution_id == owner execution_id
 handle step_execution_id == owner step_execution_id
 handle tool_call_id == owner tool_call_id
@@ -230,6 +231,8 @@ lock_key unique
 acquisition_id unique
 lease acquired_at <= Tool operation started_at
 ~~~
+
+The owner_id equality is critical because IU7's opaque operation_handle_id is created from the physical attempt identity. It prevents a lease from a different physical attempt with the same logical tool_call_id from being rebound to this handle.
 
 Therefore ResourceLock truth and IU7 InFlightOperation truth refer to the same physical Tool operation boundary.
 
@@ -506,18 +509,19 @@ Covered at minimum:
 6. terminal execution status + nonterminal Step does not release
 7. release cannot precede latest execution observation
 8. forged session lock_key cannot release
-9. Tool binding requires exact execution/step/tool provenance
-10. Tool lease must exist before operation starts
-11. operation binding cannot be rebound
-12. normal exact Tool completion releases resources
-13. completion identity mismatch retains resources
-14. Tool CONFIRMED_STOPPED releases resources
-15. ALREADY_COMPLETED retains until real completion observation
-16. NOT_CANCELLABLE retains
-17. UNKNOWN retains
-18. ambiguous interrupt summary cannot release
-19. partial release uncertainty preserves retained leases + active binding
-20. release requires exact active operation-resource binding
+9. Tool lock owner_id must equal exact Tool operation_handle_id
+10. Tool binding requires exact execution/step/tool provenance
+11. Tool lease must exist before operation starts
+12. operation binding cannot be rebound
+13. normal exact Tool completion releases resources
+14. completion identity mismatch retains resources
+15. Tool CONFIRMED_STOPPED releases resources
+16. ALREADY_COMPLETED retains until real completion observation
+17. NOT_CANCELLABLE retains
+18. UNKNOWN retains
+19. ambiguous interrupt summary cannot release
+20. partial release uncertainty preserves retained leases + active binding
+21. release requires exact active operation-resource binding
 ~~~
 
 ## 16. Blocker mapping

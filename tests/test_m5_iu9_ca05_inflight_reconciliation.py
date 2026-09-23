@@ -527,6 +527,42 @@ def test_unbound_orphan_with_strong_probe_can_converge_without_resource_lock() -
     asyncio.run(scenario())
 
 
+def test_not_found_with_proof_commits_proven_absent_not_false_stopped() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        evidence = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        resources = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        handle = _handle()
+
+        _, recovery = await _register_and_orphan(
+            claims=claims,
+            evidence_store=evidence,
+            handle=handle,
+        )
+        coordinator = ToolResourceRecoveryCoordinator(
+            claim_authority=claims,
+            lock_store=resources,
+            binding_store=resources,
+            inflight_store=evidence,
+            operation_probe=StaticProbe(OperationRecoveryStatus.NOT_FOUND_WITH_PROOF),
+        )
+        decision = await coordinator.recover(
+            operation_handle_id=handle.operation_handle_id,
+            recovery_claim=recovery,
+            recovered_at=NOW + timedelta(seconds=9),
+        )
+        assert decision.status is ResourceRecoveryStatus.NO_RESOURCE_LOCKS
+
+        observations = await evidence.load_inflight(execution_id=handle.execution_id)
+        assert observations[0].state is InFlightEvidenceState.PROVEN_ABSENT
+        assert (
+            observations[0].reconciliation_basis
+            is InFlightReconciliationBasis.OPERATION_NOT_FOUND_WITH_PROOF
+        )
+
+    asyncio.run(scenario())
+
+
 def test_running_probe_does_not_upgrade_orphan_to_terminal() -> None:
     async def scenario() -> None:
         claims = InMemoryRecoveryClaimAuthority()

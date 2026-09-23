@@ -238,6 +238,50 @@ def test_owner_supersession_only_transitions_skill_and_workflow_not_tool() -> No
     asyncio.run(scenario())
 
 
+
+def test_tool_kind_is_explicitly_forbidden_from_owner_supersession() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        first = await _claim(
+            claims,
+            claim_id="claim-1",
+            owner="worker-old",
+            expected_epoch=0,
+            source_generation=0,
+            at=NOW,
+        )
+        owner = _owner_handle(InFlightOperationKind.SKILL)
+        tool = _tool_handle(owner)
+        await _register(store=store, claim=first, handle=tool)
+        recovery = await _claim(
+            claims,
+            claim_id="claim-2",
+            owner="worker-new",
+            expected_epoch=1,
+            source_generation=3,
+            at=NOW + timedelta(seconds=4),
+        )
+        await store.recover_active_as_orphaned(
+            execution_id="exec-1",
+            recovered_at=NOW + timedelta(seconds=5),
+            required_claim=recovery,
+        )
+
+        decision = await store.supersede_orphaned_owner_frame(
+            execution_id="exec-1",
+            step_execution_id="step-exec-1",
+            owner_kind=InFlightOperationKind.TOOL,
+            capability_id="tool-1",
+            recovered_at=NOW + timedelta(seconds=6),
+            required_claim=recovery,
+        )
+        assert decision.status is InFlightRecoveryTransitionStatus.CONFLICT
+        observation = (await store.load_inflight(execution_id="exec-1"))[0]
+        assert observation.state is InFlightEvidenceState.ORPHANED_UNCONFIRMED
+
+    asyncio.run(scenario())
+
 def test_owner_supersession_exact_replay_is_idempotent() -> None:
     async def scenario() -> None:
         claims = InMemoryRecoveryClaimAuthority()

@@ -186,9 +186,9 @@ from runtime.execution.recovery_evidence import (
 from runtime.execution.recovery_resource_lock import (
     DurableOperationResourceBindingReadDecision,
     DurableOperationResourceBindingReadStatus,
+    DurableOperationResourceBindingRecord,
     DurableOperationResourceBindingState,
     DurableOperationResourceBindingStore,
-    DurableOperationResourceBindingRecord,
     DurableOperationResourceLeaseRegistry,
     DurableResourceLockAuthority,
     DurableResourceLockReadDecision,

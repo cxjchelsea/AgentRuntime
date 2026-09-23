@@ -20,7 +20,6 @@ from runtime.execution.capability_resolution import (
     ResolvedStepCapabilities,
 )
 from runtime.execution.control_application import InFlightOperationHandle
-from runtime.execution.invocation import ApprovedToolInvoker
 from runtime.execution.models import (
     M5WorkflowResult,
     StepExecutionStatus,
@@ -574,7 +573,7 @@ class WorkflowWaitingCheckpointCoordinator:
 
 
 class WorkflowResumeStatus(str, Enum):
-    RESUMED = "RESUMED"
+    AUTHORIZED = "AUTHORIZED"
     UNKNOWN = "UNKNOWN"
 
 
@@ -582,30 +581,40 @@ class WorkflowResumeStatus(str, Enum):
 class WorkflowResumeDecision:
     status: WorkflowResumeStatus
     reason_codes: tuple[str, ...]
-    result: M5WorkflowResult | None = None
-    checkpoint_commit_required: bool = False
+    request: WorkflowResumeRequest | None = None
+    checkpoint: WorkflowRecoveryCheckpoint | None = None
+    recovery_claim: ExecutionRecoveryClaim | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, WorkflowResumeStatus):
             raise TypeError("status must be WorkflowResumeStatus")
         if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
             raise ValueError("reason_codes must contain non-blank values")
-        if self.status is WorkflowResumeStatus.RESUMED:
-            if self.result is None:
-                raise ValueError("RESUMED requires Workflow result")
-            expected = self.result.status is WorkflowExecutionStatus.WAITING
-            if self.checkpoint_commit_required is not expected:
+        if self.status is WorkflowResumeStatus.AUTHORIZED:
+            if (
+                self.request is None
+                or self.checkpoint is None
+                or self.recovery_claim is None
+            ):
                 raise ValueError(
-                    "WAITING resumed result must require a new durable checkpoint"
+                    "AUTHORIZED resume requires request, checkpoint, and recovery claim"
                 )
-        elif self.result is not None or self.checkpoint_commit_required:
-            raise ValueError(
-                "UNKNOWN resume cannot claim result/checkpoint requirement"
-            )
+        elif (
+            self.request is not None
+            or self.checkpoint is not None
+            or self.recovery_claim is not None
+        ):
+            raise ValueError("UNKNOWN resume cannot carry resume authority")
 
 
 class WorkflowResumeCoordinator:
-    """Resume the same exact Workflow instance and approved version from latest checkpoint."""
+    """Authorize exact Workflow resume without creating a second execution path.
+
+    This coordinator deliberately does NOT call WorkflowImplementation.resume().
+    M5-IU9 Formal Implementation must consume the authorization through the existing
+    StepCapabilityExecutor owner in-flight / Tool gateway / concurrency boundaries,
+    and must revalidate the recovery claim immediately before external invocation.
+    """
 
     def __init__(
         self,
@@ -616,13 +625,12 @@ class WorkflowResumeCoordinator:
         self._claim_authority = claim_authority
         self._checkpoint_store = checkpoint_store
 
-    async def resume(
+    async def authorize(
         self,
         *,
         checkpoint: WorkflowRecoveryCheckpoint,
         resolved: ResolvedStepCapabilities,
         execution_context: ExecutionContext,
-        tool_invoker: ApprovedToolInvoker,
         recovery_claim: ExecutionRecoveryClaim,
         event: str | None = None,
     ) -> WorkflowResumeDecision:
@@ -696,40 +704,28 @@ class WorkflowResumeCoordinator:
             event=event,
             inputs={},
         )
+
+        # Recheck after all durable reads. This only authorizes a request; Formal
+        # Implementation must repeat the epoch check at actual side-effect admission.
         try:
-            admission_epoch = await self._claim_authority.validate_current(
+            authorization_epoch = await self._claim_authority.validate_current(
                 recovery_claim
             )
         except Exception:  # noqa: BLE001
-            return self._unknown("WORKFLOW_RESUME_ADMISSION_EPOCH_CHECK_EXCEPTION")
-        if admission_epoch.status is not RecoveryEpochValidationStatus.CURRENT:
+            return self._unknown("WORKFLOW_RESUME_AUTHORIZATION_EPOCH_CHECK_EXCEPTION")
+        if authorization_epoch.status is not RecoveryEpochValidationStatus.CURRENT:
             return self._unknown(
-                "WORKFLOW_RESUME_ADMISSION_STALE_RECOVERY_EPOCH"
-                if admission_epoch.status is RecoveryEpochValidationStatus.STALE
-                else "WORKFLOW_RESUME_ADMISSION_RECOVERY_EPOCH_UNKNOWN"
+                "WORKFLOW_RESUME_AUTHORIZATION_STALE_RECOVERY_EPOCH"
+                if authorization_epoch.status is RecoveryEpochValidationStatus.STALE
+                else "WORKFLOW_RESUME_AUTHORIZATION_RECOVERY_EPOCH_UNKNOWN"
             )
-        try:
-            result = await implementation.resume(
-                request,
-                execution_context,
-                tool_invoker,
-            )
-        except Exception:  # noqa: BLE001
-            return self._unknown("WORKFLOW_RESUME_IMPLEMENTATION_EXCEPTION")
-        if (
-            not isinstance(result, M5WorkflowResult)
-            or not isinstance(result.status, WorkflowExecutionStatus)
-            or result.workflow_id != checkpoint.workflow_id
-            or result.workflow_instance_id != checkpoint.workflow_instance_id
-        ):
-            return self._unknown("WORKFLOW_RESUME_RESULT_IDENTITY_MISMATCH")
+
         return WorkflowResumeDecision(
-            status=WorkflowResumeStatus.RESUMED,
-            reason_codes=("WORKFLOW_RESUMED_FROM_EXACT_CHECKPOINT",),
-            result=result,
-            checkpoint_commit_required=(
-                result.status is WorkflowExecutionStatus.WAITING
-            ),
+            status=WorkflowResumeStatus.AUTHORIZED,
+            reason_codes=("WORKFLOW_RESUME_EXACT_CHECKPOINT_AUTHORIZED",),
+            request=request,
+            checkpoint=checkpoint,
+            recovery_claim=recovery_claim,
         )
 
     @staticmethod

@@ -76,7 +76,9 @@ class Sha256SessionExecutionLockIdentityFactory:
     ) -> str:
         _require_non_blank(session_id, "session_id")
         _require_non_blank(execution_id, "execution_id")
-        payload = f"session-execution-acquisition\0{session_id}\0{execution_id}".encode()
+        payload = (
+            f"session-execution-acquisition\0{session_id}\0{execution_id}".encode()
+        )
         return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
@@ -283,10 +285,7 @@ class SessionExecutionLockCoordinator:
                 reason_codes=("EXECUTION_NOT_AUTHORITATIVELY_TERMINAL",),
                 session_lease=session_lease,
             )
-        if (
-            prepared.finished_at is not None
-            and released_at < prepared.finished_at
-        ):
+        if prepared.finished_at is not None and released_at < prepared.finished_at:
             return SessionExecutionReleaseDecision(
                 status=SessionExecutionReleaseStatus.UNKNOWN,
                 reason_codes=("SESSION_LOCK_RELEASE_PRECEDES_EXECUTION_FINISH",),
@@ -347,9 +346,8 @@ class SessionExecutionLockCoordinator:
         decision: object,
         request: ResourceLockAcquireRequest,
     ) -> bool:
-        if (
-            not isinstance(decision, ResourceLockAcquireDecision)
-            or not isinstance(decision.status, ResourceLockAcquireStatus)
+        if not isinstance(decision, ResourceLockAcquireDecision) or not isinstance(
+            decision.status, ResourceLockAcquireStatus
         ):
             return False
         if decision.status in {
@@ -372,8 +370,7 @@ class SessionExecutionLockCoordinator:
             and prepared.finished_at is not None
             and bool(prepared.steps)
             and all(
-                step.status in cls._TERMINAL_STEP_STATUSES
-                for step in prepared.steps
+                step.status in cls._TERMINAL_STEP_STATUSES for step in prepared.steps
             )
         )
 
@@ -470,7 +467,9 @@ class InMemoryOperationResourceLeaseRegistry:
         existing = self._bindings.get(key)
         if existing is not None:
             if existing != binding:
-                raise ValueError("operation_handle_id resource binding cannot be rebound")
+                raise ValueError(
+                    "operation_handle_id resource binding cannot be rebound"
+                )
             return False
         self._bindings[key] = binding
         return True

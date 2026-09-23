@@ -73,6 +73,14 @@ from runtime.execution.protocols import (
     ToolImplementation,
     WorkflowImplementation,
 )
+from runtime.execution.recovery import (
+    RecoverySideEffectAdmissionGuard,
+    RecoverySideEffectAdmissionStatus,
+)
+from runtime.execution.recovery_workflow import (
+    WorkflowRecoveryImplementation,
+    WorkflowResumeRequest,
+)
 from runtime.execution.reliability import (
     AsyncTimeoutRunner,
     IdempotencyMode,
@@ -204,6 +212,7 @@ class CoreApprovedToolInvoker(
         inflight_parent_handle_id: str | None = None,
         inflight_clock: Callable[[], datetime] | None = None,
         tool_concurrency_runtime: ToolConcurrencyRuntime | None = None,
+        side_effect_admission_guard: RecoverySideEffectAdmissionGuard | None = None,
     ) -> None:
         if not step_execution_id.strip():
             raise ValueError("step_execution_id must not be blank")
@@ -263,6 +272,7 @@ class CoreApprovedToolInvoker(
         self._inflight_parent_handle_id = inflight_parent_handle_id
         self._inflight_clock = inflight_clock or (lambda: datetime.now(UTC))
         self._tool_concurrency_runtime = tool_concurrency_runtime
+        self._side_effect_admission_guard = side_effect_admission_guard
         self._permission_context_provider = permission_context_provider
         self._permission_evaluator = permission_evaluator
         self._input_validator = input_validator
@@ -970,6 +980,14 @@ class CoreApprovedToolInvoker(
                 "APPROVED_TOOL_BINDING_INVALID",
                 "IU3 resolved Tool binding is internally inconsistent",
             )
+
+        await self._authorize_recovery_side_effect()
+
+        await self._authorize_recovery_side_effect()
+
+        await self._authorize_recovery_side_effect()
+
+        await self._authorize_recovery_side_effect()
 
         (
             concurrency_admission,
@@ -2184,6 +2202,33 @@ class CoreApprovedToolInvoker(
             )
         return value
 
+    async def _authorize_recovery_side_effect(self) -> None:
+        guard = self._side_effect_admission_guard
+        if guard is None:
+            return
+        try:
+            decision = await guard.authorize(
+                execution_id=self._execution_context.execution_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._record_fault("RECOVERY_SIDE_EFFECT_EPOCH_VALIDATION_UNKNOWN")
+            raise ToolInvocationBoundaryError(
+                "RECOVERY_SIDE_EFFECT_EPOCH_VALIDATION_UNKNOWN",
+                "recovery side-effect admission guard failed",
+            ) from exc
+        if decision.status is RecoverySideEffectAdmissionStatus.ALLOWED:
+            return
+        reason = (
+            "RECOVERY_SIDE_EFFECT_EPOCH_STALE"
+            if decision.status is RecoverySideEffectAdmissionStatus.STALE
+            else "RECOVERY_SIDE_EFFECT_EPOCH_VALIDATION_UNKNOWN"
+        )
+        self._record_fault(reason)
+        raise ToolInvocationBoundaryError(
+            reason,
+            "stale or unknown recovery epoch cannot admit physical Tool attempt",
+        )
+
     def entries(self) -> tuple[ToolInvocationJournalEntry, ...]:
         return tuple(self._journal)
 
@@ -2512,6 +2557,7 @@ class StepCapabilityExecutor:
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
         owner_timeout_seconds: float | None = None,
         owner_timeout_runner: AsyncTimeoutRunner | None = None,
+        side_effect_admission_guard: RecoverySideEffectAdmissionGuard | None = None,
     ) -> StepCapabilityExecutionOutcome:
         if attempt_number < 1:
             return self._outcome(
@@ -2561,6 +2607,19 @@ class StepCapabilityExecutor:
                 resolved=resolved,
                 status=CapabilityExecutionStatus.NO_EXTERNAL_EXECUTION,
                 reason_codes=("NO_EXTERNAL_EXECUTION",),
+            )
+
+        admission_error = await self._owner_side_effect_admission_error(
+            execution_context=execution_context,
+            guard=side_effect_admission_guard,
+        )
+        if admission_error is not None:
+            return self._outcome(
+                step=step,
+                step_snapshot=step_snapshot,
+                resolved=resolved,
+                status=CapabilityExecutionStatus.UNKNOWN,
+                reason_codes=(admission_error,),
             )
 
         if self._execution_concurrency_runtime is not None:
@@ -2638,6 +2697,7 @@ class StepCapabilityExecutor:
                 ),
                 inflight_clock=self._inflight_clock,
                 tool_concurrency_runtime=self._tool_concurrency_runtime,
+                side_effect_admission_guard=side_effect_admission_guard,
             )
         except (TypeError, ValueError):
             completion_ok = await self._complete_owner_inflight(owner_handle)
@@ -2710,12 +2770,33 @@ class StepCapabilityExecutor:
             }
         )
 
+    @staticmethod
+    async def _owner_side_effect_admission_error(
+        *,
+        execution_context: ExecutionContext,
+        guard: RecoverySideEffectAdmissionGuard | None,
+    ) -> str | None:
+        if guard is None:
+            return None
+        try:
+            decision = await guard.authorize(
+                execution_id=execution_context.execution_id,
+            )
+        except Exception:  # noqa: BLE001
+            return "RECOVERY_SIDE_EFFECT_EPOCH_VALIDATION_UNKNOWN"
+        if decision.status is RecoverySideEffectAdmissionStatus.ALLOWED:
+            return None
+        if decision.status is RecoverySideEffectAdmissionStatus.STALE:
+            return "RECOVERY_SIDE_EFFECT_EPOCH_STALE"
+        return "RECOVERY_SIDE_EFFECT_EPOCH_VALIDATION_UNKNOWN"
+
     async def _begin_owner_inflight(
         self,
         *,
         resolved: ResolvedStepCapabilities,
         step_snapshot: StepLifecycleSnapshot,
         execution_context: ExecutionContext,
+        workflow_instance_id: str | None = None,
     ) -> tuple[InFlightOperationHandle | None, str | None]:
         registry = self._inflight_registry
         factory = self._inflight_identifier_factory
@@ -2761,6 +2842,11 @@ class StepCapabilityExecutor:
             capability_id=capability.capability_id,
             capability_version=capability.version,
             started_at=started_at,
+            workflow_instance_id=(
+                workflow_instance_id
+                if kind is InFlightOperationKind.WORKFLOW
+                else None
+            ),
         )
         try:
             registered = await registry.register(handle)

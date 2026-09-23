@@ -420,7 +420,9 @@ class DurableControlReadDecision:
             raise ValueError("reason_codes must contain non-blank values")
         if self.status is DurableControlReadStatus.LATCHED:
             if self.latched_control is None:
-                raise ValueError("LATCHED durable control read requires latched_control")
+                raise ValueError(
+                    "LATCHED durable control read requires latched_control"
+                )
         elif self.latched_control is not None:
             raise ValueError("NONE/UNKNOWN durable control read cannot carry latch")
 
@@ -537,10 +539,14 @@ class InFlightRecoveryTransitionDecision:
             raise TypeError("status must be InFlightRecoveryTransitionStatus")
         if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
             raise ValueError("reason_codes must contain non-blank values")
-        if self.status in {
-            InFlightRecoveryTransitionStatus.CONFLICT,
-            InFlightRecoveryTransitionStatus.UNKNOWN,
-        } and self.observations:
+        if (
+            self.status
+            in {
+                InFlightRecoveryTransitionStatus.CONFLICT,
+                InFlightRecoveryTransitionStatus.UNKNOWN,
+            }
+            and self.observations
+        ):
             raise ValueError("CONFLICT/UNKNOWN cannot claim recovered observations")
 
 

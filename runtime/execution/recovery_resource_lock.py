@@ -17,6 +17,7 @@ authorize Tool lock reclaim.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -429,7 +430,7 @@ class DurableOperationResourceLeaseRegistry(OperationResourceLeaseRegistry):
         *,
         store: DurableOperationResourceBindingStore,
         recovery_claim: ExecutionRecoveryClaim,
-        clock: callable | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._store = store
         self._claim = recovery_claim

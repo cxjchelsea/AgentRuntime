@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from runtime.execution.concurrency_runtime import ToolConcurrencyRuntime
 from runtime.execution.control import (
     ExecutionControlLatch,
     ExecutionControlLatchDecision,
@@ -27,7 +28,6 @@ from runtime.execution.control_application import (
     HierarchicalInterruptSummary,
     InFlightInterruptCoordinator,
 )
-from runtime.execution.concurrency_runtime import ToolConcurrencyRuntime
 from runtime.execution.control_lifecycle import ExecutionControlLifecycleService
 from runtime.execution.foundation import ExecutionTerminalObserver, PreparedExecution
 from runtime.execution.models import StepExecutionStatus

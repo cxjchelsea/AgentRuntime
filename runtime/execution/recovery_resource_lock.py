@@ -630,6 +630,50 @@ class ToolResourceRecoveryCoordinator:
                 operation_handle_id=operation_handle_id,
             )
         if binding_read.status is DurableOperationResourceBindingReadStatus.RELEASED:
+            record = binding_read.record
+            if record is None:
+                return ResourceRecoveryDecision(
+                    status=ResourceRecoveryStatus.UNKNOWN,
+                    reason_codes=("RESOURCE_RELEASED_BINDING_RECORD_MISSING",),
+                    operation_handle_id=operation_handle_id,
+                )
+            active_leases: list[ResourceLockLease] = []
+            for lease in record.binding.leases:
+                try:
+                    lock_read = await self._lock_store.read_by_acquisition(
+                        lease.acquisition_id
+                    )
+                except Exception:  # noqa: BLE001
+                    return ResourceRecoveryDecision(
+                        status=ResourceRecoveryStatus.UNKNOWN,
+                        reason_codes=("RESOURCE_RELEASED_BINDING_LOCK_READ_EXCEPTION",),
+                        operation_handle_id=operation_handle_id,
+                    )
+                if (
+                    lock_read.status is DurableResourceLockReadStatus.RELEASED
+                    and lock_read.record is not None
+                    and lock_read.record.lease == lease
+                ):
+                    continue
+                if (
+                    lock_read.status is DurableResourceLockReadStatus.ACTIVE
+                    and lock_read.record is not None
+                    and lock_read.record.lease == lease
+                ):
+                    active_leases.append(lease)
+                    continue
+                return ResourceRecoveryDecision(
+                    status=ResourceRecoveryStatus.UNKNOWN,
+                    reason_codes=("RESOURCE_RELEASED_BINDING_LOCK_STATE_INCONSISTENT",),
+                    operation_handle_id=operation_handle_id,
+                )
+            if active_leases:
+                return ResourceRecoveryDecision(
+                    status=ResourceRecoveryStatus.UNKNOWN,
+                    reason_codes=("RESOURCE_RELEASED_BINDING_HAS_ACTIVE_LEASE",),
+                    operation_handle_id=operation_handle_id,
+                    retained_leases=tuple(active_leases),
+                )
             return ResourceRecoveryDecision(
                 status=ResourceRecoveryStatus.ALREADY_RECLAIMED,
                 reason_codes=("RESOURCE_BINDING_ALREADY_RELEASED",),
@@ -749,14 +793,21 @@ class ToolResourceRecoveryCoordinator:
             if operation_recovery is not None and (
                 operation_recovery.status in self._STRONG_RECOVERY
             ):
+                if operation_recovery.operation_handle_id != operation_handle_id:
+                    return self._retained(
+                        binding=binding,
+                        operation_handle_id=operation_handle_id,
+                        reason="OPERATION_RECOVERY_IDENTITY_MISMATCH",
+                        operation_recovery=operation_recovery,
+                    )
                 if (
-                    operation_recovery.operation_handle_id != operation_handle_id
-                    or operation_recovery.observed_at < handle.started_at
+                    operation_recovery.observed_at < handle.started_at
+                    or operation_recovery.observed_at > recovered_at
                 ):
                     return self._retained(
                         binding=binding,
                         operation_handle_id=operation_handle_id,
-                        reason="OPERATION_RECOVERY_OBSERVATION_PRECEDES_START",
+                        reason="OPERATION_RECOVERY_OBSERVATION_TIME_INVALID",
                         operation_recovery=operation_recovery,
                     )
                 strong_basis = f"PROBE_{operation_recovery.status.value}"

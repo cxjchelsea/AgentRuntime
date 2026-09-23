@@ -55,7 +55,23 @@ writer_recovery_owner_id
 
 Core 只保存 opaque state reference / resume token，不把业务 Workflow state schema 塞进 Core。
 
-## 4. Checkpoint CAS / fencing
+## 4. Checkpoint CAS / writer fencing
+
+Workflow checkpoint 必须同时支持正常运行阶段和 crash recovery 阶段，不能要求“先发生 crash 才能创建 checkpoint”。
+
+新增 `WorkflowCheckpointWriterFence`：
+
+~~~text
+normal live execution
+-> recovery_epoch = 0
+-> allowed only while no recovery claim exists
+
+recovery runtime
+-> recovery_epoch > 0
+-> exact current ExecutionRecoveryClaim required
+~~~
+
+因此第一次 Workflow WAITING 可以在正常执行时立即 durable commit；一旦 recovery claim 建立，旧 epoch-0 live writer 立即失去写权限。
 
 规则：
 
@@ -64,8 +80,10 @@ Core 只保存 opaque state reference / resume token，不把业务 Workflow sta
 - exact replay -> ALREADY_COMMITTED。
 - same checkpoint_id different payload -> CONFLICT。
 - provenance drift -> CONFLICT。
+- live epoch-0 writer 在 recovery takeover 后不得继续写。
 - stale recovery epoch cannot commit。
-- stale epoch 在调用 Domain checkpoint adapter 前就被拒绝。
+- writer fence 在调用 Domain checkpoint adapter 前检查，并在 Domain persistence 后再次检查。
+- production durable store 必须把 writer-fence validation 与 checkpoint generation CAS 放在同一 durable mutation boundary；coordinator-side pre-check 本身不足以构成原子性证明。
 
 ## 5. WorkflowResumeRequest
 
@@ -294,6 +312,49 @@ RecoveryCoordinator
 
 ~~~text
 F-M5-IU9-CA04-004 = CLOSED_BY_ARCHITECTURE_CORRECTION
+~~~
+
+
+### F-M5-IU9-CA04-005 WAITING_CHECKPOINT_REQUIRED_RECOVERY_CLAIM_BEFORE_CRASH
+
+独立复核发现初版 `WorkflowWaitingCheckpointCoordinator.commit_waiting()` 强制要求 `ExecutionRecoveryClaim`。但 IU9 crash model 明确包含：
+
+~~~text
+Workflow returns WAITING
+-> checkpoint not yet durably committed
+-> crash
+~~~
+
+如果第一次 checkpoint 必须先持有 recovery claim，就会形成“必须先 crash 才能创建 crash 前 checkpoint”的循环依赖。
+
+修复为双模式 `WorkflowCheckpointWriterFence`：
+
+~~~text
+live runtime before any recovery takeover
+-> epoch 0 writer
+-> may commit durable WAITING checkpoint
+
+first recovery claim appears
+-> epoch 0 writer becomes fenced immediately
+
+recovery writer
+-> exact current recovery claim / epoch required
+~~~
+
+新增回归测试证明：
+
+~~~text
+normal WAITING checkpoint commit succeeds before crash
++
+recovery takeover creates epoch 1
++
+old live writer second commit -> CONFLICT
++
+Domain checkpoint adapter is not called again
+~~~
+
+~~~text
+F-M5-IU9-CA04-005 = CLOSED_BY_ARCHITECTURE_CORRECTION
 ~~~
 
 ## 14. Blocker mapping

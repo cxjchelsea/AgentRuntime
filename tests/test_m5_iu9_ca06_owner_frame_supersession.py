@@ -206,8 +206,11 @@ def test_owner_supersession_only_transitions_skill_and_workflow_not_tool() -> No
         )
         assert orphaned.status is InFlightRecoveryTransitionStatus.TRANSITIONED
 
-        superseded = await store.supersede_orphaned_owner_frames(
+        superseded = await store.supersede_orphaned_owner_frame(
             execution_id="exec-1",
+            step_execution_id="step-exec-1",
+            owner_kind=owner.kind,
+            capability_id=owner.capability_id,
             recovered_at=NOW + timedelta(seconds=6),
             required_claim=recovery,
         )
@@ -260,14 +263,20 @@ def test_owner_supersession_exact_replay_is_idempotent() -> None:
             recovered_at=NOW + timedelta(seconds=5),
             required_claim=recovery,
         )
-        first_decision = await store.supersede_orphaned_owner_frames(
+        first_decision = await store.supersede_orphaned_owner_frame(
             execution_id="exec-1",
+            step_execution_id="step-exec-1",
+            owner_kind=owner.kind,
+            capability_id=owner.capability_id,
             recovered_at=NOW + timedelta(seconds=6),
             required_claim=recovery,
         )
         before = (await store.load_inflight(execution_id="exec-1"))[0]
-        replay = await store.supersede_orphaned_owner_frames(
+        replay = await store.supersede_orphaned_owner_frame(
             execution_id="exec-1",
+            step_execution_id="step-exec-1",
+            owner_kind=owner.kind,
+            capability_id=owner.capability_id,
             recovered_at=NOW + timedelta(seconds=7),
             required_claim=recovery,
         )
@@ -317,8 +326,11 @@ def test_stale_recovery_epoch_cannot_supersede_owner_frame() -> None:
         )
         assert newer.recovery_epoch == 3
 
-        decision = await store.supersede_orphaned_owner_frames(
+        decision = await store.supersede_orphaned_owner_frame(
             execution_id="exec-1",
+            step_execution_id="step-exec-1",
+            owner_kind=owner.kind,
+            capability_id=owner.capability_id,
             recovered_at=NOW + timedelta(seconds=7),
             required_claim=recovery,
         )

@@ -218,14 +218,16 @@ class WorkflowCheckpointWriterFence:
                 raise ValueError("writer fence does not match recovery claim")
 
     @classmethod
-    def live(cls, *, execution_id: str, writer_id: str) -> "WorkflowCheckpointWriterFence":
+    def live(
+        cls, *, execution_id: str, writer_id: str
+    ) -> WorkflowCheckpointWriterFence:
         return cls(execution_id=execution_id, writer_id=writer_id)
 
     @classmethod
     def from_recovery_claim(
         cls,
         claim: ExecutionRecoveryClaim,
-    ) -> "WorkflowCheckpointWriterFence":
+    ) -> WorkflowCheckpointWriterFence:
         return cls(
             execution_id=claim.execution_id,
             writer_id=claim.recovery_owner_id,
@@ -389,12 +391,16 @@ class InMemoryWorkflowRecoveryCheckpointStore(WorkflowRecoveryCheckpointStore):
             except Exception:  # noqa: BLE001
                 return WorkflowCheckpointCommitDecision(
                     status=WorkflowCheckpointCommitStatus.UNKNOWN,
-                    reason_codes=("WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCE_CHECK_EXCEPTION",),
+                    reason_codes=(
+                        "WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCE_CHECK_EXCEPTION",
+                    ),
                 )
             if current is not None:
                 return WorkflowCheckpointCommitDecision(
                     status=WorkflowCheckpointCommitStatus.CONFLICT,
-                    reason_codes=("WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCED_BY_RECOVERY",),
+                    reason_codes=(
+                        "WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCED_BY_RECOVERY",
+                    ),
                 )
             return None
 
@@ -629,12 +635,16 @@ class WorkflowWaitingCheckpointCoordinator:
             except Exception:  # noqa: BLE001
                 return WorkflowCheckpointCommitDecision(
                     status=WorkflowCheckpointCommitStatus.UNKNOWN,
-                    reason_codes=("WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCE_CHECK_EXCEPTION",),
+                    reason_codes=(
+                        "WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCE_CHECK_EXCEPTION",
+                    ),
                 )
             if current is not None:
                 return WorkflowCheckpointCommitDecision(
                     status=WorkflowCheckpointCommitStatus.CONFLICT,
-                    reason_codes=("WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCED_BY_RECOVERY",),
+                    reason_codes=(
+                        "WORKFLOW_CHECKPOINT_LIVE_WRITER_FENCED_BY_RECOVERY",
+                    ),
                 )
             return None
 

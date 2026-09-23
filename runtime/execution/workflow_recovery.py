@@ -219,7 +219,13 @@ class WorkflowCheckpointAdapter(Protocol):
         generation: int,
         requested_at: datetime,
     ) -> WorkflowCheckpointMaterial:
-        """Persist Domain/Workflow state and return opaque durable recovery material."""
+        """Persist Domain/Workflow state and return opaque durable recovery material.
+
+        Exact (checkpoint_id, generation, workflow instance/version) replay MUST be
+        idempotent across a crash after Domain persistence but before the Core CAS
+        commit. It must return the same durable material or fail closed; it must not
+        create a second independent Workflow continuation.
+        """
 
 
 class InMemoryWorkflowRecoveryCheckpointStore(WorkflowRecoveryCheckpointStore):
@@ -509,6 +515,28 @@ class WorkflowWaitingCheckpointCoordinator:
                 status=WorkflowCheckpointCommitStatus.UNKNOWN,
                 reason_codes=("WORKFLOW_STATE_PERSISTENCE_INVALID_RESULT",),
             )
+        try:
+            post_persist_epoch = await self._claim_authority.validate_current(
+                recovery_claim
+            )
+        except Exception:  # noqa: BLE001
+            return WorkflowCheckpointCommitDecision(
+                status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                reason_codes=("WORKFLOW_CHECKPOINT_POST_PERSIST_EPOCH_CHECK_EXCEPTION",),
+            )
+        if post_persist_epoch.status is not RecoveryEpochValidationStatus.CURRENT:
+            return WorkflowCheckpointCommitDecision(
+                status=(
+                    WorkflowCheckpointCommitStatus.CONFLICT
+                    if post_persist_epoch.status is RecoveryEpochValidationStatus.STALE
+                    else WorkflowCheckpointCommitStatus.UNKNOWN
+                ),
+                reason_codes=(
+                    "WORKFLOW_CHECKPOINT_STALE_AFTER_DOMAIN_PERSIST"
+                    if post_persist_epoch.status is RecoveryEpochValidationStatus.STALE
+                    else "WORKFLOW_CHECKPOINT_EPOCH_UNKNOWN_AFTER_DOMAIN_PERSIST"
+                ,),
+            )
 
         checkpoint = WorkflowRecoveryCheckpoint(
             execution_id=execution_id,
@@ -652,6 +680,18 @@ class WorkflowResumeCoordinator:
             event=event,
             inputs={},
         )
+        try:
+            admission_epoch = await self._claim_authority.validate_current(
+                recovery_claim
+            )
+        except Exception:  # noqa: BLE001
+            return self._unknown("WORKFLOW_RESUME_ADMISSION_EPOCH_CHECK_EXCEPTION")
+        if admission_epoch.status is not RecoveryEpochValidationStatus.CURRENT:
+            return self._unknown(
+                "WORKFLOW_RESUME_ADMISSION_STALE_RECOVERY_EPOCH"
+                if admission_epoch.status is RecoveryEpochValidationStatus.STALE
+                else "WORKFLOW_RESUME_ADMISSION_RECOVERY_EPOCH_UNKNOWN"
+            )
         try:
             result = await implementation.resume(
                 request,

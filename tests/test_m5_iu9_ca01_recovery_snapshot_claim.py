@@ -216,6 +216,7 @@ def test_snapshot_capture_deep_copies_recovery_safe_context() -> None:
         )
 
         prepared.execution_context.policy_snapshot["policy"]["version"] = "mutated"
+        assert prepared.execution_context.trace_context is not None
         prepared.execution_context.trace_context["trace_id"] = "mutated"
 
         assert snapshot.execution_context.policy_snapshot == {

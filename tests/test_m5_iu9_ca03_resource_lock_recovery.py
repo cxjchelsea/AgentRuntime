@@ -268,7 +268,9 @@ async def _takeover_and_orphan(
     return claim
 
 
-def test_session_lock_exact_execution_reattaches_after_restart_and_competitor_is_busy() -> None:
+def test_session_lock_exact_execution_reattaches_after_restart_and_competitor_is_busy() -> (
+    None
+):
     async def scenario() -> None:
         claims = InMemoryRecoveryClaimAuthority()
         first_claim = await _claim(
@@ -458,12 +460,8 @@ def test_crashed_orphan_without_probe_is_retained_even_after_long_time() -> None
             owner="worker-a",
             expected_epoch=0,
         )
-        resource_store = InMemoryDurableResourceRecoveryStore(
-            claim_authority=claims
-        )
-        evidence_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         handle, binding = await _setup_bound_tool(
             claims=claims,
             claim=first_claim,
@@ -506,12 +504,8 @@ def test_stopped_confirmed_probe_permits_exact_reclaim() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        resource_store = InMemoryDurableResourceRecoveryStore(
-            claim_authority=claims
-        )
-        evidence_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         handle, binding = await _setup_bound_tool(
             claims=claims,
             claim=first_claim,
@@ -561,12 +555,8 @@ def test_completed_durable_inflight_evidence_reclaims_without_probe() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        resource_store = InMemoryDurableResourceRecoveryStore(
-            claim_authority=claims
-        )
-        evidence_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         handle, binding = await _setup_bound_tool(
             claims=claims,
             claim=first_claim,
@@ -620,12 +610,8 @@ def test_running_confirmed_without_provider_fence_retains_lock() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        resource_store = InMemoryDurableResourceRecoveryStore(
-            claim_authority=claims
-        )
-        evidence_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         handle, binding = await _setup_bound_tool(
             claims=claims,
             claim=first_claim,
@@ -666,12 +652,8 @@ def test_provider_fence_allows_reclaim_of_running_old_operation() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        resource_store = InMemoryDurableResourceRecoveryStore(
-            claim_authority=claims
-        )
-        evidence_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         handle, _binding = await _setup_bound_tool(
             claims=claims,
             claim=first_claim,
@@ -720,12 +702,8 @@ def test_provider_fence_unsupported_does_not_authorize_reclaim() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        resource_store = InMemoryDurableResourceRecoveryStore(
-            claim_authority=claims
-        )
-        evidence_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         handle, binding = await _setup_bound_tool(
             claims=claims,
             claim=first_claim,
@@ -766,12 +744,8 @@ def test_not_found_with_proof_is_strong_provider_evidence() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        resource_store = InMemoryDurableResourceRecoveryStore(
-            claim_authority=claims
-        )
-        evidence_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         handle, _ = await _setup_bound_tool(
             claims=claims,
             claim=first_claim,
@@ -811,12 +785,8 @@ def test_stale_recovery_claim_cannot_reclaim_bound_tool_resources() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        resource_store = InMemoryDurableResourceRecoveryStore(
-            claim_authority=claims
-        )
-        evidence_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         handle, binding = await _setup_bound_tool(
             claims=claims,
             claim=first_claim,
@@ -862,12 +832,8 @@ def test_unbound_active_tool_lease_is_discoverable_and_retained() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        resource_store = InMemoryDurableResourceRecoveryStore(
-            claim_authority=claims
-        )
-        evidence_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         owner = _tool_owner()
         authority = DurableResourceLockAuthority(
             store=resource_store,
@@ -921,12 +887,8 @@ def test_reclaimed_lock_can_be_acquired_by_new_exact_acquisition() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        resource_store = InMemoryDurableResourceRecoveryStore(
-            claim_authority=claims
-        )
-        evidence_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         handle, binding = await _setup_bound_tool(
             claims=claims,
             claim=first_claim,

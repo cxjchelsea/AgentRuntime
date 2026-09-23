@@ -575,18 +575,40 @@ class StepReliabilityCoordinator:
         reliability_decision: StepReliabilityDecision,
         owner_policy: ResolvedReliabilityPolicy,
     ) -> RecoveredStepReliabilityRunResult:
-        normal = self._finish(
-            attempts=[observation],
-            observation=observation,
-            reliability_decision=reliability_decision,
-            owner_policy=owner_policy,
-        )
+        try:
+            finalization = self._runtime.step_finalization_evaluator.evaluate(
+                observation=observation,
+                reliability_decision=reliability_decision,
+            )
+        except Exception:  # noqa: BLE001
+            finalization = None
+        if not isinstance(finalization, StepFinalizationDecision) or not isinstance(
+            finalization.disposition,
+            StepFinalizationDisposition,
+        ):
+            finalization = StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.UNKNOWN,
+                reason_codes=("STEP_FINALIZATION_EVALUATOR_UNKNOWN",),
+            )
+        elif (
+            reliability_decision.disposition
+            in {
+                StepReliabilityDisposition.ABORT_UNKNOWN,
+                StepReliabilityDisposition.WAIT_RECOVERY,
+                StepReliabilityDisposition.KEEP_RUNNING,
+            }
+            and finalization.disposition is StepFinalizationDisposition.FINALIZE
+        ):
+            finalization = StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.UNKNOWN,
+                reason_codes=("STEP_FINALIZATION_AUTHORITY_INCONSISTENT",),
+            )
         return RecoveredStepReliabilityRunResult(
             prior_attempt_number=prior_attempt_number,
             attempts=tuple(attempts),
-            reliability_decision=normal.reliability_decision,
-            finalization_decision=normal.finalization_decision,
-            owner_policy_identity=normal.owner_policy_identity,
+            reliability_decision=reliability_decision,
+            finalization_decision=finalization,
+            owner_policy_identity=owner_policy.policy_identity,
         )
 
     def _resolve_owner_policy(

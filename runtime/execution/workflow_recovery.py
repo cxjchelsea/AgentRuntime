@@ -394,6 +394,11 @@ class WorkflowWaitingCheckpointCoordinator:
                 status=WorkflowCheckpointCommitStatus.UNKNOWN,
                 reason_codes=("WORKFLOW_CHECKPOINT_REQUIRES_WAITING_RESULT",),
             )
+        if expected_generation < 0:
+            return WorkflowCheckpointCommitDecision(
+                status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                reason_codes=("WORKFLOW_CHECKPOINT_EXPECTED_GENERATION_INVALID",),
+            )
         if recovery_claim.execution_id != execution_id:
             return WorkflowCheckpointCommitDecision(
                 status=WorkflowCheckpointCommitStatus.UNKNOWN,
@@ -418,6 +423,66 @@ class WorkflowWaitingCheckpointCoordinator:
                     if epoch.status is RecoveryEpochValidationStatus.STALE
                     else "WORKFLOW_CHECKPOINT_RECOVERY_EPOCH_UNKNOWN"
                 ,),
+            )
+
+        try:
+            preflight = await self._store.read_latest(
+                execution_id=execution_id,
+                step_execution_id=step_execution_id,
+            )
+        except Exception:  # noqa: BLE001
+            return WorkflowCheckpointCommitDecision(
+                status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                reason_codes=("WORKFLOW_CHECKPOINT_PREFLIGHT_READ_EXCEPTION",),
+            )
+        if preflight.status is WorkflowCheckpointReadStatus.UNKNOWN:
+            return WorkflowCheckpointCommitDecision(
+                status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                reason_codes=preflight.reason_codes,
+            )
+        if preflight.status is WorkflowCheckpointReadStatus.COMMITTED:
+            current = preflight.checkpoint
+            if current is None:
+                return WorkflowCheckpointCommitDecision(
+                    status=WorkflowCheckpointCommitStatus.UNKNOWN,
+                    reason_codes=("WORKFLOW_CHECKPOINT_PREFLIGHT_INVALID",),
+                )
+            if (
+                current.checkpoint_id == checkpoint_id
+                and current.generation == expected_generation + 1
+                and current.execution_id == execution_id
+                and current.step_id == step_id
+                and current.step_execution_id == step_execution_id
+                and current.workflow_instance_id == result.workflow_instance_id
+                and current.workflow_id == result.workflow_id
+                and current.workflow_version == workflow_version
+            ):
+                return WorkflowCheckpointCommitDecision(
+                    status=WorkflowCheckpointCommitStatus.ALREADY_COMMITTED,
+                    reason_codes=("WORKFLOW_CHECKPOINT_EXACT_REPLAY_PREFLIGHT",),
+                    checkpoint=current,
+                )
+            if current.generation != expected_generation:
+                return WorkflowCheckpointCommitDecision(
+                    status=WorkflowCheckpointCommitStatus.CONFLICT,
+                    reason_codes=("WORKFLOW_CHECKPOINT_GENERATION_CONFLICT",),
+                )
+            if (
+                current.execution_id != execution_id
+                or current.step_id != step_id
+                or current.step_execution_id != step_execution_id
+                or current.workflow_instance_id != result.workflow_instance_id
+                or current.workflow_id != result.workflow_id
+                or current.workflow_version != workflow_version
+            ):
+                return WorkflowCheckpointCommitDecision(
+                    status=WorkflowCheckpointCommitStatus.CONFLICT,
+                    reason_codes=("WORKFLOW_CHECKPOINT_PROVENANCE_DRIFT",),
+                )
+        elif expected_generation != 0:
+            return WorkflowCheckpointCommitDecision(
+                status=WorkflowCheckpointCommitStatus.CONFLICT,
+                reason_codes=("WORKFLOW_CHECKPOINT_BASE_GENERATION_MISSING",),
             )
 
         generation = expected_generation + 1
@@ -496,10 +561,16 @@ class WorkflowResumeDecision:
 
 
 class WorkflowResumeCoordinator:
-    """Resume the same exact Workflow instance and approved version from one checkpoint."""
+    """Resume the same exact Workflow instance and approved version from latest checkpoint."""
 
-    def __init__(self, *, claim_authority: RecoveryClaimAuthority) -> None:
+    def __init__(
+        self,
+        *,
+        claim_authority: RecoveryClaimAuthority,
+        checkpoint_store: WorkflowRecoveryCheckpointStore,
+    ) -> None:
         self._claim_authority = claim_authority
+        self._checkpoint_store = checkpoint_store
 
     async def resume(
         self,
@@ -527,6 +598,20 @@ class WorkflowResumeCoordinator:
             or resolved.step_id != checkpoint.step_id
         ):
             return self._unknown("WORKFLOW_RESUME_EXECUTION_PROVENANCE_MISMATCH")
+        try:
+            latest = await self._checkpoint_store.read_latest(
+                execution_id=checkpoint.execution_id,
+                step_execution_id=checkpoint.step_execution_id,
+            )
+        except Exception:  # noqa: BLE001
+            return self._unknown("WORKFLOW_RESUME_CHECKPOINT_READ_EXCEPTION")
+        if (
+            latest.status is not WorkflowCheckpointReadStatus.COMMITTED
+            or latest.checkpoint is None
+        ):
+            return self._unknown("WORKFLOW_RESUME_LATEST_CHECKPOINT_UNAVAILABLE")
+        if latest.checkpoint != checkpoint:
+            return self._unknown("WORKFLOW_RESUME_CHECKPOINT_IS_NOT_LATEST")
         if (
             resolved.execution_owner is not CapabilityExecutionOwner.WORKFLOW
             or resolved.workflow is None

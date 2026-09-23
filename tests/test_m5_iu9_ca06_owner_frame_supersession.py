@@ -630,3 +630,52 @@ def test_non_running_orphan_owner_is_not_silently_superseded() -> None:
         assert observation.state is InFlightEvidenceState.ORPHANED_UNCONFIRMED
 
     asyncio.run(scenario())
+
+
+def test_running_step_with_skill_and_workflow_owner_fails_closed() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        await _claim(
+            claims,
+            claim_id="claim-1",
+            owner="worker-old",
+            expected_epoch=0,
+            source_generation=0,
+            at=NOW,
+        )
+        recovery = await _claim(
+            claims,
+            claim_id="claim-2",
+            owner="worker-new",
+            expected_epoch=1,
+            source_generation=3,
+            at=NOW + timedelta(seconds=4),
+        )
+        step = StepLifecycleSnapshot(
+            step_execution_id="step-exec-1",
+            step_id="step-1",
+            action="act",
+            status=StepExecutionStatus.RUNNING,
+            skill_id="skill-1",
+            workflow_id="wf-1",
+            started_at=NOW + timedelta(seconds=1),
+        )
+        coordinator = RecoveryCoordinator(
+            claim_authority=claims,
+            snapshot_store=SnapshotStore(_snapshot(step)),
+            control_store=ControlStore(),
+            inflight_store=store,
+            resource_binding_store=ResourceStore(),
+            workflow_checkpoint_store=CheckpointStore(_checkpoint()),
+            workflow_version_authority=VersionAuthority(),
+            step_replay_evaluator=SafeReplay(),
+        )
+        decision = await coordinator.decide(
+            recovery_claim=recovery,
+            recovered_at=NOW + timedelta(seconds=6),
+        )
+        assert decision.disposition is RecoveryDisposition.UNKNOWN_BLOCKED
+        assert "RECOVERY_RUNNING_STEP_OWNER_AMBIGUOUS" in decision.reason_codes
+
+    asyncio.run(scenario())

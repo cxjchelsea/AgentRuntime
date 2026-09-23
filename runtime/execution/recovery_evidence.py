@@ -487,6 +487,7 @@ class InFlightEvidenceState(str, Enum):
     COMPLETED = "COMPLETED"
     CONFIRMED_STOPPED = "CONFIRMED_STOPPED"
     FENCED_OUT = "FENCED_OUT"
+    PROVEN_ABSENT = "PROVEN_ABSENT"
     ORPHANED_UNCONFIRMED = "ORPHANED_UNCONFIRMED"
     UNKNOWN = "UNKNOWN"
 
@@ -524,6 +525,7 @@ class DurableInFlightOperationObservation:
             InFlightEvidenceState.COMPLETED,
             InFlightEvidenceState.CONFIRMED_STOPPED,
             InFlightEvidenceState.FENCED_OUT,
+            InFlightEvidenceState.PROVEN_ABSENT,
         }
         if terminal != (self.terminal_at is not None):
             raise ValueError(
@@ -537,6 +539,14 @@ class DurableInFlightOperationObservation:
             is not InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED
         ):
             raise ValueError("FENCED_OUT requires provider-fence reconciliation basis")
+        if (
+            self.state is InFlightEvidenceState.PROVEN_ABSENT
+            and self.reconciliation_basis
+            is not InFlightReconciliationBasis.OPERATION_NOT_FOUND_WITH_PROOF
+        ):
+            raise ValueError(
+                "PROVEN_ABSENT requires not-found-with-proof reconciliation basis"
+            )
         if self.reconciliation_basis is not None:
             if (
                 self.state is InFlightEvidenceState.COMPLETED
@@ -584,7 +594,7 @@ class InFlightTerminalReconciliation:
                 InFlightEvidenceState.CONFIRMED_STOPPED
             ),
             InFlightReconciliationBasis.OPERATION_NOT_FOUND_WITH_PROOF: (
-                InFlightEvidenceState.CONFIRMED_STOPPED
+                InFlightEvidenceState.PROVEN_ABSENT
             ),
             InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED: (
                 InFlightEvidenceState.FENCED_OUT

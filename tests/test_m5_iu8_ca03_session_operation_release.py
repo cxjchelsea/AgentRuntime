@@ -106,16 +106,14 @@ def _session_coordinator(
 
 def _tool_owner(
     *,
+    owner_id: str = "tool-handle-001",
     execution_id: str = "execution-001",
     step_execution_id: str = "step-exec-001",
     tool_call_id: str = "tool-call-001",
     physical_attempt: int = 1,
 ) -> ResourceLockOwner:
     return ResourceLockOwner(
-        owner_id=(
-            f"{execution_id}:{step_execution_id}:{tool_call_id}:"
-            f"attempt-{physical_attempt}"
-        ),
+        owner_id=owner_id,
         execution_id=execution_id,
         step_execution_id=step_execution_id,
         tool_call_id=tool_call_id,
@@ -410,6 +408,24 @@ def test_forged_session_lease_identity_cannot_release_resource() -> None:
     assert decision.status is SessionExecutionReleaseStatus.UNKNOWN
     assert decision.reason_codes == ("SESSION_LEASE_LOCK_KEY_MISMATCH",)
     assert authority.active_lease(acquired.session_lease.lease.lock_key) is not None
+
+
+def test_operation_binding_requires_owner_id_equal_operation_handle() -> None:
+    owner = _tool_owner(owner_id="different-operation-handle")
+    handle = _tool_handle()
+    lease = ResourceLockLease(
+        lock_key="resource-001",
+        owner=owner,
+        acquisition_id="acq-001",
+        acquired_at=NOW + timedelta(seconds=2),
+    )
+
+    with pytest.raises(ValueError, match="operation_handle_id"):
+        OperationResourceLeaseBinding(
+            handle=handle,
+            owner=owner,
+            leases=(lease,),
+        )
 
 
 def test_operation_binding_requires_exact_tool_provenance() -> None:

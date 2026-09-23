@@ -21,6 +21,7 @@ from runtime.execution.resource_lock import (
 )
 from runtime.execution.resource_lock_set import (
     ResolvedResourceLock,
+    ResourceLockProjectionDecision,
     ResourceLockProjectionStatus,
     ResourceLockRequirement,
     ResourceLockResolutionDecision,
@@ -601,8 +602,6 @@ def test_projection_contract_rejects_partial_unknown_payload() -> None:
     resolved = _resolved("a-lock", resource_ref="speaker")
 
     with pytest.raises(ValueError, match="must not expose partial"):
-        from runtime.execution.resource_lock_set import ResourceLockProjectionDecision
-
         ResourceLockProjectionDecision(
             status=ResourceLockProjectionStatus.UNKNOWN,
             reason_codes=("RESOURCE_UNKNOWN",),

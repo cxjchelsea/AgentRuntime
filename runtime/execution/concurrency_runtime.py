@@ -277,6 +277,12 @@ class ToolConcurrencyRuntime:
         logical_tool_call_id: str,
         physical_attempt: int,
     ) -> ToolConcurrencyAdmissionDecision:
+        if (
+            tool_definition.tool_id != tool_id
+            or tool_definition.version != tool_version
+        ):
+            return self._unknown("TOOL_CONCURRENCY_DEFINITION_IDENTITY_MISMATCH")
+
         try:
             handle_id = self._inflight_identifier_factory.new_tool_handle_id(
                 execution_id=execution_context.execution_id,

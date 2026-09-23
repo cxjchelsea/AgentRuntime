@@ -1258,6 +1258,70 @@ def test_inflight_store_exception_retains_known_binding_leases() -> None:
     asyncio.run(scenario())
 
 
+def test_partial_reclaim_can_finish_on_later_recovery_without_releasing_twice() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        first_claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        resource_store = FailingReleaseResourceStore(
+            claim_authority=claims,
+            fail_acquisition_id="acq:tool-handle-001:1",
+        )
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        handle, binding = await _setup_bound_tool(
+            claims=claims,
+            claim=first_claim,
+            resource_store=resource_store,
+            evidence_store=evidence_store,
+            lock_keys=("resource:A", "resource:B"),
+        )
+        recovery_claim = await _takeover_and_orphan(
+            claims=claims,
+            evidence_store=evidence_store,
+        )
+        coordinator = ToolResourceRecoveryCoordinator(
+            claim_authority=claims,
+            lock_store=resource_store,
+            binding_store=resource_store,
+            inflight_store=evidence_store,
+            operation_probe=StaticProbe(OperationRecoveryStatus.STOPPED_CONFIRMED),
+        )
+        first = await coordinator.recover(
+            operation_handle_id=handle.operation_handle_id,
+            recovery_claim=recovery_claim,
+            recovered_at=NOW + timedelta(seconds=9),
+        )
+        assert first.status is ResourceRecoveryStatus.UNKNOWN
+        assert first.released_leases == (binding.leases[1],)
+        assert first.retained_leases == (binding.leases[0],)
+
+        resource_store._fail_acquisition_id = "never-match"
+        second = await coordinator.recover(
+            operation_handle_id=handle.operation_handle_id,
+            recovery_claim=recovery_claim,
+            recovered_at=NOW + timedelta(seconds=10),
+        )
+
+        assert second.status is ResourceRecoveryStatus.RECLAIMED
+        assert second.released_leases == binding.leases
+        first_lock = await resource_store.read_by_acquisition(
+            binding.leases[0].acquisition_id
+        )
+        second_lock = await resource_store.read_by_acquisition(
+            binding.leases[1].acquisition_id
+        )
+        assert first_lock.status is DurableResourceLockReadStatus.RELEASED
+        assert second_lock.status is DurableResourceLockReadStatus.RELEASED
+        binding_read = await resource_store.read(handle.operation_handle_id)
+        assert binding_read.status is DurableOperationResourceBindingReadStatus.RELEASED
+
+    asyncio.run(scenario())
+
+
 def test_single_lock_release_exception_is_typed_partial_reclaim_unknown() -> None:
     async def scenario() -> None:
         claims = InMemoryRecoveryClaimAuthority()
@@ -1315,4 +1379,3 @@ def test_single_lock_release_exception_is_typed_partial_reclaim_unknown() -> Non
         assert binding_read.status is DurableOperationResourceBindingReadStatus.ACTIVE
 
     asyncio.run(scenario())
-

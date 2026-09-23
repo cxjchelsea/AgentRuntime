@@ -22,7 +22,10 @@ from runtime.execution.recovery_evidence import (
     InMemoryDurableRecoveryEvidenceStore,
 )
 from runtime.execution.recovery_resource_lock import (
+    DurableOperationResourceBindingReadDecision,
     DurableOperationResourceBindingReadStatus,
+    DurableOperationResourceBindingRecord,
+    DurableOperationResourceBindingState,
     DurableOperationResourceLeaseRegistry,
     DurableResourceLockAuthority,
     DurableResourceLockReadStatus,
@@ -161,6 +164,31 @@ class FailingReleaseResourceStore(InMemoryDurableResourceRecoveryStore):
             released_at=released_at,
             required_claim=required_claim,
         )
+
+
+class ReleasedBindingActiveLeaseStore(InMemoryDurableResourceRecoveryStore):
+    async def read(self, operation_handle_id: str):
+        decision = await super().read(operation_handle_id)
+        if (
+            decision.status is DurableOperationResourceBindingReadStatus.ACTIVE
+            and decision.record is not None
+        ):
+            record = decision.record
+            return DurableOperationResourceBindingReadDecision(
+                status=DurableOperationResourceBindingReadStatus.RELEASED,
+                reason_codes=("SIMULATED_RELEASED_BINDING_WITH_ACTIVE_LEASE",),
+                record=DurableOperationResourceBindingRecord(
+                    binding=record.binding,
+                    state=DurableOperationResourceBindingState.RELEASED,
+                    revision=record.revision + 1,
+                    updated_at=NOW + timedelta(seconds=7),
+                    writer_recovery_epoch=record.writer_recovery_epoch,
+                    released_at=NOW + timedelta(seconds=7),
+                    release_basis="SIMULATED_INCONSISTENT_TOMBSTONE",
+                    provider_fence=record.provider_fence,
+                ),
+            )
+        return decision
 
 
 class StaticProbe:
@@ -819,6 +847,95 @@ def test_not_found_with_proof_is_strong_provider_evidence() -> None:
     asyncio.run(scenario())
 
 
+def test_released_binding_tombstone_cannot_hide_active_durable_lease() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        first_claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        resource_store = ReleasedBindingActiveLeaseStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        handle, binding = await _setup_bound_tool(
+            claims=claims,
+            claim=first_claim,
+            resource_store=resource_store,
+            evidence_store=evidence_store,
+        )
+        recovery_claim = await _takeover_and_orphan(
+            claims=claims,
+            evidence_store=evidence_store,
+        )
+        coordinator = ToolResourceRecoveryCoordinator(
+            claim_authority=claims,
+            lock_store=resource_store,
+            binding_store=resource_store,
+            inflight_store=evidence_store,
+        )
+
+        decision = await coordinator.recover(
+            operation_handle_id=handle.operation_handle_id,
+            recovery_claim=recovery_claim,
+            recovered_at=NOW + timedelta(seconds=9),
+        )
+
+        assert decision.status is ResourceRecoveryStatus.UNKNOWN
+        assert decision.reason_codes == ("RESOURCE_RELEASED_BINDING_HAS_ACTIVE_LEASE",)
+        assert decision.retained_leases == binding.leases
+        for lease in binding.leases:
+            read = await resource_store.read_by_acquisition(lease.acquisition_id)
+            assert read.status is DurableResourceLockReadStatus.ACTIVE
+
+    asyncio.run(scenario())
+
+
+def test_future_probe_observation_cannot_authorize_reclaim() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        first_claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        handle, binding = await _setup_bound_tool(
+            claims=claims,
+            claim=first_claim,
+            resource_store=resource_store,
+            evidence_store=evidence_store,
+        )
+        recovery_claim = await _takeover_and_orphan(
+            claims=claims,
+            evidence_store=evidence_store,
+        )
+        coordinator = ToolResourceRecoveryCoordinator(
+            claim_authority=claims,
+            lock_store=resource_store,
+            binding_store=resource_store,
+            inflight_store=evidence_store,
+            operation_probe=StaticProbe(
+                OperationRecoveryStatus.STOPPED_CONFIRMED,
+                observed_at=NOW + timedelta(seconds=10),
+            ),
+        )
+
+        decision = await coordinator.recover(
+            operation_handle_id=handle.operation_handle_id,
+            recovery_claim=recovery_claim,
+            recovered_at=NOW + timedelta(seconds=9),
+        )
+
+        assert decision.status is ResourceRecoveryStatus.RETAINED
+        assert decision.reason_codes == ("OPERATION_RECOVERY_OBSERVATION_TIME_INVALID",)
+        assert decision.retained_leases == binding.leases
+
+    asyncio.run(scenario())
+
+
 def test_stale_recovery_claim_cannot_reclaim_bound_tool_resources() -> None:
     async def scenario() -> None:
         claims = InMemoryRecoveryClaimAuthority()
@@ -1135,9 +1252,7 @@ def test_inflight_store_exception_retains_known_binding_leases() -> None:
         )
 
         assert decision.status is ResourceRecoveryStatus.RETAINED
-        assert decision.reason_codes == (
-            "RESOURCE_RECOVERY_INFLIGHT_READ_EXCEPTION",
-        )
+        assert decision.reason_codes == ("RESOURCE_RECOVERY_INFLIGHT_READ_EXCEPTION",)
         assert decision.retained_leases == binding.leases
 
     asyncio.run(scenario())

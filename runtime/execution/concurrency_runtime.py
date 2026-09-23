@@ -180,7 +180,7 @@ class ExecutionConcurrencyRuntime:
     def _now(self) -> datetime:
         value = self._clock()
         if not isinstance(value, datetime):
-            raise ValueError("concurrency clock returned invalid time")
+            raise TypeError("concurrency clock returned invalid time")
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("concurrency clock must return timezone-aware time")
         return value
@@ -255,9 +255,7 @@ class ToolConcurrencyRuntime:
         self._inflight_registry = inflight_registry
         self._inflight_identifier_factory = inflight_identifier_factory
         self._clock = clock or (lambda: datetime.now(UTC))
-        self._interrupt_cleanup: dict[
-            str, ToolConcurrencyCompletionDecision
-        ] = {}
+        self._interrupt_cleanup: dict[str, ToolConcurrencyCompletionDecision] = {}
 
     @property
     def inflight_registry(self) -> InFlightOperationRegistry:
@@ -537,7 +535,7 @@ class ToolConcurrencyRuntime:
     def _now(self) -> datetime:
         value = self._clock()
         if not isinstance(value, datetime):
-            raise ValueError("concurrency clock returned invalid time")
+            raise TypeError("concurrency clock returned invalid time")
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("concurrency clock must return timezone-aware time")
         return value

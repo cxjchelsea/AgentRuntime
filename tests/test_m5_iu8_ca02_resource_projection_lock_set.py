@@ -630,9 +630,7 @@ def test_replayed_lease_is_retained_not_rolled_back_on_later_failure() -> None:
 def test_empty_lock_set_is_safe_noop() -> None:
     authority = _RecordingAuthority()
 
-    decision = asyncio.run(
-        _coordinator(authority).acquire(_set_request())
-    )
+    decision = asyncio.run(_coordinator(authority).acquire(_set_request()))
 
     assert decision.status is ResourceLockSetStatus.ACQUIRED
     assert decision.leases == ()
@@ -670,9 +668,7 @@ def test_successful_acquire_decision_with_wrong_lease_identity_fails_closed() ->
             )
 
     decision = asyncio.run(
-        _coordinator(WrongLeaseAuthority()).acquire(
-            _set_request(_resolved("a-lock"))
-        )
+        _coordinator(WrongLeaseAuthority()).acquire(_set_request(_resolved("a-lock")))
     )
 
     assert decision.status is ResourceLockSetStatus.UNKNOWN

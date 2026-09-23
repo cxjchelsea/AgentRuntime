@@ -532,7 +532,9 @@ class DurableInFlightOperationObservation:
                 "terminal in-flight evidence requires terminal_at; nonterminal states forbid it"
             )
         if not terminal and self.reconciliation_basis is not None:
-            raise ValueError("nonterminal in-flight evidence cannot carry reconciliation_basis")
+            raise ValueError(
+                "nonterminal in-flight evidence cannot carry reconciliation_basis"
+            )
         if (
             self.state is InFlightEvidenceState.FENCED_OUT
             and self.reconciliation_basis
@@ -568,7 +570,9 @@ class DurableInFlightOperationObservation:
                 and self.reconciliation_basis
                 is not InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED
             ):
-                raise ValueError("FENCED_OUT requires provider-fence reconciliation basis")
+                raise ValueError(
+                    "FENCED_OUT requires provider-fence reconciliation basis"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -585,7 +589,9 @@ class InFlightTerminalReconciliation:
             raise TypeError("basis must be InFlightReconciliationBasis")
         _require_aware(self.observed_at, "observed_at")
         if self.observed_at < self.handle.started_at:
-            raise ValueError("reconciliation observed_at cannot precede operation start")
+            raise ValueError(
+                "reconciliation observed_at cannot precede operation start"
+            )
         allowed = {
             InFlightReconciliationBasis.OPERATION_COMPLETED_CONFIRMED: (
                 InFlightEvidenceState.COMPLETED
@@ -1372,9 +1378,7 @@ class InMemoryDurableRecoveryEvidenceStore(
             if fenced is not None:
                 return fenced
 
-            existing = self._inflight.get(
-                reconciliation.handle.operation_handle_id
-            )
+            existing = self._inflight.get(reconciliation.handle.operation_handle_id)
             if existing is None:
                 return DurableEvidenceMutationDecision(
                     status=DurableEvidenceMutationStatus.UNKNOWN,

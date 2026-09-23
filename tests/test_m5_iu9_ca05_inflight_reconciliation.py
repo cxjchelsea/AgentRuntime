@@ -155,7 +155,9 @@ async def _register_and_orphan(
         required_claim=recovery,
     )
     assert transition.observations
-    assert transition.observations[0].state is InFlightEvidenceState.ORPHANED_UNCONFIRMED
+    assert (
+        transition.observations[0].state is InFlightEvidenceState.ORPHANED_UNCONFIRMED
+    )
     return first, recovery
 
 

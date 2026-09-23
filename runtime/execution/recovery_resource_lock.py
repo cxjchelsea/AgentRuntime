@@ -933,14 +933,10 @@ class ToolResourceRecoveryCoordinator:
                 )
             except Exception:  # noqa: BLE001
                 committed = None
-            if (
-                committed is None
-                or committed.status
-                not in {
-                    DurableEvidenceMutationStatus.RECORDED,
-                    DurableEvidenceMutationStatus.ALREADY_CURRENT,
-                }
-            ):
+            if committed is None or committed.status not in {
+                DurableEvidenceMutationStatus.RECORDED,
+                DurableEvidenceMutationStatus.ALREADY_CURRENT,
+            }:
                 return self._retained(
                     binding=binding,
                     operation_handle_id=operation_handle_id,
@@ -1183,14 +1179,10 @@ class ToolResourceRecoveryCoordinator:
             )
         except Exception:  # noqa: BLE001
             committed = None
-        if (
-            committed is None
-            or committed.status
-            not in {
-                DurableEvidenceMutationStatus.RECORDED,
-                DurableEvidenceMutationStatus.ALREADY_CURRENT,
-            }
-        ):
+        if committed is None or committed.status not in {
+            DurableEvidenceMutationStatus.RECORDED,
+            DurableEvidenceMutationStatus.ALREADY_CURRENT,
+        }:
             return ResourceRecoveryDecision(
                 status=ResourceRecoveryStatus.UNKNOWN,
                 reason_codes=("UNBOUND_OPERATION_TERMINAL_COMMIT_FAILED",),

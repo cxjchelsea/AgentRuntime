@@ -27,7 +27,33 @@ from runtime.execution.recovery import (
     RecoverySideEffectAdmissionDecision,
     RecoverySideEffectAdmissionStatus,
 )
+from runtime.execution.recovery_evidence import (
+    DurableStepAttemptSequenceAuthority,
+    InMemoryDurableRecoveryEvidenceStore,
+)
 from runtime.execution.recovery_runtime import ApprovedPlanWorkflowVersionAuthority
+from runtime.execution.reliability import (
+    IdempotencyMode,
+    ReliabilityCapabilityKind,
+    ReplaySafetyDecision,
+    ReplaySafetyStatus,
+    ResolvedIdempotencyPolicy,
+    ResolvedReliabilityPolicy,
+    ResolvedRetryPolicy,
+    ResolvedTimeoutPolicy,
+    RetryDecision,
+    RetryDecisionStatus,
+    SideEffectClass,
+)
+from runtime.execution.reliability_boundary import (
+    StepFinalizationDecision,
+    StepFinalizationDisposition,
+    StepReliabilityDecision,
+    StepReliabilityDisposition,
+)
+from runtime.execution.reliability_coordinator import StepReliabilityCoordinator
+from runtime.execution.reliability_runtime import StepReliabilityRuntime
+from runtime.execution.result_collection import StepResultCollector
 from runtime.execution.recovery_workflow import (
     WorkflowResumeRequest,
 )
@@ -357,3 +383,143 @@ def test_approved_workflow_version_authority_reads_frozen_plan_not_checkpoint_cl
     )
 
     assert expected == "4.5.6"
+
+
+
+class StaticClock:
+    def now(self) -> datetime:
+        return NOW + timedelta(seconds=10)
+
+
+class NoopTimeoutRunner:
+    async def run(self, **kwargs: Any) -> Any:
+        raise AssertionError("timeout runner must not be used when timeout is disabled")
+
+
+class NoopSleeper:
+    async def sleep(self, seconds: float) -> None:
+        del seconds
+
+
+class SkillPolicyResolver:
+    def resolve(self, **kwargs: Any) -> ResolvedReliabilityPolicy:
+        return ResolvedReliabilityPolicy(
+            capability_kind=ReliabilityCapabilityKind.SKILL,
+            capability_id="DOMAIN_SKILL",
+            capability_version="3.2.1",
+            policy_identity="skill-policy@formal-recovery",
+            timeout=ResolvedTimeoutPolicy(timeout_seconds=None),
+            retry=ResolvedRetryPolicy(
+                enabled=True,
+                max_attempts=3,
+                retry_on_statuses=(),
+                backoff_seconds=0.0,
+            ),
+            idempotency=ResolvedIdempotencyPolicy(mode=IdempotencyMode.NATURAL),
+            side_effect_class=SideEffectClass.NONE,
+        )
+
+
+class UnusedReplayEvaluator:
+    async def evaluate(self, request: Any) -> ReplaySafetyDecision:
+        del request
+        return ReplaySafetyDecision(
+            status=ReplaySafetyStatus.SAFE,
+            reason_codes=("SAFE",),
+        )
+
+
+class UnusedRetryEvaluator:
+    def evaluate(self, **kwargs: Any) -> RetryDecision:
+        return RetryDecision(
+            status=RetryDecisionStatus.STOP,
+            reason_codes=("NO_FURTHER_RETRY",),
+        )
+
+
+class SimpleStepReliabilityEvaluator:
+    def evaluate(self, **kwargs: Any) -> StepReliabilityDecision:
+        observation = kwargs["observation"]
+        assert observation.status.value == "SUCCESS"
+        return StepReliabilityDecision(
+            disposition=StepReliabilityDisposition.FINALIZE,
+            reason_codes=("RECOVERED_ATTEMPT_SUCCESS",),
+        )
+
+
+class SimpleStepFinalizationEvaluator:
+    def evaluate(self, **kwargs: Any) -> StepFinalizationDecision:
+        return StepFinalizationDecision(
+            disposition=StepFinalizationDisposition.FINALIZE,
+            reason_codes=("FINALIZE_RECOVERED_SUCCESS",),
+            terminal_status=kwargs["observation"].status.to_step_status()
+            if hasattr(kwargs["observation"].status, "to_step_status")
+            else __import__(
+                "runtime.execution.models",
+                fromlist=["StepExecutionStatus"],
+            ).StepExecutionStatus.SUCCESS,
+        )
+
+
+def test_recovered_skill_retry_claims_next_attempt_through_iu6_authority() -> None:
+    async def scenario() -> None:
+        authority = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(
+            authority,
+            claim_id="claim-1",
+            owner="worker-a",
+            expected_epoch=0,
+            at=NOW,
+        )
+        evidence = InMemoryDurableRecoveryEvidenceStore(claim_authority=authority)
+        sequence = DurableStepAttemptSequenceAuthority(
+            store=evidence,
+            execution_id="execution-iu4",
+            recovery_claim=claim,
+            clock=lambda: NOW + timedelta(seconds=2),
+        )
+        baseline = await sequence.ensure_baseline(
+            step_execution_id="step-execution-001"
+        )
+        assert baseline.status.value in {"RECORDED", "ALREADY_CURRENT"}
+
+        plan, step = _approved_step(owner=CapabilityExecutionOwner.SKILL)
+        skill = RecordingSkill()
+        runtime = StepReliabilityRuntime(
+            policy_resolver=SkillPolicyResolver(),
+            clock=StaticClock(),
+            timeout_runner=NoopTimeoutRunner(),
+            retry_decision_evaluator=UnusedRetryEvaluator(),
+            retry_sleeper=NoopSleeper(),
+            replay_safety_evaluator=UnusedReplayEvaluator(),
+            attempt_sequence_authority=sequence,
+            step_reliability_evaluator=SimpleStepReliabilityEvaluator(),
+            step_finalization_evaluator=SimpleStepFinalizationEvaluator(),
+        )
+        coordinator = StepReliabilityCoordinator(
+            step_executor=_executor(),
+            result_collector=StepResultCollector(),
+            runtime=runtime,
+        )
+        guard = CurrentRecoveryEpochSideEffectAdmissionGuard(
+            claim_authority=authority,
+            recovery_claim=claim,
+        )
+
+        result = await coordinator.run_recovered_retry(
+            approved_plan=plan,
+            step=step,
+            step_snapshot=_snapshot(step),
+            resolved=_skill_resolved(skill),
+            execution_context=_context(),
+            expected_current_attempt=1,
+            prior_attempt_journal=(),
+            side_effect_admission_guard=guard,
+        )
+
+        assert skill.calls == 1
+        assert result.prior_attempt_number == 1
+        assert result.attempts[0].attempt_number == 2
+        assert await sequence.current_attempt("step-execution-001") == 2
+
+    asyncio.run(scenario())

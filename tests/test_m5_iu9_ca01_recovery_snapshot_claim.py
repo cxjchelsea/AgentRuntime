@@ -147,7 +147,7 @@ def _claim_and_snapshot_runtime():
 
 def test_recovery_safe_context_never_persists_raw_tool_context() -> None:
     async def scenario() -> None:
-        store, authority, claim_coordinator, snapshot_coordinator = (
+        store, _authority, claim_coordinator, snapshot_coordinator = (
             _claim_and_snapshot_runtime()
         )
         claim_decision = await claim_coordinator.claim(

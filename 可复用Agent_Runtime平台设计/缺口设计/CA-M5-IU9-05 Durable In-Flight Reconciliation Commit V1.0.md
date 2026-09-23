@@ -38,7 +38,7 @@ OPERATION_STOPPED_CONFIRMED
 -> CONFIRMED_STOPPED
 
 OPERATION_NOT_FOUND_WITH_PROOF
--> CONFIRMED_STOPPED
+-> PROVEN_ABSENT
 
 PROVIDER_FENCE_ESTABLISHED
 -> FENCED_OUT
@@ -112,6 +112,8 @@ or
 -> CONFIRMED_STOPPED
 or
 -> FENCED_OUT
+or
+-> PROVEN_ABSENT
 ~~~
 
 禁止：
@@ -180,7 +182,7 @@ STOPPED_CONFIRMED
 -> durable CONFIRMED_STOPPED
 
 NOT_FOUND_WITH_PROOF
--> durable CONFIRMED_STOPPED
+-> durable PROVEN_ABSENT
 
 RUNNING_CONFIRMED
 -> no terminal mutation
@@ -246,6 +248,7 @@ UNKNOWN
 COMPLETED
 CONFIRMED_STOPPED
 FENCED_OUT
+PROVEN_ABSENT
 ~~~
 
 因此成功 reconciliation 后，CA-04 不再因同一个 operation 永久 WAIT。
@@ -275,6 +278,7 @@ exact reconciliation replay idempotency
 stale recovery epoch cannot terminalize orphan
 STOPPED_CONFIRMED -> durable CONFIRMED_STOPPED + resource reclaim
 provider fence -> FENCED_OUT, not false CONFIRMED_STOPPED
+NOT_FOUND_WITH_PROOF -> PROVEN_ABSENT, not false CONFIRMED_STOPPED
 unbound/no-lock orphan + strong probe -> durable terminal convergence
 RUNNING_CONFIRMED does not upgrade orphan
 ~~~

@@ -49,6 +49,7 @@ from runtime.execution import (
     ResourceLockResolutionDecision,
     ResourceLockResolutionStatus,
     ResourceLockSetCoordinator,
+    RetryTriggerStatus,
     SessionExecutionLockCoordinator,
     SessionExecutionReleaseStatus,
     Sha256ResourceLockAcquisitionIdentifierFactory,
@@ -260,6 +261,7 @@ class RetryOnceEvaluator:
                 status=RetryDecisionStatus.RETRY,
                 reason_codes=("RETRY_SECOND_ATTEMPT",),
                 next_attempt=2,
+                backoff_seconds=0.0,
             )
         return RetryDecision(
             status=RetryDecisionStatus.STOP,

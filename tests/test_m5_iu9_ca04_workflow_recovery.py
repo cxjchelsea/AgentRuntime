@@ -90,6 +90,22 @@ def _snapshot(*, status: StepExecutionStatus = StepExecutionStatus.RUNNING) -> E
         identity_scope="user-1",
         status="RUNNING",
         current_step="step-1" if status is StepExecutionStatus.RUNNING else None,
+        step_results=(
+            {
+                "step_execution_id": step.step_execution_id,
+                "step_id": step.step_id,
+                "action": step.action,
+                "status": step.status.value,
+                "skill_id": step.skill_id,
+                "workflow_id": step.workflow_id,
+                "tool_call_ids": list(step.tool_call_ids),
+                "output": step.output,
+                "error": step.error,
+                "retry_count": step.retry_count,
+                "started_at": step.started_at,
+                "finished_at": step.finished_at,
+            },
+        ),
         created_at=NOW - timedelta(seconds=20),
         updated_at=NOW - timedelta(seconds=5),
     )
@@ -302,10 +318,10 @@ def test_resume_uses_same_instance_exact_version_and_checkpoint_material() -> No
             workflow_id="wf-1",
             workflow_version="7",
             checkpoint_id="wf-checkpoint-1",
-            generation=3,
+            generation=1,
             material=WorkflowCheckpointMaterial(
-                state_reference="state://wf-1/g3",
-                resume_token="token-g3",
+                state_reference="state://wf-1/g1",
+                resume_token="token-g1",
                 state_schema_version="domain-state-v3",
             ),
             committed_at=NOW,
@@ -334,9 +350,9 @@ def test_resume_uses_same_instance_exact_version_and_checkpoint_material() -> No
         assert decision.result is not None
         assert implementation.last_request.workflow_instance_id == "wf-instance-1"
         assert implementation.last_request.workflow_version == "7"
-        assert implementation.last_request.checkpoint_generation == 3
-        assert implementation.last_request.state_reference == "state://wf-1/g3"
-        assert implementation.last_request.resume_token == "token-g3"
+        assert implementation.last_request.checkpoint_generation == 1
+        assert implementation.last_request.state_reference == "state://wf-1/g1"
+        assert implementation.last_request.resume_token == "token-g1"
 
     asyncio.run(scenario())
 

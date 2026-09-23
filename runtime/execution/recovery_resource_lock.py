@@ -32,8 +32,11 @@ from runtime.execution.recovery import (
     RecoveryEpochValidationStatus,
 )
 from runtime.execution.recovery_evidence import (
+    DurableEvidenceMutationStatus,
     DurableInFlightEvidenceStore,
     InFlightEvidenceState,
+    InFlightReconciliationBasis,
+    InFlightTerminalReconciliation,
 )
 from runtime.execution.resource_lock import (
     ResourceLockAcquireDecision,
@@ -674,6 +677,18 @@ class ToolResourceRecoveryCoordinator:
                     operation_handle_id=operation_handle_id,
                     retained_leases=tuple(active_leases),
                 )
+            reconciled = await self._reconcile_released_binding(
+                record=record,
+                recovery_claim=recovery_claim,
+            )
+            if not reconciled:
+                return ResourceRecoveryDecision(
+                    status=ResourceRecoveryStatus.UNKNOWN,
+                    reason_codes=(
+                        "RELEASED_RESOURCE_BINDING_INFLIGHT_RECONCILIATION_UNKNOWN",
+                    ),
+                    operation_handle_id=operation_handle_id,
+                )
             return ResourceRecoveryDecision(
                 status=ResourceRecoveryStatus.ALREADY_RECLAIMED,
                 reason_codes=("RESOURCE_BINDING_ALREADY_RELEASED",),
@@ -697,10 +712,10 @@ class ToolResourceRecoveryCoordinator:
                     operation_handle_id=operation_handle_id,
                     retained_leases=tuple(item.lease for item in active),
                 )
-            return ResourceRecoveryDecision(
-                status=ResourceRecoveryStatus.NO_RESOURCE_LOCKS,
-                reason_codes=("NO_OPERATION_RESOURCE_BINDING_OR_ACTIVE_LEASE",),
+            return await self._reconcile_without_binding(
                 operation_handle_id=operation_handle_id,
+                recovery_claim=recovery_claim,
+                recovered_at=recovered_at,
             )
 
         record = binding_read.record
@@ -775,6 +790,8 @@ class ToolResourceRecoveryCoordinator:
             strong_basis = "DURABLE_INFLIGHT_COMPLETED"
         elif observation.state is InFlightEvidenceState.CONFIRMED_STOPPED:
             strong_basis = "DURABLE_INFLIGHT_CONFIRMED_STOPPED"
+        elif observation.state is InFlightEvidenceState.PROVEN_ABSENT:
+            strong_basis = "DURABLE_INFLIGHT_NOT_FOUND_WITH_PROOF"
         elif provider_fence is not None:
             if (
                 provider_fence.operation_handle_id != operation_handle_id
@@ -896,6 +913,37 @@ class ToolResourceRecoveryCoordinator:
                 operation_recovery=operation_recovery,
             )
 
+        if observation.state is InFlightEvidenceState.ORPHANED_UNCONFIRMED:
+            reconciliation = self._terminal_reconciliation(
+                handle=handle,
+                operation_recovery=operation_recovery,
+                provider_fence=provider_fence,
+            )
+            if reconciliation is None:
+                return self._retained(
+                    binding=binding,
+                    operation_handle_id=operation_handle_id,
+                    reason="RECOVERY_TERMINAL_EVIDENCE_NOT_COMMITTABLE",
+                    operation_recovery=operation_recovery,
+                )
+            try:
+                committed = await self._inflight_store.commit_terminal_reconciliation(
+                    reconciliation=reconciliation,
+                    required_claim=recovery_claim,
+                )
+            except Exception:  # noqa: BLE001
+                committed = None
+            if committed is None or committed.status not in {
+                DurableEvidenceMutationStatus.RECORDED,
+                DurableEvidenceMutationStatus.ALREADY_CURRENT,
+            }:
+                return self._retained(
+                    binding=binding,
+                    operation_handle_id=operation_handle_id,
+                    reason="RECOVERY_TERMINAL_EVIDENCE_COMMIT_FAILED",
+                    operation_recovery=operation_recovery,
+                )
+
         released: list[ResourceLockLease] = []
         retained: list[ResourceLockLease] = []
         for lease in reversed(binding.leases):
@@ -957,6 +1005,236 @@ class ToolResourceRecoveryCoordinator:
             operation_recovery=operation_recovery,
             provider_fence=provider_fence,
         )
+
+    async def _reconcile_released_binding(
+        self,
+        *,
+        record: DurableOperationResourceBindingRecord,
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> bool:
+        handle = record.binding.handle
+        try:
+            observations = await self._inflight_store.load_inflight(
+                execution_id=handle.execution_id,
+                step_execution_id=handle.step_execution_id,
+            )
+        except Exception:  # noqa: BLE001
+            return False
+        matching = tuple(
+            item
+            for item in observations
+            if item.handle.operation_handle_id == handle.operation_handle_id
+        )
+        if len(matching) != 1 or matching[0].handle != handle:
+            return False
+        observation = matching[0]
+        if observation.state in {
+            InFlightEvidenceState.COMPLETED,
+            InFlightEvidenceState.CONFIRMED_STOPPED,
+            InFlightEvidenceState.FENCED_OUT,
+            InFlightEvidenceState.PROVEN_ABSENT,
+        }:
+            return True
+        if observation.state is not InFlightEvidenceState.ORPHANED_UNCONFIRMED:
+            return False
+
+        provider_fence = record.provider_fence
+        if provider_fence is None:
+            # A free-form release_basis string is audit metadata, not strong
+            # provider truth. Without typed durable evidence, remain fail-closed.
+            return False
+        if (
+            provider_fence.operation_handle_id != handle.operation_handle_id
+            or provider_fence.recovery_epoch > recovery_claim.recovery_epoch
+            or provider_fence.established_at < handle.started_at
+            or (
+                record.released_at is not None
+                and provider_fence.established_at > record.released_at
+            )
+        ):
+            return False
+
+        reconciliation = InFlightTerminalReconciliation(
+            handle=handle,
+            state=InFlightEvidenceState.FENCED_OUT,
+            basis=InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED,
+            observed_at=provider_fence.established_at,
+        )
+        try:
+            decision = await self._inflight_store.commit_terminal_reconciliation(
+                reconciliation=reconciliation,
+                required_claim=recovery_claim,
+            )
+        except Exception:  # noqa: BLE001
+            return False
+        return decision.status in {
+            DurableEvidenceMutationStatus.RECORDED,
+            DurableEvidenceMutationStatus.ALREADY_CURRENT,
+        }
+
+    async def _reconcile_without_binding(
+        self,
+        *,
+        operation_handle_id: str,
+        recovery_claim: ExecutionRecoveryClaim,
+        recovered_at: datetime,
+    ) -> ResourceRecoveryDecision:
+        try:
+            observations = await self._inflight_store.load_inflight(
+                execution_id=recovery_claim.execution_id,
+            )
+        except Exception:  # noqa: BLE001
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=("UNBOUND_INFLIGHT_READ_EXCEPTION",),
+                operation_handle_id=operation_handle_id,
+            )
+        matching = tuple(
+            item
+            for item in observations
+            if item.handle.operation_handle_id == operation_handle_id
+        )
+        if len(matching) != 1:
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=(
+                    (
+                        "UNBOUND_INFLIGHT_EVIDENCE_MISSING"
+                        if not matching
+                        else "UNBOUND_INFLIGHT_EVIDENCE_AMBIGUOUS"
+                    ),
+                ),
+                operation_handle_id=operation_handle_id,
+            )
+        observation = matching[0]
+        handle = observation.handle
+        if handle.execution_id != recovery_claim.execution_id:
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=("UNBOUND_INFLIGHT_EXECUTION_MISMATCH",),
+                operation_handle_id=operation_handle_id,
+            )
+        if recovered_at < handle.started_at:
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=("UNBOUND_RECOVERY_TIME_PRECEDES_OPERATION",),
+                operation_handle_id=operation_handle_id,
+            )
+        if observation.state in {
+            InFlightEvidenceState.COMPLETED,
+            InFlightEvidenceState.CONFIRMED_STOPPED,
+            InFlightEvidenceState.FENCED_OUT,
+            InFlightEvidenceState.PROVEN_ABSENT,
+        }:
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.NO_RESOURCE_LOCKS,
+                reason_codes=("UNBOUND_OPERATION_ALREADY_TERMINAL",),
+                operation_handle_id=operation_handle_id,
+            )
+        if observation.state is not InFlightEvidenceState.ORPHANED_UNCONFIRMED:
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=("UNBOUND_OPERATION_NOT_RECONCILABLE",),
+                operation_handle_id=operation_handle_id,
+            )
+
+        operation_recovery = await self._probe(handle)
+        if (
+            operation_recovery is None
+            or operation_recovery.status not in self._STRONG_RECOVERY
+        ):
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=("UNBOUND_OPERATION_RECONCILIATION_REQUIRED",),
+                operation_handle_id=operation_handle_id,
+                operation_recovery=operation_recovery,
+            )
+        if (
+            operation_recovery.operation_handle_id != operation_handle_id
+            or operation_recovery.observed_at < handle.started_at
+            or operation_recovery.observed_at > recovered_at
+        ):
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=("UNBOUND_OPERATION_RECOVERY_EVIDENCE_INVALID",),
+                operation_handle_id=operation_handle_id,
+                operation_recovery=operation_recovery,
+            )
+        reconciliation = self._terminal_reconciliation(
+            handle=handle,
+            operation_recovery=operation_recovery,
+            provider_fence=None,
+        )
+        if reconciliation is None:
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=("UNBOUND_OPERATION_RECONCILIATION_NOT_COMMITTABLE",),
+                operation_handle_id=operation_handle_id,
+                operation_recovery=operation_recovery,
+            )
+        try:
+            committed = await self._inflight_store.commit_terminal_reconciliation(
+                reconciliation=reconciliation,
+                required_claim=recovery_claim,
+            )
+        except Exception:  # noqa: BLE001
+            committed = None
+        if committed is None or committed.status not in {
+            DurableEvidenceMutationStatus.RECORDED,
+            DurableEvidenceMutationStatus.ALREADY_CURRENT,
+        }:
+            return ResourceRecoveryDecision(
+                status=ResourceRecoveryStatus.UNKNOWN,
+                reason_codes=("UNBOUND_OPERATION_TERMINAL_COMMIT_FAILED",),
+                operation_handle_id=operation_handle_id,
+                operation_recovery=operation_recovery,
+            )
+        return ResourceRecoveryDecision(
+            status=ResourceRecoveryStatus.NO_RESOURCE_LOCKS,
+            reason_codes=("UNBOUND_OPERATION_RECONCILED_TERMINAL",),
+            operation_handle_id=operation_handle_id,
+            operation_recovery=operation_recovery,
+        )
+
+    @staticmethod
+    def _terminal_reconciliation(
+        *,
+        handle: InFlightOperationHandle,
+        operation_recovery: OperationRecoveryDecision | None,
+        provider_fence: ProviderFenceEvidence | None,
+    ) -> InFlightTerminalReconciliation | None:
+        if operation_recovery is not None:
+            mapping = {
+                OperationRecoveryStatus.COMPLETED_CONFIRMED: (
+                    InFlightEvidenceState.COMPLETED,
+                    InFlightReconciliationBasis.OPERATION_COMPLETED_CONFIRMED,
+                ),
+                OperationRecoveryStatus.STOPPED_CONFIRMED: (
+                    InFlightEvidenceState.CONFIRMED_STOPPED,
+                    InFlightReconciliationBasis.OPERATION_STOPPED_CONFIRMED,
+                ),
+                OperationRecoveryStatus.NOT_FOUND_WITH_PROOF: (
+                    InFlightEvidenceState.PROVEN_ABSENT,
+                    InFlightReconciliationBasis.OPERATION_NOT_FOUND_WITH_PROOF,
+                ),
+            }
+            mapped = mapping.get(operation_recovery.status)
+            if mapped is not None:
+                state, basis = mapped
+                return InFlightTerminalReconciliation(
+                    handle=handle,
+                    state=state,
+                    basis=basis,
+                    observed_at=operation_recovery.observed_at,
+                )
+        if provider_fence is not None:
+            return InFlightTerminalReconciliation(
+                handle=handle,
+                state=InFlightEvidenceState.FENCED_OUT,
+                basis=InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED,
+                observed_at=provider_fence.established_at,
+            )
+        return None
 
     async def _probe(
         self,

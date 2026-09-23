@@ -486,8 +486,17 @@ class InFlightEvidenceState(str, Enum):
     ACTIVE_AT_CHECKPOINT = "ACTIVE_AT_CHECKPOINT"
     COMPLETED = "COMPLETED"
     CONFIRMED_STOPPED = "CONFIRMED_STOPPED"
+    FENCED_OUT = "FENCED_OUT"
+    PROVEN_ABSENT = "PROVEN_ABSENT"
     ORPHANED_UNCONFIRMED = "ORPHANED_UNCONFIRMED"
     UNKNOWN = "UNKNOWN"
+
+
+class InFlightReconciliationBasis(str, Enum):
+    OPERATION_COMPLETED_CONFIRMED = "OPERATION_COMPLETED_CONFIRMED"
+    OPERATION_STOPPED_CONFIRMED = "OPERATION_STOPPED_CONFIRMED"
+    OPERATION_NOT_FOUND_WITH_PROOF = "OPERATION_NOT_FOUND_WITH_PROOF"
+    PROVIDER_FENCE_ESTABLISHED = "PROVIDER_FENCE_ESTABLISHED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,6 +507,7 @@ class DurableInFlightOperationObservation:
     observed_at: datetime
     writer_recovery_epoch: int
     terminal_at: datetime | None = None
+    reconciliation_basis: InFlightReconciliationBasis | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.state, InFlightEvidenceState):
@@ -514,11 +524,90 @@ class DurableInFlightOperationObservation:
         terminal = self.state in {
             InFlightEvidenceState.COMPLETED,
             InFlightEvidenceState.CONFIRMED_STOPPED,
+            InFlightEvidenceState.FENCED_OUT,
+            InFlightEvidenceState.PROVEN_ABSENT,
         }
         if terminal != (self.terminal_at is not None):
             raise ValueError(
-                "COMPLETED/CONFIRMED_STOPPED require terminal_at; other states forbid it"
+                "terminal in-flight evidence requires terminal_at; nonterminal states forbid it"
             )
+        if not terminal and self.reconciliation_basis is not None:
+            raise ValueError(
+                "nonterminal in-flight evidence cannot carry reconciliation_basis"
+            )
+        if (
+            self.state is InFlightEvidenceState.FENCED_OUT
+            and self.reconciliation_basis
+            is not InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED
+        ):
+            raise ValueError("FENCED_OUT requires provider-fence reconciliation basis")
+        if (
+            self.state is InFlightEvidenceState.PROVEN_ABSENT
+            and self.reconciliation_basis
+            is not InFlightReconciliationBasis.OPERATION_NOT_FOUND_WITH_PROOF
+        ):
+            raise ValueError(
+                "PROVEN_ABSENT requires not-found-with-proof reconciliation basis"
+            )
+        if self.reconciliation_basis is not None:
+            if (
+                self.state is InFlightEvidenceState.COMPLETED
+                and self.reconciliation_basis
+                is not InFlightReconciliationBasis.OPERATION_COMPLETED_CONFIRMED
+            ):
+                raise ValueError("COMPLETED reconciliation basis is invalid")
+            if (
+                self.state is InFlightEvidenceState.CONFIRMED_STOPPED
+                and self.reconciliation_basis
+                not in {
+                    InFlightReconciliationBasis.OPERATION_STOPPED_CONFIRMED,
+                    InFlightReconciliationBasis.OPERATION_NOT_FOUND_WITH_PROOF,
+                }
+            ):
+                raise ValueError("CONFIRMED_STOPPED reconciliation basis is invalid")
+            if (
+                self.state is InFlightEvidenceState.FENCED_OUT
+                and self.reconciliation_basis
+                is not InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED
+            ):
+                raise ValueError(
+                    "FENCED_OUT requires provider-fence reconciliation basis"
+                )
+
+
+@dataclass(frozen=True, slots=True)
+class InFlightTerminalReconciliation:
+    handle: InFlightOperationHandle
+    state: InFlightEvidenceState
+    basis: InFlightReconciliationBasis
+    observed_at: datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.state, InFlightEvidenceState):
+            raise TypeError("state must be InFlightEvidenceState")
+        if not isinstance(self.basis, InFlightReconciliationBasis):
+            raise TypeError("basis must be InFlightReconciliationBasis")
+        _require_aware(self.observed_at, "observed_at")
+        if self.observed_at < self.handle.started_at:
+            raise ValueError(
+                "reconciliation observed_at cannot precede operation start"
+            )
+        allowed = {
+            InFlightReconciliationBasis.OPERATION_COMPLETED_CONFIRMED: (
+                InFlightEvidenceState.COMPLETED
+            ),
+            InFlightReconciliationBasis.OPERATION_STOPPED_CONFIRMED: (
+                InFlightEvidenceState.CONFIRMED_STOPPED
+            ),
+            InFlightReconciliationBasis.OPERATION_NOT_FOUND_WITH_PROOF: (
+                InFlightEvidenceState.PROVEN_ABSENT
+            ),
+            InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED: (
+                InFlightEvidenceState.FENCED_OUT
+            ),
+        }
+        if allowed[self.basis] is not self.state:
+            raise ValueError("reconciliation basis/state mapping is invalid")
 
 
 class InFlightRecoveryTransitionStatus(str, Enum):
@@ -577,6 +666,14 @@ class DurableInFlightEvidenceStore(Protocol):
         required_claim: ExecutionRecoveryClaim,
     ) -> InFlightRecoveryTransitionDecision:
         """On restart, atomically fence and orphan ACTIVE evidence fail-closed."""
+
+    async def commit_terminal_reconciliation(
+        self,
+        *,
+        reconciliation: InFlightTerminalReconciliation,
+        required_claim: ExecutionRecoveryClaim,
+    ) -> DurableEvidenceMutationDecision:
+        """Commit authoritative recovery reconciliation for one exact orphan."""
 
     async def load_inflight(
         self,
@@ -1260,6 +1357,68 @@ class InMemoryDurableRecoveryEvidenceStore(
                     else ("INFLIGHT_NO_ACTIVE_AT_RECOVERY",)
                 ),
                 observations=observations,
+            )
+
+    async def commit_terminal_reconciliation(
+        self,
+        *,
+        reconciliation: InFlightTerminalReconciliation,
+        required_claim: ExecutionRecoveryClaim,
+    ) -> DurableEvidenceMutationDecision:
+        _require_claim_execution(
+            required_claim,
+            reconciliation.handle.execution_id,
+        )
+        async with self._lock:
+            fenced = self._mutation_from_fence(
+                self._fence_status(required_claim),
+                stale_reason="INFLIGHT_RECONCILIATION_STALE_RECOVERY_EPOCH",
+                unknown_reason="INFLIGHT_RECONCILIATION_RECOVERY_EPOCH_UNKNOWN",
+            )
+            if fenced is not None:
+                return fenced
+
+            existing = self._inflight.get(reconciliation.handle.operation_handle_id)
+            if existing is None:
+                return DurableEvidenceMutationDecision(
+                    status=DurableEvidenceMutationStatus.UNKNOWN,
+                    reason_codes=("INFLIGHT_RECONCILIATION_HANDLE_UNKNOWN",),
+                )
+            if existing.handle != reconciliation.handle:
+                return DurableEvidenceMutationDecision(
+                    status=DurableEvidenceMutationStatus.CONFLICT,
+                    reason_codes=("INFLIGHT_RECONCILIATION_HANDLE_MISMATCH",),
+                )
+            if (
+                existing.state is reconciliation.state
+                and existing.terminal_at == reconciliation.observed_at
+                and existing.reconciliation_basis is reconciliation.basis
+            ):
+                return DurableEvidenceMutationDecision(
+                    status=DurableEvidenceMutationStatus.ALREADY_CURRENT,
+                    reason_codes=("INFLIGHT_RECONCILIATION_EXACT_REPLAY",),
+                    revision=existing.revision,
+                )
+            if existing.state is not InFlightEvidenceState.ORPHANED_UNCONFIRMED:
+                return DurableEvidenceMutationDecision(
+                    status=DurableEvidenceMutationStatus.CONFLICT,
+                    reason_codes=("INFLIGHT_RECONCILIATION_STATE_CONFLICT",),
+                )
+
+            updated = replace(
+                existing,
+                state=reconciliation.state,
+                revision=existing.revision + 1,
+                observed_at=reconciliation.observed_at,
+                terminal_at=reconciliation.observed_at,
+                writer_recovery_epoch=required_claim.recovery_epoch,
+                reconciliation_basis=reconciliation.basis,
+            )
+            self._inflight[reconciliation.handle.operation_handle_id] = updated
+            return DurableEvidenceMutationDecision(
+                status=DurableEvidenceMutationStatus.RECORDED,
+                reason_codes=("INFLIGHT_RECONCILIATION_DURABLY_COMMITTED",),
+                revision=updated.revision,
             )
 
     async def load_inflight(

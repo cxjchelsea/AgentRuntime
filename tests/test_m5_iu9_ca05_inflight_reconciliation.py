@@ -165,7 +165,7 @@ async def _bind_resource(
     evidence_store: InMemoryDurableRecoveryEvidenceStore,
     resource_store: InMemoryDurableResourceRecoveryStore,
     handle: InFlightOperationHandle,
-) -> None:
+) -> OperationResourceLeaseBinding:
     owner = ResourceLockOwner(
         owner_id=handle.operation_handle_id,
         execution_id=handle.execution_id,
@@ -206,6 +206,7 @@ async def _bind_resource(
         clock=lambda: NOW + timedelta(seconds=3),
     )
     assert await bindings.register(binding)
+    return binding
 
 
 def test_orphaned_operation_can_commit_exact_completed_reconciliation() -> None:
@@ -396,6 +397,78 @@ def test_provider_fence_commits_fenced_out_not_false_confirmed_stopped() -> None
         assert (
             observations[0].reconciliation_basis
             is InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED
+        )
+
+    asyncio.run(scenario())
+
+
+def test_released_binding_tombstone_backfills_orphan_terminal_evidence() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        evidence = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        resources = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        handle = _handle()
+
+        first = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+            at=NOW,
+        )
+        binding = await _bind_resource(
+            claims=claims,
+            claim=first,
+            evidence_store=evidence,
+            resource_store=resources,
+            handle=handle,
+        )
+        recovery = await _claim(
+            claims,
+            claim_id="claim-002",
+            owner="worker-b",
+            expected_epoch=1,
+            at=NOW + timedelta(seconds=4),
+        )
+        await evidence.recover_active_as_orphaned(
+            execution_id=handle.execution_id,
+            recovered_at=NOW + timedelta(seconds=5),
+            required_claim=recovery,
+        )
+
+        for lease in binding.leases:
+            released = await resources.release(
+                lease,
+                released_at=NOW + timedelta(seconds=7),
+                required_claim=recovery,
+            )
+            assert released.status.name in {"RELEASED", "ALREADY_RELEASED"}
+        marked = await resources.mark_released(
+            binding,
+            released_at=NOW + timedelta(seconds=7),
+            release_basis="PROBE_STOPPED_CONFIRMED",
+            required_claim=recovery,
+        )
+        assert marked
+
+        coordinator = ToolResourceRecoveryCoordinator(
+            claim_authority=claims,
+            lock_store=resources,
+            binding_store=resources,
+            inflight_store=evidence,
+        )
+        decision = await coordinator.recover(
+            operation_handle_id=handle.operation_handle_id,
+            recovery_claim=recovery,
+            recovered_at=NOW + timedelta(seconds=9),
+        )
+        assert decision.status is ResourceRecoveryStatus.ALREADY_RECLAIMED
+
+        observations = await evidence.load_inflight(execution_id=handle.execution_id)
+        assert observations[0].state is InFlightEvidenceState.CONFIRMED_STOPPED
+        assert (
+            observations[0].reconciliation_basis
+            is InFlightReconciliationBasis.OPERATION_STOPPED_CONFIRMED
         )
 
     asyncio.run(scenario())

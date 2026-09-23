@@ -204,7 +204,68 @@ python -m ruff check runtime tests
 python -m ruff format --check runtime tests
 ~~~
 
-## 13. Blocker mapping
+
+## 13. Targeted Amendment Review findings
+
+本轮独立审查发现并修复三项恢复一致性问题：
+
+### F-M5-IU9-CA04-001 CHECKPOINT_EXACT_REPLAY_COULD_REPEAT_DOMAIN_PERSISTENCE
+
+初版在 Core CAS 检测 exact replay 前先调用 Domain checkpoint adapter。若重复提交同一 checkpoint，会重复执行 Domain 持久化。
+
+修复：
+
+~~~text
+Core read_latest preflight
+-> exact checkpoint replay returns ALREADY_COMMITTED
+-> Domain adapter is not called again
+~~~
+
+同时冻结 crash window：若崩溃发生在 Domain state 已持久化、Core checkpoint 尚未 CAS commit 之间，adapter 必须以 exact `checkpoint_id + generation + workflow instance/version` 实现幂等；只能返回同一 durable material 或 fail closed。
+
+~~~text
+F-M5-IU9-CA04-001 = CLOSED_BY_IMPLEMENTATION
+~~~
+
+### F-M5-IU9-CA04-002 RESUME_COULD_USE_NON_LATEST_CHECKPOINT
+
+初版 WorkflowResumeCoordinator 只验证传入 checkpoint 的结构/provenance，没有重新读取 durable store 证明它仍是当前 latest checkpoint。
+
+修复：
+
+~~~text
+read_latest(execution_id, step_execution_id)
+-> exact equality with requested checkpoint
+-> only then resume eligibility continues
+~~~
+
+旧 generation / 非 latest checkpoint -> UNKNOWN，不调用 Workflow implementation。
+
+~~~text
+F-M5-IU9-CA04-002 = CLOSED_BY_IMPLEMENTATION
+~~~
+
+### F-M5-IU9-CA04-003 RECOVERY_EPOCH_TOCTOU_BEFORE_WORKFLOW_RESUME
+
+初版只在 resume 流程入口校验 recovery epoch。checkpoint read / capability validation 期间可能发生新的 recovery takeover，导致 stale owner 仍调用 Workflow.resume()。
+
+修复为 side-effect admission 前二次 epoch gate：
+
+~~~text
+initial current-epoch check
+-> latest checkpoint + exact version validation
+-> build exact WorkflowResumeRequest
+-> validate current epoch AGAIN
+-> only CURRENT may invoke Workflow.resume()
+~~~
+
+回归测试要求 takeover 后旧 owner 的 `resume_calls == 0`。
+
+~~~text
+F-M5-IU9-CA04-003 = CLOSED_BY_IMPLEMENTATION
+~~~
+
+## 14. Blocker mapping
 
 实现目标：
 
@@ -215,7 +276,7 @@ B-M5-IU9-007 -> FIX IMPLEMENTED, targeted review required
 
 只有 Targeted Amendment Review + four gates 全绿后才能写 CLOSED / PASSED。
 
-## 14. Frozen non-goals
+## 15. Frozen non-goals
 
 ~~~text
 ExecutionResult aggregation -> IU10
@@ -228,11 +289,11 @@ blind TTL lock stealing -> forbidden
 distributed global transaction -> not claimed
 ~~~
 
-## 15. Current status
+## 16. Current status
 
 ~~~text
 CA-M5-IU9-04 = CODE COMPLETE
-CA-M5-IU9-04 TARGETED AMENDMENT REVIEW = PENDING
+CA-M5-IU9-04 TARGETED AMENDMENT REVIEW = IN_PROGRESS
 CA-M5-IU9-04 VERIFICATION = PENDING
 
 B-M5-IU9-001..005 = CLOSED

@@ -235,6 +235,80 @@ class RecoveryEpochValidationDecision:
             raise ValueError("CURRENT/STALE validation requires current_claim")
 
 
+class RecoverySideEffectAdmissionStatus(str, Enum):
+    ALLOWED = "ALLOWED"
+    STALE = "STALE"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True, slots=True)
+class RecoverySideEffectAdmissionDecision:
+    status: RecoverySideEffectAdmissionStatus
+    reason_codes: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, RecoverySideEffectAdmissionStatus):
+            raise TypeError("status must be RecoverySideEffectAdmissionStatus")
+        if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
+            raise ValueError("reason_codes must contain non-blank values")
+
+
+class RecoverySideEffectAdmissionGuard(Protocol):
+    async def authorize(
+        self,
+        *,
+        execution_id: str,
+    ) -> RecoverySideEffectAdmissionDecision:
+        """Revalidate current recovery epoch immediately before real side effects."""
+
+
+class CurrentRecoveryEpochSideEffectAdmissionGuard:
+    """FI guard preventing a stale recovery worker from starting new side effects."""
+
+    def __init__(
+        self,
+        *,
+        claim_authority: "RecoveryClaimAuthority",
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> None:
+        if recovery_claim.execution_id.strip() == "":
+            raise ValueError("recovery claim execution_id must not be blank")
+        self._claim_authority = claim_authority
+        self._claim = recovery_claim
+
+    async def authorize(
+        self,
+        *,
+        execution_id: str,
+    ) -> RecoverySideEffectAdmissionDecision:
+        if execution_id != self._claim.execution_id:
+            return RecoverySideEffectAdmissionDecision(
+                status=RecoverySideEffectAdmissionStatus.UNKNOWN,
+                reason_codes=("RECOVERY_SIDE_EFFECT_EXECUTION_MISMATCH",),
+            )
+        try:
+            decision = await self._claim_authority.validate_current(self._claim)
+        except Exception:  # noqa: BLE001
+            return RecoverySideEffectAdmissionDecision(
+                status=RecoverySideEffectAdmissionStatus.UNKNOWN,
+                reason_codes=("RECOVERY_SIDE_EFFECT_EPOCH_VALIDATION_UNKNOWN",),
+            )
+        if decision.status is RecoveryEpochValidationStatus.CURRENT:
+            return RecoverySideEffectAdmissionDecision(
+                status=RecoverySideEffectAdmissionStatus.ALLOWED,
+                reason_codes=("RECOVERY_SIDE_EFFECT_EPOCH_CURRENT",),
+            )
+        if decision.status is RecoveryEpochValidationStatus.STALE:
+            return RecoverySideEffectAdmissionDecision(
+                status=RecoverySideEffectAdmissionStatus.STALE,
+                reason_codes=("RECOVERY_SIDE_EFFECT_EPOCH_STALE",),
+            )
+        return RecoverySideEffectAdmissionDecision(
+            status=RecoverySideEffectAdmissionStatus.UNKNOWN,
+            reason_codes=("RECOVERY_SIDE_EFFECT_EPOCH_VALIDATION_UNKNOWN",),
+        )
+
+
 class RecoveryClaimAuthority(Protocol):
     async def claim(self, request: RecoveryClaimRequest) -> RecoveryClaimDecision:
         """Atomically claim expected_current_epoch + 1."""

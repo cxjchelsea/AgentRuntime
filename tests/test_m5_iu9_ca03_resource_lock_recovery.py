@@ -31,6 +31,7 @@ from runtime.execution.recovery_resource_lock import (
     OperationRecoveryStatus,
     ProviderFenceDecision,
     ProviderFenceEvidence,
+    ProviderFencePersistenceStatus,
     ProviderFenceStatus,
     ResourceRecoveryStatus,
     ToolResourceRecoveryCoordinator,
@@ -131,9 +132,11 @@ class StaticProbe:
         status: OperationRecoveryStatus,
         *,
         observed_at: datetime | None = None,
+        returned_operation_handle_id: str | None = None,
     ) -> None:
         self._status = status
         self._observed_at = observed_at or NOW + timedelta(seconds=8)
+        self._returned_operation_handle_id = returned_operation_handle_id
         self.calls: list[str] = []
 
     async def probe(
@@ -143,6 +146,9 @@ class StaticProbe:
     ) -> OperationRecoveryDecision:
         self.calls.append(handle.operation_handle_id)
         return OperationRecoveryDecision(
+            operation_handle_id=(
+                self._returned_operation_handle_id or handle.operation_handle_id
+            ),
             status=self._status,
             reason_codes=(f"PROBE_{self._status.value}",),
             observed_at=self._observed_at,
@@ -937,3 +943,122 @@ def test_reclaimed_lock_can_be_acquired_by_new_exact_acquisition() -> None:
         assert reacquired.lease.owner == new_owner
 
     asyncio.run(scenario())
+
+def test_probe_evidence_for_different_operation_cannot_authorize_reclaim() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        first_claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        handle, binding = await _setup_bound_tool(
+            claims=claims,
+            claim=first_claim,
+            resource_store=resource_store,
+            evidence_store=evidence_store,
+        )
+        recovery_claim = await _takeover_and_orphan(
+            claims=claims,
+            evidence_store=evidence_store,
+        )
+        probe = StaticProbe(
+            OperationRecoveryStatus.STOPPED_CONFIRMED,
+            returned_operation_handle_id="different-operation",
+        )
+        coordinator = ToolResourceRecoveryCoordinator(
+            claim_authority=claims,
+            lock_store=resource_store,
+            binding_store=resource_store,
+            inflight_store=evidence_store,
+            operation_probe=probe,
+        )
+
+        decision = await coordinator.recover(
+            operation_handle_id=handle.operation_handle_id,
+            recovery_claim=recovery_claim,
+            recovered_at=NOW + timedelta(seconds=9),
+        )
+
+        assert decision.status is ResourceRecoveryStatus.RETAINED
+        assert decision.reason_codes == ("RESOURCE_RECONCILIATION_REQUIRED",)
+        assert decision.operation_recovery is not None
+        assert decision.operation_recovery.status is OperationRecoveryStatus.UNKNOWN
+        assert decision.operation_recovery.reason_codes == (
+            "OPERATION_RECOVERY_PROBE_IDENTITY_MISMATCH",
+        )
+        for lease in binding.leases:
+            read = await resource_store.read_by_acquisition(lease.acquisition_id)
+            assert read.status is DurableResourceLockReadStatus.ACTIVE
+
+    asyncio.run(scenario())
+
+
+def test_durable_provider_fence_survives_second_recovery_takeover() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        first_claim = await _claim(
+            claims,
+            claim_id="claim-001",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        resource_store = InMemoryDurableResourceRecoveryStore(claim_authority=claims)
+        evidence_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+        handle, binding = await _setup_bound_tool(
+            claims=claims,
+            claim=first_claim,
+            resource_store=resource_store,
+            evidence_store=evidence_store,
+        )
+        second_claim = await _takeover_and_orphan(
+            claims=claims,
+            evidence_store=evidence_store,
+        )
+
+        fence = ProviderFenceEvidence(
+            operation_handle_id=handle.operation_handle_id,
+            fencing_token="fence:2:tool-handle-001",
+            established_at=NOW + timedelta(seconds=6),
+            recovery_epoch=second_claim.recovery_epoch,
+        )
+        persisted = await resource_store.record_provider_fence(
+            binding,
+            evidence=fence,
+            recorded_at=NOW + timedelta(seconds=6),
+            required_claim=second_claim,
+        )
+        assert persisted.status is ProviderFencePersistenceStatus.RECORDED
+
+        third_claim = await _claim(
+            claims,
+            claim_id="claim-003",
+            owner="worker-c",
+            expected_epoch=2,
+            at=NOW + timedelta(seconds=7),
+        )
+        coordinator = ToolResourceRecoveryCoordinator(
+            claim_authority=claims,
+            lock_store=resource_store,
+            binding_store=resource_store,
+            inflight_store=evidence_store,
+        )
+        decision = await coordinator.recover(
+            operation_handle_id=handle.operation_handle_id,
+            recovery_claim=third_claim,
+            recovered_at=NOW + timedelta(seconds=9),
+        )
+
+        assert decision.status is ResourceRecoveryStatus.RECLAIMED
+        assert decision.reason_codes[0] == "DURABLE_PROVIDER_FENCE"
+        assert decision.provider_fence == fence
+        binding_read = await resource_store.read(handle.operation_handle_id)
+        assert binding_read.status is DurableOperationResourceBindingReadStatus.RELEASED
+        assert binding_read.record is not None
+        assert binding_read.record.provider_fence == fence
+
+    asyncio.run(scenario())
+

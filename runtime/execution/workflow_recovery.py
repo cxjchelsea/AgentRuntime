@@ -37,16 +37,13 @@ from runtime.execution.recovery import (
 from runtime.execution.recovery_evidence import (
     DurableControlReadDecision,
     DurableControlReadStatus,
-    DurableInFlightEvidenceStore,
     DurableInFlightOperationObservation,
-    DurableTerminalControlStore,
     InFlightRecoveryTransitionDecision,
     InFlightEvidenceState,
     InFlightRecoveryTransitionStatus,
 )
 from runtime.execution.recovery_resource_lock import (
     DurableOperationResourceBindingRecord,
-    DurableOperationResourceBindingStore,
     OperationRecoveryDecision,
     OperationRecoveryProbe,
     OperationRecoveryStatus,

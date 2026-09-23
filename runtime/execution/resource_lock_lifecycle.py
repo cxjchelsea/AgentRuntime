@@ -292,6 +292,15 @@ class SessionExecutionLockCoordinator:
                 reason_codes=("SESSION_LOCK_RELEASE_PRECEDES_EXECUTION_FINISH",),
                 session_lease=session_lease,
             )
+        if (
+            prepared.execution_record.updated_at is not None
+            and released_at < prepared.execution_record.updated_at
+        ):
+            return SessionExecutionReleaseDecision(
+                status=SessionExecutionReleaseStatus.UNKNOWN,
+                reason_codes=("SESSION_LOCK_RELEASE_PRECEDES_LATEST_OBSERVATION",),
+                session_lease=session_lease,
+            )
         if released_at < session_lease.lease.acquired_at:
             return SessionExecutionReleaseDecision(
                 status=SessionExecutionReleaseStatus.UNKNOWN,

@@ -214,6 +214,12 @@ class InflightStore:
             reason_codes=("NO_ACTIVE",),
         )
 
+    async def supersede_orphaned_owner_frames(self, **kwargs):
+        return InFlightRecoveryTransitionDecision(
+            status=InFlightRecoveryTransitionStatus.NO_ACTIVE,
+            reason_codes=("NO_ORPHANED_OWNER_FRAME",),
+        )
+
     async def load_inflight(self, **kwargs):
         return ()
 

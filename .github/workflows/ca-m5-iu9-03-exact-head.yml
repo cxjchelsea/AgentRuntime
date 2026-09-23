@@ -1,0 +1,22 @@
+name: CA-M5-IU9-03 exact-head verification
+on:
+  push:
+    branches:
+      - verification/ca-m5-iu9-03-b2c1c72
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b2c1c72df28af37050be74934b56f03488548254
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pydantic>=2.0,<3" "pytest>=8.0" mypy ruff
+      - run: python -m pytest tests -q
+      - run: python -m mypy runtime tests
+      - run: python -m ruff check runtime tests
+      - run: python -m ruff format --check runtime tests

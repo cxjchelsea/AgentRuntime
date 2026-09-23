@@ -18,6 +18,7 @@ from runtime.execution.models import (
     SkillExecutionRequest,
     ToolInvocationRequest,
     WorkflowExecutionRequest,
+    WorkflowResumeRequest,
 )
 
 

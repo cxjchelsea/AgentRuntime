@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from runtime.execution import (
     CapabilityExecutionOwner,
@@ -21,8 +21,6 @@ from runtime.execution import (
     RecoverySafeExecutionContext,
     ResolvedCapability,
     ResolvedStepCapabilities,
-    SkillRecoveryReplayDecision,
-    SkillRecoveryReplayStatus,
     StepExecutionStatus,
     StepLifecycleSnapshot,
     WorkflowCheckpointCommitStatus,
@@ -174,7 +172,7 @@ class EmptyBindingStore:
 
 
 class FakeToolInvoker:
-    async def invoke(self, *, tool_id: str, input_payload: dict[str, object]):
+    async def invoke(self, *, tool_id: str, input_payload: dict[str, Any]):
         raise AssertionError("resume test must not invoke Tool")
 
 

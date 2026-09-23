@@ -19,7 +19,7 @@ from runtime.execution.capability_resolution import (
     CapabilityKind,
     ResolvedStepCapabilities,
 )
-from runtime.execution.control_application import InFlightOperationKind
+from runtime.execution.control_application import InFlightOperationHandle
 from runtime.execution.invocation import ApprovedToolInvoker
 from runtime.execution.models import (
     M5WorkflowResult,
@@ -35,13 +35,17 @@ from runtime.execution.recovery import (
     RecoveryEpochValidationStatus,
 )
 from runtime.execution.recovery_evidence import (
+    DurableControlReadDecision,
     DurableControlReadStatus,
     DurableInFlightEvidenceStore,
+    DurableInFlightOperationObservation,
     DurableTerminalControlStore,
+    InFlightRecoveryTransitionDecision,
     InFlightEvidenceState,
     InFlightRecoveryTransitionStatus,
 )
 from runtime.execution.recovery_resource_lock import (
+    DurableOperationResourceBindingRecord,
     DurableOperationResourceBindingStore,
     OperationRecoveryDecision,
     OperationRecoveryProbe,
@@ -770,6 +774,38 @@ class RecoveryDecision:
             raise ValueError("only RETRY_STEP may carry next_attempt")
 
 
+class RecoveryControlReader(Protocol):
+    async def read_latched(self, execution_id: str) -> DurableControlReadDecision:
+        """Read durable terminal control for recovery ordering."""
+
+
+class RecoveryInFlightReader(Protocol):
+    async def recover_active_as_orphaned(
+        self,
+        *,
+        execution_id: str,
+        recovered_at: datetime,
+        required_claim: ExecutionRecoveryClaim,
+    ) -> InFlightRecoveryTransitionDecision:
+        """Fence crash-time ACTIVE evidence into ORPHANED_UNCONFIRMED."""
+
+    async def load_inflight(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str | None = None,
+    ) -> tuple[DurableInFlightOperationObservation, ...]:
+        """Load durable in-flight observations."""
+
+
+class RecoveryBindingReader(Protocol):
+    async def active_for_execution(
+        self,
+        execution_id: str,
+    ) -> tuple[DurableOperationResourceBindingRecord, ...]:
+        """Load active operation-resource bindings for one execution."""
+
+
 class RecoveryCoordinator:
     """Order all durable recovery authorities before resume/retry/scheduler re-entry."""
 
@@ -791,9 +827,9 @@ class RecoveryCoordinator:
         self,
         *,
         claim_authority: RecoveryClaimAuthority,
-        control_store: DurableTerminalControlStore,
-        inflight_store: DurableInFlightEvidenceStore,
-        binding_store: DurableOperationResourceBindingStore,
+        control_store: RecoveryControlReader,
+        inflight_store: RecoveryInFlightReader,
+        binding_store: RecoveryBindingReader,
         workflow_checkpoint_store: WorkflowRecoveryCheckpointStore,
         operation_probe: OperationRecoveryProbe | None = None,
         resource_recovery: ToolResourceRecoveryCoordinator | None = None,
@@ -1046,7 +1082,7 @@ class RecoveryCoordinator:
 
     async def _reconcile_operation(
         self,
-        handle: object,
+        handle: InFlightOperationHandle,
         *,
         recovery_claim: ExecutionRecoveryClaim,
         recovered_at: datetime,
@@ -1062,7 +1098,7 @@ class RecoveryCoordinator:
                 reason_codes=("RECOVERY_OPERATION_PROBE_MISSING",),
             )
         try:
-            probe = await self._operation_probe.probe(handle=handle)  # type: ignore[arg-type]
+            probe = await self._operation_probe.probe(handle=handle)
         except Exception:  # noqa: BLE001
             return RecoveryDecision(
                 disposition=RecoveryDisposition.WAIT_RECONCILIATION,

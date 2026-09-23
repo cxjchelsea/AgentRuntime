@@ -99,7 +99,7 @@ exact committed checkpoint generation
 
 ## 6. Workflow resume gate
 
-WorkflowResumeCoordinator 在调用实现前验证：
+WorkflowResumeCoordinator 在签发 resume authorization 前验证：
 
 - current recovery epoch。
 - checkpoint execution/step provenance。
@@ -109,7 +109,7 @@ WorkflowResumeCoordinator 在调用实现前验证：
 - exact workflow id/version。
 - current ExecutionContext execution identity。
 
-resume 返回 WAITING 时，只得到一次新的 WAITING observation；仍必须再次 durable checkpoint commit 后才能再次恢复。
+CA-04 不直接调用 resume。Formal Implementation 经既有 StepCapabilityExecutor 执行后，如 resume 返回 WAITING，只得到新的 WAITING observation；仍必须再次 durable checkpoint commit 后才能再次恢复。
 
 ## 7. Skill crash recovery
 
@@ -190,7 +190,7 @@ Tool resource 继续复用 CA-03 ToolResourceRecoveryCoordinator；CA-04 不增�
 - WAITING without durable checkpoint is not resumable。
 - stale recovery epoch cannot checkpoint，且不会调用 Domain state adapter。
 - exact checkpoint generation/provenance commit。
-- resume keeps same instance + exact version + exact checkpoint material。
+- authorization keeps same instance + exact version + exact checkpoint material，且 CA-04 不直接调用 provider。
 - latched CANCEL outranks Workflow resume。
 - exact durable Workflow checkpoint authorizes RESUME_WORKFLOW。
 - no running Step + pending work only re-enters existing Scheduler。
@@ -245,24 +245,55 @@ read_latest(execution_id, step_execution_id)
 F-M5-IU9-CA04-002 = CLOSED_BY_IMPLEMENTATION
 ~~~
 
-### F-M5-IU9-CA04-003 RECOVERY_EPOCH_TOCTOU_BEFORE_WORKFLOW_RESUME
+### F-M5-IU9-CA04-003 RECOVERY_EPOCH_TOCTOU_BEFORE_RESUME_AUTHORIZATION
 
-初版只在 resume 流程入口校验 recovery epoch。checkpoint read / capability validation 期间可能发生新的 recovery takeover，导致 stale owner 仍调用 Workflow.resume()。
+初版只在 resume 流程入口校验 recovery epoch。checkpoint read / capability validation 期间可能发生新的 recovery takeover，导致 stale owner 仍获得 resume authority。
 
-修复为 side-effect admission 前二次 epoch gate：
+修复为 authorization 返回前二次 epoch gate：
 
 ~~~text
 initial current-epoch check
 -> latest checkpoint + exact version validation
 -> build exact WorkflowResumeRequest
 -> validate current epoch AGAIN
--> only CURRENT may invoke Workflow.resume()
+-> only CURRENT may receive AUTHORIZED
 ~~~
 
-回归测试要求 takeover 后旧 owner 的 `resume_calls == 0`。
+Formal Implementation 在真正外部调用前仍必须再次校验 current recovery claim；CA-04 的 authorization 不能替代 side-effect admission gate。
 
 ~~~text
 F-M5-IU9-CA04-003 = CLOSED_BY_IMPLEMENTATION
+~~~
+
+### F-M5-IU9-CA04-004 RESUME_BYPASSED_EXISTING_EXECUTION_BOUNDARY
+
+初版 WorkflowResumeCoordinator 直接调用 WorkflowImplementation.resume()，形成了独立于 StepCapabilityExecutor 的第二条执行路径，可能绕过：
+
+~~~text
+owner in-flight registration
+CoreApprovedToolInvoker
+IU7 interrupt/control tracking
+IU8 session/resource concurrency boundary
+existing permission/tool validation path
+~~~
+
+这与 IU9 已冻结的“recovery re-enters existing IU6/IU7/IU8 boundaries”冲突。
+
+修复：
+
+~~~text
+RecoveryCoordinator
+-> RESUME_WORKFLOW decision
+-> WorkflowResumeCoordinator.authorize()
+-> exact WorkflowResumeRequest + recovery claim authority only
+-> NO provider invocation inside CA-04
+-> M5-IU9 Formal Implementation must re-enter existing StepCapabilityExecutor boundary
+~~~
+
+同时冻结 WorkflowImplementation.resume exact replay 合同：同一 checkpoint_id / generation / resume_token 的重放必须幂等或可外部对账，不能把 crash 后的盲重放当成安全。
+
+~~~text
+F-M5-IU9-CA04-004 = CLOSED_BY_ARCHITECTURE_CORRECTION
 ~~~
 
 ## 14. Blocker mapping

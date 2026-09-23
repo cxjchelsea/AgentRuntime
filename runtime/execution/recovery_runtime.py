@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Protocol
 
 from runtime.contracts import ApprovedActionPlan
 from runtime.contracts.planning import ActionStep
@@ -45,6 +46,11 @@ from runtime.execution.recovery_evidence import (
     DurableStepAttemptSequenceAuthority,
     DurableTerminalControlStore,
     InFlightEvidenceState,
+)
+from runtime.execution.reliability_coordinator import (
+    RecoveredStepReliabilityRunResult,
+    StepReliabilityCoordinationError,
+    StepReliabilityCoordinator,
 )
 from runtime.execution.recovery_resource_lock import (
     DurableOperationResourceBindingStore,
@@ -86,10 +92,35 @@ class M5RecoveryRuntimeOutcome:
     capability_outcome: StepCapabilityExecutionOutcome | None = None
     schedule_decision: StepScheduleDecision | None = None
     control_result: ExecutionControlRuntimeResult | None = None
+    reliability_result: RecoveredStepReliabilityRunResult | None = None
 
     def __post_init__(self) -> None:
         if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
             raise ValueError("reason_codes must contain non-blank values")
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryExecutionBindings:
+    """Claim-bound existing M5 execution authorities used by one recovery worker."""
+
+    step_executor: StepCapabilityExecutor
+    skill_reliability_coordinator: StepReliabilityCoordinator
+
+
+class RecoveryExecutionBindingsFactory(Protocol):
+    def create(
+        self,
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> RecoveryExecutionBindings:
+        """Build IU6/IU7/IU8 authorities bound to the exact current recovery claim."""
+
+
+class RecoveryControlRuntimeFactory(Protocol):
+    def create(
+        self,
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> ExecutionControlCoordinator:
+        """Build the existing IU7 control runtime with the exact durable claim-bound latch."""
 
 
 class ApprovedPlanWorkflowVersionAuthority(WorkflowVersionAuthority):
@@ -170,11 +201,11 @@ class M5RecoveryRuntime:
         workflow_checkpoint_store: WorkflowRecoveryCheckpointStore,
         step_replay_evaluator: StepRecoveryReplayEvaluator,
         step_resolver: StepCapabilityResolver,
-        step_executor: StepCapabilityExecutor,
+        execution_bindings_factory: RecoveryExecutionBindingsFactory,
         scheduler: SequentialStepScheduler,
         reliability_store: DurableReliabilityEvidenceStore,
         tool_resource_recovery: ToolResourceRecoveryCoordinator | None = None,
-        control_runtime: ExecutionControlCoordinator | None = None,
+        control_runtime_factory: RecoveryControlRuntimeFactory | None = None,
     ) -> None:
         self._claim_authority = claim_authority
         self._snapshot_store = snapshot_store
@@ -184,11 +215,11 @@ class M5RecoveryRuntime:
         self._workflow_checkpoint_store = workflow_checkpoint_store
         self._step_replay_evaluator = step_replay_evaluator
         self._step_resolver = step_resolver
-        self._step_executor = step_executor
+        self._execution_bindings_factory = execution_bindings_factory
         self._scheduler = scheduler
         self._reliability_store = reliability_store
         self._tool_resource_recovery = tool_resource_recovery
-        self._control_runtime = control_runtime
+        self._control_runtime_factory = control_runtime_factory
 
     async def recover(
         self,
@@ -256,6 +287,7 @@ class M5RecoveryRuntime:
             return await self._apply_control(
                 prepared=prepared,
                 decision=decision,
+                recovery_claim=recovery_claim,
             )
 
         if decision.disposition is RecoveryDisposition.WAIT_RECONCILIATION:
@@ -330,6 +362,30 @@ class M5RecoveryRuntime:
             claim_authority=self._claim_authority,
             recovery_claim=recovery_claim,
         )
+        try:
+            bindings = self._execution_bindings_factory.create(recovery_claim)
+        except Exception:  # noqa: BLE001
+            return M5RecoveryRuntimeOutcome(
+                status=M5RecoveryRuntimeStatus.UNKNOWN,
+                reason_codes=("RECOVERY_EXECUTION_BINDINGS_UNKNOWN",),
+                recovery_decision=decision,
+                prepared=prepared,
+            )
+        if (
+            not isinstance(bindings, RecoveryExecutionBindings)
+            or not isinstance(bindings.step_executor, StepCapabilityExecutor)
+            or not isinstance(
+                bindings.skill_reliability_coordinator,
+                StepReliabilityCoordinator,
+            )
+        ):
+            return M5RecoveryRuntimeOutcome(
+                status=M5RecoveryRuntimeStatus.UNKNOWN,
+                reason_codes=("RECOVERY_EXECUTION_BINDINGS_INVALID",),
+                recovery_decision=decision,
+                prepared=prepared,
+            )
+
         attempt_authority = DurableStepAttemptSequenceAuthority(
             store=self._reliability_store,
             execution_id=recovery_claim.execution_id,
@@ -360,7 +416,7 @@ class M5RecoveryRuntime:
                     recovery_decision=decision,
                     prepared=prepared,
                 )
-            outcome = await self._step_executor.resume_workflow_from_checkpoint(
+            outcome = await bindings.step_executor.resume_workflow_from_checkpoint(
                 approved_plan=approved_plan,
                 step=step,
                 step_snapshot=step_snapshot,
@@ -379,32 +435,32 @@ class M5RecoveryRuntime:
             )
 
         if decision.disposition is RecoveryDisposition.RETRY_STEP:
-            claim = await attempt_authority.claim_next(
-                step_execution_id=step_snapshot.step_execution_id,
-                expected_current_attempt=current_attempt,
-            )
-            if claim.next_attempt is None:
+            try:
+                reliability_result = (
+                    await bindings.skill_reliability_coordinator.run_recovered_retry(
+                        approved_plan=approved_plan,
+                        step=step,
+                        step_snapshot=step_snapshot,
+                        resolved=resolution.resolved,
+                        execution_context=prepared.execution_context,
+                        expected_current_attempt=current_attempt,
+                        prior_attempt_journal=prior_journal,
+                        side_effect_admission_guard=guard,
+                    )
+                )
+            except StepReliabilityCoordinationError as exc:
                 return M5RecoveryRuntimeOutcome(
                     status=M5RecoveryRuntimeStatus.UNKNOWN,
-                    reason_codes=claim.reason_codes,
+                    reason_codes=(exc.reason_code,),
                     recovery_decision=decision,
                     prepared=prepared,
                 )
-            outcome = await self._step_executor.execute(
-                approved_plan=approved_plan,
-                step=step,
-                step_snapshot=step_snapshot,
-                resolved=resolution.resolved,
-                execution_context=prepared.execution_context,
-                attempt_number=claim.next_attempt,
-                prior_attempt_journal=prior_journal,
-                side_effect_admission_guard=guard,
-            )
-            return self._capability_runtime_outcome(
-                success_status=M5RecoveryRuntimeStatus.SKILL_RETRIED,
-                outcome=outcome,
-                decision=decision,
+            return M5RecoveryRuntimeOutcome(
+                status=M5RecoveryRuntimeStatus.SKILL_RETRIED,
+                reason_codes=reliability_result.final_observation.reason_codes,
+                recovery_decision=decision,
                 prepared=prepared,
+                reliability_result=reliability_result,
             )
 
         return M5RecoveryRuntimeOutcome(
@@ -486,12 +542,29 @@ class M5RecoveryRuntime:
         *,
         prepared: PreparedExecution,
         decision: RecoveryDecision,
+        recovery_claim: ExecutionRecoveryClaim,
     ) -> M5RecoveryRuntimeOutcome:
-        runtime = self._control_runtime
-        if runtime is None:
+        factory = self._control_runtime_factory
+        if factory is None:
             return M5RecoveryRuntimeOutcome(
                 status=M5RecoveryRuntimeStatus.UNKNOWN,
                 reason_codes=("RECOVERY_CONTROL_RUNTIME_MISSING",),
+                recovery_decision=decision,
+                prepared=prepared,
+            )
+        try:
+            runtime = factory.create(recovery_claim)
+        except Exception:  # noqa: BLE001
+            return M5RecoveryRuntimeOutcome(
+                status=M5RecoveryRuntimeStatus.UNKNOWN,
+                reason_codes=("RECOVERY_CONTROL_RUNTIME_UNKNOWN",),
+                recovery_decision=decision,
+                prepared=prepared,
+            )
+        if not isinstance(runtime, ExecutionControlCoordinator):
+            return M5RecoveryRuntimeOutcome(
+                status=M5RecoveryRuntimeStatus.UNKNOWN,
+                reason_codes=("RECOVERY_CONTROL_RUNTIME_INVALID",),
                 recovery_decision=decision,
                 prepared=prepared,
             )

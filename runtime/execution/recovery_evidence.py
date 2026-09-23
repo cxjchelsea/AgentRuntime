@@ -716,14 +716,17 @@ class DurableInFlightEvidenceStore(Protocol):
     ) -> DurableEvidenceMutationDecision:
         """Commit authoritative recovery reconciliation for one exact orphan."""
 
-    async def supersede_orphaned_owner_frames(
+    async def supersede_orphaned_owner_frame(
         self,
         *,
         execution_id: str,
+        step_execution_id: str,
+        owner_kind: InFlightOperationKind,
+        capability_id: str,
         recovered_at: datetime,
         required_claim: ExecutionRecoveryClaim,
     ) -> InFlightRecoveryTransitionDecision:
-        """Supersede stale local Skill/Workflow owner frames under current recovery epoch."""
+        """Supersede one exact stale Skill/Workflow owner frame under current recovery epoch."""
 
     async def load_inflight(
         self,
@@ -1471,16 +1474,30 @@ class InMemoryDurableRecoveryEvidenceStore(
                 revision=updated.revision,
             )
 
-    async def supersede_orphaned_owner_frames(
+    async def supersede_orphaned_owner_frame(
         self,
         *,
         execution_id: str,
+        step_execution_id: str,
+        owner_kind: InFlightOperationKind,
+        capability_id: str,
         recovered_at: datetime,
         required_claim: ExecutionRecoveryClaim,
     ) -> InFlightRecoveryTransitionDecision:
         _require_non_blank(execution_id, "execution_id")
+        _require_non_blank(step_execution_id, "step_execution_id")
+        _require_non_blank(capability_id, "capability_id")
         _require_aware(recovered_at, "recovered_at")
         _require_claim_execution(required_claim, execution_id)
+        if owner_kind not in {
+            InFlightOperationKind.SKILL,
+            InFlightOperationKind.WORKFLOW,
+        }:
+            return InFlightRecoveryTransitionDecision(
+                status=InFlightRecoveryTransitionStatus.CONFLICT,
+                reason_codes=("OWNER_FRAME_SUPERSESSION_KIND_FORBIDDEN",),
+            )
+
         async with self._lock:
             fence = self._fence_status(required_claim)
             if fence is RecoveryEpochValidationStatus.STALE:
@@ -1494,33 +1511,66 @@ class InMemoryDurableRecoveryEvidenceStore(
                     reason_codes=("OWNER_FRAME_SUPERSESSION_RECOVERY_EPOCH_UNKNOWN",),
                 )
 
-            transitioned = False
-            for handle_id, existing in tuple(self._inflight.items()):
-                if existing.handle.execution_id != execution_id:
-                    continue
-                if existing.state is InFlightEvidenceState.OWNER_FRAME_SUPERSEDED:
-                    continue
-                if existing.state is not InFlightEvidenceState.ORPHANED_UNCONFIRMED:
-                    continue
-                if existing.handle.kind not in {
-                    InFlightOperationKind.SKILL,
-                    InFlightOperationKind.WORKFLOW,
-                }:
-                    continue
-                self._inflight[handle_id] = replace(
-                    existing,
-                    state=InFlightEvidenceState.OWNER_FRAME_SUPERSEDED,
-                    revision=existing.revision + 1,
-                    observed_at=recovered_at,
-                    terminal_at=recovered_at,
-                    writer_recovery_epoch=required_claim.recovery_epoch,
-                    reconciliation_basis=None,
-                    owner_supersession_basis=(
-                        OwnerFrameSupersessionBasis.RECOVERY_EPOCH_TAKEOVER
-                    ),
+            matching = tuple(
+                (handle_id, existing)
+                for handle_id, existing in self._inflight.items()
+                if existing.handle.execution_id == execution_id
+                and existing.handle.step_execution_id == step_execution_id
+                and existing.handle.kind is owner_kind
+                and existing.handle.capability_id == capability_id
+                and existing.state
+                in {
+                    InFlightEvidenceState.ORPHANED_UNCONFIRMED,
+                    InFlightEvidenceState.OWNER_FRAME_SUPERSEDED,
+                }
+            )
+            if len(matching) > 1:
+                return InFlightRecoveryTransitionDecision(
+                    status=InFlightRecoveryTransitionStatus.UNKNOWN,
+                    reason_codes=("OWNER_FRAME_SUPERSESSION_AMBIGUOUS_MATCH",),
                 )
-                transitioned = True
+            if not matching:
+                observations = deepcopy(
+                    tuple(
+                        item
+                        for item in self._inflight.values()
+                        if item.handle.execution_id == execution_id
+                    )
+                )
+                return InFlightRecoveryTransitionDecision(
+                    status=InFlightRecoveryTransitionStatus.NO_ACTIVE,
+                    reason_codes=("EXACT_ORPHANED_OWNER_FRAME_NOT_PRESENT",),
+                    observations=observations,
+                )
 
+            handle_id, existing = matching[0]
+            if existing.state is InFlightEvidenceState.OWNER_FRAME_SUPERSEDED:
+                observations = deepcopy(
+                    tuple(
+                        item
+                        for item in self._inflight.values()
+                        if item.handle.execution_id == execution_id
+                    )
+                )
+                return InFlightRecoveryTransitionDecision(
+                    status=InFlightRecoveryTransitionStatus.NO_ACTIVE,
+                    reason_codes=("OWNER_FRAME_SUPERSESSION_ALREADY_CURRENT",),
+                    observations=observations,
+                )
+
+            updated = replace(
+                existing,
+                state=InFlightEvidenceState.OWNER_FRAME_SUPERSEDED,
+                revision=existing.revision + 1,
+                observed_at=recovered_at,
+                terminal_at=recovered_at,
+                writer_recovery_epoch=required_claim.recovery_epoch,
+                reconciliation_basis=None,
+                owner_supersession_basis=(
+                    OwnerFrameSupersessionBasis.RECOVERY_EPOCH_TAKEOVER
+                ),
+            )
+            self._inflight[handle_id] = updated
             observations = deepcopy(
                 tuple(
                     item
@@ -1529,16 +1579,8 @@ class InMemoryDurableRecoveryEvidenceStore(
                 )
             )
             return InFlightRecoveryTransitionDecision(
-                status=(
-                    InFlightRecoveryTransitionStatus.TRANSITIONED
-                    if transitioned
-                    else InFlightRecoveryTransitionStatus.NO_ACTIVE
-                ),
-                reason_codes=(
-                    ("OWNER_FRAME_SUPERSEDED_BY_RECOVERY_EPOCH",)
-                    if transitioned
-                    else ("NO_ORPHANED_OWNER_FRAME_TO_SUPERSEDE",)
-                ),
+                status=InFlightRecoveryTransitionStatus.TRANSITIONED,
+                reason_codes=("EXACT_OWNER_FRAME_SUPERSEDED_BY_RECOVERY_EPOCH",),
                 observations=observations,
             )
 

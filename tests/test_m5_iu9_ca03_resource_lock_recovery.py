@@ -672,7 +672,7 @@ def test_provider_fence_allows_reclaim_of_running_old_operation() -> None:
         evidence_store = InMemoryDurableRecoveryEvidenceStore(
             claim_authority=claims
         )
-        handle, binding = await _setup_bound_tool(
+        handle, _binding = await _setup_bound_tool(
             claims=claims,
             claim=first_claim,
             resource_store=resource_store,

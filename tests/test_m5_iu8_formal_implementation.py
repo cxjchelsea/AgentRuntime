@@ -389,9 +389,7 @@ def test_session_busy_blocks_step_before_skill_side_effect() -> None:
         assert first.status is ExecutionConcurrencyAdmissionStatus.ADMITTED
 
         skill = RecordingSkill()
-        approved_plan, step = _approved_step(
-            owner=CapabilityExecutionOwner.SKILL
-        )
+        approved_plan, step = _approved_step(owner=CapabilityExecutionOwner.SKILL)
         resolved = _skill_resolved(skill)
         snapshot = _snapshot(step)
         executor = StepCapabilityExecutor(
@@ -494,7 +492,9 @@ def test_normal_terminal_execution_releases_session_lease_via_lifecycle_hook() -
     asyncio.run(scenario())
 
 
-def test_baseline_tool_path_blocks_competing_resource_and_releases_on_completion() -> None:
+def test_baseline_tool_path_blocks_competing_resource_and_releases_on_completion() -> (
+    None
+):
     async def scenario() -> None:
         runtime, authority, inflight, operation_registry, ids = _tool_runtime()
         del operation_registry
@@ -637,7 +637,9 @@ def test_confirmed_stop_control_cleans_tool_lock_before_terminalization() -> Non
             step_execution_id="step-exec-control",
         )
         admission = await runtime.admit(
-            tool_definition=cast(ToolDefinition, _resolved_tool(RecordingTool()).definition),
+            tool_definition=cast(
+                ToolDefinition, _resolved_tool(RecordingTool()).definition
+            ),
             tool_id="DOMAIN_TOOL",
             tool_version="1.0.0",
             execution_context=context,
@@ -708,8 +710,7 @@ def test_confirmed_stop_control_cleans_tool_lock_before_terminalization() -> Non
         assert result.prepared.execution_record.status == "CANCELLED"
         assert authority.active_lease("device-001:exclusive") is None
         assert (
-            await operation_registry.get(admission.handle.operation_handle_id)
-            is None
+            await operation_registry.get(admission.handle.operation_handle_id) is None
         )
         chain = await inflight.active_chain(
             execution_id=context.execution_id,

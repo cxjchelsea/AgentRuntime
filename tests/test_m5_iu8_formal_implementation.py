@@ -24,6 +24,7 @@ from runtime.execution import (
     ExecutionControlSignalType,
     ExecutionLifecycleManager,
     ExecutionLifecycleService,
+    IdempotencyMode,
     InFlightInterruptCoordinator,
     InFlightOperationHandle,
     InFlightOperationKind,
@@ -37,7 +38,6 @@ from runtime.execution import (
     M5ToolResult,
     ObservedExecutionControl,
     OperationResourceReleaseCoordinator,
-    PermissionDecisionStatus,
     PreparedExecution,
     ResolvedCapability,
     ResolvedIdempotencyPolicy,
@@ -45,7 +45,6 @@ from runtime.execution import (
     ResolvedResourceLock,
     ResolvedRetryPolicy,
     ResolvedTimeoutPolicy,
-    ResourceLockProjectionStatus,
     ResourceLockRequirement,
     ResourceLockResolutionDecision,
     ResourceLockResolutionStatus,
@@ -61,20 +60,16 @@ from runtime.execution import (
     TimeoutRunResult,
     TimeoutRunStatus,
     ToolConcurrencyRuntime,
-    IdempotencyMode,
     ToolExecutionStatus,
     ToolOperationCorrelationDecision,
     ToolOperationCorrelationKey,
     ToolOperationCorrelationStatus,
     ToolOperationOccurrenceDecision,
     ToolOperationOccurrenceStatus,
-    ToolPayloadValidationDecision,
-    ToolPayloadValidationStatus,
     ToolReliabilityRuntime,
     ToolResourceLockProjector,
 )
 from runtime.execution.models import ExecutionRecord
-from runtime.execution.reliability import ReliabilityCapabilityKind
 from runtime.registries.definitions import ToolDefinition
 from tests.test_m5_iu4_capability_execution import (
     CountingIdentifierFactory,

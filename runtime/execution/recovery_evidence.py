@@ -401,6 +401,30 @@ class DurableToolJournalEvidence:
         )
 
 
+class DurableControlReadStatus(str, Enum):
+    NONE = "NONE"
+    LATCHED = "LATCHED"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True, slots=True)
+class DurableControlReadDecision:
+    status: DurableControlReadStatus
+    reason_codes: tuple[str, ...]
+    latched_control: LatchedExecutionControl | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, DurableControlReadStatus):
+            raise TypeError("status must be DurableControlReadStatus")
+        if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
+            raise ValueError("reason_codes must contain non-blank values")
+        if self.status is DurableControlReadStatus.LATCHED:
+            if self.latched_control is None:
+                raise ValueError("LATCHED durable control read requires latched_control")
+        elif self.latched_control is not None:
+            raise ValueError("NONE/UNKNOWN durable control read cannot carry latch")
+
+
 class DurableTerminalControlStore(Protocol):
     async def latch(
         self,
@@ -411,11 +435,11 @@ class DurableTerminalControlStore(Protocol):
     ) -> ExecutionControlLatchDecision:
         """Atomically fence + persist first immutable terminal control."""
 
-    async def get_latched(
+    async def read_latched(
         self,
         execution_id: str,
-    ) -> LatchedExecutionControl | None:
-        """Load the durable terminal control barrier, if any."""
+    ) -> DurableControlReadDecision:
+        """Read durable control without collapsing storage uncertainty to NONE."""
 
 
 class DurableExecutionControlLatch(ExecutionControlLatch):
@@ -446,7 +470,14 @@ class DurableExecutionControlLatch(ExecutionControlLatch):
         self,
         execution_id: str,
     ) -> LatchedExecutionControl | None:
-        return await self._store.get_latched(execution_id)
+        decision = await self._store.read_latched(execution_id)
+        if decision.status is DurableControlReadStatus.UNKNOWN:
+            raise RuntimeError(decision.reason_codes[0])
+        if decision.status is DurableControlReadStatus.NONE:
+            return None
+        if decision.latched_control is None:
+            raise RuntimeError("DURABLE_CONTROL_READ_INVALID")
+        return decision.latched_control
 
 
 class InFlightEvidenceState(str, Enum):
@@ -488,6 +519,31 @@ class DurableInFlightOperationObservation:
             )
 
 
+class InFlightRecoveryTransitionStatus(str, Enum):
+    TRANSITIONED = "TRANSITIONED"
+    NO_ACTIVE = "NO_ACTIVE"
+    CONFLICT = "CONFLICT"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True, slots=True)
+class InFlightRecoveryTransitionDecision:
+    status: InFlightRecoveryTransitionStatus
+    reason_codes: tuple[str, ...]
+    observations: tuple[DurableInFlightOperationObservation, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, InFlightRecoveryTransitionStatus):
+            raise TypeError("status must be InFlightRecoveryTransitionStatus")
+        if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
+            raise ValueError("reason_codes must contain non-blank values")
+        if self.status in {
+            InFlightRecoveryTransitionStatus.CONFLICT,
+            InFlightRecoveryTransitionStatus.UNKNOWN,
+        } and self.observations:
+            raise ValueError("CONFLICT/UNKNOWN cannot claim recovered observations")
+
+
 class DurableInFlightEvidenceStore(Protocol):
     async def register_active(
         self,
@@ -513,8 +569,8 @@ class DurableInFlightEvidenceStore(Protocol):
         execution_id: str,
         recovered_at: datetime,
         required_claim: ExecutionRecoveryClaim,
-    ) -> tuple[DurableInFlightOperationObservation, ...]:
-        """On restart, ACTIVE evidence becomes ORPHANED_UNCONFIRMED."""
+    ) -> InFlightRecoveryTransitionDecision:
+        """On restart, atomically fence and orphan ACTIVE evidence fail-closed."""
 
     async def load_inflight(
         self,
@@ -733,7 +789,14 @@ class InMemoryDurableRecoveryEvidenceStore(
 
             key = (execution_id, step_execution_id)
             current = self._step_cursors.get(key)
-            current_attempt = 1 if current is None else current.current_attempt
+            if current is None:
+                return StepAttemptSequenceDecision(
+                    status=StepAttemptSequenceStatus.CONFLICT,
+                    step_execution_id=step_execution_id,
+                    expected_current_attempt=expected_current_attempt,
+                    reason_codes=("STEP_ATTEMPT_DURABLE_BASELINE_MISSING",),
+                )
+            current_attempt = current.current_attempt
             if current_attempt != expected_current_attempt:
                 return StepAttemptSequenceDecision(
                     status=StepAttemptSequenceStatus.CONFLICT,
@@ -746,7 +809,7 @@ class InMemoryDurableRecoveryEvidenceStore(
                 f"{execution_id}:{step_execution_id}:attempt:{next_attempt}:"
                 f"epoch:{required_claim.recovery_epoch}"
             )
-            revision = 1 if current is None else current.revision + 1
+            revision = current.revision + 1
             self._step_cursors[key] = StepAttemptCursorRecord(
                 execution_id=execution_id,
                 step_execution_id=step_execution_id,
@@ -998,15 +1061,27 @@ class InMemoryDurableRecoveryEvidenceStore(
                 latched_control=deepcopy(existing),
             )
 
-    async def get_latched(
+    async def read_latched(
         self,
         execution_id: str,
-    ) -> LatchedExecutionControl | None:
+    ) -> DurableControlReadDecision:
         if not isinstance(execution_id, str) or not execution_id.strip():
-            return None
+            return DurableControlReadDecision(
+                status=DurableControlReadStatus.UNKNOWN,
+                reason_codes=("DURABLE_CONTROL_READ_EXECUTION_ID_INVALID",),
+            )
         async with self._lock:
             current = self._control_latches.get(execution_id)
-            return None if current is None else deepcopy(current)
+            if current is None:
+                return DurableControlReadDecision(
+                    status=DurableControlReadStatus.NONE,
+                    reason_codes=("DURABLE_CONTROL_NOT_LATCHED",),
+                )
+            return DurableControlReadDecision(
+                status=DurableControlReadStatus.LATCHED,
+                reason_codes=("DURABLE_CONTROL_LATCH_FOUND",),
+                latched_control=deepcopy(current),
+            )
 
     async def register_active(
         self,
@@ -1130,16 +1205,23 @@ class InMemoryDurableRecoveryEvidenceStore(
         execution_id: str,
         recovered_at: datetime,
         required_claim: ExecutionRecoveryClaim,
-    ) -> tuple[DurableInFlightOperationObservation, ...]:
+    ) -> InFlightRecoveryTransitionDecision:
         _require_non_blank(execution_id, "execution_id")
         _require_aware(recovered_at, "recovered_at")
         _require_claim_execution(required_claim, execution_id)
         async with self._lock:
-            if (
-                self._fence_status(required_claim)
-                is not RecoveryEpochValidationStatus.CURRENT
-            ):
-                return ()
+            fence = self._fence_status(required_claim)
+            if fence is RecoveryEpochValidationStatus.STALE:
+                return InFlightRecoveryTransitionDecision(
+                    status=InFlightRecoveryTransitionStatus.CONFLICT,
+                    reason_codes=("INFLIGHT_RECOVERY_STALE_RECOVERY_EPOCH",),
+                )
+            if fence is not RecoveryEpochValidationStatus.CURRENT:
+                return InFlightRecoveryTransitionDecision(
+                    status=InFlightRecoveryTransitionStatus.UNKNOWN,
+                    reason_codes=("INFLIGHT_RECOVERY_EPOCH_UNKNOWN",),
+                )
+            transitioned = False
             for handle_id, existing in tuple(self._inflight.items()):
                 if (
                     existing.handle.execution_id == execution_id
@@ -1152,12 +1234,26 @@ class InMemoryDurableRecoveryEvidenceStore(
                         observed_at=recovered_at,
                         writer_recovery_epoch=required_claim.recovery_epoch,
                     )
-            return deepcopy(
+                    transitioned = True
+            observations = deepcopy(
                 tuple(
                     item
                     for item in self._inflight.values()
                     if item.handle.execution_id == execution_id
                 )
+            )
+            return InFlightRecoveryTransitionDecision(
+                status=(
+                    InFlightRecoveryTransitionStatus.TRANSITIONED
+                    if transitioned
+                    else InFlightRecoveryTransitionStatus.NO_ACTIVE
+                ),
+                reason_codes=(
+                    ("INFLIGHT_ACTIVE_RECOVERED_AS_ORPHANED",)
+                    if transitioned
+                    else ("INFLIGHT_NO_ACTIVE_AT_RECOVERY",)
+                ),
+                observations=observations,
             )
 
     async def load_inflight(

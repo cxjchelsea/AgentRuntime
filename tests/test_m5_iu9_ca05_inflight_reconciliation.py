@@ -31,6 +31,7 @@ from runtime.execution.recovery_resource_lock import (
     OperationRecoveryStatus,
     ProviderFenceDecision,
     ProviderFenceEvidence,
+    ProviderFencePersistenceStatus,
     ProviderFenceStatus,
     ResourceRecoveryStatus,
     ToolResourceRecoveryCoordinator,
@@ -334,10 +335,10 @@ def test_probe_stop_reclaims_resource_and_commits_confirmed_stopped() -> None:
             execution_id=handle.execution_id,
             step_execution_id=handle.step_execution_id,
         )
-        assert observations[0].state is InFlightEvidenceState.CONFIRMED_STOPPED
+        assert observations[0].state is InFlightEvidenceState.FENCED_OUT
         assert (
             observations[0].reconciliation_basis
-            is InFlightReconciliationBasis.OPERATION_STOPPED_CONFIRMED
+            is InFlightReconciliationBasis.PROVIDER_FENCE_ESTABLISHED
         )
 
     asyncio.run(scenario())
@@ -436,6 +437,20 @@ def test_released_binding_tombstone_backfills_orphan_terminal_evidence() -> None
             required_claim=recovery,
         )
 
+        fence = ProviderFenceEvidence(
+            operation_handle_id=handle.operation_handle_id,
+            fencing_token=f"fence:{recovery.recovery_epoch}:{handle.operation_handle_id}",
+            established_at=NOW + timedelta(seconds=6),
+            recovery_epoch=recovery.recovery_epoch,
+        )
+        persisted = await resources.record_provider_fence(
+            binding,
+            evidence=fence,
+            recorded_at=NOW + timedelta(seconds=6),
+            required_claim=recovery,
+        )
+        assert persisted.status is ProviderFencePersistenceStatus.RECORDED
+
         for lease in binding.leases:
             released = await resources.release(
                 lease,
@@ -446,8 +461,9 @@ def test_released_binding_tombstone_backfills_orphan_terminal_evidence() -> None
         marked = await resources.mark_released(
             binding,
             released_at=NOW + timedelta(seconds=7),
-            release_basis="PROBE_STOPPED_CONFIRMED",
+            release_basis="PROVIDER_FENCE_ESTABLISHED",
             required_claim=recovery,
+            provider_fence=fence,
         )
         assert marked
 

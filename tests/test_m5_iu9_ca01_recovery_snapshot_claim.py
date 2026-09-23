@@ -735,9 +735,7 @@ def test_claim_detects_snapshot_change_during_claim_window() -> None:
         )
 
         assert decision.status is RecoveryClaimStatus.CONFLICT
-        assert decision.reason_codes == (
-            "RECOVERY_CLAIM_SOURCE_CHANGED_DURING_CLAIM",
-        )
+        assert decision.reason_codes == ("RECOVERY_CLAIM_SOURCE_CHANGED_DURING_CLAIM",)
         assert decision.current_claim is not None
         assert decision.current_claim.recovery_epoch == 2
         latest = await store.load("execution-001")

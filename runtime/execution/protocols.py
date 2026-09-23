@@ -59,4 +59,10 @@ class WorkflowImplementation(Protocol):
         execution_context: ExecutionContext,
         tool_invoker: ApprovedToolInvoker,
     ) -> M5WorkflowResult:
-        """Resume the same exact registered Workflow instance from durable checkpoint authority."""
+        """Resume the same exact Workflow instance from durable checkpoint authority.
+
+        Exact WorkflowResumeRequest replay must be idempotent or externally
+        reconcilable by checkpoint_id/checkpoint_generation/resume_token. A crash
+        after provider acceptance but before Core result persistence must never make
+        blind duplicate continuation safe by default.
+        """

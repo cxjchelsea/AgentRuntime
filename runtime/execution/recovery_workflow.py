@@ -598,6 +598,14 @@ class RecoveryCoordinator:
             )
         if len(running_steps) == 1:
             running_step = running_steps[0]
+            if (
+                running_step.workflow_id is not None
+                and running_step.skill_id is not None
+            ):
+                return self._unknown(
+                    snapshot.generation,
+                    "RECOVERY_RUNNING_STEP_OWNER_AMBIGUOUS",
+                )
             owner_kind: InFlightOperationKind | None = None
             capability_id: str | None = None
             if running_step.workflow_id is not None:

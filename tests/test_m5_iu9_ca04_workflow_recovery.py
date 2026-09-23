@@ -194,11 +194,6 @@ class EmptyBindingStore:
         return ()
 
 
-class FakeToolInvoker:
-    async def invoke(self, *, tool_id: str, input_payload: dict[str, Any]):
-        raise AssertionError("resume test must not invoke Tool")
-
-
 class ResumableWorkflow:
     def __init__(self) -> None:
         self.last_request: WorkflowResumeRequest | None = None
@@ -346,21 +341,20 @@ def test_resume_uses_same_instance_exact_version_and_checkpoint_material() -> No
             claim_authority=claims,
             checkpoint_store=store,
         )
-        decision = await coordinator.resume(
+        decision = await coordinator.authorize(
             checkpoint=checkpoint,
             resolved=_resolved_workflow(implementation),
             execution_context=_snapshot().execution_context.restore(),
-            tool_invoker=FakeToolInvoker(),
             recovery_claim=claim,
         )
-        assert decision.status is WorkflowResumeStatus.RESUMED
-        assert decision.result is not None
-        assert implementation.last_request is not None
-        assert implementation.last_request.workflow_instance_id == "wf-instance-1"
-        assert implementation.last_request.workflow_version == "7"
-        assert implementation.last_request.checkpoint_generation == 1
-        assert implementation.last_request.state_reference == "state://wf-1/g1"
-        assert implementation.last_request.resume_token == "token-g1"
+        assert decision.status is WorkflowResumeStatus.AUTHORIZED
+        assert decision.request is not None
+        assert decision.request.workflow_instance_id == "wf-instance-1"
+        assert decision.request.workflow_version == "7"
+        assert decision.request.checkpoint_generation == 1
+        assert decision.request.state_reference == "state://wf-1/g1"
+        assert decision.request.resume_token == "token-g1"
+        assert implementation.last_request is None
 
     asyncio.run(scenario())
 
@@ -587,11 +581,10 @@ def test_resume_rejects_checkpoint_that_is_no_longer_latest() -> None:
             claim_authority=claims,
             checkpoint_store=store,
         )
-        decision = await coordinator.resume(
+        decision = await coordinator.authorize(
             checkpoint=first,
             resolved=_resolved_workflow(ResumableWorkflow()),
             execution_context=_snapshot().execution_context.restore(),
-            tool_invoker=FakeToolInvoker(),
             recovery_claim=claim,
         )
         assert decision.status is WorkflowResumeStatus.UNKNOWN
@@ -644,7 +637,7 @@ class EpochAdvancingCheckpointStore:
         return decision
 
 
-def test_resume_rechecks_epoch_immediately_before_external_admission() -> None:
+def test_resume_rechecks_epoch_before_authorization_and_does_not_invoke() -> None:
     async def scenario() -> None:
         claims = InMemoryRecoveryClaimAuthority()
         claim = await _claim(claims)
@@ -679,15 +672,14 @@ def test_resume_rechecks_epoch_immediately_before_external_admission() -> None:
                 claims=claims,
             ),
         )
-        decision = await coordinator.resume(
+        decision = await coordinator.authorize(
             checkpoint=checkpoint,
             resolved=_resolved_workflow(implementation),
             execution_context=_snapshot().execution_context.restore(),
-            tool_invoker=FakeToolInvoker(),
             recovery_claim=claim,
         )
         assert decision.status is WorkflowResumeStatus.UNKNOWN
-        assert "WORKFLOW_RESUME_ADMISSION_STALE_RECOVERY_EPOCH" in decision.reason_codes
+        assert "WORKFLOW_RESUME_AUTHORIZATION_STALE_RECOVERY_EPOCH" in decision.reason_codes
         assert implementation.resume_calls == 0
 
     asyncio.run(scenario())

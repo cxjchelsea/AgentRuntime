@@ -1717,19 +1717,28 @@ class CoreApprovedToolInvoker(
             idempotency_key=idempotency_key,
         )
 
-        try:
-            inflight_handle = await self._begin_tool_inflight(
-                resolved=resolved,
-                logical_tool_call_id=logical_tool_call_id,
-                physical_attempt=physical_attempt,
+        (
+            concurrency_admission,
+            inflight_handle,
+            admission_reasons,
+        ) = await self._begin_physical_tool_operation(
+            resolved=resolved,
+            logical_tool_call_id=logical_tool_call_id,
+            physical_attempt=physical_attempt,
+        )
+        if admission_reasons:
+            error_code = (
+                "RESOURCE_LOCK_BUSY"
+                if concurrency_admission is not None
+                and concurrency_admission.status is ToolConcurrencyAdmissionStatus.BUSY
+                else admission_reasons[0]
             )
-        except ToolInvocationBoundaryError as exc:
             result = self._generated_result(
                 tool_call_id=logical_tool_call_id,
                 tool_id=tool_id,
                 status=ToolExecutionStatus.UNKNOWN,
-                error_code=exc.reason_code,
-                reason_codes=(exc.reason_code,),
+                error_code=error_code,
+                reason_codes=admission_reasons,
                 attempt=physical_attempt,
             )
             return self._append_journal_attempt(
@@ -1749,7 +1758,10 @@ class CoreApprovedToolInvoker(
                 self._execution_context,
             )
         except Exception:  # noqa: BLE001
-            completion_ok = await self._complete_tool_inflight(inflight_handle)
+            completion_ok = await self._complete_physical_tool_operation(
+                concurrency_admission=concurrency_admission,
+                inflight_handle=inflight_handle,
+            )
             error_code = (
                 "TOOL_EXECUTION_EXCEPTION"
                 if completion_ok
@@ -1774,7 +1786,10 @@ class CoreApprovedToolInvoker(
                 operation_fingerprint=operation_fingerprint,
             )
 
-        completion_ok = await self._complete_tool_inflight(inflight_handle)
+        completion_ok = await self._complete_physical_tool_operation(
+            concurrency_admission=concurrency_admission,
+            inflight_handle=inflight_handle,
+        )
         raw_identity_valid = (
             isinstance(raw_result, M5ToolResult)
             and isinstance(raw_result.status, ToolExecutionStatus)

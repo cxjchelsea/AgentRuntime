@@ -79,9 +79,10 @@ Recovery generation
 ExecutionRecoveryClaim
 recovery_epoch
 stale-writer rejection
+side-effect admission epoch validation
 ~~~
 
-没有这些机制，旧 worker / partitioned worker 可能覆盖新恢复进程的状态。
+没有这些机制，旧 worker / partitioned worker 不仅可能覆盖新恢复进程的状态，还可能在失去恢复所有权后继续进入新的 Skill / Workflow / Tool 真实副作用。因此 epoch 必须同时保护持久化 mutation 与 external side-effect admission。
 
 ~~~text
 B-M5-IU9-004 = OPEN
@@ -214,7 +215,19 @@ Execution recovery epoch 解决 Core stale writer；provider fencing 仅在 adap
 
 通过。
 
-### 10.5 IU9 不提前做 IU10/M6
+### 10.5 Durable checkpoint 不持久化 ephemeral secrets
+
+设计改为 recovery-safe ExecutionContext projection。短期 credential、connection handle、进程内 Tool context 不进入 durable snapshot；恢复后的 Tool 调用仍重新通过现有 Permission / Tool Context authority。
+
+通过。
+
+### 10.6 Recovery epoch 保护 side-effect admission
+
+设计明确 stale epoch 不仅不能写 state，也不能启动新的 Skill / Workflow / physical Tool side effect；这避免旧 worker 在新 recovery owner 接管后继续产生副作用。
+
+通过。
+
+### 10.7 IU9 不提前做 IU10/M6
 
 RecoveryDisposition 不生成 Canonical ExecutionResult，也不进行 M6 validation。
 
@@ -286,17 +299,19 @@ M5-IU9 IMPLEMENTATION READINESS = READY
 4. CA-M5-IU9-04 Targeted Review = PASSED + four gates GREEN
 5. B-M5-IU9-001～007 all CLOSED
 6. stale recovery writer cannot overwrite newer state
-7. latched terminal control survives restart
-8. active-at-crash operation is never assumed stopped
-9. retry / occurrence identity survives restart
-10. RESERVED / UNKNOWN idempotency never blind-replays
-11. stale Tool lock cannot be reclaimed by TTL alone
-12. provider fence limitations remain explicit
-13. WAITING Workflow is resumable only after durable exact checkpoint
-14. Workflow resume uses same instance + exact approved version
-15. recovery ordering applies control/reconciliation before resume/retry
-16. existing Scheduler reused; no replanning
-17. IU10/M6 not entered
+7. stale recovery epoch cannot admit new external side effect
+8. recovery snapshot does not persist ephemeral credentials/process handles
+9. latched terminal control survives restart
+10. active-at-crash operation is never assumed stopped
+11. retry / occurrence identity survives restart
+12. RESERVED / UNKNOWN idempotency never blind-replays
+13. stale Tool lock cannot be reclaimed by TTL alone
+14. provider fence limitations remain explicit
+15. WAITING Workflow is resumable only after durable exact checkpoint
+16. Workflow resume uses same instance + exact approved version
+17. recovery ordering applies control/reconciliation before resume/retry
+18. existing Scheduler reused; no replanning
+19. IU10/M6 not entered
 ~~~
 
 ## 14. Current Formal Status

@@ -338,7 +338,6 @@ class ResourceLockSetCoordinator:
                 )
             except Exception:  # noqa: BLE001
                 return await self._failed_with_rollback(
-                    request=request,
                     acquired=acquired,
                     failed_lock_key=resolved.lock_key,
                     failure_status=ResourceLockSetStatus.UNKNOWN,
@@ -346,7 +345,6 @@ class ResourceLockSetCoordinator:
                 )
             if not isinstance(acquisition_id, str) or not acquisition_id.strip():
                 return await self._failed_with_rollback(
-                    request=request,
                     acquired=acquired,
                     failed_lock_key=resolved.lock_key,
                     failure_status=ResourceLockSetStatus.UNKNOWN,
@@ -363,7 +361,6 @@ class ResourceLockSetCoordinator:
                 decision = await self._authority.acquire(acquire_request)
             except Exception:  # noqa: BLE001
                 return await self._failed_with_rollback(
-                    request=request,
                     acquired=acquired,
                     failed_lock_key=resolved.lock_key,
                     failure_status=ResourceLockSetStatus.UNKNOWN,
@@ -375,7 +372,6 @@ class ResourceLockSetCoordinator:
                 request=acquire_request,
             ):
                 return await self._failed_with_rollback(
-                    request=request,
                     acquired=acquired,
                     failed_lock_key=resolved.lock_key,
                     failure_status=ResourceLockSetStatus.UNKNOWN,
@@ -396,7 +392,6 @@ class ResourceLockSetCoordinator:
                 else ResourceLockSetStatus.UNKNOWN
             )
             return await self._failed_with_rollback(
-                request=request,
                 acquired=acquired,
                 failed_lock_key=resolved.lock_key,
                 failure_status=failure_status,
@@ -445,7 +440,6 @@ class ResourceLockSetCoordinator:
     async def _failed_with_rollback(
         self,
         *,
-        request: ResourceLockSetRequest,
         acquired: list[ResourceLockLease],
         failed_lock_key: str,
         failure_status: ResourceLockSetStatus,

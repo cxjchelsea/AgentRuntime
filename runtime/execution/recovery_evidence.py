@@ -824,7 +824,10 @@ class InMemoryDurableRecoveryEvidenceStore(
             operation_fingerprint,
         )
         async with self._lock:
-            if self._fence_status(required_claim) is not RecoveryEpochValidationStatus.CURRENT:
+            if (
+                self._fence_status(required_claim)
+                is not RecoveryEpochValidationStatus.CURRENT
+            ):
                 return ToolOperationOccurrenceDecision(
                     status=ToolOperationOccurrenceStatus.UNKNOWN,
                     reason_codes=("TOOL_OCCURRENCE_RECOVERY_EPOCH_NOT_CURRENT",),
@@ -967,7 +970,10 @@ class InMemoryDurableRecoveryEvidenceStore(
             )
 
         async with self._lock:
-            if self._fence_status(required_claim) is not RecoveryEpochValidationStatus.CURRENT:
+            if (
+                self._fence_status(required_claim)
+                is not RecoveryEpochValidationStatus.CURRENT
+            ):
                 return ExecutionControlLatchDecision(
                     status=ExecutionControlLatchStatus.UNKNOWN,
                     reason_codes=("CONTROL_LATCH_RECOVERY_EPOCH_NOT_CURRENT",),
@@ -1129,7 +1135,10 @@ class InMemoryDurableRecoveryEvidenceStore(
         _require_aware(recovered_at, "recovered_at")
         _require_claim_execution(required_claim, execution_id)
         async with self._lock:
-            if self._fence_status(required_claim) is not RecoveryEpochValidationStatus.CURRENT:
+            if (
+                self._fence_status(required_claim)
+                is not RecoveryEpochValidationStatus.CURRENT
+            ):
                 return ()
             for handle_id, existing in tuple(self._inflight.items()):
                 if (

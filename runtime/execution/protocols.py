@@ -54,8 +54,8 @@ class WorkflowImplementation(Protocol):
 
     async def resume(
         self,
-        request: WorkflowExecutionRequest,
+        request: WorkflowResumeRequest,
         execution_context: ExecutionContext,
         tool_invoker: ApprovedToolInvoker,
     ) -> M5WorkflowResult:
-        """Resume one registered Workflow instance from persisted state."""
+        """Resume the same exact registered Workflow instance from durable checkpoint authority."""

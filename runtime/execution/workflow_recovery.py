@@ -204,6 +204,16 @@ class WorkflowRecoveryCheckpointStore(Protocol):
         """Read the latest exact checkpoint without collapsing uncertainty to NONE."""
 
 
+class WorkflowRecoveryCheckpointReader(Protocol):
+    async def read_latest(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str,
+    ) -> WorkflowCheckpointReadDecision:
+        """Read latest exact Workflow recovery checkpoint fail-closed."""
+
+
 class WorkflowCheckpointAdapter(Protocol):
     async def persist_waiting_state(
         self,
@@ -595,7 +605,7 @@ class WorkflowResumeCoordinator:
         self,
         *,
         claim_authority: RecoveryClaimAuthority,
-        checkpoint_store: WorkflowRecoveryCheckpointStore,
+        checkpoint_store: WorkflowRecoveryCheckpointReader,
     ) -> None:
         self._claim_authority = claim_authority
         self._checkpoint_store = checkpoint_store
@@ -952,7 +962,7 @@ class RecoveryCoordinator:
         control_store: RecoveryControlReader,
         inflight_store: RecoveryInFlightReader,
         binding_store: RecoveryBindingReader,
-        workflow_checkpoint_store: WorkflowRecoveryCheckpointStore,
+        workflow_checkpoint_store: WorkflowRecoveryCheckpointReader,
         operation_probe: OperationRecoveryProbe | None = None,
         resource_recovery: ToolResourceRecoveryCoordinator | None = None,
         skill_replay_authority: SkillRecoveryReplayAuthority | None = None,

@@ -14,7 +14,10 @@ from typing import Mapping
 
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.planning import ApprovedActionPlan
-from runtime.execution.control import ExecutionControlSignalType
+from runtime.execution.control import (
+    ExecutionControlSignalType,
+    LatchedExecutionControl,
+)
 from runtime.execution.foundation import PreparedExecution, StepLifecycleSnapshot
 from runtime.execution.models import StepExecutionStatus
 from runtime.execution.recovery_evidence import (
@@ -59,7 +62,7 @@ class AggregationControlApplicabilityStatus(str, Enum):
 class AggregationControlApplicabilityDecision:
     status: AggregationControlApplicabilityStatus
     reason_codes: tuple[str, ...]
-    latched_control: object | None = None
+    latched_control: LatchedExecutionControl | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, AggregationControlApplicabilityStatus):

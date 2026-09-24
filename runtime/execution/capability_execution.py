@@ -2786,6 +2786,9 @@ class StepCapabilityExecutor:
         resume_request: WorkflowResumeRequest,
         attempt_number: int = 1,
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
+        recovered_current_attempt_journal: tuple[
+            ToolInvocationJournalEntry, ...
+        ] = (),
         side_effect_admission_guard: RecoverySideEffectAdmissionGuard | None = None,
     ) -> StepCapabilityExecutionOutcome:
         """Resume the exact approved Workflow checkpoint through existing M5 gates."""
@@ -2994,7 +2997,7 @@ class StepCapabilityExecutor:
                     outcome = boundary
                 else:
                     merged_journal = self._merge_resumed_attempt_journal(
-                        prior_attempt_journal=prior_attempt_journal,
+                        prior_attempt_journal=recovered_current_attempt_journal,
                         resumed_journal=tool_invoker.entries(),
                     )
                     if merged_journal is None:

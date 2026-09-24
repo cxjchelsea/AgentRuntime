@@ -272,6 +272,13 @@ class RunningStepCompletionCoordinator:
                 prepared=prepared,
                 step_id=observation.step_id,
             )
+        if prepared.execution_record.current_step != target.step_id:
+            return RunningStepCompletionDecision(
+                status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
+                reason_codes=("STEP_COMPLETION_CURRENT_STEP_MISMATCH",),
+                prepared=prepared,
+                step_id=observation.step_id,
+            )
 
         if finalization.disposition is StepFinalizationDisposition.KEEP_RUNNING:
             return RunningStepCompletionDecision(

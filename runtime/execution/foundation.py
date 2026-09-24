@@ -409,11 +409,7 @@ class ExecutionLifecycleManager:
         step_id: str,
         at: datetime,
     ) -> PreparedExecution:
-        target = self._step(prepared, authority.step_id)
-        if target.step_execution_id != authority.step_execution_id:
-            raise ExecutionLifecycleError(
-                "pending Step skip authority step_execution_id mismatch"
-            )
+        target = self._step(prepared, step_id)
         if target.status is not StepExecutionStatus.PENDING:
             raise ExecutionLifecycleError("only PENDING step can start")
         if prepared.execution_record.status != "RUNNING":
@@ -519,7 +515,11 @@ class ExecutionLifecycleManager:
                 "pending Step skip cannot occur while another Step is RUNNING"
             )
 
-        target = self._step(prepared, step_id)
+        target = self._step(prepared, authority.step_id)
+        if target.step_execution_id != authority.step_execution_id:
+            raise ExecutionLifecycleError(
+                "pending Step skip authority step_execution_id mismatch"
+            )
         if target.status is not StepExecutionStatus.PENDING:
             raise ExecutionLifecycleError(
                 "only PENDING Step can be scheduler-terminalized"

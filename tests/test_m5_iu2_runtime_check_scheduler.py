@@ -614,6 +614,25 @@ def test_scheduler_reports_complete_when_no_pending_steps_remain() -> None:
     assert decision.step_id is None
 
 
+def test_scheduler_complete_means_no_pending_steps_not_execution_success() -> None:
+    plan, prepared = _prepared()
+    first_done = _finish_first_step(
+        plan,
+        prepared,
+        status=StepExecutionStatus.FAILED,
+    )
+
+    decision = asyncio.run(
+        SequentialStepScheduler().next_step(
+            approved_plan=plan,
+            prepared=first_done,
+        )
+    )
+
+    assert decision.status is StepScheduleStatus.COMPLETE
+    assert decision.reason_codes == ("NO_PENDING_STEPS",)
+
+
 def test_scheduler_rejects_plan_execution_alignment_drift() -> None:
     plan, prepared = _running_prepared()
     drifted = replace(

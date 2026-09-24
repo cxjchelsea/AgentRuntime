@@ -16,6 +16,10 @@ from typing import TYPE_CHECKING, Any, Mapping
 from runtime.execution.models import StepExecutionStatus
 
 if TYPE_CHECKING:
+    from runtime.execution.aggregation_authority import (
+        AggregationEvidenceReadinessDecision,
+        StepSkipAggregationDecision,
+    )
     from runtime.execution.foundation import PreparedExecution, StepLifecycleSnapshot
     from runtime.execution.result_collection import StepAttemptObservation
 
@@ -270,17 +274,12 @@ class StepAggregationEvidence:
                 tool_call_ids=tuple(
                     str(item) for item in payload.get("tool_call_ids", ())
                 ),
-                tool_journal=tuple(
-                    deepcopy(item)
-                    for item in payload.get("tool_journal", ())
+                tool_journal=_tuple_of_dicts(payload.get("tool_journal", ())),
+                business_outputs=_tuple_of_dicts(
+                    payload.get("business_outputs", ())
                 ),
-                business_outputs=tuple(
-                    deepcopy(item)
-                    for item in payload.get("business_outputs", ())
-                ),
-                capability_events=tuple(
-                    deepcopy(item)
-                    for item in payload.get("capability_events", ())
+                capability_events=_tuple_of_dicts(
+                    payload.get("capability_events", ())
                 ),
                 has_non_success_tool_observation=bool(
                     payload.get("has_non_success_tool_observation", False)
@@ -429,14 +428,14 @@ class StepAggregationEvidenceAuthority:
         prepared: "PreparedExecution",
     ) -> tuple[
         StepAggregationEvidenceAssessment,
-        dict[str, object],
+        dict[str, "StepSkipAggregationDecision"],
     ]:
         from runtime.execution.aggregation_authority import (
             StepSkipAggregationDecision,
             StepSkipAggregationDisposition,
         )
 
-        skip_decisions: dict[str, object] = {}
+        skip_decisions: dict[str, StepSkipAggregationDecision] = {}
         execution_id = prepared.execution_record.execution_id
 
         for step in prepared.steps:
@@ -576,7 +575,10 @@ class StepAggregationEvidenceAuthority:
 
 def project_ca01_evidence_inputs(
     prepared: "PreparedExecution",
-) -> tuple[object, dict[str, object]]:
+) -> tuple[
+    "AggregationEvidenceReadinessDecision",
+    dict[str, "StepSkipAggregationDecision"],
+]:
     """Project exact CA-01 inputs without letting callers hand-construct READY."""
 
     from runtime.execution.aggregation_authority import (
@@ -640,6 +642,17 @@ def _freeze_value(value: Any) -> Any:
     raise ValueError(
         f"unsupported aggregation evidence value type: {type(value).__name__}"
     )
+
+
+def _tuple_of_dicts(value: object) -> tuple[dict[str, Any], ...]:
+    if not isinstance(value, (tuple, list)):
+        raise ValueError("expected sequence of mappings")
+    result: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise ValueError("expected sequence of mappings")
+        result.append(deepcopy(dict(item)))
+    return tuple(result)
 
 
 def _optional_int(value: object | None) -> int | None:

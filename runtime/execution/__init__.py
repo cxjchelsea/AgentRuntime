@@ -31,6 +31,12 @@ from runtime.execution.aggregation_result import (
     ExecutionAggregationRunResult,
     ExecutionAggregator,
 )
+from runtime.execution.aggregation_runtime import (
+    DurableRecoveryControlRuntimeFactory,
+    M5ExecutionAggregationOutcome,
+    M5ExecutionAggregationRuntime,
+    M5ExecutionAggregationRuntimeStatus,
+)
 from runtime.execution.authority import (
     ApprovedWorkflowAuthority,
     project_workflow_authority,
@@ -507,6 +513,7 @@ __all__ = [
     "DurableOperationResourceBindingState",
     "DurableOperationResourceBindingStore",
     "DurableOperationResourceLeaseRegistry",
+    "DurableRecoveryControlRuntimeFactory",
     "DurableReliabilityEvidenceStore",
     "DurableResourceLockAuthority",
     "DurableResourceLockReadDecision",
@@ -615,6 +622,9 @@ __all__ = [
     "InterruptOutcome",
     "InterruptOutcomeStatus",
     "LatchedExecutionControl",
+    "M5ExecutionAggregationOutcome",
+    "M5ExecutionAggregationRuntime",
+    "M5ExecutionAggregationRuntimeStatus",
     "M5RecoveryRuntime",
     "M5RecoveryRuntimeOutcome",
     "M5RecoveryRuntimeStatus",

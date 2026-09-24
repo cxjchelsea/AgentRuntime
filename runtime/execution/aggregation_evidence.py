@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Mapping
 
-from runtime.execution.models import StepExecutionStatus
+from runtime.execution.models import StepExecutionStatus, ToolExecutionStatus
 
 if TYPE_CHECKING:
     from runtime.execution.aggregation_authority import (
@@ -159,15 +159,19 @@ class StepAggregationEvidence:
         derived_non_success = False
         derived_unknown = False
         derived_untrusted_success = False
+        valid_tool_statuses = {item.value for item in ToolExecutionStatus}
         for entry in self.tool_journal:
             tool_call_id = entry.get("tool_call_id")
             tool_id = entry.get("tool_id")
+            tool_version = entry.get("tool_version")
             result = entry.get("result")
             if (
                 not isinstance(tool_call_id, str)
                 or not tool_call_id.strip()
                 or not isinstance(tool_id, str)
                 or not tool_id.strip()
+                or not isinstance(tool_version, str)
+                or not tool_version.strip()
                 or not isinstance(result, Mapping)
             ):
                 raise ValueError("tool_journal entry structure is invalid")
@@ -177,8 +181,21 @@ class StepAggregationEvidence:
             ):
                 raise ValueError("tool_journal result identity mismatch")
             result_status = result.get("status")
-            if not isinstance(result_status, str) or not result_status.strip():
+            if result_status not in valid_tool_statuses:
                 raise ValueError("tool_journal result status is invalid")
+            result_attempt = result.get("attempt")
+            if (
+                isinstance(result_attempt, bool)
+                or not isinstance(result_attempt, int)
+                or result_attempt < 1
+            ):
+                raise ValueError("tool_journal result attempt is invalid")
+            _validate_frozen_tool_attempts(
+                entry=entry,
+                tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                tool_version=tool_version,
+            )
             if result_status != "SUCCESS":
                 derived_non_success = True
             if result_status == "UNKNOWN":
@@ -927,6 +944,75 @@ def _freeze_value(value: Any) -> Any:
     raise ValueError(
         f"unsupported aggregation evidence value type: {type(value).__name__}"
     )
+
+
+def _validate_frozen_tool_attempts(
+    *,
+    entry: Mapping[str, Any],
+    tool_call_id: str,
+    tool_id: str,
+    tool_version: str,
+) -> None:
+    operation_key = entry.get("operation_key")
+    operation_fingerprint = entry.get("operation_fingerprint")
+    idempotency_key = entry.get("idempotency_key")
+    if (operation_key is None) != (operation_fingerprint is None):
+        raise ValueError("tool_journal operation identity is inconsistent")
+    for value, field_name in (
+        (operation_key, "operation_key"),
+        (operation_fingerprint, "operation_fingerprint"),
+        (idempotency_key, "idempotency_key"),
+    ):
+        if value is not None and (
+            not isinstance(value, str) or not value.strip()
+        ):
+            raise ValueError(f"tool_journal {field_name} is invalid")
+
+    attempts = entry.get("attempts", [])
+    if not isinstance(attempts, list):
+        raise ValueError("tool_journal attempts must be list")
+    for expected, attempt in enumerate(attempts, start=1):
+        if not isinstance(attempt, Mapping):
+            raise ValueError("tool_journal attempt must be mapping")
+        if attempt.get("physical_attempt") != expected:
+            raise ValueError("tool_journal physical attempts must be contiguous")
+        if (
+            attempt.get("logical_tool_call_id") != tool_call_id
+            or attempt.get("tool_id") != tool_id
+            or attempt.get("tool_version") != tool_version
+            or attempt.get("operation_key") != operation_key
+            or attempt.get("operation_fingerprint") != operation_fingerprint
+            or attempt.get("idempotency_key") != idempotency_key
+        ):
+            raise ValueError("tool_journal attempt identity drift")
+        result = attempt.get("result")
+        if not isinstance(result, Mapping):
+            raise ValueError("tool_journal attempt result must be mapping")
+        if (
+            result.get("tool_call_id") != tool_call_id
+            or result.get("tool_id") != tool_id
+            or result.get("attempt") != expected
+        ):
+            raise ValueError("tool_journal attempt result identity mismatch")
+        raw_result = attempt.get("raw_result")
+        if raw_result is not None:
+            if not isinstance(raw_result, Mapping):
+                raise ValueError("tool_journal attempt raw_result must be mapping")
+            if (
+                raw_result.get("tool_call_id") != tool_call_id
+                or raw_result.get("tool_id") != tool_id
+                or raw_result.get("attempt") != expected
+            ):
+                raise ValueError("tool_journal attempt raw_result identity mismatch")
+
+    if attempts:
+        final_attempt = attempts[-1]
+        if entry.get("result") != final_attempt.get("result"):
+            raise ValueError("tool_journal final result does not match final attempt")
+        if entry.get("raw_result") != final_attempt.get("raw_result"):
+            raise ValueError(
+                "tool_journal final raw_result does not match final attempt"
+            )
 
 
 def _freeze_mapping_tuple(

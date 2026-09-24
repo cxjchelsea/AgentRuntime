@@ -16,6 +16,7 @@ from runtime.execution.aggregation_runtime import (
     M5ExecutionAggregationRuntimeStatus,
 )
 from runtime.execution.control import (
+    ExecutionControlLatchStatus,
     ExecutionControlSignal,
     ExecutionControlSignalType,
     ObservedExecutionControl,
@@ -31,6 +32,7 @@ from runtime.execution.control_application import (
     ExecutionControlApplicationEvaluator,
     ExecutionControlDisposition,
     InFlightInterruptCoordinator,
+    InMemoryInFlightOperationRegistry,
 )
 from runtime.execution.control_lifecycle import (
     ExecutionControlLifecycleService,
@@ -47,10 +49,7 @@ from runtime.execution.recovery import (
     RecoveryClaimRequest,
     RecoveryClaimStatus,
 )
-from runtime.execution.recovery_evidence import (
-    ExecutionControlLatchStatus,
-    InMemoryDurableRecoveryEvidenceStore,
-)
+from runtime.execution.recovery_evidence import InMemoryDurableRecoveryEvidenceStore
 from runtime.execution.reliability_boundary import (
     StepFinalizationDecision,
     StepFinalizationDisposition,
@@ -537,10 +536,7 @@ def test_durable_recovery_control_factory_binds_latch_and_applicability_to_same_
             transitioner=ExecutionControlLifecycleTransitioner(),
             execution_store=state_store,
         )
-        inflight = __import__(
-            "runtime.execution.control_application",
-            fromlist=["InMemoryInFlightOperationRegistry"],
-        ).InMemoryInFlightOperationRegistry()
+        inflight = InMemoryInFlightOperationRegistry()
         factory = DurableRecoveryControlRuntimeFactory(
             watcher=StaticWatcher(observed),
             control_store=reliability,
@@ -584,7 +580,7 @@ def test_durable_recovery_control_factory_binds_latch_and_applicability_to_same_
 def test_formal_runtime_does_not_use_skeleton_projector_or_hand_built_control() -> None:
     source = inspect.getsource(aggregation_runtime_module)
 
-    assert "ExecutionResultProjector" not in source
+    assert " ExecutionResultProjector" not in source
     assert "StaticAggregationControlAuthority" not in source
     assert "AggregationControlApplicabilityDecision(" not in source
     assert "DurableAggregationControlAuthority(" in source

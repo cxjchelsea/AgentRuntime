@@ -1073,3 +1073,56 @@ Terminal Step Completion Boundary
 -> CA-M5-IU10-01
 Aggregation Eligibility + Plan Status Authority
 ~~~
+
+
+# 34. Post-Readiness Amendment Record
+
+> 本节为 CA-00～03 完成后的累计 Readiness Re-Review 修订记录。
+> 第 30～33 节保留初始设计时点历史，不作为当前状态。
+
+CA-M5-IU10-00～03 全部通过后，累计 Re-Review 发现：
+
+~~~text
+B-M5-IU10-009
+DURABLE_CONTROL_APPLICABILITY_AUTHORITY_MISSING
+~~~
+
+根因：
+
+~~~text
+AggregationControlApplicabilityDecision 已存在
+ExecutionAggregationAuthority 已消费
+
+但 Formal Aggregator 仍可由 caller 直接提供：
+control
+control_applicability
+
+且没有 crash-safe authoritative producer
+区分：
+APPLIES
+vs
+LATE_NOOP
+~~~
+
+因此追加：
+
+~~~text
+CA-M5-IU10-04
+Durable Control Applicability Authority
+~~~
+
+CA-04 冻结：
+
+~~~text
+READY_TO_TERMINALIZE -> durable APPLIES
+ALREADY_TERMINAL -> durable LATE_NOOP
+
+exact durable latch binding
+recovery-epoch fenced immutable evidence
+write-before-control-lifecycle ordering
+control-terminal replay does not rewrite APPLIES as LATE_NOOP
+natural terminal commit后重新 resolve control authority
+ExecutionAggregator internally resolves authoritative control snapshot
+~~~
+
+当前实施状态以 CA-M5-IU10-04 文档与最新 Readiness Re-Review 为准。

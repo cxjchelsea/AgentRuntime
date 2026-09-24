@@ -5,15 +5,17 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Mapping
+from typing import Any, Mapping
 
 from runtime.contracts.enums import ExecutionPlanStatus
+from runtime.contracts.planning import ApprovedActionPlan
 from runtime.execution.aggregation_authority import (
     AggregationControlApplicabilityDecision,
     AggregationControlApplicabilityStatus,
     AggregationEvidenceReadinessDecision,
     AggregationEvidenceReadinessStatus,
     ExecutionAggregationAuthority,
+    ExecutionAggregationEligibilityDecision,
     ExecutionAggregationEligibilityStatus,
     StepSkipAggregationDecision,
     StepSkipAggregationDisposition,
@@ -46,7 +48,7 @@ from tests.orchestration_stubs import (
 NOW = datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
 
 
-def _plan(*, optional: tuple[bool | None, ...]):
+def _plan(*, optional: tuple[bool | None, ...]) -> ApprovedActionPlan:
     base = build_approved_action_plan()
     source = base.steps[0]
     return base.model_copy(
@@ -65,7 +67,7 @@ def _plan(*, optional: tuple[bool | None, ...]):
     )
 
 
-async def _prepared(plan) -> PreparedExecution:
+async def _prepared(plan: ApprovedActionPlan) -> PreparedExecution:
     ids = CallableExecutionIdentifierFactory(
         execution_id_factory=lambda: "execution-iu10-ca01",
         step_execution_id_factory=lambda step_id: f"exec:{step_id}",
@@ -111,7 +113,7 @@ def _with_steps(
                 } else None,
             )
         )
-    payload = tuple(
+    payload: tuple[dict[str, Any], ...] = tuple(
         {
             "step_execution_id": step.step_execution_id,
             "step_id": step.step_id,
@@ -208,14 +210,14 @@ def _latched(signal_type: ExecutionControlSignalType) -> DurableControlReadDecis
 
 
 async def _evaluate(
-    plan,
-    prepared,
+    plan: ApprovedActionPlan,
+    prepared: PreparedExecution,
     *,
     control: DurableControlReadDecision | None = None,
     control_applicability: AggregationControlApplicabilityDecision | None = None,
     evidence: AggregationEvidenceReadinessDecision | None = None,
     skips: Mapping[str, StepSkipAggregationDisposition] | None = None,
-):
+) -> ExecutionAggregationEligibilityDecision:
     resolved_control = control or _no_control()
     if control_applicability is None:
         if resolved_control.status is DurableControlReadStatus.NONE:

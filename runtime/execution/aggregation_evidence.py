@@ -381,7 +381,7 @@ class StepAggregationEvidence:
             raise ValueError("invalid StepAggregationEvidence payload keys")
         normalized = _freeze_value(payload)
         if not isinstance(normalized, dict):
-            raise ValueError("invalid StepAggregationEvidence payload")
+            raise ValueError("invalid StepAggregationEvidence payload")  # noqa: TRY004
         payload = normalized
         try:
             return cls(
@@ -459,7 +459,7 @@ class StepAggregationEvidence:
                     payload.get("scheduler_skip_disposition")
                 ),
             )
-        except (KeyError, TypeError, ValueError) as exc:
+        except (KeyError, TypeError) as exc:
             raise ValueError("invalid StepAggregationEvidence payload") from exc
 
     @classmethod

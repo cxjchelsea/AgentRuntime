@@ -170,6 +170,9 @@ APPLIES
 LATE_NOOP
 -> 必须携带并 exact 等于当前 DurableControlReadDecision.latched_control
 
+同 signal type 但不同 signal_id / reason / source / timestamp
+也不得复用 applicability。
+
 UNKNOWN
 -> BLOCKED_UNKNOWN
 ~~~
@@ -350,6 +353,8 @@ StepSkipAggregationDecision
 - step_id
 - disposition
 - reason_codes
+
+CA-02 给出的 skip decision 必须与当前 lifecycle exact identity 一致。
 ~~~
 
 映射：
@@ -539,7 +544,34 @@ at most one RUNNING Step
 BLOCKED_UNKNOWN
 ~~~
 
-# 16. Files
+# 16. Lifecycle timing consistency
+
+Eligibility 必须 fail-closed 校验基础 lifecycle envelope：
+
+~~~text
+RUNNING execution
+-> started_at required
+-> finished_at must be None
+
+terminal execution
+-> started_at / finished_at required
+-> finished_at >= started_at
+
+PENDING Step
+-> no started_at / finished_at
+
+RUNNING Step
+-> started_at required
+-> finished_at None
+
+terminal Step
+-> finished_at required
+-> if started_at exists: finished_at >= started_at
+~~~
+
+这些是 M5 lifecycle facts，不属于 CA-02 rich evidence。
+
+# 17. Files
 
 ~~~text
 runtime/execution/aggregation_authority.py
@@ -547,7 +579,7 @@ runtime/execution/__init__.py
 tests/test_m5_iu10_ca01_aggregation_authority.py
 ~~~
 
-# 17. Behavioral gates
+# 18. Behavioral gates
 
 ~~~text
 1. PENDING -> WAITING
@@ -580,9 +612,11 @@ tests/test_m5_iu10_ca01_aggregation_authority.py
 28. aggregation decision binds exact execution_id + plan_id
 29. Step action/capability provenance drift -> BLOCKED_UNKNOWN
 30. current_step pointer drift -> BLOCKED_UNKNOWN
+31. terminal Step missing finished_at -> BLOCKED_UNKNOWN
+32. existing terminal execution missing finished_at -> BLOCKED_UNKNOWN
 ~~~
 
-# 18. Independent Review findings
+# 19. Independent Review findings
 
 ~~~text
 F-M5-IU10-CA01-001
@@ -608,9 +642,13 @@ AGGREGATION_DECISION_NOT_BOUND_TO_EXECUTION_PLAN
 F-M5-IU10-CA01-006
 STEP_PROVENANCE_AND_CURRENT_STEP_ALIGNMENT_INCOMPLETE
 = CLOSED
+
+F-M5-IU10-CA01-007
+AGGREGATION_ELIGIBILITY_DID_NOT_VALIDATE_LIFECYCLE_TIMING_ENVELOPE
+= CLOSED
 ~~~
 
-# 19. Blocker impact
+# 20. Blocker impact
 
 ~~~text
 B-M5-IU10-001
@@ -630,7 +668,7 @@ B-M5-IU10-007 = CLOSED
 B-M5-IU10-008 = CLOSED
 ~~~
 
-# 20. Formal Implementation dependency
+# 21. Formal Implementation dependency
 
 CA-01 依赖后续 CA-02 提供 authoritative：
 
@@ -649,7 +687,7 @@ Formal Implementation 不得手工构造 READY / LATE_NOOP / APPLIES 来绕过 e
 
 所以 CA-01 即使 PASSED，M5-IU10 仍不能 READY。
 
-# 21. Non-goals
+# 22. Non-goals
 
 ~~~text
 rich evidence persistence
@@ -663,7 +701,7 @@ response generation
 state/memory mutation
 ~~~
 
-# 22. Current status
+# 23. Current status
 
 ~~~text
 CA-M5-IU10-01 = CODE COMPLETE

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol
 from datetime import UTC, datetime
 from enum import Enum
 
@@ -24,6 +25,7 @@ from runtime.execution.aggregation_result import (
     ExecutionAggregationRunResult,
     ExecutionAggregator,
 )
+from runtime.execution.capability_execution import StepCapabilityExecutor
 from runtime.execution.concurrency_runtime import ToolConcurrencyRuntime
 from runtime.execution.control import ExecutionControlWatcher
 from runtime.execution.control_applicability import (
@@ -47,7 +49,9 @@ from runtime.execution.recovery_evidence import (
     DurableExecutionControlLatch,
     DurableReliabilityEvidenceStore,
     DurableTerminalControlStore,
+    DurableToolJournalEvidence,
 )
+from runtime.execution.invocation import ToolInvocationJournalPersistence
 from runtime.execution.reliability_coordinator import (
     RecoveredStepReliabilityRunResult,
     RecoveredWorkflowReliabilityRunResult,
@@ -65,6 +69,64 @@ from runtime.execution.step_completion import (
     TerminalStepCompletionCoordinator,
     TerminalStepCompletionStatus,
 )
+
+
+class LiveExecutionBindingsBuilder(Protocol):
+    def build(
+        self,
+        *,
+        recovery_claim: ExecutionRecoveryClaim,
+        tool_journal_persistence: ToolInvocationJournalPersistence,
+    ) -> StepCapabilityExecutor:
+        """Build live execution authorities around the exact durable journal."""
+
+
+@dataclass(frozen=True, slots=True)
+class DurableLiveExecutionBindings:
+    """Live execution bindings whose Tool journal is claim-bound and durable."""
+
+    step_executor: StepCapabilityExecutor
+    tool_journal_persistence: DurableToolJournalEvidence
+
+
+class DurableLiveExecutionBindingsFactory:
+    """Enforce durable Tool journaling on the normal live execution path."""
+
+    def __init__(
+        self,
+        *,
+        builder: LiveExecutionBindingsBuilder,
+        reliability_store: DurableReliabilityEvidenceStore,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._builder = builder
+        self._reliability_store = reliability_store
+        self._clock = clock
+
+    def create(
+        self,
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> DurableLiveExecutionBindings:
+        journal = DurableToolJournalEvidence(
+            store=self._reliability_store,
+            execution_id=recovery_claim.execution_id,
+            recovery_claim=recovery_claim,
+            clock=self._clock,
+        )
+        executor = self._builder.build(
+            recovery_claim=recovery_claim,
+            tool_journal_persistence=journal,
+        )
+        if not isinstance(executor, StepCapabilityExecutor):
+            raise TypeError("live execution bindings builder returned invalid executor")
+        if executor.tool_journal_persistence is not journal:
+            raise ValueError(
+                "live StepCapabilityExecutor must use exact durable Tool journal"
+            )
+        return DurableLiveExecutionBindings(
+            step_executor=executor,
+            tool_journal_persistence=journal,
+        )
 
 
 class DurableControlRuntimeFactory:

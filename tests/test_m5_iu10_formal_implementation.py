@@ -920,12 +920,15 @@ def test_workflow_resume_keeps_current_attempt_prefix_separate_from_retry_histor
     assert "recovered_current_attempt_journal" in source
     assert "prior_attempt_journal=prior_attempt_journal" in source
     assert (
-        "prior_attempt_journal=recovered_current_attempt_journal"
+        "recovered_current_attempt_journal=("
         in source
     )
 
     recovery_source = inspect.getsource(M5RecoveryRuntime.recover)
-    assert "recovered_current_attempt_journal=prior_journal" in recovery_source
+    assert (
+        "recovered_current_attempt_journal=current_attempt_journal"
+        in recovery_source
+    )
 
 
 def test_workflow_resume_journal_merge_preserves_prior_order_and_fails_on_conflict() -> None:
@@ -943,7 +946,7 @@ def test_workflow_resume_journal_merge_preserves_prior_order_and_fails_on_confli
     )
 
     merged = StepCapabilityExecutor._merge_resumed_attempt_journal(
-        prior_attempt_journal=(first,),
+        recovered_current_attempt_journal=(first,),
         resumed_journal=(first, second),
     )
     assert merged == (first, second)
@@ -951,7 +954,7 @@ def test_workflow_resume_journal_merge_preserves_prior_order_and_fails_on_confli
     conflict = replace(first, tool_version="9.9.9")
     assert (
         StepCapabilityExecutor._merge_resumed_attempt_journal(
-            prior_attempt_journal=(first,),
+            recovered_current_attempt_journal=(first,),
             resumed_journal=(conflict,),
         )
         is None

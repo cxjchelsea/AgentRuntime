@@ -229,15 +229,28 @@ class ExecutionAggregationAuthority:
         ):
             return self._blocked("AGGREGATION_EVIDENCE_EXECUTION_MISMATCH")
 
-        if control_applicability.status is AggregationControlApplicabilityStatus.UNKNOWN:
+        if (
+            control_applicability.status
+            is AggregationControlApplicabilityStatus.UNKNOWN
+        ):
             return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_UNKNOWN")
 
         if control.status is DurableControlReadStatus.NONE:
-            if control_applicability.status is not AggregationControlApplicabilityStatus.NONE:
-                return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_MISMATCH")
+            if (
+                control_applicability.status
+                is not AggregationControlApplicabilityStatus.NONE
+            ):
+                return self._blocked(
+                    "AGGREGATION_CONTROL_APPLICABILITY_MISMATCH"
+                )
         else:
-            if control_applicability.status is AggregationControlApplicabilityStatus.NONE:
-                return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_MISMATCH")
+            if (
+                control_applicability.status
+                is AggregationControlApplicabilityStatus.NONE
+            ):
+                return self._blocked(
+                    "AGGREGATION_CONTROL_APPLICABILITY_MISMATCH"
+                )
             if (
                 control.latched_control is None
                 or control_applicability.latched_control != control.latched_control
@@ -414,8 +427,9 @@ class ExecutionAggregationAuthority:
             existing_plan_status=existing,
         )
 
-    @staticmethod
+    @classmethod
     def _alignment_error(
+        cls,
         approved_plan: ApprovedActionPlan,
         prepared: PreparedExecution,
     ) -> str | None:

@@ -207,6 +207,7 @@ class CoreApprovedToolInvoker(
         step_id: str | None = None,
         step_attempt_number: int = 1,
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
+        reserved_tool_call_ids: frozenset[str] = frozenset(),
         journal_persistence: ToolInvocationJournalPersistence | None = None,
         reliability_runtime: ToolReliabilityRuntime | None = None,
         inflight_registry: InFlightOperationRegistry | None = None,
@@ -267,7 +268,10 @@ class CoreApprovedToolInvoker(
         self._step_execution_id = step_execution_id
         self._step_id = step_id
         self._step_attempt_number = step_attempt_number
+        if any(not item.strip() for item in reserved_tool_call_ids):
+            raise ValueError("reserved_tool_call_ids must contain non-blank ids")
         self._prior_attempt_journal = prior_attempt_journal
+        self._reserved_tool_call_ids = reserved_tool_call_ids
         self._journal_persistence = journal_persistence
         self._reliability_runtime = reliability_runtime
         self._inflight_registry = inflight_registry
@@ -1300,7 +1304,10 @@ class CoreApprovedToolInvoker(
     ) -> None:
         existing = self._journal_entry(logical_tool_call_id)
         if existing is None:
-            if logical_tool_call_id in self._issued_tool_call_ids:
+            if (
+                logical_tool_call_id in self._issued_tool_call_ids
+                or logical_tool_call_id in self._reserved_tool_call_ids
+            ):
                 self._record_fault("TOOL_CALL_ID_COLLISION")
                 raise ToolInvocationBoundaryError(
                     "TOOL_CALL_ID_COLLISION",
@@ -1351,7 +1358,10 @@ class CoreApprovedToolInvoker(
                 "TOOL_CALL_ID_COLLISION",
                 "logical Tool call already has a journal entry",
             )
-        if result.tool_call_id in self._issued_tool_call_ids:
+        if (
+            result.tool_call_id in self._issued_tool_call_ids
+            or result.tool_call_id in self._reserved_tool_call_ids
+        ):
             raise ToolInvocationBoundaryError(
                 "TOOL_CALL_ID_COLLISION",
                 "logical Tool call id is already issued",
@@ -2298,7 +2308,10 @@ class CoreApprovedToolInvoker(
                 "TOOL_CALL_ID_UNAVAILABLE",
                 "Tool call id factory returned invalid id",
             )
-        if value in self._issued_tool_call_ids:
+        if (
+            value in self._issued_tool_call_ids
+            or value in self._reserved_tool_call_ids
+        ):
             self._record_fault("TOOL_CALL_ID_COLLISION")
             raise ToolInvocationBoundaryError(
                 "TOOL_CALL_ID_COLLISION",
@@ -2918,6 +2931,10 @@ class StepCapabilityExecutor:
                 step_id=step.step_id,
                 step_attempt_number=attempt_number,
                 prior_attempt_journal=prior_attempt_journal,
+                reserved_tool_call_ids=frozenset(
+                    entry.tool_call_id
+                    for entry in recovered_current_attempt_journal
+                ),
                 journal_persistence=self._journal_persistence,
                 reliability_runtime=self._reliability_runtime,
                 inflight_registry=(

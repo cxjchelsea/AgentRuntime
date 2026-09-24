@@ -182,7 +182,68 @@ plan SUCCESS
 
 CA-01 / CA-02 必须消费 degraded / rich owner evidence，不能只看 Step SUCCESS 就丢失 partial semantics。
 
-# 5. StepFinalizationDecision amendment
+# 5. Running Step Completion Boundary
+
+新增：
+
+~~~text
+RunningStepCompletionCoordinator
+RunningStepCompletionDecision
+RunningStepCompletionStatus
+~~~
+
+正式链：
+
+~~~text
+StepReliabilityCoordinator
+-> StepReliabilityRunResult / RecoveredStepReliabilityRunResult
+-> exact finalization_decision
+-> RunningStepCompletionCoordinator
+-> existing ExecutionLifecycleService.finish_step(...)
+~~~
+
+只有：
+
+~~~text
+StepFinalizationDisposition.FINALIZE
++ exact RUNNING step_id
++ exact step_execution_id
+~~~
+
+才允许提交 lifecycle terminal state。
+
+映射：
+
+~~~text
+FINALIZE
+-> TERMINALIZED
+
+KEEP_RUNNING
+-> no mutation
+
+WAIT_RECOVERY
+-> no mutation
+
+UNKNOWN
+-> BLOCKED_UNKNOWN / no mutation
+~~~
+
+Coordinator 不重新计算 reliability，不执行 retry，不调用 Skill / Workflow / Tool。
+
+提交的 lifecycle facts：
+
+~~~text
+terminal status
+finalization reason_codes
+attempt_number -> retry_count
+final Tool journal logical ids
+degraded
+finished_at
+~~~
+
+rich Skill / Workflow / Tool payload 仍留给 CA-02。
+
+# 6. StepFinalizationDecision amendment
 
 新增：
 
@@ -216,12 +277,13 @@ StepExecutionStatus.PARTIAL_SUCCESS
 
 因此不破坏已冻结 Step lifecycle enum。
 
-# 6. Terminal reason preservation
+# 7. Terminal reason / degradation preservation
 
 StepLifecycleSnapshot 新增：
 
 ~~~text
 terminal_reason_codes: tuple[str, ...] = ()
+degraded: bool = False
 ~~~
 
 用途：
@@ -230,6 +292,7 @@ terminal_reason_codes: tuple[str, ...] = ()
 Scheduler SKIP reason
 required-upstream-failure remainder reason
 later terminal evidence correlation
+PARTIAL_SUCCESS completion degradation
 ~~~
 
 该字段是 execution fact，不是 business interpretation。
@@ -242,7 +305,14 @@ ExecutionRecoverySnapshot exact typed-step comparison
 control lifecycle step payload projection
 ~~~
 
-# 7. Recovery backward compatibility
+约束：
+
+~~~text
+degraded = true
+-> StepLifecycleSnapshot.status must be SUCCESS
+~~~
+
+# 8. Recovery backward compatibility
 
 CA-00 对 IU9 recovery payload 的新增字段是 additive。
 
@@ -250,12 +320,14 @@ CA-00 对 IU9 recovery payload 的新增字段是 additive。
 
 ~~~text
 no terminal_reason_codes key
+no degraded key
 ~~~
 
 解释为：
 
 ~~~text
 terminal_reason_codes = []
+degraded = false
 ~~~
 
 新 snapshot 显式写出：
@@ -267,9 +339,9 @@ terminal_reason_codes
 因此：
 
 ~~~text
-legacy empty reason
+legacy empty reason / non-degraded
 ==
-new empty reason
+new empty reason / degraded=false
 ~~~
 
 不 bump：
@@ -282,7 +354,39 @@ RECOVERY_SNAPSHOT_SCHEMA_VERSION
 
 不同 non-empty reason 仍参与 exact comparison，不能被归一化掉。
 
-# 8. Truth / authority boundaries
+# 9. Degraded dependency semantics
+
+PARTIAL_SUCCESS 被映射为：
+
+~~~text
+Step lifecycle SUCCESS
++ degraded = true
+~~~
+
+只表示生命周期已结束，不表示它满足后续依赖。
+
+Scheduler 必须 fail-closed：
+
+~~~text
+required previous Step:
+  SUCCESS + degraded=true
+  -> REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL
+
+explicit depends_on:
+  dependency SUCCESS + degraded=true
+  -> SKIP / DEPENDENCY_NOT_SUCCESSFUL
+~~~
+
+因此：
+
+~~~text
+lifecycle completed
+!= dependency satisfied
+~~~
+
+对于 optional degraded Step 且后续 Step 没有 depends_on，仍沿用既有 optional continuation 规则。
+
+# 10. Truth / authority boundaries
 
 必须保持：
 
@@ -300,6 +404,9 @@ Step lifecycle SUCCESS
 with degraded=true
 != plan SUCCESS
 
+degraded SUCCESS
+!= dependency SUCCESS
+
 generic BLOCKED
 != permission to skip
 
@@ -307,13 +414,15 @@ WAITING / UNKNOWN
 != terminalization authority
 ~~~
 
-# 9. Files
+# 11. Files
 
 ~~~text
 runtime/execution/foundation.py
 runtime/execution/step_completion.py
 runtime/execution/reliability_boundary.py
 runtime/execution/reliability_defaults.py
+runtime/execution/reliability_coordinator.py (consumed contract; no semantic rewrite)
+runtime/execution/scheduler.py
 runtime/execution/recovery.py
 runtime/execution/control_lifecycle.py
 runtime/execution/__init__.py
@@ -322,7 +431,7 @@ tests/test_m5_iu10_ca00_terminal_step_completion.py
 tests/test_m5_iu6_formal_implementation.py
 ~~~
 
-# 10. Behavioral gates
+# 12. Behavioral gates
 
 覆盖：
 
@@ -342,9 +451,16 @@ tests/test_m5_iu6_formal_implementation.py
 13. forged step_execution_id skip authority is rejected
 14. skip authority kind cannot impersonate required-failure provenance
 15. PARTIAL_SUCCESS remains non-terminal while IU6 still requests RETRY
+16. IU6 FINALIZE is committed through RunningStepCompletionCoordinator
+17. WAIT_RECOVERY does not mutate RUNNING Step
+18. stale step_execution_id completion is blocked
+19. degraded lifecycle survives recovery snapshot roundtrip
+20. degraded required Step does not authorize later execution
+21. degraded explicit dependency is SKIPPED fail-closed
+22. replay against already terminal Step is blocked
 ~~~
 
-# 11. Findings
+# 13. Findings
 
 ~~~text
 F-M5-IU10-CA00-001
@@ -353,6 +469,18 @@ RECOVERY_STEP_PAYLOAD_ADDITIVE_FIELD_COULD_BREAK_LEGACY_SNAPSHOT_EXACTNESS
 
 F-M5-IU10-CA00-002
 PENDING_SKIP_MUTATION_SURFACE_NOT_AUTHORITY_SEALED
+= CLOSED
+
+F-M5-IU10-CA00-003
+STEP_FINALIZATION_DECISION_NOT_WIRED_TO_LIFECYCLE
+= CLOSED
+
+F-M5-IU10-CA00-004
+PARTIAL_SUCCESS_DEGRADED_FACT_COULD_BE_LOST_BEFORE_AGGREGATION
+= CLOSED
+
+F-M5-IU10-CA00-005
+DEGRADED_SUCCESS_COULD_FALSELY_SATISFY_DEPENDENCY
 = CLOSED
 ~~~
 
@@ -380,7 +508,33 @@ SCHEDULER_SKIP
 != REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL provenance
 ~~~
 
-# 12. Blocker impact
+Fix 3：
+
+~~~text
+IU6 finalization_decision
+-> RunningStepCompletionCoordinator
+-> existing lifecycle service
+~~~
+
+Fix 4：
+
+~~~text
+degraded
+-> StepLifecycleSnapshot
+-> ExecutionRecord.step_results
+-> Recovery snapshot exact payload
+~~~
+
+Fix 5：
+
+~~~text
+Scheduler required/dependency success
+must require:
+status == SUCCESS
+and degraded == false
+~~~
+
+# 14. Blocker impact
 
 Implementation intent：
 
@@ -400,7 +554,7 @@ B-M5-IU10-005 = OPEN
 B-M5-IU10-006 = OPEN
 ~~~
 
-# 13. Non-goals
+# 15. Non-goals
 
 CA-00 不做：
 
@@ -416,7 +570,7 @@ retry/resume
 Registry lookup
 ~~~
 
-# 14. Current status
+# 16. Current status
 
 ~~~text
 CA-M5-IU10-00 = CODE COMPLETE

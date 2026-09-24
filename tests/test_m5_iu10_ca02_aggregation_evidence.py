@@ -88,7 +88,42 @@ def _skill_plan():
             "optional": False,
         }
     )
-    return base.model_copy(update={"steps": [step]})
+    return base.model_copy(
+        update={
+            "steps": [step],
+            "capability_plan": {
+                "bindings": [
+                    {
+                        "action_id": "SKILL_ACTION",
+                        "skill_id": "skill-001",
+                        "skill_version": "1.0.0",
+                        "workflow_id": None,
+                        "workflow_version": None,
+                        "execution_owner": "SKILL",
+                    }
+                ],
+                "selected_skills": ["skill-001"],
+                "selected_workflows": [],
+            },
+            "tool_plan": {
+                "tool_calls": [
+                    {
+                        "tool_id": "tool-001",
+                        "tool_version": "1.0.0",
+                        "required": True,
+                        "required_by_skills": ["skill-001"],
+                        "required_by_workflows": [],
+                        "timeout_policy": None,
+                        "retry_policy": None,
+                        "idempotency_mode": None,
+                        "side_effect_level": None,
+                    }
+                ],
+                "parallelizable": False,
+                "required_success": True,
+            },
+        }
+    )
 
 
 def _workflow_plan():
@@ -101,7 +136,30 @@ def _workflow_plan():
             "optional": False,
         }
     )
-    return base.model_copy(update={"steps": [step]})
+    return base.model_copy(
+        update={
+            "steps": [step],
+            "capability_plan": {
+                "bindings": [
+                    {
+                        "action_id": "WORKFLOW_ACTION",
+                        "skill_id": None,
+                        "skill_version": None,
+                        "workflow_id": "workflow-001",
+                        "workflow_version": "1.0.0",
+                        "execution_owner": "WORKFLOW",
+                    }
+                ],
+                "selected_skills": [],
+                "selected_workflows": ["workflow-001"],
+            },
+            "tool_plan": {
+                "tool_calls": [],
+                "parallelizable": False,
+                "required_success": False,
+            },
+        }
+    )
 
 
 def _plain_plan():
@@ -308,11 +366,12 @@ def test_attempt_finalization_persists_rich_evidence_atomically() -> None:
         assert stored is not None
         assert stored.step_results[0]["aggregation_evidence"] == evidence.to_payload()
 
-        readiness, skips = project_ca01_evidence_inputs(decision.prepared)
+        readiness, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=decision.prepared)
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
         assert skips == {}
         raw_assessment, _ = StepAggregationEvidenceAuthority().assess(
-            decision.prepared
+            approved_plan=plan,
+            prepared=decision.prepared,
         )
         assert raw_assessment.status is StepAggregationEvidenceReadStatus.READY
 
@@ -359,7 +418,7 @@ def test_attempt_evidence_survives_recovery_snapshot_roundtrip() -> None:
             restored.steps[0].aggregation_evidence
             == completed.prepared.steps[0].aggregation_evidence
         )
-        readiness, skips = project_ca01_evidence_inputs(restored)
+        readiness, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=restored)
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
         assert skips == {}
 
@@ -414,7 +473,7 @@ def test_scheduler_skip_persists_explicit_skip_semantics(
         assert stored is not None
         assert stored.step_results[0]["aggregation_evidence"] == evidence.to_payload()
 
-        readiness, skips = project_ca01_evidence_inputs(decision.prepared)
+        readiness, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=decision.prepared)
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
         assert skips["step-001"].disposition is expected
         assert skips["step-001"].step_execution_id == step.step_execution_id
@@ -446,7 +505,7 @@ def test_required_previous_failure_blocked_terminalization_is_unsatisfied() -> N
         evidence = decision.prepared.steps[0].aggregation_evidence
         assert evidence is not None
         assert evidence.scheduler_skip_disposition == "UNSATISFIED"
-        readiness, skips = project_ca01_evidence_inputs(decision.prepared)
+        readiness, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=decision.prepared)
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
         assert (
             skips["step-001"].disposition
@@ -473,7 +532,7 @@ def test_terminal_step_without_aggregation_evidence_is_missing_not_invented() ->
             terminal_reason_codes=("LEGACY_DIRECT_FINISH",),
         )
 
-        readiness, skips = project_ca01_evidence_inputs(legacy_terminal)
+        readiness, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=legacy_terminal)
 
         assert readiness.status is AggregationEvidenceReadinessStatus.MISSING
         assert readiness.reason_codes == (
@@ -516,7 +575,7 @@ def test_persisted_evidence_drift_is_unknown_not_ready() -> None:
             ),
         )
 
-        assessment, skips = project_ca01_evidence_inputs(drifted)
+        assessment, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=drifted)
 
         assert assessment.status is AggregationEvidenceReadinessStatus.UNKNOWN
         assert assessment.reason_codes == (
@@ -565,7 +624,7 @@ def test_legacy_terminal_payload_without_evidence_remains_recovery_readable() ->
         restored = snapshot.restore_prepared_execution()
 
         assert restored.steps[0].aggregation_evidence is None
-        readiness, _ = project_ca01_evidence_inputs(restored)
+        readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=restored)
         assert readiness.status is AggregationEvidenceReadinessStatus.MISSING
 
     asyncio.run(scenario())
@@ -673,7 +732,7 @@ def test_workflow_completed_terminal_evidence_is_ready() -> None:
         assert evidence.workflow_result is not None
         assert evidence.workflow_result["status"] == "COMPLETED"
         assert evidence.business_outputs == ({"answer": "done"},)
-        readiness, _ = project_ca01_evidence_inputs(completed.prepared)
+        readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=completed.prepared)
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
 
     asyncio.run(scenario())
@@ -732,7 +791,7 @@ def test_workflow_waiting_payload_cannot_masquerade_as_terminal_success() -> Non
             ),
         )
 
-        readiness, _ = project_ca01_evidence_inputs(forged)
+        readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=forged)
 
         assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
         assert readiness.reason_codes == (
@@ -780,7 +839,7 @@ def test_unknown_tool_truth_blocks_terminal_evidence_readiness() -> None:
             ),
         )
 
-        readiness, _ = project_ca01_evidence_inputs(forged)
+        readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=forged)
 
         assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
         assert readiness.reason_codes == (
@@ -829,7 +888,7 @@ def test_recovered_attempt_number_survives_terminal_evidence() -> None:
         assert step.retry_count == 1
         assert step.aggregation_evidence is not None
         assert step.aggregation_evidence.final_attempt_number == 2
-        readiness, _ = project_ca01_evidence_inputs(completed.prepared)
+        readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=completed.prepared)
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
 
     asyncio.run(scenario())
@@ -916,7 +975,7 @@ def test_ambiguous_skill_and_workflow_owner_is_unknown() -> None:
             at=NOW + timedelta(seconds=3),
         )
 
-        readiness, _ = project_ca01_evidence_inputs(completed.prepared)
+        readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=completed.prepared)
 
         assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
         assert readiness.reason_codes == (

@@ -979,3 +979,31 @@ def test_persisted_step_status_drift_is_blocked() -> None:
         )
 
     asyncio.run(scenario())
+
+
+
+def test_created_execution_with_terminal_step_is_blocked_not_waiting() -> None:
+    async def scenario() -> None:
+        plan = _plan(optional=(False,))
+        prepared = _with_steps(
+            await _prepared(plan),
+            (StepExecutionStatus.SUCCESS, False, ("DONE",)),
+        )
+        corrupted = replace(
+            prepared,
+            started_at=None,
+            execution_record=replace(
+                prepared.execution_record,
+                status="CREATED",
+                current_step=None,
+            ),
+        )
+
+        decision = await _evaluate(plan, corrupted)
+
+        assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == (
+            "AGGREGATION_CREATED_EXECUTION_STEP_STATE_INVALID",
+        )
+
+    asyncio.run(scenario())

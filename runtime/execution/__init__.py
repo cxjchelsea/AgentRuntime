@@ -161,6 +161,7 @@ from runtime.execution.invocation import (
     ToolAttemptObservation,
     ToolInputValidator,
     ToolInvocationJournalEntry,
+    ToolInvocationJournalPersistence,
     ToolInvocationJournalReader,
     ToolOutputValidator,
     ToolPayloadValidationDecision,
@@ -274,11 +275,13 @@ from runtime.execution.recovery_resource_lock import (
 )
 from runtime.execution.recovery_runtime import (
     ApprovedPlanWorkflowVersionAuthority,
+    DurableRecoveryExecutionBindingsFactory,
     M5RecoveryRuntime,
     M5RecoveryRuntimeOutcome,
     M5RecoveryRuntimeStatus,
     RecoveryControlRuntimeFactory,
     RecoveryExecutionBindings,
+    RecoveryExecutionBindingsBuilder,
     RecoveryExecutionBindingsFactory,
 )
 from runtime.execution.recovery_workflow import (
@@ -517,6 +520,7 @@ __all__ = [
     "DurableOperationResourceBindingStore",
     "DurableOperationResourceLeaseRegistry",
     "DurableRecoveryControlRuntimeFactory",
+    "DurableRecoveryExecutionBindingsFactory",
     "DurableReliabilityEvidenceStore",
     "DurableResourceLockAuthority",
     "DurableResourceLockReadDecision",
@@ -676,6 +680,7 @@ __all__ = [
     "RecoveryEpochValidationDecision",
     "RecoveryEpochValidationStatus",
     "RecoveryExecutionBindings",
+    "RecoveryExecutionBindingsBuilder",
     "RecoveryExecutionBindingsFactory",
     "RecoverySafeExecutionContext",
     "RecoverySideEffectAdmissionDecision",
@@ -807,6 +812,7 @@ __all__ = [
     "ToolInputValidator",
     "ToolInvocationBoundaryError",
     "ToolInvocationJournalEntry",
+    "ToolInvocationJournalPersistence",
     "ToolInvocationJournalReader",
     "ToolInvocationRequest",
     "ToolJournalWriteDecision",

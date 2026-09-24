@@ -262,6 +262,26 @@ typed/persisted drift / owner mismatch / Tool UNKNOWN / ambiguous owner -> UNKNO
 
 Formal Implementation 不得手工构造 READY 来绕过该 authority。
 
+StepAggregationEvidenceAuthority 必须同时消费 frozen ApprovedActionPlan。
+
+ATTEMPT_FINALIZED evidence 还必须验证：
+
+~~~text
+execution owner
+owner capability id/version
+Tool id/version
+~~~
+
+均来自 ApprovedStepCapabilityProjector 的 frozen capability/tool authority。
+
+禁止：
+
+~~~text
+evidence self-claim version
+Registry latest substitution
+unapproved Tool version
+~~~
+
 # 16. Immutability and replay
 
 CA-02 不建立第二套独立 mutable evidence store。evidence 属于 immutable terminal Step fact。
@@ -306,6 +326,10 @@ tests/test_m5_iu10_ca02_aggregation_evidence.py
 20. extra/coercive serialized fields rejected
 21. forged Tool truth flags rejected
 22. ambiguous Skill+Workflow owner -> UNKNOWN
+23. owner version drift from ApprovedActionPlan -> UNKNOWN
+24. Tool version drift from ApprovedActionPlan -> UNKNOWN
+25. owner result Tool results must equal Core journal final results
+26. frozen physical Tool attempts are revalidated
 ~~~
 
 # 19. Independent Review findings accumulated during implementation
@@ -317,9 +341,30 @@ F-M5-IU10-CA02-003 FINAL_ATTEMPT_STATUS_NOT_CRASH_PRESERVED = CLOSED
 F-M5-IU10-CA02-004 TOOL_TRUTH_FLAGS_COULD_BE_FORGED = CLOSED
 F-M5-IU10-CA02-005 STEP_OWNER_COULD_BE_AMBIGUOUS = CLOSED
 F-M5-IU10-CA02-006 SERIALIZED_EVIDENCE_ALLOWED_COERCIVE_TYPES = CLOSED
+F-M5-IU10-CA02-007 OWNER_RESULT_TOOL_RESULTS_COULD_DIVERGE_FROM_CORE_JOURNAL = CLOSED
+F-M5-IU10-CA02-008 EXTENSIBLE_PAYLOADS_COULD_BYPASS_RECOVERY_SAFE_FREEZE = CLOSED
+F-M5-IU10-CA02-009 FROZEN_PHYSICAL_TOOL_ATTEMPTS_NOT_REVALIDATED = CLOSED
+F-M5-IU10-CA02-010 OWNER_AND_TOOL_VERSIONS_COULD_SELF_CLAIM_WITHOUT_APPROVED_PLAN = CLOSED
+F-M5-IU10-CA02-011 CONTROL_PATH_LACKS_EXACT_FINAL_ATTEMPT_AUTHORITY = CLOSED_BY_BOUNDARY
 ~~~
 
-# 20. Blocker impact
+# 20. Independent Review boundary on control evidence
+
+Control-terminalized Step 的 evidence 是 crash-safe terminal fact，但不是完整 cancellation projector。
+
+CA-02 不使用 retry_count + 1 猜 final attempt，也不从 durable Tool journal 随意选 attempt。
+
+因此：
+
+~~~text
+CONTROL_TERMINALIZED evidence
++ IU9 durable control / Tool evidence
+-> 后续 CA-03 authoritative join
+~~~
+
+该边界关闭的是 CA-02 的“不得发明”问题，不关闭 B-M5-IU10-004。
+
+# 21. Blocker impact
 
 ~~~text
 B-M5-IU10-002
@@ -336,7 +381,7 @@ B-M5-IU10-007 = CLOSED
 B-M5-IU10-008 = CLOSED
 ~~~
 
-# 21. Non-goals
+# 22. Non-goals
 
 ~~~text
 change CA-01 plan-status matrix
@@ -351,7 +396,7 @@ replanning / retry / resume
 Registry lookup
 ~~~
 
-# 22. Current status
+# 23. Current status
 
 ~~~text
 CA-M5-IU10-02 = CODE COMPLETE

@@ -28,6 +28,7 @@ from runtime.contracts.planning import ApprovedActionPlan
 from runtime.execution.aggregation_authority import (
     AggregationControlApplicabilityDecision,
     AggregationControlApplicabilityStatus,
+    AggregationEvidenceReadinessStatus,
     ExecutionAggregationAuthority,
     ExecutionAggregationEligibilityDecision,
     ExecutionAggregationEligibilityStatus,
@@ -122,16 +123,24 @@ class CanonicalExecutionResultProjector:
             approved_plan=approved_plan,
             prepared=prepared,
         )
-        if evidence_readiness.status.value != "READY":
+        if (
+            evidence_readiness.status
+            is not AggregationEvidenceReadinessStatus.READY
+        ):
             raise ExecutionAggregationProjectionError(
                 "EXECUTION_RESULT_EVIDENCE_NOT_READY"
             )
 
-        step_by_id = {step.step_id: step for step in prepared.steps}
-        if tuple(step_by_id) != tuple(step.step_id for step in approved_plan.steps):
+        prepared_step_ids = tuple(step.step_id for step in prepared.steps)
+        approved_step_ids = tuple(step.step_id for step in approved_plan.steps)
+        if (
+            prepared_step_ids != approved_step_ids
+            or len(set(prepared_step_ids)) != len(prepared_step_ids)
+        ):
             raise ExecutionAggregationProjectionError(
                 "EXECUTION_RESULT_STEP_ORDER_MISMATCH"
             )
+        step_by_id = {step.step_id: step for step in prepared.steps}
 
         step_results: list[StepExecutionResult] = []
         skill_results: list[dict[str, Any]] = []

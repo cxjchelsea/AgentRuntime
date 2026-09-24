@@ -243,6 +243,29 @@ finished_at
 
 rich Skill / Workflow / Tool payload 仍留给 CA-02。
 
+FINALIZE 还必须满足 observation/finalization exact consistency：
+
+~~~text
+SUCCESS + degraded=false
+<-> StepAttemptStatus.SUCCESS
+
+SUCCESS + degraded=true
+<-> StepAttemptStatus.PARTIAL_SUCCESS
+
+FAILED
+<-> StepAttemptStatus.FAILED
+
+TIMEOUT
+<-> StepAttemptStatus.TIMEOUT
+~~~
+
+不一致：
+
+~~~text
+BLOCKED_UNKNOWN
+STEP_COMPLETION_FINALIZATION_OBSERVATION_MISMATCH
+~~~
+
 # 6. StepFinalizationDecision amendment
 
 新增：
@@ -458,6 +481,8 @@ tests/test_m5_iu6_formal_implementation.py
 20. degraded required Step does not authorize later execution
 21. degraded explicit dependency is SKIPPED fail-closed
 22. replay against already terminal Step is blocked
+23. finalization status cannot contradict final observation
+24. recovered IU6 reliability result uses the same completion boundary
 ~~~
 
 # 13. Findings
@@ -481,6 +506,10 @@ PARTIAL_SUCCESS_DEGRADED_FACT_COULD_BE_LOST_BEFORE_AGGREGATION
 
 F-M5-IU10-CA00-005
 DEGRADED_SUCCESS_COULD_FALSELY_SATISFY_DEPENDENCY
+= CLOSED
+
+F-M5-IU10-CA00-006
+FINALIZATION_DECISION_COULD_CONTRADICT_FINAL_OBSERVATION
 = CLOSED
 ~~~
 
@@ -532,6 +561,15 @@ Scheduler required/dependency success
 must require:
 status == SUCCESS
 and degraded == false
+~~~
+
+Fix 6：
+
+~~~text
+RunningStepCompletionCoordinator
+cross-checks finalization terminal/degraded
+against exact final StepAttemptStatus
+before lifecycle mutation
 ~~~
 
 # 14. Blocker impact

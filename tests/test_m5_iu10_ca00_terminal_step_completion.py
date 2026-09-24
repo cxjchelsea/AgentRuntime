@@ -533,7 +533,9 @@ def test_running_completion_does_not_mutate_wait_recovery_step() -> None:
             step_id="step-001",
             at=NOW + timedelta(seconds=1),
         )
-        observation = _partial_observation()
+        observation = _partial_observation(
+            step_execution_id=running_step.steps[0].step_execution_id
+        )
         result = StepReliabilityRunResult(
             attempts=(observation,),
             reliability_decision=StepReliabilityDecision(
@@ -650,5 +652,111 @@ def test_degraded_lifecycle_fact_survives_recovery_snapshot_roundtrip() -> None:
         assert restored.steps[0].status is StepExecutionStatus.SUCCESS
         assert restored.steps[0].degraded is True
         assert restored.execution_record.step_results[0]["degraded"] is True
+
+    asyncio.run(scenario())
+
+
+
+def test_degraded_required_step_does_not_authorize_later_step_execution() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=2, first_optional=False)
+        prepared, service, _ = await _running(plan)
+        running_step = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        partial = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running_step,
+            reliability_result=_partial_reliability_result(
+                step_execution_id=running_step.steps[0].step_execution_id
+            ),
+            at=NOW + timedelta(seconds=2),
+        )
+        assert partial.prepared.steps[0].degraded is True
+
+        schedule = await SequentialStepScheduler().next_step(
+            approved_plan=plan,
+            prepared=partial.prepared,
+        )
+
+        assert schedule.status is StepScheduleStatus.BLOCKED
+        assert schedule.step_id == "step-002"
+        assert schedule.reason_codes == (
+            "REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL",
+        )
+
+    asyncio.run(scenario())
+
+
+def test_degraded_dependency_is_skipped_fail_closed() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(
+            count=2,
+            first_optional=True,
+            second_depends_on_first=True,
+        )
+        prepared, service, _ = await _running(plan)
+        running_step = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        partial = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running_step,
+            reliability_result=_partial_reliability_result(
+                step_execution_id=running_step.steps[0].step_execution_id
+            ),
+            at=NOW + timedelta(seconds=2),
+        )
+
+        schedule = await SequentialStepScheduler().next_step(
+            approved_plan=plan,
+            prepared=partial.prepared,
+        )
+
+        assert schedule.status is StepScheduleStatus.SKIP
+        assert schedule.step_id == "step-002"
+        assert schedule.reason_codes == ("DEPENDENCY_NOT_SUCCESSFUL",)
+
+    asyncio.run(scenario())
+
+
+def test_running_completion_rejects_already_terminal_step_replay() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, service, store = await _running(plan)
+        running_step = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        coordinator = RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        )
+        result = _partial_reliability_result(
+            step_execution_id=running_step.steps[0].step_execution_id
+        )
+        first = await coordinator.complete(
+            prepared=running_step,
+            reliability_result=result,
+            at=NOW + timedelta(seconds=2),
+        )
+
+        replay = await coordinator.complete(
+            prepared=first.prepared,
+            reliability_result=result,
+            at=NOW + timedelta(seconds=3),
+        )
+
+        assert replay.status is RunningStepCompletionStatus.BLOCKED_UNKNOWN
+        assert replay.reason_codes == ("STEP_COMPLETION_STEP_NOT_RUNNING",)
+        persisted = await store.load("execution-iu10-ca00")
+        assert persisted is not None
+        assert persisted.step_results[0]["degraded"] is True
 
     asyncio.run(scenario())

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Mapping
+from typing import ClassVar, Mapping
 
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.planning import ApprovedActionPlan
@@ -198,7 +198,7 @@ class ExecutionAggregationEligibilityDecision:
 class ExecutionAggregationAuthority:
     """Pure IU10 authority over aggregation eligibility and terminal plan status."""
 
-    _TERMINAL_EXECUTION_STATUSES = {
+    _TERMINAL_EXECUTION_STATUSES: ClassVar[dict[str, ExecutionPlanStatus]] = {
         item.value: item for item in ExecutionPlanStatus
     }
 

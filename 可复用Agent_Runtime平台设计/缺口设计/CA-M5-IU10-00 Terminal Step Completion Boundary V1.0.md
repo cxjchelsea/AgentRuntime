@@ -605,8 +605,8 @@ RUNNING completion requires current_step == exact target Step
 Implementation intent：
 
 ~~~text
-B-M5-IU10-007 = FIX_IMPLEMENTED_PENDING_GATES
-B-M5-IU10-008 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-007 = CLOSED
+B-M5-IU10-008 = CLOSED
 ~~~
 
 不影响：
@@ -639,9 +639,9 @@ Registry lookup
 # 16. Current status
 
 ~~~text
-CA-M5-IU10-00 = CODE COMPLETE
+CA-M5-IU10-00 = PASSED
 CA-M5-IU10-00 INDEPENDENT REVIEW = PASSED
-CA-M5-IU10-00 VERIFICATION = PENDING
+CA-M5-IU10-00 VERIFICATION = PASSED
 
 M5-IU10 IMPLEMENTATION READINESS = NOT_READY
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
@@ -698,12 +698,12 @@ STEP_COMPLETION_COULD_HIDE_CURRENT_STEP_POINTER_DRIFT
 正式 Review 结论：
 
 ~~~text
-CA-M5-IU10-00 = CODE COMPLETE
+CA-M5-IU10-00 = PASSED
 CA-M5-IU10-00 INDEPENDENT REVIEW = PASSED
-CA-M5-IU10-00 VERIFICATION = PENDING
+CA-M5-IU10-00 VERIFICATION = PASSED
 
-B-M5-IU10-007 = FIX_IMPLEMENTED_PENDING_GATES
-B-M5-IU10-008 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-007 = CLOSED
+B-M5-IU10-008 = CLOSED
 
 M5-IU10 IMPLEMENTATION READINESS = NOT_READY
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
@@ -716,4 +716,117 @@ M5 = IN PROGRESS
 CA-M5-IU10-00 = PASSED
 B-M5-IU10-007 = CLOSED
 B-M5-IU10-008 = CLOSED
+~~~
+
+
+# 18. Verification Closure
+
+Verification target：
+
+~~~text
+PR #74
+verified semantic baseline = 32f31b6ed2a5208fe8f3d4e8861b543e4799e30b
+verified gate HEAD = 250cda00e35c035bcb8927b5ad2fc4b4ee10572c
+~~~
+
+Independent Review baseline 到 gate HEAD：
+
+~~~text
+32f31b6 -> 250cda00
+1 commit
+6 files
+~~~
+
+Exact delta 复核结论：
+
+~~~text
+tests/test_m5_iu10_ca00_terminal_step_completion.py
+- 仅补测试 fixture 类型注解与 formatter 变更
+
+runtime/execution/__init__.py
+- 仅 __all__ 字母序整理
+
+runtime/execution/foundation.py
+- PendingStepSkipAuthority 非法 kind 仍以 ValueError fail-closed
+- 仅增加 noqa: TRY004 与 formatter 变更
+
+runtime/execution/scheduler.py
+runtime/execution/step_completion.py
+tests/test_m5_iu7_ca03_control_lifecycle.py
+- 仅 formatter / 换行变更
+~~~
+
+未改变：
+
+~~~text
+Scheduler SKIP authority
+required-previous-step skip authority
+PendingStepSkipAuthority identity/provenance checks
+PARTIAL_SUCCESS -> SUCCESS + degraded mapping
+IU6 finalization -> RunningStepCompletionCoordinator
+finalization/observation exact consistency
+degraded dependency fail-closed
+current_step pointer fail-closed
+recovery additive compatibility
+control-terminal payload recovery compatibility
+~~~
+
+四项门禁由当前工作区在 gate HEAD `250cda00...` 上执行：
+
+~~~text
+python -m pytest tests -q
+= 866 passed
+
+python -m mypy runtime tests
+= Success, 209 files
+
+python -m ruff check runtime tests
+= PASSED
+
+python -m ruff format --check runtime tests
+= PASSED
+~~~
+
+GitHub repository 当前没有配置对应 check-run / commit status；因此本 Closure 的 executable evidence 为上述绑定到 exact gate HEAD 的本地四项门禁结果。
+
+Verification Closure 判定：
+
+~~~text
+CA-M5-IU10-00 = PASSED
+
+B-M5-IU10-007
+PENDING_STEP_TERMINALIZATION_AUTHORITY_MISSING
+= CLOSED
+
+B-M5-IU10-008
+PARTIAL_SUCCESS_STEP_FINALIZATION_AUTHORITY_MISSING
+= CLOSED
+~~~
+
+其余 IU10 readiness blockers 不受本 Closure 影响：
+
+~~~text
+B-M5-IU10-001 = OPEN
+B-M5-IU10-002 = OPEN
+B-M5-IU10-003 = OPEN
+B-M5-IU10-004 = OPEN
+B-M5-IU10-005 = OPEN
+B-M5-IU10-006 = OPEN
+~~~
+
+因此整体状态仍为：
+
+~~~text
+M5-IU10 IMPLEMENTATION READINESS = NOT_READY
+FORMAL IMPLEMENTATION = NOT AUTHORIZED
+M5 = IN PROGRESS
+~~~
+
+本 Verification Closure 不授权：
+
+~~~text
+CA-M5-IU10-01 implementation
+M5-IU10 Formal Implementation
+M6
+PR merge
 ~~~

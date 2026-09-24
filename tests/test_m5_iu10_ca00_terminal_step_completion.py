@@ -423,3 +423,31 @@ def test_direct_skip_mutation_rejects_authority_bound_to_other_step_execution() 
         assert stored.step_results[0]["status"] == "PENDING"
 
     asyncio.run(scenario())
+
+
+
+def test_skip_authority_kind_cannot_impersonate_required_failure_provenance() -> None:
+    with pytest.raises(ValueError, match="impersonate"):
+        PendingStepSkipAuthority(
+            execution_id="execution-iu10-ca00",
+            plan_id="plan-001",
+            step_execution_id="exec:step-001",
+            step_id="step-001",
+            kind=PendingStepSkipAuthorityKind.SCHEDULER_SKIP,
+            reason_codes=("REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL",),
+        )
+
+
+def test_partial_success_is_not_terminalized_while_iu6_still_requests_retry() -> None:
+    decision = BasicStepFinalizationEvaluator().evaluate(
+        observation=_partial_observation(),
+        reliability_decision=StepReliabilityDecision(
+            disposition=StepReliabilityDisposition.RETRY,
+            reason_codes=("STEP_RETRY_AUTHORIZED",),
+            next_attempt=2,
+        ),
+    )
+
+    assert decision.disposition is StepFinalizationDisposition.UNKNOWN
+    assert decision.terminal_status is None
+    assert decision.degraded is False

@@ -52,6 +52,8 @@ class StepAggregationEvidence:
     observed_at: datetime
     terminalized_at: datetime
     final_attempt_number: int | None = None
+    final_attempt_status: str | None = None
+    final_attempt_reason_codes: tuple[str, ...] = ()
     execution_owner: str | None = None
     owner_capability_id: str | None = None
     owner_capability_version: str | None = None
@@ -100,6 +102,10 @@ class StepAggregationEvidence:
             raise ValueError("terminalized_at cannot precede observed_at")
         if self.degraded and self.terminal_step_status is not StepExecutionStatus.SUCCESS:
             raise ValueError("degraded terminal evidence requires SUCCESS Step status")
+        if any(not reason.strip() for reason in self.final_attempt_reason_codes):
+            raise ValueError(
+                "final_attempt_reason_codes must not contain blank values"
+            )
         if (self.owner_capability_id is None) != (
             self.owner_capability_version is None
         ):
@@ -144,6 +150,22 @@ class StepAggregationEvidence:
             )
         if self.final_attempt_number is None or self.final_attempt_number < 1:
             raise ValueError("ATTEMPT_FINALIZED requires final_attempt_number >= 1")
+        if self.final_attempt_status is None or not self.final_attempt_status.strip():
+            raise ValueError("ATTEMPT_FINALIZED requires final_attempt_status")
+        if not self.final_attempt_reason_codes:
+            raise ValueError(
+                "ATTEMPT_FINALIZED requires final_attempt_reason_codes"
+            )
+        expected_attempt_status = {
+            (StepExecutionStatus.SUCCESS, False): "SUCCESS",
+            (StepExecutionStatus.SUCCESS, True): "PARTIAL_SUCCESS",
+            (StepExecutionStatus.FAILED, False): "FAILED",
+            (StepExecutionStatus.TIMEOUT, False): "TIMEOUT",
+        }.get((self.terminal_step_status, self.degraded))
+        if self.final_attempt_status != expected_attempt_status:
+            raise ValueError(
+                "ATTEMPT_FINALIZED final attempt status must match terminal lifecycle"
+            )
         if self.execution_owner is None or not self.execution_owner.strip():
             raise ValueError("ATTEMPT_FINALIZED requires execution_owner")
         if self.scheduler_skip_disposition is not None:
@@ -160,6 +182,8 @@ class StepAggregationEvidence:
             raise ValueError("SCHEDULER_SKIPPED requires SKIPPED Step status")
         if self.final_attempt_number is not None:
             raise ValueError("SCHEDULER_SKIPPED cannot carry final_attempt_number")
+        if self.final_attempt_status is not None or self.final_attempt_reason_codes:
+            raise ValueError("SCHEDULER_SKIPPED cannot carry final attempt evidence")
         if self.execution_owner is not None:
             raise ValueError("SCHEDULER_SKIPPED cannot carry execution_owner")
         if self.owner_capability_id is not None:
@@ -190,6 +214,8 @@ class StepAggregationEvidence:
             )
         if self.final_attempt_number is not None:
             raise ValueError("CONTROL_TERMINALIZED cannot invent final attempt")
+        if self.final_attempt_status is not None or self.final_attempt_reason_codes:
+            raise ValueError("CONTROL_TERMINALIZED cannot invent final attempt evidence")
         if self.execution_owner is not None:
             raise ValueError("CONTROL_TERMINALIZED cannot invent execution owner")
         if self.owner_capability_id is not None:
@@ -222,6 +248,8 @@ class StepAggregationEvidence:
             "observed_at": self.observed_at,
             "terminalized_at": self.terminalized_at,
             "final_attempt_number": self.final_attempt_number,
+            "final_attempt_status": self.final_attempt_status,
+            "final_attempt_reason_codes": list(self.final_attempt_reason_codes),
             "execution_owner": self.execution_owner,
             "owner_capability_id": self.owner_capability_id,
             "owner_capability_version": self.owner_capability_version,
@@ -261,6 +289,13 @@ class StepAggregationEvidence:
                 terminalized_at=payload["terminalized_at"],
                 final_attempt_number=_optional_int(
                     payload.get("final_attempt_number")
+                ),
+                final_attempt_status=_optional_str(
+                    payload.get("final_attempt_status")
+                ),
+                final_attempt_reason_codes=tuple(
+                    str(item)
+                    for item in payload.get("final_attempt_reason_codes", ())
                 ),
                 execution_owner=_optional_str(payload.get("execution_owner")),
                 owner_capability_id=_optional_str(
@@ -322,6 +357,8 @@ class StepAggregationEvidence:
             observed_at=observation.observed_at,
             terminalized_at=terminalized_at,
             final_attempt_number=observation.attempt_number,
+            final_attempt_status=observation.status.value,
+            final_attempt_reason_codes=observation.reason_codes,
             execution_owner=observation.execution_owner.value,
             owner_capability_id=observation.owner_capability_id,
             owner_capability_version=observation.owner_capability_version,
@@ -594,6 +631,19 @@ class StepAggregationEvidenceAuthority:
         ):
             if step.status is StepExecutionStatus.SKIPPED:
                 return "AGGREGATION_EVIDENCE_KIND_STATUS_MISMATCH"
+            if (
+                evidence.has_unknown_tool_observation
+                or evidence.has_untrusted_success_observation
+            ):
+                return "AGGREGATION_EVIDENCE_TOOL_TRUTH_UNKNOWN"
+            expected_attempt_status = {
+                (StepExecutionStatus.SUCCESS, False): "SUCCESS",
+                (StepExecutionStatus.SUCCESS, True): "PARTIAL_SUCCESS",
+                (StepExecutionStatus.FAILED, False): "FAILED",
+                (StepExecutionStatus.TIMEOUT, False): "TIMEOUT",
+            }.get((step.status, step.degraded))
+            if evidence.final_attempt_status != expected_attempt_status:
+                return "AGGREGATION_EVIDENCE_FINAL_ATTEMPT_STATUS_MISMATCH"
             if step.skill_id is not None:
                 if (
                     evidence.execution_owner != "SKILL"
@@ -602,6 +652,22 @@ class StepAggregationEvidenceAuthority:
                     or evidence.skill_result.get("skill_id") != step.skill_id
                 ):
                     return "AGGREGATION_EVIDENCE_SKILL_OWNER_MISMATCH"
+                expected_skill_status = {
+                    (StepExecutionStatus.SUCCESS, False): "SUCCESS",
+                    (StepExecutionStatus.SUCCESS, True): "PARTIAL_SUCCESS",
+                    (StepExecutionStatus.FAILED, False): "FAILED",
+                    (StepExecutionStatus.TIMEOUT, False): "TIMEOUT",
+                }.get((step.status, step.degraded))
+                if evidence.skill_result.get("status") != expected_skill_status:
+                    return "AGGREGATION_EVIDENCE_SKILL_STATUS_MISMATCH"
+                if evidence.skill_result.get("business_outputs", []) != list(
+                    evidence.business_outputs
+                ):
+                    return "AGGREGATION_EVIDENCE_SKILL_OUTPUT_MISMATCH"
+                if evidence.skill_result.get("events", []) != list(
+                    evidence.capability_events
+                ):
+                    return "AGGREGATION_EVIDENCE_SKILL_EVENT_MISMATCH"
             elif step.workflow_id is not None:
                 if (
                     evidence.execution_owner != "WORKFLOW"
@@ -610,6 +676,26 @@ class StepAggregationEvidenceAuthority:
                     or evidence.workflow_result.get("workflow_id") != step.workflow_id
                 ):
                     return "AGGREGATION_EVIDENCE_WORKFLOW_OWNER_MISMATCH"
+                expected_workflow_status = {
+                    StepExecutionStatus.SUCCESS: "COMPLETED",
+                    StepExecutionStatus.FAILED: "FAILED",
+                    StepExecutionStatus.TIMEOUT: "TIMEOUT",
+                }.get(step.status)
+                if evidence.workflow_result.get("status") != expected_workflow_status:
+                    return "AGGREGATION_EVIDENCE_WORKFLOW_STATUS_MISMATCH"
+                important_outputs = evidence.workflow_result.get(
+                    "important_outputs",
+                    {},
+                )
+                expected_outputs = (
+                    [important_outputs]
+                    if isinstance(important_outputs, dict) and important_outputs
+                    else []
+                )
+                if expected_outputs != list(evidence.business_outputs):
+                    return "AGGREGATION_EVIDENCE_WORKFLOW_OUTPUT_MISMATCH"
+                if evidence.capability_events:
+                    return "AGGREGATION_EVIDENCE_WORKFLOW_EVENT_MISMATCH"
             elif evidence.execution_owner != "NONE":
                 return "AGGREGATION_EVIDENCE_OWNER_MISMATCH"
             if (
@@ -697,8 +783,12 @@ def _freeze_value(value: Any) -> Any:
             for field in fields(value)
         }
     if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise ValueError(
+                "aggregation evidence mappings require string keys"
+            )
         return {
-            str(key): _freeze_value(item)
+            key: _freeze_value(item)
             for key, item in value.items()
         }
     if isinstance(value, (tuple, list)):
@@ -746,5 +836,7 @@ def _optional_dict(value: object | None) -> dict[str, Any] | None:
 
 
 def _require_aware(value: datetime, field_name: str) -> None:
+    if not isinstance(value, datetime):
+        raise ValueError(f"{field_name} must be datetime")
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{field_name} must be timezone-aware")

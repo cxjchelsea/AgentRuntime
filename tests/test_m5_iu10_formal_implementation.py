@@ -1306,6 +1306,15 @@ def test_recovered_current_attempt_tool_call_id_collision_blocks_before_physical
     assert "reserved_tool_call_ids=frozenset(" in source
     assert "recovered_current_attempt_journal" in source
 
+    reliable_source = inspect.getsource(
+        CoreApprovedToolInvoker._claim_reliable_attempt_identity
+    )
+    logical_source = inspect.getsource(
+        CoreApprovedToolInvoker._append_logical_result_without_attempt
+    )
+    assert "_reserved_tool_call_ids" in reliable_source
+    assert "_reserved_tool_call_ids" in logical_source
+
 
 def test_durable_live_bindings_factory_requires_exact_claim_bound_journal() -> None:
     async def scenario() -> None:

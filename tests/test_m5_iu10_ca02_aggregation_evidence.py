@@ -1180,3 +1180,98 @@ def test_frozen_physical_attempt_sequence_is_revalidated() -> None:
             evidence,
             tool_journal=(journal_entry,),
         )
+
+
+
+def test_scheduler_skip_evidence_survives_recovery_snapshot() -> None:
+    async def scenario() -> None:
+        plan = _plain_plan()
+        prepared, service, _ = await _running(plan)
+        coordinator = TerminalStepCompletionCoordinator(
+            scheduler=StaticScheduler(
+                StepScheduleDecision(
+                    status=StepScheduleStatus.SKIP,
+                    step_id="step-001",
+                    reason_codes=("CONDITION_FALSE",),
+                )
+            ),
+            lifecycle_service=service,
+        )
+        completed = await coordinator.advance(
+            approved_plan=plan,
+            prepared=prepared,
+            at=NOW + timedelta(seconds=1),
+        )
+        claim = ExecutionRecoveryClaim(
+            claim_id="claim-ca02-skip",
+            execution_id="execution-iu10-ca02",
+            recovery_owner_id="worker-ca02",
+            recovery_epoch=1,
+            source_snapshot_generation=0,
+            claimed_at=NOW + timedelta(seconds=1),
+        )
+
+        snapshot = ExecutionRecoverySnapshotFactory().capture(
+            completed.prepared,
+            checkpoint_id="checkpoint-ca02-skip",
+            generation=1,
+            captured_at=NOW + timedelta(seconds=2),
+            claim=claim,
+        )
+        restored = snapshot.restore_prepared_execution()
+
+        assert (
+            restored.steps[0].aggregation_evidence
+            == completed.prepared.steps[0].aggregation_evidence
+        )
+        readiness, skips = project_ca01_evidence_inputs(
+            approved_plan=plan,
+            prepared=restored,
+        )
+        assert readiness.status is AggregationEvidenceReadinessStatus.READY
+        assert (
+            skips["step-001"].disposition
+            is StepSkipAggregationDisposition.NOT_APPLICABLE
+        )
+
+    asyncio.run(scenario())
+
+
+def test_control_terminal_evidence_survives_recovery_snapshot() -> None:
+    prepared = control_prepared()
+    updated = ExecutionControlLifecycleTransitioner().terminalize(
+        prepared,
+        latched_control=control_latched(),
+        application=control_application(),
+        at=CONTROL_TERMINALIZED_AT,
+    )
+    claim = ExecutionRecoveryClaim(
+        claim_id="claim-ca02-control",
+        execution_id=updated.execution_record.execution_id,
+        recovery_owner_id="worker-ca02",
+        recovery_epoch=1,
+        source_snapshot_generation=0,
+        claimed_at=CONTROL_TERMINALIZED_AT,
+    )
+
+    snapshot = ExecutionRecoverySnapshotFactory().capture(
+        updated,
+        checkpoint_id="checkpoint-ca02-control",
+        generation=1,
+        captured_at=CONTROL_TERMINALIZED_AT + timedelta(seconds=1),
+        claim=claim,
+    )
+    restored = snapshot.restore_prepared_execution()
+
+    assert restored.steps[0].aggregation_evidence is None
+    for original, recovered in zip(
+        updated.steps[1:],
+        restored.steps[1:],
+        strict=True,
+    ):
+        assert recovered.aggregation_evidence == original.aggregation_evidence
+        assert (
+            recovered.aggregation_evidence is not None
+            and recovered.aggregation_evidence.terminalization_kind
+            is StepAggregationTerminalizationKind.CONTROL_TERMINALIZED
+        )

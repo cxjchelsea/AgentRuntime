@@ -832,7 +832,7 @@ def test_control_tool_join_uses_durable_current_attempt_not_retry_count() -> Non
             error_message="cancelled at safe boundary",
             started_at=NOW + timedelta(seconds=1),
             finished_at=NOW + timedelta(seconds=2),
-            attempt=3,
+            attempt=1,
         )
         journal = (
             ToolInvocationJournalEntry(

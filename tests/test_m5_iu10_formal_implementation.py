@@ -14,6 +14,7 @@ import runtime.execution.aggregation_runtime as aggregation_runtime_module
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.execution import ExecutionContext
 from runtime.execution.aggregation_runtime import (
+    DurableLiveExecutionBindingsFactory,
     DurableRecoveryControlRuntimeFactory,
     M5ExecutionAggregationRuntime,
     M5ExecutionAggregationRuntimeStatus,
@@ -174,6 +175,32 @@ class RecordingRecoveryBindingsBuilder:
         return RecoveryExecutionBindings(
             step_executor=executor,
             skill_reliability_coordinator=cast(Any, object()),
+        )
+
+
+class RecordingLiveBindingsBuilder:
+    def __init__(self, *, bind_persistence: bool = True) -> None:
+        self.bind_persistence = bind_persistence
+        self.claim = None
+        self.persistence: Any = None
+
+    def build(
+        self,
+        *,
+        recovery_claim,
+        tool_journal_persistence,
+    ) -> StepCapabilityExecutor:
+        self.claim = recovery_claim
+        self.persistence = tool_journal_persistence
+        return StepCapabilityExecutor(
+            permission_context_provider=StaticPermissionProvider(),
+            permission_evaluator=StaticPermissionEvaluator(),
+            input_validator=StaticValidator(),
+            output_validator=StaticValidator(),
+            identifier_factory=CountingIdentifierFactory(),
+            journal_persistence=(
+                tool_journal_persistence if self.bind_persistence else None
+            ),
         )
 
 
@@ -1277,3 +1304,44 @@ def test_recovered_current_attempt_tool_call_id_collision_blocks_before_physical
     source = inspect.getsource(StepCapabilityExecutor.resume_workflow_from_checkpoint)
     assert "reserved_tool_call_ids=frozenset(" in source
     assert "recovered_current_attempt_journal" in source
+
+
+def test_durable_live_bindings_factory_requires_exact_claim_bound_journal() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(
+            claims,
+            execution_id="execution-iu4",
+            claim_id="formal-live-bindings",
+        )
+        store = InMemoryDurableRecoveryEvidenceStore(
+            claim_authority=claims
+        )
+        builder = RecordingLiveBindingsBuilder()
+        factory = DurableLiveExecutionBindingsFactory(
+            builder=builder,
+            reliability_store=store,
+            clock=lambda: NOW + timedelta(seconds=1),
+        )
+
+        bindings = factory.create(claim)
+
+        assert builder.claim is claim
+        assert isinstance(builder.persistence, DurableToolJournalEvidence)
+        assert bindings.tool_journal_persistence is builder.persistence
+        assert (
+            bindings.step_executor.tool_journal_persistence
+            is bindings.tool_journal_persistence
+        )
+
+        bad = DurableLiveExecutionBindingsFactory(
+            builder=RecordingLiveBindingsBuilder(bind_persistence=False),
+            reliability_store=store,
+        )
+        with pytest.raises(
+            ValueError,
+            match="must use exact durable Tool journal",
+        ):
+            bad.create(claim)
+
+    asyncio.run(scenario())

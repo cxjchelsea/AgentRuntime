@@ -991,7 +991,7 @@ class InMemoryExecutionStateStore:
 
 
 def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, Any]:
-    payload = {
+    payload: dict[str, object] = {
         "step_execution_id": snapshot.step_execution_id,
         "step_id": snapshot.step_id,
         "action": snapshot.action,

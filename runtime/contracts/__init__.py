@@ -39,7 +39,11 @@ from runtime.contracts.enums import (
     ValidationMode,
     ValidationStatus,
 )
-from runtime.contracts.execution import ExecutionResult, ExecutionTiming
+from runtime.contracts.execution import (
+    EXECUTION_RESULT_SCHEMA_VERSION,
+    ExecutionResult,
+    ExecutionTiming,
+)
 from runtime.contracts.identity import CoreIdentity, DomainIdentityExtension
 from runtime.contracts.input import RuntimeInput
 from runtime.contracts.knowledge_planning import (
@@ -83,6 +87,7 @@ __all__ = [
     "DomainSchemaReference",
     "Entity",
     "EvidenceRequirement",
+    "EXECUTION_RESULT_SCHEMA_VERSION",
     "ExecutionPlanStatus",
     "ExecutionResult",
     "ExecutionTiming",

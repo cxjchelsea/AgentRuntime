@@ -2206,7 +2206,7 @@ class CoreApprovedToolInvoker(
             decision = await guard.authorize(
                 execution_id=self._execution_context.execution_id,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_fault("RECOVERY_SIDE_EFFECT_EPOCH_VALIDATION_UNKNOWN")
             raise ToolInvocationBoundaryError(
                 "RECOVERY_SIDE_EFFECT_EPOCH_VALIDATION_UNKNOWN",
@@ -2983,8 +2983,8 @@ class StepCapabilityExecutor:
                         reason_codes=(
                             "WORKFLOW_RECOVERY_WAITING"
                             if status is CapabilityExecutionStatus.WAITING
-                            else "WORKFLOW_RESUMED"
-                        ,),
+                            else "WORKFLOW_RESUMED",
+                        ),
                         workflow_result=normalized,
                         tool_results=journal_results,
                         tool_journal=tool_invoker.entries(),
@@ -3098,9 +3098,7 @@ class StepCapabilityExecutor:
             capability_version=capability.version,
             started_at=started_at,
             workflow_instance_id=(
-                workflow_instance_id
-                if kind is InFlightOperationKind.WORKFLOW
-                else None
+                workflow_instance_id if kind is InFlightOperationKind.WORKFLOW else None
             ),
         )
         try:

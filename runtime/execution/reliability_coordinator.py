@@ -527,8 +527,7 @@ class StepReliabilityCoordinator:
                 execution_context
             )
             if deadline_error is not None or (
-                remaining_after_backoff is not None
-                and remaining_after_backoff <= 0
+                remaining_after_backoff is not None and remaining_after_backoff <= 0
             ):
                 expired = StepReliabilityDecision(
                     disposition=StepReliabilityDisposition.ABORT_UNKNOWN,

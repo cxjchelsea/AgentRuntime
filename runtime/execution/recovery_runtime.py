@@ -47,11 +47,6 @@ from runtime.execution.recovery_evidence import (
     DurableTerminalControlStore,
     InFlightEvidenceState,
 )
-from runtime.execution.reliability_coordinator import (
-    RecoveredStepReliabilityRunResult,
-    StepReliabilityCoordinationError,
-    StepReliabilityCoordinator,
-)
 from runtime.execution.recovery_resource_lock import (
     DurableOperationResourceBindingStore,
     ResourceRecoveryStatus,
@@ -64,6 +59,11 @@ from runtime.execution.recovery_workflow import (
     StepRecoveryReplayEvaluator,
     WorkflowRecoveryCheckpointStore,
     WorkflowVersionAuthority,
+)
+from runtime.execution.reliability_coordinator import (
+    RecoveredStepReliabilityRunResult,
+    StepReliabilityCoordinationError,
+    StepReliabilityCoordinator,
 )
 from runtime.execution.scheduler import (
     SequentialStepScheduler,
@@ -136,7 +136,9 @@ class ApprovedPlanWorkflowVersionAuthority(WorkflowVersionAuthority):
         if approved_plan.plan_id != snapshot.execution_record.plan_id:
             raise ValueError("approved plan does not match recovery snapshot plan_id")
         if approved_plan.request_id != snapshot.execution_record.request_id:
-            raise ValueError("approved plan does not match recovery snapshot request_id")
+            raise ValueError(
+                "approved plan does not match recovery snapshot request_id"
+            )
         self._approved_plan = approved_plan
         self._snapshot = snapshot
         self._projector = projector or ApprovedStepCapabilityProjector()

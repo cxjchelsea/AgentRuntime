@@ -42,6 +42,11 @@ from runtime.execution.recovery_runtime import (
     M5RecoveryRuntime,
     M5RecoveryRuntimeStatus,
 )
+from runtime.execution.recovery_workflow import (
+    StepRecoveryReplayDecision,
+    StepRecoveryReplayStatus,
+    WorkflowResumeRequest,
+)
 from runtime.execution.reliability import (
     IdempotencyMode,
     ReliabilityCapabilityKind,
@@ -64,11 +69,6 @@ from runtime.execution.reliability_boundary import (
 from runtime.execution.reliability_coordinator import StepReliabilityCoordinator
 from runtime.execution.reliability_runtime import StepReliabilityRuntime
 from runtime.execution.result_collection import StepResultCollector
-from runtime.execution.recovery_workflow import (
-    StepRecoveryReplayDecision,
-    StepRecoveryReplayStatus,
-    WorkflowResumeRequest,
-)
 from tests.test_m5_iu4_capability_execution import (
     CountingIdentifierFactory,
     RecordingSkill,
@@ -367,8 +367,12 @@ def test_workflow_resume_rejects_checkpoint_version_drift_before_invoke() -> Non
     asyncio.run(scenario())
 
 
-def test_approved_workflow_version_authority_reads_frozen_plan_not_checkpoint_claim() -> None:
+def test_approved_workflow_version_authority_reads_frozen_plan_not_checkpoint_claim() -> (
+    None
+):
     plan, step = _approved_step(owner=CapabilityExecutionOwner.WORKFLOW)
+    # IU3 projector 要求可执行 owner 必须带显式 tool_plan；空 tool_calls 表示没有批准 Tool。
+    plan = plan.model_copy(update={"tool_plan": {"tool_calls": []}})
     lifecycle = _snapshot(step)
     snapshot = cast(
         Any,
@@ -395,7 +399,6 @@ def test_approved_workflow_version_authority_reads_frozen_plan_not_checkpoint_cl
     )
 
     assert expected == "4.5.6"
-
 
 
 class StaticClock:
@@ -532,7 +535,6 @@ def test_recovered_skill_retry_claims_next_attempt_through_iu6_authority() -> No
     asyncio.run(scenario())
 
 
-
 class RuntimeSnapshot:
     def __init__(self, *, plan: Any, step: Any) -> None:
         self.execution_id = "execution-iu4"
@@ -582,13 +584,17 @@ class NoControlStore:
 
 
 class EmptyInflightStore:
-    async def recover_active_as_orphaned(self, **kwargs: Any) -> InFlightRecoveryTransitionDecision:
+    async def recover_active_as_orphaned(
+        self, **kwargs: Any
+    ) -> InFlightRecoveryTransitionDecision:
         return InFlightRecoveryTransitionDecision(
             status=InFlightRecoveryTransitionStatus.NO_ACTIVE,
             reason_codes=("NO_ACTIVE",),
         )
 
-    async def supersede_orphaned_owner_frame(self, **kwargs: Any) -> InFlightRecoveryTransitionDecision:
+    async def supersede_orphaned_owner_frame(
+        self, **kwargs: Any
+    ) -> InFlightRecoveryTransitionDecision:
         return InFlightRecoveryTransitionDecision(
             status=InFlightRecoveryTransitionStatus.NO_ACTIVE,
             reason_codes=("NO_OWNER",),
@@ -640,7 +646,9 @@ class NeverUsedBindingsFactory:
         raise AssertionError("scheduler re-entry must not build execution bindings")
 
 
-def test_recovery_runtime_reenters_existing_scheduler_without_selecting_capability() -> None:
+def test_recovery_runtime_reenters_existing_scheduler_without_selecting_capability() -> (
+    None
+):
     async def scenario() -> None:
         plan, step = _approved_step(owner=CapabilityExecutionOwner.SKILL)
         snapshot = RuntimeSnapshot(plan=plan, step=step)

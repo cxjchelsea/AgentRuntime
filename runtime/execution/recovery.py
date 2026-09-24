@@ -268,7 +268,7 @@ class CurrentRecoveryEpochSideEffectAdmissionGuard:
     def __init__(
         self,
         *,
-        claim_authority: "RecoveryClaimAuthority",
+        claim_authority: RecoveryClaimAuthority,
         recovery_claim: ExecutionRecoveryClaim,
     ) -> None:
         if recovery_claim.execution_id.strip() == "":

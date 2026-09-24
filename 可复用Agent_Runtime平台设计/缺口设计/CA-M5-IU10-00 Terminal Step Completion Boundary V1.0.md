@@ -109,6 +109,7 @@ execution must be RUNNING
 target Step must be exact PENDING
 target started_at must be None
 no other Step may be RUNNING
+execution_record.current_step must be None
 reason_codes must be non-empty/non-blank
 at must not precede latest execution observation
 ~~~
@@ -208,6 +209,7 @@ StepReliabilityCoordinator
 StepFinalizationDisposition.FINALIZE
 + exact RUNNING step_id
 + exact step_execution_id
++ execution_record.current_step == exact step_id
 ~~~
 
 才允许提交 lifecycle terminal state。
@@ -483,6 +485,9 @@ tests/test_m5_iu6_formal_implementation.py
 22. replay against already terminal Step is blocked
 23. finalization status cannot contradict final observation
 24. recovered IU6 reliability result uses the same completion boundary
+25. PENDING skip rejects stale current_step pointer
+26. RUNNING completion rejects current_step pointer drift
+27. IU7 control-terminal step payload remains IU9 snapshot-compatible
 ~~~
 
 # 13. Findings
@@ -510,6 +515,14 @@ DEGRADED_SUCCESS_COULD_FALSELY_SATISFY_DEPENDENCY
 
 F-M5-IU10-CA00-006
 FINALIZATION_DECISION_COULD_CONTRADICT_FINAL_OBSERVATION
+= CLOSED
+
+F-M5-IU10-CA00-007
+CONTROL_LIFECYCLE_STEP_PAYLOAD_SHAPE_DRIFT_COULD_BREAK_RECOVERY_EXACTNESS
+= CLOSED
+
+F-M5-IU10-CA00-008
+STEP_COMPLETION_COULD_HIDE_CURRENT_STEP_POINTER_DRIFT
 = CLOSED
 ~~~
 
@@ -570,6 +583,21 @@ RunningStepCompletionCoordinator
 cross-checks finalization terminal/degraded
 against exact final StepAttemptStatus
 before lifecycle mutation
+~~~
+
+Fix 7：
+
+~~~text
+control lifecycle tool_call_ids
+tuple -> list
+to match foundation / recovery canonical step payload
+~~~
+
+Fix 8：
+
+~~~text
+PENDING skip requires current_step is None
+RUNNING completion requires current_step == exact target Step
 ~~~
 
 # 14. Blocker impact

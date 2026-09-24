@@ -486,12 +486,29 @@ must exactly equal
 StepAggregationEvidence.tool_call_ids
 ~~~
 
+同时每个 durable journal Tool 必须再次绑定 frozen ApprovedActionPlan：
+
+~~~text
+ApprovedStepCapabilityProjector
+-> exact approved tool_id/version
+
+durable journal tool_id/version
+must match
+approved tool_id/version
+~~~
+
+durable evidence 只证明“发生过什么”，不能自行证明“被批准过什么”。
+
 否则：
 
 ~~~text
 EXECUTION_RESULT_CONTROL_TOOL_EVIDENCE_READER_MISSING
 or
 EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_MISMATCH
+or
+EXECUTION_RESULT_CONTROL_APPROVED_CAPABILITY_UNKNOWN
+or
+EXECUTION_RESULT_CONTROL_TOOL_NOT_APPROVED
 ~~~
 
 如果 Step 没有 tool_call_ids，则允许没有 durable attempt/journal；
@@ -686,19 +703,20 @@ tests/test_m5_iu10_ca03_canonical_result_projection.py
 20. control Tool journal uses durable current-attempt cursor
 21. control Tool join never derives attempt from retry_count
 22. control Step Tool IDs must exactly match durable journal
-23. missing durable control Tool evidence fails closed
-24. non-ready aggregation cannot be projected
-25. Formal Projector accepts READY_EXISTING_TERMINAL only
-26. Projector independently requires CA-02 READY evidence
-27. Projector validates execution/plan/status provenance
-28. Projector validates ApprovedPlan Step order
-29. duplicate logical Tool exact replay is deterministic
-30. conflicting duplicate tool_call_id fails closed
-31. no Registry lookup
-32. no capability invoke
-33. no retry / resume / replan
-34. no M6/M7/M8 dependency
-35. Canonical ExecutionResult validates successfully
+23. control Tool id/version must match frozen ApprovedPlan
+24. missing durable control Tool evidence fails closed
+25. non-ready aggregation cannot be projected
+26. Formal Projector accepts READY_EXISTING_TERMINAL only
+27. Projector independently requires CA-02 READY evidence
+28. Projector validates execution/plan/status provenance
+29. Projector validates ApprovedPlan Step order
+30. duplicate logical Tool exact replay is deterministic
+31. conflicting duplicate tool_call_id fails closed
+32. no Registry lookup
+33. no capability invoke
+34. no retry / resume / replan
+35. no M6/M7/M8 dependency
+36. Canonical ExecutionResult validates successfully
 ~~~
 
 # 24. Blocker impact

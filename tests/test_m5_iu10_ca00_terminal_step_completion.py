@@ -14,12 +14,15 @@ from runtime.execution import (
     CallableExecutionIdentifierFactory,
     ExecutionContextBuilder,
     ExecutionFoundation,
+    ExecutionLifecycleError,
     ExecutionLifecycleManager,
     ExecutionLifecycleService,
     ExecutionRecordFactory,
     ExecutionRecoveryClaim,
     ExecutionRecoverySnapshotFactory,
     InMemoryExecutionStateStore,
+    PendingStepSkipAuthority,
+    PendingStepSkipAuthorityKind,
     SequentialStepScheduler,
     StepAttemptObservation,
     StepAttemptStatus,
@@ -390,5 +393,33 @@ def test_recovery_snapshot_accepts_legacy_step_payload_without_terminal_reasons(
         restored = snapshot.restore_prepared_execution()
         assert restored.steps[0].terminal_reason_codes == ()
         assert "terminal_reason_codes" not in legacy_payload[0]
+
+    asyncio.run(scenario())
+
+
+
+def test_direct_skip_mutation_rejects_authority_bound_to_other_step_execution() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, service, store = await _running(plan)
+        forged = PendingStepSkipAuthority(
+            execution_id=prepared.execution_record.execution_id,
+            plan_id=prepared.execution_record.plan_id,
+            step_execution_id="different-step-execution",
+            step_id="step-001",
+            kind=PendingStepSkipAuthorityKind.SCHEDULER_SKIP,
+            reason_codes=("REGISTERED_CONDITION_FALSE",),
+        )
+
+        with pytest.raises(ExecutionLifecycleError, match="step_execution_id"):
+            await service.skip_pending_step(
+                prepared,
+                authority=forged,
+                at=NOW + timedelta(seconds=1),
+            )
+
+        stored = await store.load("execution-iu10-ca00")
+        assert stored is not None
+        assert stored.step_results[0]["status"] == "PENDING"
 
     asyncio.run(scenario())

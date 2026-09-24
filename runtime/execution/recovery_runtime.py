@@ -478,7 +478,7 @@ class M5RecoveryRuntime:
                 recovery_decision=decision,
                 prepared=prepared,
             )
-        prior_journal = await self._reliability_store.load_tool_journal(
+        current_attempt_journal = await self._reliability_store.load_tool_journal(
             execution_id=recovery_claim.execution_id,
             step_execution_id=step_snapshot.step_execution_id,
             step_attempt_number=current_attempt,
@@ -550,7 +550,7 @@ class M5RecoveryRuntime:
                         resolved=resolution.resolved,
                         execution_context=prepared.execution_context,
                         expected_current_attempt=current_attempt,
-                        prior_attempt_journal=prior_journal,
+                        prior_attempt_journal=current_attempt_journal,
                         side_effect_admission_guard=guard,
                     )
                 )

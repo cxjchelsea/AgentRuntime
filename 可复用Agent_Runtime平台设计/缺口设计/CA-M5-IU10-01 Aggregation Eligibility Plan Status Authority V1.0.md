@@ -723,11 +723,11 @@ state/memory mutation
 # 23. Current status
 
 ~~~text
-CA-M5-IU10-01 = CODE COMPLETE
+CA-M5-IU10-01 = PASSED
 CA-M5-IU10-01 INDEPENDENT REVIEW = PASSED
-CA-M5-IU10-01 VERIFICATION = PENDING
+CA-M5-IU10-01 VERIFICATION = PASSED
 
-B-M5-IU10-001 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-001 = CLOSED
 
 M5-IU10 IMPLEMENTATION READINESS = NOT_READY
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
@@ -783,9 +783,111 @@ M5-IU10 IMPLEMENTATION READINESS = NOT_READY
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
 ~~~
 
-四项门禁通过并完成 Verification Closure 前，不得写：
+四项门禁已通过并完成 Verification Closure：
 
 ~~~text
 CA-M5-IU10-01 = PASSED
 B-M5-IU10-001 = CLOSED
 ~~~
+
+
+# 25. Verification Closure
+
+Verification target code HEAD：
+
+~~~text
+47d8552232087285996fa85ac7c41e99947d57e0
+~~~
+
+相对 Independent Review closure HEAD：
+
+~~~text
+6d924410f741dcf2de6a75d892f4f48344fb3d94
+~~~
+
+仅有两项门禁兼容修改：
+
+~~~text
+1. aggregation_authority.py
+   - typing.Mapping -> typing.ClassVar, Mapping
+   - _TERMINAL_EXECUTION_STATUSES 标注为
+     ClassVar[dict[str, ExecutionPlanStatus]]
+   - 仅消除 RUF012
+   - 不改变 aggregation status / eligibility / control / evidence 语义
+
+2. test_m5_iu10_ca01_aggregation_authority.py
+   - test_terminal_step_missing_finished_at_is_blocked
+     同时清空 PreparedExecution Step 与 persisted step_results 的 finished_at
+   - 保证该测试穿过 persisted-fact alignment，
+     精确验证 AGGREGATION_TERMINAL_STEP_FINISH_MISSING
+   - 不改变 production code 语义
+~~~
+
+isinstance fail-closed 校验继续使用 ValueError，并保留 noqa: TRY004。
+
+无 authority 语义变化，无 status matrix 变化，无新 runtime wiring。
+
+四项门禁：
+
+~~~text
+python -m pytest tests -q
+-> 898 passed
+
+python -m mypy runtime tests
+-> Success: no issues found in 211 source files
+
+python -m ruff check runtime tests
+-> All checks passed
+
+python -m ruff format --check runtime tests
+-> 211 files already formatted
+~~~
+
+Verification 结论：
+
+~~~text
+CA-M5-IU10-01 = PASSED
+CA-M5-IU10-01 INDEPENDENT REVIEW = PASSED
+CA-M5-IU10-01 VERIFICATION = PASSED
+
+B-M5-IU10-001
+PLAN_STATUS_AND_AGGREGATION_ELIGIBILITY_NOT_FROZEN
+= CLOSED
+
+NEW VERIFICATION BLOCKER = NONE
+~~~
+
+该 Closure 只关闭 CA-01 / B-001。
+
+仍然保持：
+
+~~~text
+B-M5-IU10-002 = OPEN
+B-M5-IU10-003 = OPEN
+B-M5-IU10-004 = OPEN
+B-M5-IU10-005 = OPEN
+B-M5-IU10-006 = OPEN
+
+B-M5-IU10-007 = CLOSED
+B-M5-IU10-008 = CLOSED
+
+M5-IU10 IMPLEMENTATION READINESS = NOT_READY
+FORMAL IMPLEMENTATION = NOT AUTHORIZED
+M5 = IN PROGRESS
+~~~
+
+下一步允许进入：
+
+~~~text
+CA-M5-IU10-02
+Crash-Safe Terminal Step Aggregation Evidence
+~~~
+
+CA-02 必须消费并实现 CA-01 已冻结的：
+
+~~~text
+AggregationEvidenceReadinessDecision
+StepSkipAggregationDecision
+~~~
+
+不得重新定义 CA-01 的 plan_status matrix。

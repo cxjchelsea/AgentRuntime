@@ -530,10 +530,10 @@ B-M5-IU10-001..008 = CLOSED
 
 ~~~text
 CA-M5-IU10-04 = CODE COMPLETE
-CA-M5-IU10-04 INDEPENDENT REVIEW = PENDING
+CA-M5-IU10-04 INDEPENDENT REVIEW = PASSED
 CA-M5-IU10-04 VERIFICATION = PENDING
 
-B-M5-IU10-009 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+B-M5-IU10-009 = FIX_IMPLEMENTED_PENDING_GATES
 
 M5-IU10 IMPLEMENTATION READINESS = NOT_READY
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
@@ -548,4 +548,197 @@ CA-M5-IU10-04 Independent Review
 -> four verification gates
 -> CA-M5-IU10-04 Verification Closure
 -> M5-IU10 Implementation Readiness Re-Review
+~~~
+
+
+# 24. Independent Review Closure
+
+Independent Review 累计检查：
+
+~~~text
+durable applicability identity
+IU7 source disposition mapping
+recovery epoch fencing
+immutable replay
+control-latch exact binding
+control-runtime write ordering
+natural aggregation race
+control-terminal replay
+formal Aggregator authority seam
+M6/M7/M8 boundary
+~~~
+
+Review findings：
+
+~~~text
+F-M5-IU10-CA04-001
+NATURAL_TERMINAL_RECHECK_REUSED_STALE_CONTROL_SNAPSHOT
+= CLOSED
+~~~
+
+原实现只在 aggregate() 开始时 resolve control authority。
+
+竞态：
+
+~~~text
+initial durable control = NONE
+↓
+all Steps terminal
+↓
+READY_NATURAL
+↓
+natural finish_execution(...)
+↓
+期间 control 到达并形成 durable LATE_NOOP / APPLIES truth
+↓
+如果继续复用旧 NONE snapshot
+-> terminal replay 绕过最新 control authority
+~~~
+
+修复：
+
+~~~text
+finish_execution(...)
+↓
+重新 DurableAggregationControlAuthority.resolve(...)
+↓
+重新 CA-02 evidence projection
+↓
+重新 CA-01 aggregation evaluation
+~~~
+
+并增加行为 gate：
+
+~~~text
+first resolve = NONE
+second resolve = exact LATE_NOOP
+resolve_count == 2
+terminal replay remains deterministic
+~~~
+
+---
+
+~~~text
+F-M5-IU10-CA04-002
+REFERENCE_STORE_RECOVERY_EPOCH_CHECK_NOT_AT_MUTATION_BOUNDARY
+= CLOSED
+~~~
+
+原参考 store 先：
+
+~~~text
+await validate_current(claim)
+~~~
+
+再进入 applicability store lock。
+
+两者之间理论上允许 recovery owner takeover。
+
+修复为与 IU9 reference durable evidence store 一致：
+
+~~~text
+applicability store mutation lock
+↓
+InMemoryRecoveryClaimAuthority._validate_current_sync(claim)
+↓
+same critical section mutation
+~~~
+
+因此 reference implementation 也能证明 stale writer 不在 epoch 校验与写入之间穿透。
+
+Production adapter 仍必须使用真实 durable transaction / CAS。
+
+---
+
+~~~text
+F-M5-IU10-CA04-003
+CONTROL_TERMINAL_REPLAY_COULD_BE_RECLASSIFIED_AS_LATE_NOOP
+= CLOSED
+~~~
+
+同一个已经 APPLIES 的 CANCEL/PREEMPT，在 execution 已经持久化为：
+
+~~~text
+CANCELLED / PREEMPTED
+~~~
+
+后再次 replay，IU7 当前视角可以得到：
+
+~~~text
+ALREADY_TERMINAL
+~~~
+
+但这不代表历史上该 control 是 LATE_NOOP。
+
+修复：
+
+~~~text
+application = ALREADY_TERMINAL
++
+current execution = CANCELLED / PREEMPTED
+-> control-terminal replay
+-> do not create LATE_NOOP
+-> preserve existing APPLIES history
+~~~
+
+对于没有 CA-04 applicability evidence 的 legacy control-terminal execution：
+
+~~~text
+do not backfill guessed history
+-> aggregation remains UNKNOWN / fail closed
+~~~
+
+---
+
+Review also confirms：
+
+~~~text
+NONE only comes from durable control absence
+read uncertainty never collapses to NONE
+latched control without applicability evidence -> UNKNOWN
+APPLIES/LATE_NOOP bind exact immutable latch
+non-final IU7 dispositions cannot become applicability truth
+source Step provenance is retained
+APPLIES cannot be overwritten by later LATE_NOOP
+Formal ExecutionAggregator no longer accepts caller control
+Formal ExecutionAggregator no longer accepts caller control_applicability
+no timestamp-based LATE_NOOP inference
+no Registry lookup / capability invoke / retry / resume / replan
+no M6 / M7 / M8 authority
+~~~
+
+Independent Review decision：
+
+~~~text
+CA-M5-IU10-04 = CODE COMPLETE
+CA-M5-IU10-04 INDEPENDENT REVIEW = PASSED
+CA-M5-IU10-04 VERIFICATION = PENDING
+
+B-M5-IU10-009
+DURABLE_CONTROL_APPLICABILITY_AUTHORITY_MISSING
+= FIX_IMPLEMENTED_PENDING_GATES
+
+NEW CA-04 SEMANTIC BLOCKER = NONE
+
+M5-IU10 IMPLEMENTATION READINESS = NOT_READY
+FORMAL IMPLEMENTATION = NOT AUTHORIZED
+M5 = IN PROGRESS
+~~~
+
+下一步只允许执行四项 Verification Gate：
+
+~~~text
+python -m pytest tests -q
+python -m mypy runtime tests
+python -m ruff check runtime tests
+python -m ruff format --check runtime tests
+~~~
+
+四项全绿之前：
+
+~~~text
+CA-M5-IU10-04 != PASSED
+B-M5-IU10-009 != CLOSED
+M5-IU10 != READY
+FORMAL IMPLEMENTATION != AUTHORIZED
 ~~~

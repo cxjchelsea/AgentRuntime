@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Mapping
 from runtime.execution.models import StepExecutionStatus, ToolExecutionStatus
 
 if TYPE_CHECKING:
+    from runtime.contracts.planning import ApprovedActionPlan
     from runtime.execution.aggregation_authority import (
         AggregationEvidenceReadinessDecision,
         StepSkipAggregationDecision,
@@ -591,6 +592,8 @@ class StepAggregationEvidenceAuthority:
 
     def assess(
         self,
+        *,
+        approved_plan: "ApprovedActionPlan",
         prepared: "PreparedExecution",
     ) -> tuple[
         StepAggregationEvidenceAssessment,
@@ -601,8 +604,30 @@ class StepAggregationEvidenceAuthority:
             StepSkipAggregationDisposition,
         )
 
+        from runtime.execution.capability_resolution import (
+            ApprovedCapabilityProjectionError,
+            ApprovedStepCapabilityProjector,
+        )
+
         skip_decisions: dict[str, StepSkipAggregationDecision] = {}
         execution_id = prepared.execution_record.execution_id
+        if (
+            approved_plan.plan_id != prepared.execution_record.plan_id
+            or approved_plan.request_id != prepared.execution_record.request_id
+            or tuple(step.step_id for step in approved_plan.steps)
+            != tuple(step.step_id for step in prepared.steps)
+        ):
+            return (
+                StepAggregationEvidenceAssessment(
+                    status=StepAggregationEvidenceReadStatus.UNKNOWN,
+                    reason_codes=(
+                        "AGGREGATION_EVIDENCE_APPROVED_PLAN_MISMATCH",
+                    ),
+                ),
+                {},
+            )
+        approved_by_id = {step.step_id: step for step in approved_plan.steps}
+        projector = ApprovedStepCapabilityProjector()
         persisted_by_step: dict[str, Mapping[str, Any]] = {}
         for payload in prepared.execution_record.step_results:
             step_id = payload.get("step_id")
@@ -693,10 +718,43 @@ class StepAggregationEvidenceAuthority:
                     {},
                 )
 
+            approved_step = approved_by_id.get(step.step_id)
+            if approved_step is None:
+                return (
+                    StepAggregationEvidenceAssessment(
+                        status=StepAggregationEvidenceReadStatus.UNKNOWN,
+                        reason_codes=(
+                            "AGGREGATION_EVIDENCE_APPROVED_STEP_MISSING",
+                        ),
+                    ),
+                    {},
+                )
+            approved_capabilities = None
+            if (
+                evidence.terminalization_kind
+                is StepAggregationTerminalizationKind.ATTEMPT_FINALIZED
+            ):
+                try:
+                    approved_capabilities = projector.project(
+                        approved_plan=approved_plan,
+                        step=approved_step,
+                    )
+                except ApprovedCapabilityProjectionError:
+                    return (
+                        StepAggregationEvidenceAssessment(
+                            status=StepAggregationEvidenceReadStatus.UNKNOWN,
+                            reason_codes=(
+                                "AGGREGATION_EVIDENCE_APPROVED_CAPABILITY_UNKNOWN",
+                            ),
+                        ),
+                        {},
+                    )
+
             reason = self._validate_step_evidence(
                 execution_id=execution_id,
                 step=step,
                 evidence=evidence,
+                approved_capabilities=approved_capabilities,
             )
             if reason is not None:
                 return (
@@ -736,6 +794,7 @@ class StepAggregationEvidenceAuthority:
         execution_id: str,
         step: "StepLifecycleSnapshot",
         evidence: StepAggregationEvidence,
+        approved_capabilities: object | None,
     ) -> str | None:
         if (
             evidence.execution_id != execution_id
@@ -758,6 +817,16 @@ class StepAggregationEvidenceAuthority:
             evidence.terminalization_kind
             is StepAggregationTerminalizationKind.ATTEMPT_FINALIZED
         ):
+            from runtime.execution.capability_resolution import (
+                ApprovedStepCapabilityReferences,
+                CapabilityExecutionOwner,
+            )
+
+            if not isinstance(
+                approved_capabilities,
+                ApprovedStepCapabilityReferences,
+            ):
+                return "AGGREGATION_EVIDENCE_APPROVED_CAPABILITY_UNKNOWN"
             if step.status is StepExecutionStatus.SKIPPED:
                 return "AGGREGATION_EVIDENCE_KIND_STATUS_MISMATCH"
             if step.skill_id is not None and step.workflow_id is not None:
@@ -775,10 +844,31 @@ class StepAggregationEvidenceAuthority:
             }.get((step.status, step.degraded))
             if evidence.final_attempt_status != expected_attempt_status:
                 return "AGGREGATION_EVIDENCE_FINAL_ATTEMPT_STATUS_MISMATCH"
+            expected_owner = approved_capabilities.execution_owner.value
+            if evidence.execution_owner != expected_owner:
+                return "AGGREGATION_EVIDENCE_APPROVED_OWNER_MISMATCH"
+            approved_tool_versions = {
+                item.capability_id: item.version
+                for item in approved_capabilities.tools
+            }
+            for entry in evidence.tool_journal:
+                tool_id = entry.get("tool_id")
+                tool_version = entry.get("tool_version")
+                if (
+                    not isinstance(tool_id, str)
+                    or approved_tool_versions.get(tool_id) != tool_version
+                ):
+                    return "AGGREGATION_EVIDENCE_APPROVED_TOOL_MISMATCH"
+
             if step.skill_id is not None:
                 if (
                     evidence.execution_owner != "SKILL"
                     or evidence.owner_capability_id != step.skill_id
+                    or approved_capabilities.execution_owner
+                    is not CapabilityExecutionOwner.SKILL
+                    or approved_capabilities.skill is None
+                    or evidence.owner_capability_version
+                    != approved_capabilities.skill.version
                     or evidence.skill_result is None
                     or evidence.skill_result.get("skill_id") != step.skill_id
                 ):
@@ -808,6 +898,11 @@ class StepAggregationEvidenceAuthority:
                 if (
                     evidence.execution_owner != "WORKFLOW"
                     or evidence.owner_capability_id != step.workflow_id
+                    or approved_capabilities.execution_owner
+                    is not CapabilityExecutionOwner.WORKFLOW
+                    or approved_capabilities.workflow is None
+                    or evidence.owner_capability_version
+                    != approved_capabilities.workflow.version
                     or evidence.workflow_result is None
                     or evidence.workflow_result.get("workflow_id") != step.workflow_id
                 ):
@@ -838,7 +933,9 @@ class StepAggregationEvidenceAuthority:
                 if evidence.workflow_result.get("tool_results", []) != journal_results:
                     return "AGGREGATION_EVIDENCE_WORKFLOW_TOOL_RESULT_MISMATCH"
             elif (
-                evidence.execution_owner != "NONE"
+                approved_capabilities.execution_owner
+                is not CapabilityExecutionOwner.NONE
+                or evidence.execution_owner != "NONE"
                 or evidence.owner_capability_id is not None
                 or evidence.skill_result is not None
                 or evidence.workflow_result is not None
@@ -872,6 +969,8 @@ class StepAggregationEvidenceAuthority:
 
 
 def project_ca01_evidence_inputs(
+    *,
+    approved_plan: "ApprovedActionPlan",
     prepared: "PreparedExecution",
 ) -> tuple[
     "AggregationEvidenceReadinessDecision",
@@ -884,7 +983,10 @@ def project_ca01_evidence_inputs(
         AggregationEvidenceReadinessStatus,
     )
 
-    assessment, skip_decisions = StepAggregationEvidenceAuthority().assess(prepared)
+    assessment, skip_decisions = StepAggregationEvidenceAuthority().assess(
+        approved_plan=approved_plan,
+        prepared=prepared,
+    )
     status_map = {
         StepAggregationEvidenceReadStatus.READY: (
             AggregationEvidenceReadinessStatus.READY

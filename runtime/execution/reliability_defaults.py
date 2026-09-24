@@ -774,6 +774,14 @@ class BasicStepFinalizationEvaluator:
                 disposition=StepFinalizationDisposition.UNKNOWN,
                 reason_codes=("STEP_RETRY_NOT_FINALIZATION",),
             )
+        if observation.status is StepAttemptStatus.PARTIAL_SUCCESS:
+            return StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.FINALIZE,
+                reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
+                terminal_status=StepExecutionStatus.SUCCESS,
+                degraded=True,
+            )
+
         mapping = {
             StepAttemptStatus.SUCCESS: "SUCCESS",
             StepAttemptStatus.FAILED: "FAILED",

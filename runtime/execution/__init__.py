@@ -96,6 +96,8 @@ from runtime.execution.foundation import (
     ExecutionResultProjector,
     ExecutionTerminalObserver,
     InMemoryExecutionStateStore,
+    PendingStepSkipAuthority,
+    PendingStepSkipAuthorityKind,
     PreparedExecution,
     StepLifecycleSnapshot,
 )
@@ -295,6 +297,7 @@ from runtime.execution.reliability_boundary import (
     ToolOperationOccurrenceStatus,
 )
 from runtime.execution.reliability_coordinator import (
+    RecoveredStepReliabilityRunResult,
     StepReliabilityCoordinationError,
     StepReliabilityCoordinator,
     StepReliabilityRunResult,
@@ -377,6 +380,15 @@ from runtime.execution.scheduler import (
     StepConditionStatus,
     StepScheduleDecision,
     StepScheduleStatus,
+)
+from runtime.execution.step_completion import (
+    RunningStepCompletionCoordinator,
+    RunningStepCompletionDecision,
+    RunningStepCompletionStatus,
+    StepScheduler,
+    TerminalStepCompletionCoordinator,
+    TerminalStepCompletionDecision,
+    TerminalStepCompletionStatus,
 )
 from runtime.execution.stores import (
     ExecutionStateStore,
@@ -545,6 +557,8 @@ __all__ = [
     "OperationResourceReleaseDecision",
     "OperationResourceReleaseStatus",
     "OwnerFrameSupersessionBasis",
+    "PendingStepSkipAuthority",
+    "PendingStepSkipAuthorityKind",
     "PermissionDecision",
     "PermissionDecisionStatus",
     "PhysicalToolAttemptExecutor",
@@ -558,6 +572,7 @@ __all__ = [
     "ProviderFencePersistenceStatus",
     "ProviderFenceStatus",
     "ProviderFencingAuthority",
+    "RecoveredStepReliabilityRunResult",
     "RecoveryClaimAuthority",
     "RecoveryClaimCoordinator",
     "RecoveryClaimDecision",
@@ -619,6 +634,9 @@ __all__ = [
     "RetryDecisionStatus",
     "RetrySleeper",
     "RetryTriggerStatus",
+    "RunningStepCompletionCoordinator",
+    "RunningStepCompletionDecision",
+    "RunningStepCompletionStatus",
     "RuntimeExecutionCheckDecision",
     "RuntimeExecutionCheckStatus",
     "RuntimeExecutionChecker",
@@ -673,6 +691,10 @@ __all__ = [
     "StepResultCollector",
     "StepScheduleDecision",
     "StepScheduleStatus",
+    "StepScheduler",
+    "TerminalStepCompletionCoordinator",
+    "TerminalStepCompletionDecision",
+    "TerminalStepCompletionStatus",
     "TimeoutRunResult",
     "TimeoutRunStatus",
     "ToolAttemptObservation",

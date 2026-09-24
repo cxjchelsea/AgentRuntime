@@ -35,6 +35,13 @@ def _require_aware(value: datetime, field_name: str) -> None:
         raise ValueError(f"{field_name} must be timezone-aware")
 
 
+def _normalize_step_record_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = deepcopy(payload)
+    normalized.setdefault("terminal_reason_codes", [])
+    normalized.setdefault("degraded", False)
+    return normalized
+
+
 def _step_payload(snapshot: StepLifecycleSnapshot) -> dict[str, Any]:
     return {
         "step_execution_id": snapshot.step_execution_id,
@@ -47,6 +54,8 @@ def _step_payload(snapshot: StepLifecycleSnapshot) -> dict[str, Any]:
         "output": deepcopy(snapshot.output),
         "error": snapshot.error,
         "retry_count": snapshot.retry_count,
+        "terminal_reason_codes": list(snapshot.terminal_reason_codes),
+        "degraded": snapshot.degraded,
         "started_at": snapshot.started_at,
         "finished_at": snapshot.finished_at,
     }
@@ -508,7 +517,10 @@ class ExecutionRecoverySnapshot:
                 "recovery snapshot step_execution_id values must be unique"
             )
         expected_payload = tuple(_step_payload(item) for item in self.steps)
-        if record.step_results != expected_payload:
+        normalized_record_payload = tuple(
+            _normalize_step_record_payload(item) for item in record.step_results
+        )
+        if normalized_record_payload != expected_payload:
             raise ValueError(
                 "recovery snapshot typed steps must match ExecutionRecord.step_results"
             )

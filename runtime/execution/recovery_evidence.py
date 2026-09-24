@@ -412,7 +412,33 @@ class DurableToolJournalEvidence(ToolInvocationJournalPersistence):
         step_attempt_number: int,
         entry: ToolInvocationJournalEntry,
     ) -> None:
-        """Persist one logical Tool entry using the frozen monotonic journal contract."""
+        """Persist one logical Tool entry bound to the exact durable current attempt."""
+
+        cursor = await self._store.load_step_attempt_cursor(
+            execution_id=self._execution_id,
+            step_execution_id=step_execution_id,
+        )
+        if cursor is None:
+            if step_attempt_number != 1:
+                raise RuntimeError("TOOL_JOURNAL_ATTEMPT_CURSOR_MISSING")
+            baseline = await self._store.ensure_step_attempt_baseline(
+                execution_id=self._execution_id,
+                step_execution_id=step_execution_id,
+                recorded_at=self._clock(),
+                required_claim=self._claim,
+            )
+            if baseline.status not in {
+                DurableEvidenceMutationStatus.RECORDED,
+                DurableEvidenceMutationStatus.ALREADY_CURRENT,
+            }:
+                raise RuntimeError(baseline.reason_codes[0])
+            cursor = await self._store.load_step_attempt_cursor(
+                execution_id=self._execution_id,
+                step_execution_id=step_execution_id,
+            )
+
+        if cursor is None or cursor.current_attempt != step_attempt_number:
+            raise RuntimeError("TOOL_JOURNAL_ATTEMPT_CURSOR_MISMATCH")
 
         current = await self.load(
             step_execution_id=step_execution_id,

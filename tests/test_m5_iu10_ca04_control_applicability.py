@@ -202,6 +202,42 @@ def test_none_requires_durable_control_none_and_no_orphan_evidence() -> None:
     asyncio.run(scenario())
 
 
+def test_applicability_read_failure_never_collapses_to_none() -> None:
+    class RaisingApplicabilityStore:
+        async def read(self, execution_id: str):
+            del execution_id
+            raise RuntimeError("storage unavailable")
+
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        await _claim(
+            claims,
+            claim_id="claim-ca04-read-unknown",
+            owner="worker-a",
+            expected_epoch=0,
+        )
+        control_store = InMemoryDurableRecoveryEvidenceStore(
+            claim_authority=claims
+        )
+        authority = DurableAggregationControlAuthority(
+            control_store=control_store,
+            applicability_store=RaisingApplicabilityStore(),
+        )
+
+        snapshot = await authority.resolve(execution_id="execution-ca04")
+
+        assert snapshot.control.status is DurableControlReadStatus.NONE
+        assert (
+            snapshot.applicability.status
+            is AggregationControlApplicabilityStatus.UNKNOWN
+        )
+        assert snapshot.applicability.reason_codes == (
+            "AGGREGATION_CONTROL_APPLICABILITY_READ_UNKNOWN",
+        )
+
+    asyncio.run(scenario())
+
+
 def test_latched_control_without_applicability_evidence_is_unknown() -> None:
     async def scenario() -> None:
         claims, _, control_store, _ = await _latched_fixture()

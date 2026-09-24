@@ -19,6 +19,7 @@ from runtime.execution.foundation import (
     PendingStepSkipAuthorityKind,
     PreparedExecution,
 )
+from runtime.execution.models import StepExecutionStatus
 from runtime.execution.reliability_boundary import (
     StepFinalizationDisposition,
 )
@@ -249,10 +250,24 @@ class RunningStepCompletionCoordinator:
                 step_id=observation.step_id,
             )
         target = matches[0]
+        if prepared.execution_record.status != "RUNNING":
+            return RunningStepCompletionDecision(
+                status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
+                reason_codes=("STEP_COMPLETION_EXECUTION_NOT_RUNNING",),
+                prepared=prepared,
+                step_id=observation.step_id,
+            )
         if target.step_execution_id != observation.step_execution_id:
             return RunningStepCompletionDecision(
                 status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
                 reason_codes=("STEP_COMPLETION_EXECUTION_IDENTITY_MISMATCH",),
+                prepared=prepared,
+                step_id=observation.step_id,
+            )
+        if target.status is not StepExecutionStatus.RUNNING:
+            return RunningStepCompletionDecision(
+                status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
+                reason_codes=("STEP_COMPLETION_STEP_NOT_RUNNING",),
                 prepared=prepared,
                 step_id=observation.step_id,
             )

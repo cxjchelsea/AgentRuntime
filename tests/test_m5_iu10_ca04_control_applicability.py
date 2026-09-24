@@ -6,6 +6,7 @@ import asyncio
 import inspect
 from datetime import UTC, datetime, timedelta
 
+import runtime.execution.control_applicability as control_applicability_module
 from runtime.execution.aggregation_authority import (
     AggregationControlApplicabilityStatus,
 )
@@ -21,7 +22,6 @@ from runtime.execution.control_application import (
     ExecutionControlApplication,
     ExecutionControlDisposition,
 )
-import runtime.execution.control_applicability as control_applicability_module
 from runtime.execution.control_applicability import (
     ControlApplicabilityEvidenceStatus,
     ControlApplicabilityReadStatus,
@@ -327,6 +327,10 @@ def test_exact_applicability_replay_is_idempotent() -> None:
         assert read.record.revision == 1
         assert read.record.recorded_at == NOW + timedelta(seconds=4)
         assert read.record.status is ControlApplicabilityEvidenceStatus.APPLIES
+        assert read.record.source_nonterminal_step_ids_at_latch == ("step-001",)
+        assert read.record.source_affected_step_ids == ("step-001",)
+        assert read.record.source_running_step_id is None
+        assert read.record.source_preserve_running_step_result is False
 
     asyncio.run(scenario())
 

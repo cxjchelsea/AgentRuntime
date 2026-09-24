@@ -8,9 +8,15 @@ from datetime import UTC, datetime, timedelta
 
 import runtime.execution.control_applicability as control_applicability_module
 from runtime.execution.aggregation_authority import (
+    AggregationControlApplicabilityDecision,
     AggregationControlApplicabilityStatus,
+    ExecutionAggregationAuthority,
+    ExecutionAggregationEligibilityStatus,
 )
-from runtime.execution.aggregation_result import ExecutionAggregator
+from runtime.execution.aggregation_result import (
+    CanonicalExecutionResultProjector,
+    ExecutionAggregator,
+)
 from runtime.execution.control import (
     ExecutionControlLatchStatus,
     ExecutionControlSignal,
@@ -23,6 +29,7 @@ from runtime.execution.control_application import (
     ExecutionControlDisposition,
 )
 from runtime.execution.control_applicability import (
+    AggregationControlAuthoritySnapshot,
     ControlApplicabilityEvidenceStatus,
     ControlApplicabilityReadStatus,
     ControlApplicabilityWriteStatus,
@@ -38,9 +45,17 @@ from runtime.execution.recovery import (
     RecoveryClaimStatus,
 )
 from runtime.execution.recovery_evidence import (
+    DurableControlReadDecision,
     DurableControlReadStatus,
     DurableExecutionControlLatch,
     InMemoryDurableRecoveryEvidenceStore,
+)
+from runtime.execution.step_completion import RunningStepCompletionCoordinator
+from tests.test_m5_iu10_ca02_aggregation_evidence import (
+    NOW as CA02_NOW,
+    _partial_reliability_result,
+    _running,
+    _skill_plan,
 )
 
 NOW = datetime(2026, 9, 24, 14, 0, tzinfo=UTC)
@@ -537,6 +552,107 @@ def test_applicability_must_bind_exact_durable_latch() -> None:
         assert snapshot.applicability.reason_codes == (
             "AGGREGATION_CONTROL_APPLICABILITY_AUTHORITY_MISMATCH",
         )
+
+    asyncio.run(scenario())
+
+
+class SequenceAggregationControlAuthority:
+    def __init__(
+        self,
+        snapshots: tuple[AggregationControlAuthoritySnapshot, ...],
+    ) -> None:
+        self._snapshots = snapshots
+        self.resolve_count = 0
+
+    async def resolve(
+        self,
+        *,
+        execution_id: str,
+    ) -> AggregationControlAuthoritySnapshot:
+        del execution_id
+        index = min(self.resolve_count, len(self._snapshots) - 1)
+        self.resolve_count += 1
+        return self._snapshots[index]
+
+
+def test_natural_commit_re_resolves_control_authority_before_replay() -> None:
+    async def scenario() -> None:
+        plan = _skill_plan()
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=CA02_NOW + timedelta(seconds=1),
+        )
+        step_done = (
+            await RunningStepCompletionCoordinator(
+                lifecycle_service=service
+            ).complete(
+                prepared=running,
+                reliability_result=_partial_reliability_result(
+                    step_execution_id=running.steps[0].step_execution_id
+                ),
+                at=CA02_NOW + timedelta(seconds=3),
+            )
+        ).prepared
+
+        no_control = AggregationControlAuthoritySnapshot(
+            control=DurableControlReadDecision(
+                status=DurableControlReadStatus.NONE,
+                reason_codes=("DURABLE_CONTROL_NOT_LATCHED",),
+            ),
+            applicability=AggregationControlApplicabilityDecision(
+                status=AggregationControlApplicabilityStatus.NONE,
+                reason_codes=("AGGREGATION_CONTROL_NONE_DURABLE",),
+            ),
+        )
+        late_signal = ExecutionControlSignal(
+            signal_type=ExecutionControlSignalType.CANCEL,
+            reason_code="LATE_CANCEL",
+            source="runtime",
+            signal_id="signal-ca04-late",
+            target_execution_id=step_done.execution_record.execution_id,
+            issued_at=CA02_NOW + timedelta(seconds=3, milliseconds=100),
+        )
+        late_latch = LatchedExecutionControl(
+            signal=late_signal,
+            observed_at=CA02_NOW + timedelta(seconds=3, milliseconds=200),
+            latched_at=CA02_NOW + timedelta(seconds=3, milliseconds=300),
+        )
+        late_noop = AggregationControlAuthoritySnapshot(
+            control=DurableControlReadDecision(
+                status=DurableControlReadStatus.LATCHED,
+                reason_codes=("DURABLE_CONTROL_LATCH_FOUND",),
+                latched_control=late_latch,
+            ),
+            applicability=AggregationControlApplicabilityDecision(
+                status=AggregationControlApplicabilityStatus.LATE_NOOP,
+                reason_codes=("CONTROL_ARRIVED_AFTER_EXECUTION_TERMINAL",),
+                latched_control=late_latch,
+            ),
+        )
+        control_authority = SequenceAggregationControlAuthority(
+            (no_control, late_noop)
+        )
+        aggregator = ExecutionAggregator(
+            authority=ExecutionAggregationAuthority(),
+            lifecycle_service=service,
+            projector=CanonicalExecutionResultProjector(),
+            control_authority=control_authority,
+        )
+
+        result = await aggregator.aggregate(
+            approved_plan=plan,
+            prepared=step_done,
+            at=CA02_NOW + timedelta(seconds=4),
+        )
+
+        assert control_authority.resolve_count == 2
+        assert (
+            result.eligibility.status
+            is ExecutionAggregationEligibilityStatus.READY_EXISTING_TERMINAL
+        )
+        assert result.execution_result.cancellation is None
 
     asyncio.run(scenario())
 

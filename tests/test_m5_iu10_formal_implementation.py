@@ -914,6 +914,20 @@ def test_tool_journal_persistence_failure_is_fail_closed() -> None:
     asyncio.run(scenario())
 
 
+def test_workflow_resume_keeps_current_attempt_prefix_separate_from_retry_history() -> None:
+    source = inspect.getsource(StepCapabilityExecutor.resume_workflow_from_checkpoint)
+
+    assert "recovered_current_attempt_journal" in source
+    assert "prior_attempt_journal=prior_attempt_journal" in source
+    assert (
+        "prior_attempt_journal=recovered_current_attempt_journal"
+        in source
+    )
+
+    recovery_source = inspect.getsource(M5RecoveryRuntime.recover)
+    assert "recovered_current_attempt_journal=prior_journal" in recovery_source
+
+
 def test_workflow_resume_journal_merge_preserves_prior_order_and_fails_on_conflict() -> None:
     first = _skill_observation(
         step_execution_id="step-execution-001"

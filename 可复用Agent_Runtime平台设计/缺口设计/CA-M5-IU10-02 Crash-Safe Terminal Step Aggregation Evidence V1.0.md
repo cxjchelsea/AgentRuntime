@@ -369,7 +369,7 @@ CONTROL_TERMINALIZED evidence
 ~~~text
 B-M5-IU10-002
 CRASH_SAFE_RICH_AGGREGATION_EVIDENCE_MISSING
-= FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+= CLOSED
 
 B-M5-IU10-003 = OPEN
 B-M5-IU10-004 = OPEN
@@ -399,11 +399,11 @@ Registry lookup
 # 23. Current status
 
 ~~~text
-CA-M5-IU10-02 = CODE COMPLETE
+CA-M5-IU10-02 = PASSED
 CA-M5-IU10-02 INDEPENDENT REVIEW = PASSED
-CA-M5-IU10-02 VERIFICATION = PENDING
+CA-M5-IU10-02 VERIFICATION = PASSED
 
-B-M5-IU10-002 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-002 = CLOSED
 
 M5-IU10 IMPLEMENTATION READINESS = NOT_READY
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
@@ -496,3 +496,105 @@ M5 = IN PROGRESS
 CA-M5-IU10-02 = PASSED
 B-M5-IU10-002 = CLOSED
 ~~~
+
+
+# 25. Verification Closure
+
+Verification target code HEAD：
+
+~~~text
+1679871786257f992fcaf3bca9403e0bd48d35ed
+~~~
+
+Independent Review semantic HEAD：
+
+~~~text
+d9df6a421380e8321cc9d404c375e75a250e63ec
+~~~
+
+Independent Review closure documentation HEAD：
+
+~~~text
+667192d7a0b137b1f3ab1a3a2ed760411095bb27
+~~~
+
+Independent Review 后仅做门禁兼容修复，不改变 CA-02 aggregation 语义：
+
+~~~text
+1. test_unknown_tool_truth_blocks_terminal_evidence_readiness
+   - 不再伪造 has_unknown_tool_observation
+   - 同步把 Tool journal result / physical attempt result 改为 UNKNOWN
+   - 同步 owner result tool_results
+   - 同步 has_non_success_tool_observation / has_unknown_tool_observation
+
+2. StepAggregationEvidence.from_payload
+   - 不再把字段级 ValueError 包装成泛化 payload 错误
+   - strict type validation 保持不变
+   - 字段错误仍可保留 exact field identity
+
+3. _snapshot_to_record_payload
+   - 显式使用 dict[str, object]，仅修正 mypy invariant 推断
+
+4. fail-closed isinstance
+   - 保持 ValueError 语义
+   - 仅增加 noqa: TRY004
+
+5. import / __all__ / formatting
+   - 仅门禁兼容与格式对齐
+~~~
+
+四项最终门禁：
+
+~~~text
+python -m pytest tests -q
+-> 922 passed
+
+python -m mypy runtime tests
+-> Success: no issues found in 213 source files
+
+python -m ruff check runtime tests
+-> All checks passed
+
+python -m ruff format --check runtime tests
+-> 213 files already formatted
+~~~
+
+Verification Closure decision：
+
+~~~text
+CA-M5-IU10-02 = PASSED
+CA-M5-IU10-02 INDEPENDENT REVIEW = PASSED
+CA-M5-IU10-02 VERIFICATION = PASSED
+
+B-M5-IU10-002
+CRASH_SAFE_RICH_AGGREGATION_EVIDENCE_MISSING
+= CLOSED
+
+NEW CA-02 BLOCKER = NONE
+
+M5-IU10 IMPLEMENTATION READINESS = NOT_READY
+FORMAL IMPLEMENTATION = NOT AUTHORIZED
+M5 = IN PROGRESS
+~~~
+
+Remaining IU10 blockers：
+
+~~~text
+B-M5-IU10-001 = CLOSED
+B-M5-IU10-002 = CLOSED
+B-M5-IU10-003 = OPEN
+B-M5-IU10-004 = OPEN
+B-M5-IU10-005 = OPEN
+B-M5-IU10-006 = OPEN
+B-M5-IU10-007 = CLOSED
+B-M5-IU10-008 = CLOSED
+~~~
+
+下一步：
+
+~~~text
+CA-M5-IU10-03
+Canonical ExecutionResult Projection + Cardinality
+~~~
+
+CA-02 Verification Closure 只关闭 B-M5-IU10-002；不代表 M5-IU10 READY，不授权 Formal Implementation。

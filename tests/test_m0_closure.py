@@ -30,6 +30,7 @@ from runtime.contracts import (
     UpdateResult,
     ValidatedResult,
 )
+from runtime.contracts.execution import EXECUTION_RESULT_SCHEMA_VERSION
 from runtime.contracts.planning import PLANNING_SCHEMA_VERSION
 from runtime.interfaces import (
     ContextBuilder,
@@ -383,12 +384,13 @@ def test_fourteen_contracts_round_trip_and_unique_names() -> None:
     assert len(contract_type_names) == 14
     assert len(set(contract_type_names)) == 14
     for contract_instance in contract_instances:
-        # M4-CA1：仅 Planning Contract 默认 1.1.0，其余仍对齐全局 1.0.0
-        expected_schema_version = (
-            PLANNING_SCHEMA_VERSION
-            if isinstance(contract_instance, ActionPlanDraft | ApprovedActionPlan)
-            else SCHEMA_VERSION
-        )
+        # Planning 与 ExecutionResult 使用各自显式版本；其余仍对齐全局版本。
+        if isinstance(contract_instance, ActionPlanDraft | ApprovedActionPlan):
+            expected_schema_version = PLANNING_SCHEMA_VERSION
+        elif isinstance(contract_instance, ExecutionResult):
+            expected_schema_version = EXECUTION_RESULT_SCHEMA_VERSION
+        else:
+            expected_schema_version = SCHEMA_VERSION
         assert contract_instance.schema_version == expected_schema_version
         restored = type(contract_instance).model_validate(
             contract_instance.model_dump(mode="json")

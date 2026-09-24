@@ -1049,7 +1049,7 @@ KnowledgeDomain / KnowledgeType / SourcePolicy / Population / Scenario / SafetyL
 - producer: Execution Framework
 - consumer: M6
 - lifecycle: Execution / Trace
-- schema_version: `1.0.0`
+- schema_version: `1.1.0`（CA-M5-IU10-03 additive amendment；兼容读取 `1.0.0`）
 - 主链对象: 是
 - 内部中间对象: 否
 
@@ -1070,7 +1070,8 @@ timing
 
 ```text
 skill_results[]
-workflow_result
+workflow_result                 legacy single-Workflow compatibility field
+workflow_results[]              canonical multi-Workflow lossless field
 tool_results[]
 business_outputs[]
 execution_events[]
@@ -1080,6 +1081,16 @@ cancellation
 quality
 ```
 
+Workflow cardinality：
+
+```text
+0 Workflow  -> workflow_result=None, workflow_results=[]
+1 Workflow  -> workflow_result=exact sole item, workflow_results=[same item]
+>1 Workflow -> workflow_result=None, workflow_results=[all items in ApprovedPlan order]
+```
+
+禁止 first-wins / last-wins。
+
 ## 14.3 层次
 
 ```text
@@ -1087,17 +1098,19 @@ ExecutionResult.plan_status
         ↓
 step_results[]
         ↓
-skill_results[] / workflow_result
+skill_results[] / workflow_results[]
         ↓
 tool_results[]
 ```
+
+`workflow_result` 仅保留为单 Workflow 兼容视图，不是多 Workflow authority。
 
 ## 14.4 失效字段
 
 ```text
 status                  改 plan_status
 executed_skill          改 skill_results[]
-executed_workflow       改 workflow_result
+executed_workflow       改 workflow_results[]（单项兼容 workflow_result）
 business_result         改 business_outputs[]
 elder_id                改 identity_scope
 ```
@@ -1412,8 +1425,8 @@ optional: `device_id`, `current_state`, `step_state`, `tool_context`, `deadline`
 3. 不得定义名为 elder_id 的 Core 字段。
 4. 不得把 Domain Example 写成 Core Enum class。
 5. M0 允许 Stub，但 Stub 也必须使用本文字段名。
-6. 每个对象必须带 schema_version = 1.0.0。
-7. Breaking Change 必须提升 Major Version，并先改本文。
+6. 每个对象必须带 schema_version；默认版本以各 Contract 明确冻结的 version constant 为准。
+7. Additive compatible amendment 提升 Minor Version；Breaking Change 必须提升 Major Version，并先改本文。
 ```
 
 ---

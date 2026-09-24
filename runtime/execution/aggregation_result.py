@@ -283,11 +283,14 @@ class CanonicalExecutionResultProjector:
                 evidence.terminalization_kind
                 is StepAggregationTerminalizationKind.CONTROL_TERMINALIZED
             ):
-                joined = (
-                    ()
-                    if control_tool_journals is None
-                    else control_tool_journals.get(step.step_id, ())
-                )
+                if (
+                    control_tool_journals is None
+                    or step.step_id not in control_tool_journals
+                ):
+                    raise ExecutionAggregationProjectionError(
+                        "EXECUTION_RESULT_CONTROL_TOOL_PROJECTION_MISSING"
+                    )
+                joined = control_tool_journals[step.step_id]
                 consumed_control_tool_steps.add(step.step_id)
                 joined_ids = tuple(item.tool_call_id for item in joined)
                 if joined_ids != evidence.tool_call_ids:
@@ -564,12 +567,9 @@ class ExecutionAggregator:
                 continue
 
             if self._control_tool_evidence_reader is None:
-                if evidence.tool_call_ids:
-                    raise ExecutionAggregationProjectionError(
-                        "EXECUTION_RESULT_CONTROL_TOOL_EVIDENCE_READER_MISSING"
-                    )
-                journals[step.step_id] = ()
-                continue
+                raise ExecutionAggregationProjectionError(
+                    "EXECUTION_RESULT_CONTROL_TOOL_EVIDENCE_READER_MISSING"
+                )
 
             loaded = await self._control_tool_evidence_reader.load(
                 execution_id=execution_id,

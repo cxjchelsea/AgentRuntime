@@ -517,7 +517,7 @@ tests/test_m5_iu10_ca04_control_applicability.py
 ~~~text
 B-M5-IU10-009
 DURABLE_CONTROL_APPLICABILITY_AUTHORITY_MISSING
-= FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+= CLOSED
 ~~~
 
 Original blockers remain：
@@ -529,11 +529,11 @@ B-M5-IU10-001..008 = CLOSED
 # 23. Current status
 
 ~~~text
-CA-M5-IU10-04 = CODE COMPLETE
+CA-M5-IU10-04 = PASSED
 CA-M5-IU10-04 INDEPENDENT REVIEW = PASSED
-CA-M5-IU10-04 VERIFICATION = PENDING
+CA-M5-IU10-04 VERIFICATION = PASSED
 
-B-M5-IU10-009 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-009 = CLOSED
 
 M5-IU10 IMPLEMENTATION READINESS = NOT_READY
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
@@ -741,4 +741,127 @@ CA-M5-IU10-04 != PASSED
 B-M5-IU10-009 != CLOSED
 M5-IU10 != READY
 FORMAL IMPLEMENTATION != AUTHORIZED
+~~~
+
+
+# 25. Verification Closure
+
+Verified code HEAD：
+
+~~~text
+cf9dea1a702af3bbdbf050e89c81fec4b01a4b4e
+~~~
+
+Independent Review record HEAD：
+
+~~~text
+20a49bfffbbbb4191eac7118ad10e89661af4c56
+~~~
+
+两者之间仅包含门禁兼容修改：
+
+~~~text
+runtime/execution/control_applicability.py
+-> _require_non_blank(str | None) -> str
+-> target_execution_id 通过返回值完成 mypy narrowing
+-> durable applicability 语义不变
+
+tests/test_m5_iu10_ca03_canonical_result_projection.py
+-> non-ready aggregation gate 补回 control / control_applicability
+-> 只恢复 CA-01 evaluate() 完整调用合同
+
+tests/test_m5_iu10_ca04_control_applicability.py
+-> nonterminal / affected 显式 tuple[str, ...]
+-> fixture typing only
+~~~
+
+未修改：
+
+~~~text
+DurableControlApplicabilityRecord
+READY_TO_TERMINALIZE -> APPLIES
+ALREADY_TERMINAL -> LATE_NOOP
+immutable applicability
+recovery-epoch fencing
+write-before-lifecycle ordering
+natural terminal control re-resolve
+control-terminal replay protection
+Aggregator-owned authority resolution
+~~~
+
+Verification evidence：
+
+~~~text
+python -m pytest tests -q
+-> 953 passed
+
+python -m mypy runtime tests
+-> Success: no issues found in 217 source files
+
+python -m ruff check runtime tests
+-> All checks passed
+
+python -m ruff format --check runtime tests
+-> 217 files already formatted
+~~~
+
+Verification decision：
+
+~~~text
+CA-M5-IU10-04 = PASSED
+CA-M5-IU10-04 INDEPENDENT REVIEW = PASSED
+CA-M5-IU10-04 VERIFICATION = PASSED
+
+B-M5-IU10-009 = CLOSED
+
+NEW CA-04 BLOCKER = NONE
+
+CA-M5-IU10-00 = PASSED
+CA-M5-IU10-01 = PASSED
+CA-M5-IU10-02 = PASSED
+CA-M5-IU10-03 = PASSED
+CA-M5-IU10-04 = PASSED
+
+B-M5-IU10-001..009 = CLOSED
+
+M5-IU10 IMPLEMENTATION READINESS = NOT_READY
+FORMAL IMPLEMENTATION = NOT AUTHORIZED
+M5 = IN PROGRESS
+~~~
+
+注意：
+
+~~~text
+CA-M5-IU10-04 Verification Closure
+!=
+M5-IU10 Implementation Readiness approval
+~~~
+
+下一步必须重新执行：
+
+~~~text
+M5-IU10 Implementation Readiness Re-Review
+~~~
+
+只有 cumulative re-review 确认：
+
+~~~text
+B-M5-IU10-001..009 = CLOSED
+NEW BLOCKER = NONE
+authority chain complete
+Canonical contract complete
+recovery/control provenance complete
+Formal Implementation scope fully frozen
+~~~
+
+之后才能把：
+
+~~~text
+M5-IU10 IMPLEMENTATION READINESS
+~~~
+
+改为：
+
+~~~text
+READY
 ~~~

@@ -31,7 +31,10 @@ from runtime.execution.control_application import (
     InFlightOperationKind,
     InFlightOperationRegistry,
 )
-from runtime.execution.invocation import ToolInvocationJournalEntry
+from runtime.execution.invocation import (
+    ToolInvocationJournalEntry,
+    ToolInvocationJournalPersistence,
+)
 from runtime.execution.recovery import (
     ExecutionRecoveryClaim,
     InMemoryRecoveryClaimAuthority,
@@ -400,6 +403,39 @@ class DurableToolJournalEvidence:
             step_execution_id=step_execution_id,
             step_attempt_number=step_attempt_number,
         )
+
+
+    async def persist(
+        self,
+        *,
+        step_execution_id: str,
+        step_attempt_number: int,
+        entry: ToolInvocationJournalEntry,
+    ) -> None:
+        """Persist one logical Tool entry using the frozen monotonic journal contract."""
+
+        current = await self.load(
+            step_execution_id=step_execution_id,
+            step_attempt_number=step_attempt_number,
+        )
+        for existing in current:
+            if existing.tool_call_id != entry.tool_call_id:
+                continue
+            if existing == entry:
+                return
+            raise RuntimeError("TOOL_JOURNAL_IDENTITY_REBIND_CONFLICT")
+
+        decision = await self.append(
+            step_execution_id=step_execution_id,
+            step_attempt_number=step_attempt_number,
+            expected_current_length=len(current),
+            entry=entry,
+        )
+        if decision.status not in {
+            ToolJournalWriteStatus.APPENDED,
+            ToolJournalWriteStatus.ALREADY_CURRENT,
+        }:
+            raise RuntimeError(decision.reason_codes[0])
 
 
 class DurableControlReadStatus(str, Enum):

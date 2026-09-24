@@ -950,8 +950,9 @@ def test_control_tool_join_missing_durable_attempt_fails_closed() -> None:
                 lifecycle_manager=ExecutionLifecycleManager(),
                 execution_store=InMemoryExecutionStateStore(),
             ),
-            projector=CanonicalExecutionResultProjector(),
-            control_tool_evidence_reader=reader,
+            projector=CanonicalExecutionResultProjector(
+                control_tool_evidence_reader=reader
+            ),
         )
 
         with pytest.raises(

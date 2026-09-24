@@ -821,10 +821,37 @@ def test_unknown_tool_truth_blocks_terminal_evidence_readiness() -> None:
         )
         step = completed.prepared.steps[0]
         assert step.aggregation_evidence is not None
-        forged_evidence = replace(
-            step.aggregation_evidence,
-            has_unknown_tool_observation=True,
-        )
+
+        payload = step.aggregation_evidence.to_payload()
+        journal = payload["tool_journal"]
+        assert isinstance(journal, list)
+        assert len(journal) == 1
+        entry = journal[0]
+        assert isinstance(entry, dict)
+        result = entry["result"]
+        assert isinstance(result, dict)
+        result["status"] = ToolExecutionStatus.UNKNOWN.value
+
+        attempts = entry["attempts"]
+        assert isinstance(attempts, list)
+        for attempt in attempts:
+            assert isinstance(attempt, dict)
+            attempt_result = attempt["result"]
+            assert isinstance(attempt_result, dict)
+            attempt_result["status"] = ToolExecutionStatus.UNKNOWN.value
+
+        skill_result = payload["skill_result"]
+        assert isinstance(skill_result, dict)
+        tool_results = skill_result["tool_results"]
+        assert isinstance(tool_results, list)
+        assert len(tool_results) == 1
+        assert isinstance(tool_results[0], dict)
+        tool_results[0]["status"] = ToolExecutionStatus.UNKNOWN.value
+
+        payload["has_non_success_tool_observation"] = True
+        payload["has_unknown_tool_observation"] = True
+        forged_evidence = StepAggregationEvidence.from_payload(payload)
+
         forged_step = replace(step, aggregation_evidence=forged_evidence)
         persisted: dict[str, Any] = dict(
             completed.prepared.execution_record.step_results[0]
@@ -847,7 +874,6 @@ def test_unknown_tool_truth_blocks_terminal_evidence_readiness() -> None:
         )
 
     asyncio.run(scenario())
-
 
 def test_recovered_attempt_number_survives_terminal_evidence() -> None:
     async def scenario() -> None:

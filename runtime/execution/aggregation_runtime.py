@@ -182,6 +182,39 @@ class DurableRecoveryControlRuntimeFactory(DurableControlRuntimeFactory):
     """Recovery-facing structural adapter for M5RecoveryRuntime."""
 
 
+@dataclass(frozen=True, slots=True)
+class DurableM5ExecutionBindings:
+    """Claim-coherent live Tool and terminal-control authorities."""
+
+    live_execution: DurableLiveExecutionBindings
+    control_runtime: ExecutionControlCoordinator
+
+
+class DurableM5ExecutionBindingsFactory:
+    """Create live Tool journaling and control authority from one exact claim."""
+
+    def __init__(
+        self,
+        *,
+        live_execution_factory: DurableLiveExecutionBindingsFactory,
+        control_runtime_factory: DurableControlRuntimeFactory,
+    ) -> None:
+        self._live_execution_factory = live_execution_factory
+        self._control_runtime_factory = control_runtime_factory
+
+    def create(
+        self,
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> DurableM5ExecutionBindings:
+        live_execution = self._live_execution_factory.create(recovery_claim)
+        control_runtime = self._control_runtime_factory.create(recovery_claim)
+        if not isinstance(control_runtime, ExecutionControlCoordinator):
+            raise TypeError("durable control runtime factory returned invalid result")
+        return DurableM5ExecutionBindings(
+            live_execution=live_execution,
+            control_runtime=control_runtime,
+        )
+
 
 class M5ExecutionAggregationRuntimeStatus(str, Enum):
     STEP_READY = "STEP_READY"

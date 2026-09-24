@@ -365,16 +365,18 @@ class CanonicalExecutionResultProjector:
             or any(step.degraded for step in prepared.steps)
         )
 
-        timing = ExecutionTiming(
-            started_at=prepared.started_at,
-            finished_at=prepared.finished_at,
-            total_duration_ms=_duration_ms(
-                prepared.started_at,
-                prepared.finished_at,
-                "EXECUTION_RESULT_EXECUTION_TIMING_INVALID",
-            ),
-            step_durations=step_durations,
-            tool_durations=tool_durations,
+        timing = ExecutionTiming.model_validate(
+            {
+                "started_at": prepared.started_at,
+                "finished_at": prepared.finished_at,
+                "total_duration_ms": _duration_ms(
+                    prepared.started_at,
+                    prepared.finished_at,
+                    "EXECUTION_RESULT_EXECUTION_TIMING_INVALID",
+                ),
+                "step_durations": step_durations,
+                "tool_durations": tool_durations,
+            }
         )
 
         return ExecutionResult(

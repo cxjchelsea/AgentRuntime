@@ -742,19 +742,19 @@ Implementation target：
 ~~~text
 B-M5-IU10-003
 WORKFLOW_RESULT_CARDINALITY_CONTRACT_MISMATCH
-= FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+= CLOSED
 
 B-M5-IU10-004
 CONTROL_TERMINATION_PROVENANCE_NOT_BOUND_TO_RESULT
-= FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+= CLOSED
 
 B-M5-IU10-005
 SKELETON_EXECUTION_RESULT_PROJECTOR_INCOMPLETE
-= FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+= CLOSED
 
 B-M5-IU10-006
 AGGREGATION_REPLAY_DETERMINISM_NOT_FROZEN
-= FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+= CLOSED
 ~~~
 
 Already closed：
@@ -784,14 +784,14 @@ production storage adapter selection
 # 26. Current status
 
 ~~~text
-CA-M5-IU10-03 = CODE COMPLETE
+CA-M5-IU10-03 = PASSED
 CA-M5-IU10-03 INDEPENDENT REVIEW = PASSED
-CA-M5-IU10-03 VERIFICATION = PENDING
+CA-M5-IU10-03 VERIFICATION = PASSED
 
-B-M5-IU10-003 = FIX_IMPLEMENTED_PENDING_GATES
-B-M5-IU10-004 = FIX_IMPLEMENTED_PENDING_GATES
-B-M5-IU10-005 = FIX_IMPLEMENTED_PENDING_GATES
-B-M5-IU10-006 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-003 = CLOSED
+B-M5-IU10-004 = CLOSED
+B-M5-IU10-005 = CLOSED
+B-M5-IU10-006 = CLOSED
 
 M5-IU10 IMPLEMENTATION READINESS = NOT_READY
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
@@ -801,11 +801,7 @@ M5 = IN PROGRESS
 下一步必须是：
 
 ~~~text
-CA-M5-IU10-03 Independent Review
--> targeted fixes if findings exist
--> four verification gates
--> CA-M5-IU10-03 Verification Closure
--> cumulative M5-IU10 Implementation Readiness Re-Review
+cumulative M5-IU10 Implementation Readiness Re-Review
 ~~~
 
 
@@ -914,6 +910,99 @@ python -m ruff format --check runtime tests
 ~~~text
 CA-M5-IU10-03 != PASSED
 B-M5-IU10-003..006 != CLOSED
+M5-IU10 != READY
+FORMAL IMPLEMENTATION != AUTHORIZED
+~~~
+
+
+# 28. Verification Closure
+
+Verified code HEAD：
+
+~~~text
+289abb07c9a1d1fd08abf0ef66717b54433aad4a
+~~~
+
+该 HEAD 相对 Independent Review record HEAD：
+
+~~~text
+f5443bf65bf9d648156cbb42d0cf811fc4255a92
+~~~
+
+仅包含门禁兼容 / 格式化变更：
+
+~~~text
+ExecutionTiming extra fields
+-> constructor kwargs 改为 model_validate(...) 写入
+-> 不改变 timing projection 语义
+
+runtime/contracts/__init__.py
+runtime/execution/__init__.py
+-> __all__ / import order only
+
+tests/test_m5_iu10_ca03_canonical_result_projection.py
+-> import formatting only
+~~~
+
+CA-03 aggregation / projection authority 未改变。
+
+Verification evidence：
+
+~~~text
+python -m pytest tests -q
+-> 936 passed
+
+python -m mypy runtime tests
+-> Success: no issues found in 215 source files
+
+python -m ruff check runtime tests
+-> All checks passed
+
+python -m ruff format --check runtime tests
+-> 215 files already formatted
+~~~
+
+Verification decision：
+
+~~~text
+CA-M5-IU10-03 = PASSED
+CA-M5-IU10-03 INDEPENDENT REVIEW = PASSED
+CA-M5-IU10-03 VERIFICATION = PASSED
+
+B-M5-IU10-003 = CLOSED
+B-M5-IU10-004 = CLOSED
+B-M5-IU10-005 = CLOSED
+B-M5-IU10-006 = CLOSED
+
+CA-M5-IU10-00 = PASSED
+CA-M5-IU10-01 = PASSED
+CA-M5-IU10-02 = PASSED
+CA-M5-IU10-03 = PASSED
+
+M5-IU10 IMPLEMENTATION READINESS = NOT_READY
+FORMAL IMPLEMENTATION = NOT AUTHORIZED
+M5 = IN PROGRESS
+~~~
+
+注意：
+
+~~~text
+CA-03 Verification Closure
+!=
+M5-IU10 Implementation Readiness approval
+~~~
+
+本 Closure 只证明 CA-03 Controlled Amendment 已实现、独立评审并通过四项门禁。
+下一步必须重新聚合 CA-00..03、全部 blocker、Canonical contract、
+authority chain、recovery/control evidence 与 regression gate，执行：
+
+~~~text
+M5-IU10 Implementation Readiness Re-Review
+~~~
+
+在该 Re-Review 通过之前：
+
+~~~text
 M5-IU10 != READY
 FORMAL IMPLEMENTATION != AUTHORIZED
 ~~~

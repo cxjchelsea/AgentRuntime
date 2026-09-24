@@ -18,6 +18,11 @@ from runtime.execution.aggregation_runtime import (
     M5ExecutionAggregationRuntime,
     M5ExecutionAggregationRuntimeStatus,
 )
+from runtime.execution.capability_execution import (
+    CoreApprovedToolInvoker,
+    StepCapabilityExecutor,
+    ToolInvocationBoundaryError,
+)
 from runtime.execution.capability_resolution import CapabilityExecutionOwner
 from runtime.execution.control import (
     ExecutionControlLatchStatus,
@@ -58,7 +63,16 @@ from runtime.execution.recovery import (
     RecoveryClaimRequest,
     RecoveryClaimStatus,
 )
-from runtime.execution.recovery_evidence import InMemoryDurableRecoveryEvidenceStore
+from runtime.execution.recovery_evidence import (
+    DurableToolJournalEvidence,
+    InMemoryDurableRecoveryEvidenceStore,
+)
+from runtime.execution.recovery_runtime import (
+    M5RecoveryRuntime,
+    M5RecoveryRuntimeOutcome,
+    M5RecoveryRuntimeStatus,
+)
+from runtime.execution.recovery_workflow import WorkflowResumeRequest
 from runtime.execution.reliability import (
     IdempotencyMode,
     ReliabilityCapabilityKind,
@@ -102,8 +116,14 @@ from tests.test_m5_iu10_ca03_canonical_result_projection import (
     _multi_workflow_terminal,
 )
 from tests.test_m5_iu4_capability_execution import (
+    CountingIdentifierFactory,
+    RecordingTool,
+    StaticPermissionEvaluator,
+    StaticPermissionProvider,
+    StaticValidator,
     _approved_step,
     _snapshot,
+    _tool,
     _workflow_resolved,
 )
 from tests.test_m5_iu7_formal_implementation import (
@@ -124,7 +144,6 @@ from tests.test_m5_iu9_formal_implementation import (
     _context as recovery_context,
     _executor as recovery_executor,
 )
-from runtime.execution.recovery_workflow import WorkflowResumeRequest
 
 
 class WorkflowPolicyResolver:
@@ -700,6 +719,138 @@ def test_durable_recovery_control_factory_binds_latch_and_applicability_to_same_
         assert evidence.record.writer_recovery_epoch == claim.recovery_epoch
 
     asyncio.run(scenario())
+
+
+def test_core_tool_invoker_persists_logical_result_before_returning() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(
+            claims,
+            execution_id="execution-iu4",
+            claim_id="formal-tool-journal",
+        )
+        store = InMemoryDurableRecoveryEvidenceStore(
+            claim_authority=claims
+        )
+        journal = DurableToolJournalEvidence(
+            store=store,
+            execution_id="execution-iu4",
+            recovery_claim=claim,
+            clock=lambda: NOW + timedelta(seconds=1),
+        )
+        tool = RecordingTool()
+        invoker = CoreApprovedToolInvoker(
+            resolved_tools=(_tool(tool),),
+            execution_context=recovery_context(),
+            step_execution_id="step-execution-001",
+            permission_context_provider=StaticPermissionProvider(),
+            permission_evaluator=StaticPermissionEvaluator(),
+            input_validator=StaticValidator(),
+            output_validator=StaticValidator(),
+            identifier_factory=CountingIdentifierFactory(),
+            step_id="step-001",
+            step_attempt_number=1,
+            journal_persistence=journal,
+        )
+
+        result = await invoker.invoke(
+            tool_id="DOMAIN_TOOL",
+            input_payload={"value": 1},
+        )
+
+        assert result.status.value == "SUCCESS"
+        durable = await store.load_tool_journal(
+            execution_id="execution-iu4",
+            step_execution_id="step-execution-001",
+            step_attempt_number=1,
+        )
+        assert durable == invoker.entries()
+        assert len(durable) == 1
+
+    asyncio.run(scenario())
+
+
+def test_tool_journal_persistence_failure_is_fail_closed() -> None:
+    class ExplodingPersistence:
+        async def persist(self, **kwargs: Any) -> None:
+            del kwargs
+            raise RuntimeError("durable store unavailable")
+
+    async def scenario() -> None:
+        tool = RecordingTool()
+        invoker = CoreApprovedToolInvoker(
+            resolved_tools=(_tool(tool),),
+            execution_context=recovery_context(),
+            step_execution_id="step-execution-001",
+            permission_context_provider=StaticPermissionProvider(),
+            permission_evaluator=StaticPermissionEvaluator(),
+            input_validator=StaticValidator(),
+            output_validator=StaticValidator(),
+            identifier_factory=CountingIdentifierFactory(),
+            step_id="step-001",
+            step_attempt_number=1,
+            journal_persistence=ExplodingPersistence(),
+        )
+
+        with pytest.raises(
+            ToolInvocationBoundaryError,
+            match="logical Tool result could not be durably journaled",
+        ):
+            await invoker.invoke(
+                tool_id="DOMAIN_TOOL",
+                input_payload={"value": 1},
+            )
+
+        assert "TOOL_DURABLE_JOURNAL_WRITE_UNKNOWN" in invoker.boundary_faults
+        assert tool.calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_workflow_resume_journal_merge_preserves_prior_order_and_fails_on_conflict() -> None:
+    first = _skill_observation(
+        step_execution_id="step-execution-001"
+    ).tool_journal[0]
+    second_result = replace(
+        first.result,
+        tool_call_id="tool-call-002",
+    )
+    second = replace(
+        first,
+        tool_call_id="tool-call-002",
+        result=second_result,
+    )
+
+    merged = StepCapabilityExecutor._merge_resumed_attempt_journal(
+        prior_attempt_journal=(first,),
+        resumed_journal=(first, second),
+    )
+    assert merged == (first, second)
+
+    conflict = replace(first, tool_version="9.9.9")
+    assert (
+        StepCapabilityExecutor._merge_resumed_attempt_journal(
+            prior_attempt_journal=(first,),
+            resumed_journal=(conflict,),
+        )
+        is None
+    )
+
+
+def test_recovery_runtime_requires_workflow_finalization_authority() -> None:
+    with pytest.raises(
+        ValueError,
+        match="WORKFLOW_RESUMED requires recovered Workflow finalization authority",
+    ):
+        M5RecoveryRuntimeOutcome(
+            status=M5RecoveryRuntimeStatus.WORKFLOW_RESUMED,
+            reason_codes=("WORKFLOW_RESUMED",),
+            recovery_decision=None,
+        )
+
+    source = inspect.getsource(M5RecoveryRuntime.recover)
+    assert ".finalize_recovered_workflow_outcome(" in source
+    assert "reliability_result=workflow_reliability" in source
 
 
 def test_recovered_workflow_resume_reuses_current_attempt_and_enters_iu10_completion() -> None:

@@ -516,6 +516,11 @@ class ExecutionAggregator:
                 status=decision.plan_status,
                 at=at,
             )
+            control_snapshot = await self._control_authority.resolve(
+                execution_id=current.execution_record.execution_id,
+            )
+            control = control_snapshot.control
+            control_applicability = control_snapshot.applicability
             evidence_readiness, skip_decisions = project_ca01_evidence_inputs(
                 approved_plan=approved_plan,
                 prepared=current,

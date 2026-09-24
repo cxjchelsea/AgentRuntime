@@ -366,6 +366,7 @@ class StepFinalizationDecision:
     disposition: StepFinalizationDisposition
     reason_codes: tuple[str, ...]
     terminal_status: StepExecutionStatus | None = None
+    degraded: bool = False
 
     def __post_init__(self) -> None:
         if not self.reason_codes or any(
@@ -384,6 +385,13 @@ class StepFinalizationDecision:
                 )
         elif self.terminal_status is not None:
             raise ValueError("non-FINALIZE decision must not carry terminal_status")
+        if self.degraded and (
+            self.disposition is not StepFinalizationDisposition.FINALIZE
+            or self.terminal_status is not StepExecutionStatus.SUCCESS
+        ):
+            raise ValueError(
+                "degraded finalization requires FINALIZE with SUCCESS lifecycle status"
+            )
 
 
 class StepFinalizationEvaluator(Protocol):

@@ -70,7 +70,6 @@ from runtime.contracts.update import MemoryUpdate, StateUpdate, UpdateResult
 from runtime.contracts.validation import ClaimPolicy, ValidatedResult
 
 __all__ = [
-    "SCHEMA_VERSION",
     "ActionPlanDraft",
     "ApprovedActionPlan",
     "BusinessStatus",
@@ -118,6 +117,7 @@ __all__ = [
     "SafetyPhase",
     "SafetyResult",
     "SafetyRiskLevel",
+    "SCHEMA_VERSION",
     "SessionContext",
     "StateUpdate",
     "TransitionStatus",

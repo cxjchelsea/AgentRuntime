@@ -27,6 +27,7 @@ from runtime.execution.reliability_coordinator import (
     RecoveredStepReliabilityRunResult,
     StepReliabilityRunResult,
 )
+from runtime.execution.result_collection import StepAttemptStatus
 from runtime.execution.scheduler import (
     SequentialStepScheduler,
     StepScheduleDecision,
@@ -297,6 +298,19 @@ class RunningStepCompletionCoordinator:
             return RunningStepCompletionDecision(
                 status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
                 reason_codes=("STEP_COMPLETION_TERMINAL_STATUS_MISSING",),
+                prepared=prepared,
+                step_id=observation.step_id,
+            )
+        expected_observation = {
+            (StepExecutionStatus.SUCCESS, False): StepAttemptStatus.SUCCESS,
+            (StepExecutionStatus.SUCCESS, True): StepAttemptStatus.PARTIAL_SUCCESS,
+            (StepExecutionStatus.FAILED, False): StepAttemptStatus.FAILED,
+            (StepExecutionStatus.TIMEOUT, False): StepAttemptStatus.TIMEOUT,
+        }.get((finalization.terminal_status, finalization.degraded))
+        if expected_observation is None or observation.status is not expected_observation:
+            return RunningStepCompletionDecision(
+                status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
+                reason_codes=("STEP_COMPLETION_FINALIZATION_OBSERVATION_MISMATCH",),
                 prepared=prepared,
                 step_id=observation.step_id,
             )

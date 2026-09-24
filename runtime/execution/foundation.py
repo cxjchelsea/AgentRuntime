@@ -127,9 +127,12 @@ class PendingStepSkipAuthority:
             self.step_id,
         )
         if any(not value.strip() for value in values):
-            raise ValueError("pending Step skip authority identifiers must not be blank")
+            raise ValueError(
+                "pending Step skip authority identifiers must not be blank"
+            )
         if not isinstance(self.kind, PendingStepSkipAuthorityKind):
-            raise ValueError("kind must be PendingStepSkipAuthorityKind")
+            # 非法 kind 以 ValueError fail-closed，不能被当成普通 TypeError 逃出 authority。
+            raise ValueError("kind must be PendingStepSkipAuthorityKind")  # noqa: TRY004
         if not self.reason_codes or any(
             not reason.strip() for reason in self.reason_codes
         ):
@@ -517,9 +520,7 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError(
                 "pending Step skip authority does not match execution provenance"
             )
-        if any(
-            item.status is StepExecutionStatus.RUNNING for item in prepared.steps
-        ):
+        if any(item.status is StepExecutionStatus.RUNNING for item in prepared.steps):
             raise ExecutionLifecycleError(
                 "pending Step skip cannot occur while another Step is RUNNING"
             )

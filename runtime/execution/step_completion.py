@@ -169,9 +169,7 @@ class TerminalStepCompletionCoordinator:
             decision.status is StepScheduleStatus.BLOCKED
             and decision.reason_codes == self._REMAINDER_SKIP_REASON
         ):
-            kind = (
-                PendingStepSkipAuthorityKind.REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL
-            )
+            kind = PendingStepSkipAuthorityKind.REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL
         else:
             return TerminalStepCompletionDecision(
                 status=TerminalStepCompletionStatus.BLOCKED_UNKNOWN,

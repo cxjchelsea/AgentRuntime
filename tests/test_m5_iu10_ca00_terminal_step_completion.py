@@ -62,7 +62,7 @@ def _plan_with_steps(
     for index in range(count):
         source = base.steps[0]
         step_id = f"step-{index + 1:03d}"
-        updates = {
+        updates: dict[str, object] = {
             "step_id": step_id,
             "action": f"ACTION_{index + 1}",
             "depends_on": None,
@@ -212,7 +212,9 @@ def test_condition_skip_terminalizes_without_invoking_a_capability() -> None:
     asyncio.run(scenario())
 
 
-def test_required_failure_can_close_remaining_pending_steps_one_exact_step_at_a_time() -> None:
+def test_required_failure_can_close_remaining_pending_steps_one_exact_step_at_a_time() -> (
+    None
+):
     async def scenario() -> None:
         plan = _plan_with_steps(count=3, first_optional=False)
         prepared, service, _ = await _finish_first(
@@ -334,9 +336,7 @@ def test_partial_success_has_explicit_degraded_terminal_authority() -> None:
     assert decision.disposition is StepFinalizationDisposition.FINALIZE
     assert decision.terminal_status is StepExecutionStatus.SUCCESS
     assert decision.degraded is True
-    assert decision.reason_codes == (
-        "STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",
-    )
+    assert decision.reason_codes == ("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",)
 
 
 def test_degraded_finalization_cannot_claim_failed_or_nonfinal_lifecycle() -> None:
@@ -360,8 +360,9 @@ def test_ca00_does_not_add_partial_success_to_step_lifecycle_enum() -> None:
     assert "PARTIAL_SUCCESS" not in {status.value for status in StepExecutionStatus}
 
 
-
-def test_recovery_snapshot_accepts_legacy_step_payload_without_terminal_reasons() -> None:
+def test_recovery_snapshot_accepts_legacy_step_payload_without_terminal_reasons() -> (
+    None
+):
     async def scenario() -> None:
         plan = _plan_with_steps(count=1)
         prepared, _, _ = await _running(plan)
@@ -406,7 +407,6 @@ def test_recovery_snapshot_accepts_legacy_step_payload_without_terminal_reasons(
     asyncio.run(scenario())
 
 
-
 def test_direct_skip_mutation_rejects_authority_bound_to_other_step_execution() -> None:
     async def scenario() -> None:
         plan = _plan_with_steps(count=1)
@@ -434,7 +434,6 @@ def test_direct_skip_mutation_rejects_authority_bound_to_other_step_execution() 
     asyncio.run(scenario())
 
 
-
 def test_skip_authority_kind_cannot_impersonate_required_failure_provenance() -> None:
     with pytest.raises(ValueError, match="impersonate"):
         PendingStepSkipAuthority(
@@ -460,7 +459,6 @@ def test_partial_success_is_not_terminalized_while_iu6_still_requests_retry() ->
     assert decision.disposition is StepFinalizationDisposition.UNKNOWN
     assert decision.terminal_status is None
     assert decision.degraded is False
-
 
 
 def _partial_reliability_result(
@@ -493,9 +491,7 @@ def test_running_partial_success_commits_degraded_terminal_step() -> None:
             step_id="step-001",
             at=NOW + timedelta(seconds=1),
         )
-        coordinator = RunningStepCompletionCoordinator(
-            lifecycle_service=service
-        )
+        coordinator = RunningStepCompletionCoordinator(lifecycle_service=service)
 
         decision = await coordinator.complete(
             prepared=running_step,
@@ -549,9 +545,7 @@ def test_running_completion_does_not_mutate_wait_recovery_step() -> None:
             ),
             owner_policy_identity="skill-policy@partial",
         )
-        coordinator = RunningStepCompletionCoordinator(
-            lifecycle_service=service
-        )
+        coordinator = RunningStepCompletionCoordinator(lifecycle_service=service)
 
         decision = await coordinator.complete(
             prepared=running_step,
@@ -595,9 +589,7 @@ def test_running_completion_rejects_step_execution_identity_drift() -> None:
                 degraded=True,
             ),
         )
-        coordinator = RunningStepCompletionCoordinator(
-            lifecycle_service=service
-        )
+        coordinator = RunningStepCompletionCoordinator(lifecycle_service=service)
 
         decision = await coordinator.complete(
             prepared=running_step,
@@ -657,7 +649,6 @@ def test_degraded_lifecycle_fact_survives_recovery_snapshot_roundtrip() -> None:
     asyncio.run(scenario())
 
 
-
 def test_degraded_required_step_does_not_authorize_later_step_execution() -> None:
     async def scenario() -> None:
         plan = _plan_with_steps(count=2, first_optional=False)
@@ -685,9 +676,7 @@ def test_degraded_required_step_does_not_authorize_later_step_execution() -> Non
 
         assert schedule.status is StepScheduleStatus.BLOCKED
         assert schedule.step_id == "step-002"
-        assert schedule.reason_codes == (
-            "REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL",
-        )
+        assert schedule.reason_codes == ("REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL",)
 
     asyncio.run(scenario())
 
@@ -736,9 +725,7 @@ def test_running_completion_rejects_already_terminal_step_replay() -> None:
             step_id="step-001",
             at=NOW + timedelta(seconds=1),
         )
-        coordinator = RunningStepCompletionCoordinator(
-            lifecycle_service=service
-        )
+        coordinator = RunningStepCompletionCoordinator(lifecycle_service=service)
         result = _partial_reliability_result(
             step_execution_id=running_step.steps[0].step_execution_id
         )
@@ -761,7 +748,6 @@ def test_running_completion_rejects_already_terminal_step_replay() -> None:
         assert persisted.step_results[0]["degraded"] is True
 
     asyncio.run(scenario())
-
 
 
 def test_running_completion_rejects_finalization_observation_mismatch() -> None:
@@ -855,7 +841,6 @@ def test_recovered_reliability_result_uses_same_running_completion_boundary() ->
         assert decision.prepared.steps[0].degraded is True
 
     asyncio.run(scenario())
-
 
 
 def test_pending_skip_rejects_stale_current_step_pointer() -> None:

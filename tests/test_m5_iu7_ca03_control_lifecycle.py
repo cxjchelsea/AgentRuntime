@@ -598,7 +598,6 @@ def test_service_persists_mutation_but_not_late_control_noop() -> None:
     assert stored_after_noop == updated.execution_record
 
 
-
 def test_control_terminalized_payload_can_be_captured_by_recovery_snapshot() -> None:
     prepared = _prepared()
     updated = ExecutionControlLifecycleTransitioner().terminalize(

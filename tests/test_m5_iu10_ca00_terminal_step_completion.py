@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -16,6 +17,8 @@ from runtime.execution import (
     ExecutionLifecycleManager,
     ExecutionLifecycleService,
     ExecutionRecordFactory,
+    ExecutionRecoveryClaim,
+    ExecutionRecoverySnapshotFactory,
     InMemoryExecutionStateStore,
     SequentialStepScheduler,
     StepAttemptObservation,
@@ -345,3 +348,47 @@ def test_degraded_finalization_cannot_claim_failed_or_nonfinal_lifecycle() -> No
 
 def test_ca00_does_not_add_partial_success_to_step_lifecycle_enum() -> None:
     assert "PARTIAL_SUCCESS" not in {status.value for status in StepExecutionStatus}
+
+
+
+def test_recovery_snapshot_accepts_legacy_step_payload_without_terminal_reasons() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, _, _ = await _running(plan)
+        legacy_payload = tuple(
+            {
+                key: value
+                for key, value in item.items()
+                if key != "terminal_reason_codes"
+            }
+            for item in prepared.execution_record.step_results
+        )
+        legacy = replace(
+            prepared,
+            execution_record=replace(
+                prepared.execution_record,
+                step_results=legacy_payload,
+            ),
+        )
+        claim = ExecutionRecoveryClaim(
+            claim_id="claim-ca00",
+            execution_id=legacy.execution_record.execution_id,
+            recovery_owner_id="worker-ca00",
+            recovery_epoch=1,
+            source_snapshot_generation=0,
+            claimed_at=NOW,
+        )
+
+        snapshot = ExecutionRecoverySnapshotFactory().capture(
+            legacy,
+            checkpoint_id="checkpoint-ca00",
+            generation=1,
+            captured_at=NOW + timedelta(seconds=1),
+            claim=claim,
+        )
+
+        restored = snapshot.restore_prepared_execution()
+        assert restored.steps[0].terminal_reason_codes == ()
+        assert "terminal_reason_codes" not in legacy_payload[0]
+
+    asyncio.run(scenario())

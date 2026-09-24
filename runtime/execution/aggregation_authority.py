@@ -519,7 +519,15 @@ class ExecutionAggregationAuthority:
         status = prepared.execution_record.status
         terminal_execution = status in cls._TERMINAL_EXECUTION_STATUSES
 
-        if status == "RUNNING":
+        if status == "CREATED":
+            if prepared.started_at is not None or prepared.finished_at is not None:
+                return "AGGREGATION_CREATED_EXECUTION_TIMING_INVALID"
+            if any(
+                step.status is not StepExecutionStatus.PENDING
+                for step in prepared.steps
+            ):
+                return "AGGREGATION_CREATED_EXECUTION_STEP_STATE_INVALID"
+        elif status == "RUNNING":
             if prepared.started_at is None:
                 return "AGGREGATION_RUNNING_EXECUTION_START_MISSING"
             if prepared.finished_at is not None:

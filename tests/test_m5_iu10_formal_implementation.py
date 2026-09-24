@@ -12,11 +12,13 @@ import pytest
 
 import runtime.execution.aggregation_runtime as aggregation_runtime_module
 from runtime.contracts.enums import ExecutionPlanStatus
+from runtime.contracts.execution import ExecutionContext
 from runtime.execution.aggregation_runtime import (
     DurableRecoveryControlRuntimeFactory,
     M5ExecutionAggregationRuntime,
     M5ExecutionAggregationRuntimeStatus,
 )
+from runtime.execution.capability_resolution import CapabilityExecutionOwner
 from runtime.execution.control import (
     ExecutionControlLatchStatus,
     ExecutionControlSignal,
@@ -44,8 +46,13 @@ from runtime.execution.foundation import (
     ExecutionLifecycleManager,
     ExecutionLifecycleService,
     InMemoryExecutionStateStore,
+    PreparedExecution,
 )
-from runtime.execution.models import StepExecutionStatus, WorkflowExecutionStatus
+from runtime.execution.models import (
+    ExecutionRecord,
+    StepExecutionStatus,
+    WorkflowExecutionStatus,
+)
 from runtime.execution.recovery import (
     InMemoryRecoveryClaimAuthority,
     RecoveryClaimRequest,
@@ -646,10 +653,7 @@ def test_durable_recovery_control_factory_binds_latch_and_applicability_to_same_
 
 def test_recovered_workflow_resume_reuses_current_attempt_and_enters_iu10_completion() -> None:
     async def scenario() -> None:
-        plan, step = _approved_step(owner=__import__(
-            "runtime.execution.capability_resolution",
-            fromlist=["CapabilityExecutionOwner"],
-        ).CapabilityExecutionOwner.WORKFLOW)
+        plan, step = _approved_step(owner=CapabilityExecutionOwner.WORKFLOW)
         plan = plan.model_copy(update={"tool_plan": {"tool_calls": []}})
         workflow = RecoveryWorkflow()
         snapshot = replace(
@@ -710,12 +714,6 @@ def test_recovered_workflow_resume_reuses_current_attempt_and_enters_iu10_comple
         )
 
         state_store = InMemoryExecutionStateStore()
-        prepared = iu7_prepared(running=True)
-        del prepared
-        from runtime.contracts.execution import ExecutionContext
-        from runtime.execution.models import ExecutionRecord
-        from runtime.execution.foundation import PreparedExecution
-
         execution_id = "execution-iu4"
         context = ExecutionContext(
             execution_id=execution_id,

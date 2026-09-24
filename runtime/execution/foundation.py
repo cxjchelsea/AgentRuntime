@@ -87,6 +87,7 @@ class StepLifecycleSnapshot:
     output: dict[str, Any] | None = None
     error: str | None = None
     retry_count: int = 0
+    terminal_reason_codes: tuple[str, ...] = ()
     started_at: datetime | None = None
     finished_at: datetime | None = None
 
@@ -96,6 +97,8 @@ class StepLifecycleSnapshot:
             raise ValueError("step lifecycle identifiers must not be blank")
         if self.retry_count < 0:
             raise ValueError("retry_count must be >= 0")
+        if any(not reason.strip() for reason in self.terminal_reason_codes):
+            raise ValueError("terminal_reason_codes must not contain blank values")
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,6 +399,7 @@ class ExecutionLifecycleManager:
         error: str | None = None,
         tool_call_ids: tuple[str, ...] = (),
         retry_count: int | None = None,
+        terminal_reason_codes: tuple[str, ...] = (),
     ) -> PreparedExecution:
         target = self._step(prepared, step_id)
         if target.status is not StepExecutionStatus.RUNNING:
@@ -406,6 +410,10 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError("step cannot finish before it starts")
         if retry_count is not None and retry_count < 0:
             raise ExecutionLifecycleError("retry_count must be >= 0")
+        if any(not reason.strip() for reason in terminal_reason_codes):
+            raise ExecutionLifecycleError(
+                "terminal_reason_codes must not contain blank values"
+            )
 
         steps = tuple(
             replace(
@@ -415,6 +423,67 @@ class ExecutionLifecycleManager:
                 error=error,
                 tool_call_ids=tool_call_ids,
                 retry_count=item.retry_count if retry_count is None else retry_count,
+                terminal_reason_codes=terminal_reason_codes,
+                finished_at=at,
+            )
+            if item.step_id == step_id
+            else item
+            for item in prepared.steps
+        )
+        return self._replace_steps(
+            prepared,
+            steps,
+            current_step=None,
+            updated_at=at,
+        )
+
+    def skip_pending_step(
+        self,
+        prepared: PreparedExecution,
+        *,
+        step_id: str,
+        reason_codes: tuple[str, ...],
+        at: datetime,
+    ) -> PreparedExecution:
+        """Terminalize one exact unstarted PENDING Step as SKIPPED."""
+
+        if prepared.execution_record.status != "RUNNING":
+            raise ExecutionLifecycleError(
+                "pending Step skip requires RUNNING execution"
+            )
+        if not reason_codes or any(not reason.strip() for reason in reason_codes):
+            raise ExecutionLifecycleError(
+                "pending Step skip requires non-blank reason_codes"
+            )
+        if any(
+            item.status is StepExecutionStatus.RUNNING for item in prepared.steps
+        ):
+            raise ExecutionLifecycleError(
+                "pending Step skip cannot occur while another Step is RUNNING"
+            )
+
+        target = self._step(prepared, step_id)
+        if target.status is not StepExecutionStatus.PENDING:
+            raise ExecutionLifecycleError(
+                "only PENDING Step can be scheduler-terminalized"
+            )
+        if target.started_at is not None:
+            raise ExecutionLifecycleError(
+                "PENDING Step selected for skip must not have started_at"
+            )
+        if (
+            prepared.execution_record.updated_at is not None
+            and at < prepared.execution_record.updated_at
+        ):
+            raise ExecutionLifecycleError(
+                "pending Step skip cannot precede latest execution observation"
+            )
+
+        steps = tuple(
+            replace(
+                item,
+                status=StepExecutionStatus.SKIPPED,
+                terminal_reason_codes=reason_codes,
                 finished_at=at,
             )
             if item.step_id == step_id
@@ -559,6 +628,7 @@ class ExecutionLifecycleService:
         error: str | None = None,
         tool_call_ids: tuple[str, ...] = (),
         retry_count: int | None = None,
+        terminal_reason_codes: tuple[str, ...] = (),
     ) -> PreparedExecution:
         updated = self._lifecycle_manager.finish_step(
             prepared,
@@ -569,6 +639,24 @@ class ExecutionLifecycleService:
             error=error,
             tool_call_ids=tool_call_ids,
             retry_count=retry_count,
+            terminal_reason_codes=terminal_reason_codes,
+        )
+        await self._persist(updated)
+        return updated
+
+    async def skip_pending_step(
+        self,
+        prepared: PreparedExecution,
+        *,
+        step_id: str,
+        reason_codes: tuple[str, ...],
+        at: datetime,
+    ) -> PreparedExecution:
+        updated = self._lifecycle_manager.skip_pending_step(
+            prepared,
+            step_id=step_id,
+            reason_codes=reason_codes,
+            at=at,
         )
         await self._persist(updated)
         return updated
@@ -747,6 +835,7 @@ def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, An
         "output": snapshot.output,
         "error": snapshot.error,
         "retry_count": snapshot.retry_count,
+        "terminal_reason_codes": list(snapshot.terminal_reason_codes),
         "started_at": snapshot.started_at,
         "finished_at": snapshot.finished_at,
     }

@@ -826,6 +826,13 @@ def test_core_tool_invoker_persists_logical_result_before_returning() -> None:
         )
 
         assert result.status.value == "SUCCESS"
+        cursor = await store.load_step_attempt_cursor(
+            execution_id="execution-iu4",
+            step_execution_id="step-execution-001",
+        )
+        assert cursor is not None
+        assert cursor.current_attempt == 1
+
         durable = await store.load_tool_journal(
             execution_id="execution-iu4",
             step_execution_id="step-execution-001",
@@ -833,6 +840,39 @@ def test_core_tool_invoker_persists_logical_result_before_returning() -> None:
         )
         assert durable == invoker.entries()
         assert len(durable) == 1
+
+    asyncio.run(scenario())
+
+
+def test_durable_tool_journal_rejects_attempt_cursor_mismatch() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(
+            claims,
+            execution_id="execution-iu4",
+            claim_id="formal-tool-journal-mismatch",
+        )
+        store = InMemoryDurableRecoveryEvidenceStore(
+            claim_authority=claims
+        )
+        journal = DurableToolJournalEvidence(
+            store=store,
+            execution_id="execution-iu4",
+            recovery_claim=claim,
+        )
+        entry = _skill_observation(
+            step_execution_id="step-execution-001"
+        ).tool_journal[0]
+
+        with pytest.raises(
+            RuntimeError,
+            match="TOOL_JOURNAL_ATTEMPT_CURSOR_MISSING",
+        ):
+            await journal.persist(
+                step_execution_id="step-execution-001",
+                step_attempt_number=2,
+                entry=entry,
+            )
 
     asyncio.run(scenario())
 

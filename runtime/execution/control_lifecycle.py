@@ -407,7 +407,7 @@ def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, ob
         "status": snapshot.status.value,
         "skill_id": snapshot.skill_id,
         "workflow_id": snapshot.workflow_id,
-        "tool_call_ids": snapshot.tool_call_ids,
+        "tool_call_ids": list(snapshot.tool_call_ids),
         "output": snapshot.output,
         "error": snapshot.error,
         "retry_count": snapshot.retry_count,

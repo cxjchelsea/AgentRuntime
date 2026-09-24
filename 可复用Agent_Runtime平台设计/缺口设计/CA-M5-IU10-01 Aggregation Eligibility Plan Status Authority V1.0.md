@@ -614,6 +614,9 @@ tests/test_m5_iu10_ca01_aggregation_authority.py
 30. current_step pointer drift -> BLOCKED_UNKNOWN
 31. terminal Step missing finished_at -> BLOCKED_UNKNOWN
 32. existing terminal execution missing finished_at -> BLOCKED_UNKNOWN
+33. executed SUCCESS/FAILED/TIMEOUT Step missing started_at -> BLOCKED_UNKNOWN
+34. persisted Step fact drift -> BLOCKED_UNKNOWN
+35. corrupted CREATED execution with terminal Step -> BLOCKED_UNKNOWN
 ~~~
 
 # 19. Independent Review findings
@@ -645,6 +648,22 @@ STEP_PROVENANCE_AND_CURRENT_STEP_ALIGNMENT_INCOMPLETE
 
 F-M5-IU10-CA01-007
 AGGREGATION_ELIGIBILITY_DID_NOT_VALIDATE_LIFECYCLE_TIMING_ENVELOPE
+= CLOSED
+
+F-M5-IU10-CA01-008
+PREPARED_STEP_AND_PERSISTED_EXECUTION_RECORD_COULD_DIVERGE
+= CLOSED
+
+F-M5-IU10-CA01-009
+EXECUTED_TERMINAL_STEP_COULD_LACK_START_EVIDENCE
+= CLOSED
+
+F-M5-IU10-CA01-010
+CORRUPTED_CREATED_EXECUTION_COULD_BE_MISCLASSIFIED_AS_WAITING
+= CLOSED
+
+F-M5-IU10-CA01-011
+PERSISTED_STEP_ALIGNMENT_HELPER_DISPATCH_WAS_INVALID
 = CLOSED
 ~~~
 
@@ -705,12 +724,68 @@ state/memory mutation
 
 ~~~text
 CA-M5-IU10-01 = CODE COMPLETE
-CA-M5-IU10-01 INDEPENDENT REVIEW = PENDING
+CA-M5-IU10-01 INDEPENDENT REVIEW = PASSED
 CA-M5-IU10-01 VERIFICATION = PENDING
 
-B-M5-IU10-001 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+B-M5-IU10-001 = FIX_IMPLEMENTED_PENDING_GATES
 
 M5-IU10 IMPLEMENTATION READINESS = NOT_READY
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
 M5 = IN PROGRESS
+~~~
+
+
+# 24. Independent Review decision
+
+累计复核范围：
+
+~~~text
+aggregation eligibility
+required / optional authority
+SKIPPED semantic provenance
+degraded semantics
+natural plan_status precedence
+existing terminal replay
+IU7 control precedence
+late-control no-op race
+exact evidence / skip / control identities
+execution / plan decision identity
+lifecycle timing envelope
+PreparedExecution vs persisted ExecutionRecord alignment
+~~~
+
+结论：
+
+~~~text
+CA-M5-IU10-01 = CODE COMPLETE
+CA-M5-IU10-01 INDEPENDENT REVIEW = PASSED
+CA-M5-IU10-01 VERIFICATION = PENDING
+
+B-M5-IU10-001
+PLAN_STATUS_AND_AGGREGATION_ELIGIBILITY_NOT_FROZEN
+= FIX_IMPLEMENTED_PENDING_GATES
+
+NEW SEMANTIC BLOCKER = NONE
+~~~
+
+CA-01 通过 Review 不等于 M5-IU10 READY。
+
+仍然：
+
+~~~text
+B-M5-IU10-002 = OPEN
+B-M5-IU10-003 = OPEN
+B-M5-IU10-004 = OPEN
+B-M5-IU10-005 = OPEN
+B-M5-IU10-006 = OPEN
+
+M5-IU10 IMPLEMENTATION READINESS = NOT_READY
+FORMAL IMPLEMENTATION = NOT AUTHORIZED
+~~~
+
+四项门禁通过并完成 Verification Closure 前，不得写：
+
+~~~text
+CA-M5-IU10-01 = PASSED
+B-M5-IU10-001 = CLOSED
 ~~~

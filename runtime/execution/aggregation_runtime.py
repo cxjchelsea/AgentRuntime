@@ -6,8 +6,9 @@ recompute policy, invent recovery semantics, or enter M6.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 
 from runtime.contracts.enums import ExecutionPlanStatus
@@ -20,12 +21,27 @@ from runtime.execution.aggregation_result import (
     ExecutionAggregationRunResult,
     ExecutionAggregator,
 )
+from runtime.execution.concurrency_runtime import ToolConcurrencyRuntime
+from runtime.execution.control import ExecutionControlWatcher
 from runtime.execution.control_applicability import (
     DurableAggregationControlAuthority,
+    DurableControlApplicabilityRecorder,
     DurableControlApplicabilityStore,
 )
-from runtime.execution.foundation import ExecutionLifecycleService, PreparedExecution
+from runtime.execution.control_application import (
+    ExecutionControlApplicationEvaluator,
+    InFlightInterruptCoordinator,
+)
+from runtime.execution.control_lifecycle import ExecutionControlLifecycleService
+from runtime.execution.control_runtime import ExecutionControlCoordinator
+from runtime.execution.foundation import (
+    ExecutionLifecycleService,
+    ExecutionTerminalObserver,
+    PreparedExecution,
+)
+from runtime.execution.recovery import ExecutionRecoveryClaim
 from runtime.execution.recovery_evidence import (
+    DurableExecutionControlLatch,
     DurableReliabilityEvidenceStore,
     DurableTerminalControlStore,
 )
@@ -41,6 +57,55 @@ from runtime.execution.step_completion import (
     TerminalStepCompletionCoordinator,
     TerminalStepCompletionStatus,
 )
+
+
+class DurableRecoveryControlRuntimeFactory:
+    """Build the IU7 recovery control path with CA-04 durability bound to one claim."""
+
+    def __init__(
+        self,
+        *,
+        watcher: ExecutionControlWatcher,
+        control_store: DurableTerminalControlStore,
+        control_applicability_store: DurableControlApplicabilityStore,
+        interrupt_coordinator: InFlightInterruptCoordinator,
+        application_evaluator: ExecutionControlApplicationEvaluator,
+        lifecycle_service: ExecutionControlLifecycleService,
+        clock: Callable[[], datetime] | None = None,
+        tool_concurrency_runtime: ToolConcurrencyRuntime | None = None,
+        terminal_observer: ExecutionTerminalObserver | None = None,
+    ) -> None:
+        self._watcher = watcher
+        self._control_store = control_store
+        self._control_applicability_store = control_applicability_store
+        self._interrupt_coordinator = interrupt_coordinator
+        self._application_evaluator = application_evaluator
+        self._lifecycle_service = lifecycle_service
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._tool_concurrency_runtime = tool_concurrency_runtime
+        self._terminal_observer = terminal_observer
+
+    def create(
+        self,
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> ExecutionControlCoordinator:
+        return ExecutionControlCoordinator(
+            watcher=self._watcher,
+            latch=DurableExecutionControlLatch(
+                store=self._control_store,
+                recovery_claim=recovery_claim,
+            ),
+            interrupt_coordinator=self._interrupt_coordinator,
+            application_evaluator=self._application_evaluator,
+            lifecycle_service=self._lifecycle_service,
+            clock=self._clock,
+            tool_concurrency_runtime=self._tool_concurrency_runtime,
+            terminal_observer=self._terminal_observer,
+            control_applicability_recorder=DurableControlApplicabilityRecorder(
+                store=self._control_applicability_store,
+                recovery_claim=recovery_claim,
+            ),
+        )
 
 
 class M5ExecutionAggregationRuntimeStatus(str, Enum):

@@ -7,6 +7,7 @@ invoke M6, or substitute capabilities.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -32,6 +33,7 @@ from runtime.execution.control_runtime import (
     ExecutionControlRuntimeResult,
 )
 from runtime.execution.foundation import PreparedExecution, StepLifecycleSnapshot
+from runtime.execution.invocation import ToolInvocationJournalPersistence
 from runtime.execution.recovery import (
     CurrentRecoveryEpochSideEffectAdmissionGuard,
     ExecutionRecoveryClaim,
@@ -45,6 +47,7 @@ from runtime.execution.recovery_evidence import (
     DurableReliabilityEvidenceStore,
     DurableStepAttemptSequenceAuthority,
     DurableTerminalControlStore,
+    DurableToolJournalEvidence,
     InFlightEvidenceState,
 )
 from runtime.execution.recovery_resource_lock import (
@@ -138,6 +141,53 @@ class RecoveryExecutionBindingsFactory(Protocol):
         recovery_claim: ExecutionRecoveryClaim,
     ) -> RecoveryExecutionBindings:
         """Build IU6/IU7/IU8 authorities bound to the exact current recovery claim."""
+
+
+class RecoveryExecutionBindingsBuilder(Protocol):
+    def build(
+        self,
+        *,
+        recovery_claim: ExecutionRecoveryClaim,
+        tool_journal_persistence: ToolInvocationJournalPersistence,
+    ) -> RecoveryExecutionBindings:
+        """Build exact claim-bound execution authorities using durable Tool journaling."""
+
+
+class DurableRecoveryExecutionBindingsFactory:
+    """Enforce IU9 durable Tool journal wiring for recovered execution."""
+
+    def __init__(
+        self,
+        *,
+        builder: RecoveryExecutionBindingsBuilder,
+        reliability_store: DurableReliabilityEvidenceStore,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._builder = builder
+        self._reliability_store = reliability_store
+        self._clock = clock
+
+    def create(
+        self,
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> RecoveryExecutionBindings:
+        journal = DurableToolJournalEvidence(
+            store=self._reliability_store,
+            execution_id=recovery_claim.execution_id,
+            recovery_claim=recovery_claim,
+            clock=self._clock,
+        )
+        bindings = self._builder.build(
+            recovery_claim=recovery_claim,
+            tool_journal_persistence=journal,
+        )
+        if not isinstance(bindings, RecoveryExecutionBindings):
+            raise TypeError("recovery execution bindings builder returned invalid result")
+        if bindings.step_executor.tool_journal_persistence is not journal:
+            raise ValueError(
+                "recovery StepCapabilityExecutor must use exact durable Tool journal"
+            )
+        return bindings
 
 
 class RecoveryControlRuntimeFactory(Protocol):

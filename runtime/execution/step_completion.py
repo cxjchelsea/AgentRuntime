@@ -67,10 +67,15 @@ class TerminalStepCompletionDecision:
         ):
             raise ValueError("reason_codes must contain non-blank values")
         if self.status is TerminalStepCompletionStatus.TERMINALIZED:
-            if self.terminalized_step_id is None or not self.terminalized_step_id.strip():
+            if (
+                self.terminalized_step_id is None
+                or not self.terminalized_step_id.strip()
+            ):
                 raise ValueError("TERMINALIZED requires terminalized_step_id")
         elif self.terminalized_step_id is not None:
-            raise ValueError("non-TERMINALIZED decision cannot carry terminalized_step_id")
+            raise ValueError(
+                "non-TERMINALIZED decision cannot carry terminalized_step_id"
+            )
 
 
 class TerminalStepCompletionCoordinator:
@@ -197,7 +202,6 @@ class TerminalStepCompletionCoordinator:
         )
 
 
-
 class RunningStepCompletionStatus(str, Enum):
     TERMINALIZED = "TERMINALIZED"
     KEEP_RUNNING = "KEEP_RUNNING"
@@ -220,12 +224,15 @@ class RunningStepCompletionDecision:
             not reason.strip() for reason in self.reason_codes
         ):
             raise ValueError("reason_codes must contain non-blank values")
-        if self.degraded and self.status is not RunningStepCompletionStatus.TERMINALIZED:
+        if (
+            self.degraded
+            and self.status is not RunningStepCompletionStatus.TERMINALIZED
+        ):
             raise ValueError("degraded completion requires TERMINALIZED status")
 
 
 class RunningStepCompletionCoordinator:
-    """Commit one IU6-authorized final Step result through the existing lifecycle service."""
+    """Commit one IU6-authorized final Step through the existing lifecycle service."""
 
     def __init__(self, *, lifecycle_service: ExecutionLifecycleService) -> None:
         self._lifecycle_service = lifecycle_service
@@ -234,7 +241,9 @@ class RunningStepCompletionCoordinator:
         self,
         *,
         prepared: PreparedExecution,
-        reliability_result: StepReliabilityRunResult | RecoveredStepReliabilityRunResult,
+        reliability_result: (
+            StepReliabilityRunResult | RecoveredStepReliabilityRunResult
+        ),
         at: datetime,
     ) -> RunningStepCompletionDecision:
         observation = reliability_result.final_observation
@@ -314,7 +323,10 @@ class RunningStepCompletionCoordinator:
             (StepExecutionStatus.FAILED, False): StepAttemptStatus.FAILED,
             (StepExecutionStatus.TIMEOUT, False): StepAttemptStatus.TIMEOUT,
         }.get((finalization.terminal_status, finalization.degraded))
-        if expected_observation is None or observation.status is not expected_observation:
+        if (
+            expected_observation is None
+            or observation.status is not expected_observation
+        ):
             return RunningStepCompletionDecision(
                 status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
                 reason_codes=("STEP_COMPLETION_FINALIZATION_OBSERVATION_MISMATCH",),

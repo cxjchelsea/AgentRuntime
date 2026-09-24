@@ -13,7 +13,12 @@ from enum import Enum
 from typing import Protocol
 
 from runtime.contracts.planning import ApprovedActionPlan
-from runtime.execution.foundation import ExecutionLifecycleService, PreparedExecution
+from runtime.execution.foundation import (
+    ExecutionLifecycleService,
+    PendingStepSkipAuthority,
+    PendingStepSkipAuthorityKind,
+    PreparedExecution,
+)
 from runtime.execution.scheduler import (
     SequentialStepScheduler,
     StepScheduleDecision,
@@ -135,10 +140,43 @@ class TerminalStepCompletionCoordinator:
                 prepared=prepared,
                 schedule_decision=decision,
             )
+        matches = tuple(step for step in prepared.steps if step.step_id == step_id)
+        if len(matches) != 1:
+            return TerminalStepCompletionDecision(
+                status=TerminalStepCompletionStatus.BLOCKED_UNKNOWN,
+                reason_codes=("SCHEDULER_TERMINALIZATION_STEP_IDENTITY_UNKNOWN",),
+                prepared=prepared,
+                schedule_decision=decision,
+            )
+        target = matches[0]
+        if decision.status is StepScheduleStatus.SKIP:
+            kind = PendingStepSkipAuthorityKind.SCHEDULER_SKIP
+        elif (
+            decision.status is StepScheduleStatus.BLOCKED
+            and decision.reason_codes == self._REMAINDER_SKIP_REASON
+        ):
+            kind = (
+                PendingStepSkipAuthorityKind.REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL
+            )
+        else:
+            return TerminalStepCompletionDecision(
+                status=TerminalStepCompletionStatus.BLOCKED_UNKNOWN,
+                reason_codes=("SCHEDULER_TERMINALIZATION_AUTHORITY_INVALID",),
+                prepared=prepared,
+                schedule_decision=decision,
+            )
+
+        authority = PendingStepSkipAuthority(
+            execution_id=prepared.execution_record.execution_id,
+            plan_id=prepared.execution_record.plan_id,
+            step_execution_id=target.step_execution_id,
+            step_id=target.step_id,
+            kind=kind,
+            reason_codes=decision.reason_codes,
+        )
         updated = await self._lifecycle_service.skip_pending_step(
             prepared,
-            step_id=step_id,
-            reason_codes=decision.reason_codes,
+            authority=authority,
             at=at,
         )
         return TerminalStepCompletionDecision(

@@ -22,6 +22,7 @@ from runtime.execution import (
     InMemoryExecutionStateStore,
     PendingStepSkipAuthority,
     PendingStepSkipAuthorityKind,
+    RecoveredStepReliabilityRunResult,
     RunningStepCompletionCoordinator,
     RunningStepCompletionStatus,
     SequentialStepScheduler,
@@ -758,5 +759,99 @@ def test_running_completion_rejects_already_terminal_step_replay() -> None:
         persisted = await store.load("execution-iu10-ca00")
         assert persisted is not None
         assert persisted.step_results[0]["degraded"] is True
+
+    asyncio.run(scenario())
+
+
+
+def test_running_completion_rejects_finalization_observation_mismatch() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, service, store = await _running(plan)
+        running_step = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        observation = replace(
+            _partial_observation(
+                step_execution_id=running_step.steps[0].step_execution_id
+            ),
+            status=StepAttemptStatus.FAILED,
+        )
+        result = StepReliabilityRunResult(
+            attempts=(observation,),
+            reliability_decision=StepReliabilityDecision(
+                disposition=StepReliabilityDisposition.FINALIZE,
+                reason_codes=("STEP_RETRY_NOT_AUTHORIZED",),
+            ),
+            finalization_decision=StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.FINALIZE,
+                reason_codes=("FORGED_SUCCESS",),
+                terminal_status=StepExecutionStatus.SUCCESS,
+            ),
+        )
+
+        decision = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running_step,
+            reliability_result=result,
+            at=NOW + timedelta(seconds=2),
+        )
+
+        assert decision.status is RunningStepCompletionStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == (
+            "STEP_COMPLETION_FINALIZATION_OBSERVATION_MISMATCH",
+        )
+        persisted = await store.load("execution-iu10-ca00")
+        assert persisted is not None
+        assert persisted.step_results[0]["status"] == "RUNNING"
+
+    asyncio.run(scenario())
+
+
+def test_recovered_reliability_result_uses_same_running_completion_boundary() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, service, _ = await _running(plan)
+        running_step = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        observation = replace(
+            _partial_observation(
+                step_execution_id=running_step.steps[0].step_execution_id
+            ),
+            attempt_number=2,
+        )
+        recovered = RecoveredStepReliabilityRunResult(
+            prior_attempt_number=1,
+            attempts=(observation,),
+            reliability_decision=StepReliabilityDecision(
+                disposition=StepReliabilityDisposition.FINALIZE,
+                reason_codes=("STEP_RETRY_NOT_AUTHORIZED",),
+            ),
+            finalization_decision=StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.FINALIZE,
+                reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
+                terminal_status=StepExecutionStatus.SUCCESS,
+                degraded=True,
+            ),
+            owner_policy_identity="skill-policy@partial",
+        )
+
+        decision = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running_step,
+            reliability_result=recovered,
+            at=NOW + timedelta(seconds=2),
+        )
+
+        assert decision.status is RunningStepCompletionStatus.TERMINALIZED
+        assert decision.prepared.steps[0].retry_count == 1
+        assert decision.prepared.steps[0].degraded is True
 
     asyncio.run(scenario())

@@ -586,3 +586,27 @@ def test_all_not_applicable_steps_is_execution_success() -> None:
         assert decision.aggregation_decision.plan_status is ExecutionPlanStatus.SUCCESS
 
     asyncio.run(scenario())
+
+
+
+def test_control_terminal_replay_rejects_opposite_step_terminal_status() -> None:
+    import asyncio
+
+    async def scenario() -> None:
+        plan = _plan(optional=(False,))
+        prepared = _with_steps(
+            await _prepared(plan),
+            (StepExecutionStatus.PREEMPTED, False, ("CONTROL",)),
+            execution_status="CANCELLED",
+        )
+        decision = await _evaluate(
+            plan,
+            prepared,
+            control=_latched(ExecutionControlSignalType.CANCEL),
+        )
+        assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == (
+            "AGGREGATION_CONTROL_STEP_TERMINAL_STATUS_MISMATCH",
+        )
+
+    asyncio.run(scenario())

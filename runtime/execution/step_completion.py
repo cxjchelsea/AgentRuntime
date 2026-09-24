@@ -19,6 +19,13 @@ from runtime.execution.foundation import (
     PendingStepSkipAuthorityKind,
     PreparedExecution,
 )
+from runtime.execution.reliability_boundary import (
+    StepFinalizationDisposition,
+)
+from runtime.execution.reliability_coordinator import (
+    RecoveredStepReliabilityRunResult,
+    StepReliabilityRunResult,
+)
 from runtime.execution.scheduler import (
     SequentialStepScheduler,
     StepScheduleDecision,
@@ -185,4 +192,115 @@ class TerminalStepCompletionCoordinator:
             prepared=updated,
             schedule_decision=decision,
             terminalized_step_id=step_id,
+        )
+
+
+
+class RunningStepCompletionStatus(str, Enum):
+    TERMINALIZED = "TERMINALIZED"
+    KEEP_RUNNING = "KEEP_RUNNING"
+    WAIT_RECOVERY = "WAIT_RECOVERY"
+    BLOCKED_UNKNOWN = "BLOCKED_UNKNOWN"
+
+
+@dataclass(frozen=True, slots=True)
+class RunningStepCompletionDecision:
+    status: RunningStepCompletionStatus
+    reason_codes: tuple[str, ...]
+    prepared: PreparedExecution
+    step_id: str
+    degraded: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.step_id.strip():
+            raise ValueError("step_id must not be blank")
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
+            raise ValueError("reason_codes must contain non-blank values")
+        if self.degraded and self.status is not RunningStepCompletionStatus.TERMINALIZED:
+            raise ValueError("degraded completion requires TERMINALIZED status")
+
+
+class RunningStepCompletionCoordinator:
+    """Commit one IU6-authorized final Step result through the existing lifecycle service."""
+
+    def __init__(self, *, lifecycle_service: ExecutionLifecycleService) -> None:
+        self._lifecycle_service = lifecycle_service
+
+    async def complete(
+        self,
+        *,
+        prepared: PreparedExecution,
+        reliability_result: StepReliabilityRunResult | RecoveredStepReliabilityRunResult,
+        at: datetime,
+    ) -> RunningStepCompletionDecision:
+        observation = reliability_result.final_observation
+        finalization = reliability_result.finalization_decision
+
+        matches = tuple(
+            step for step in prepared.steps if step.step_id == observation.step_id
+        )
+        if len(matches) != 1:
+            return RunningStepCompletionDecision(
+                status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
+                reason_codes=("STEP_COMPLETION_IDENTITY_UNKNOWN",),
+                prepared=prepared,
+                step_id=observation.step_id,
+            )
+        target = matches[0]
+        if target.step_execution_id != observation.step_execution_id:
+            return RunningStepCompletionDecision(
+                status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
+                reason_codes=("STEP_COMPLETION_EXECUTION_IDENTITY_MISMATCH",),
+                prepared=prepared,
+                step_id=observation.step_id,
+            )
+
+        if finalization.disposition is StepFinalizationDisposition.KEEP_RUNNING:
+            return RunningStepCompletionDecision(
+                status=RunningStepCompletionStatus.KEEP_RUNNING,
+                reason_codes=finalization.reason_codes,
+                prepared=prepared,
+                step_id=observation.step_id,
+            )
+        if finalization.disposition is StepFinalizationDisposition.WAIT_RECOVERY:
+            return RunningStepCompletionDecision(
+                status=RunningStepCompletionStatus.WAIT_RECOVERY,
+                reason_codes=finalization.reason_codes,
+                prepared=prepared,
+                step_id=observation.step_id,
+            )
+        if finalization.disposition is not StepFinalizationDisposition.FINALIZE:
+            return RunningStepCompletionDecision(
+                status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
+                reason_codes=finalization.reason_codes,
+                prepared=prepared,
+                step_id=observation.step_id,
+            )
+        if finalization.terminal_status is None:
+            return RunningStepCompletionDecision(
+                status=RunningStepCompletionStatus.BLOCKED_UNKNOWN,
+                reason_codes=("STEP_COMPLETION_TERMINAL_STATUS_MISSING",),
+                prepared=prepared,
+                step_id=observation.step_id,
+            )
+
+        tool_call_ids = tuple(entry.tool_call_id for entry in observation.tool_journal)
+        updated = await self._lifecycle_service.finish_step(
+            prepared,
+            step_id=observation.step_id,
+            status=finalization.terminal_status,
+            at=at,
+            tool_call_ids=tool_call_ids,
+            retry_count=observation.attempt_number - 1,
+            terminal_reason_codes=finalization.reason_codes,
+            degraded=finalization.degraded,
+        )
+        return RunningStepCompletionDecision(
+            status=RunningStepCompletionStatus.TERMINALIZED,
+            reason_codes=finalization.reason_codes,
+            prepared=updated,
+            step_id=observation.step_id,
+            degraded=finalization.degraded,
         )

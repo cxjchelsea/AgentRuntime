@@ -33,11 +33,11 @@ from runtime.execution.aggregation_authority import (
     ExecutionAggregationEligibilityDecision,
     ExecutionAggregationEligibilityStatus,
 )
-from runtime.execution.aggregation_evidence import (
-    StepAggregationTerminalizationKind,
-    project_ca01_evidence_inputs,
+from runtime.execution.aggregation_evidence import project_ca01_evidence_inputs
+from runtime.execution.control import (
+    ExecutionControlSignalType,
+    LatchedExecutionControl,
 )
-from runtime.execution.control import ExecutionControlSignalType, LatchedExecutionControl
 from runtime.execution.foundation import (
     ExecutionLifecycleService,
     PreparedExecution,

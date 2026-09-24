@@ -590,6 +590,17 @@ class StaticControlToolJournalStore:
         return self.journal
 
 
+class NoAttemptControlToolJournalStore(StaticControlToolJournalStore):
+    async def load_step_attempt_cursor(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str,
+    ) -> StepAttemptCursorRecord | None:
+        del execution_id, step_execution_id
+        return None
+
+
 def test_natural_aggregation_commits_once_then_replays_identically() -> None:
     async def scenario() -> None:
         plan = _skill_plan()
@@ -682,7 +693,7 @@ def test_multiple_workflows_are_lossless_and_legacy_field_is_not_ambiguous() -> 
             is ExecutionAggregationEligibilityStatus.READY_EXISTING_TERMINAL
         )
 
-        result = CanonicalExecutionResultProjector().project(
+        result = await CanonicalExecutionResultProjector().project(
             approved_plan=plan,
             prepared=prepared,
             eligibility=eligibility,
@@ -755,7 +766,7 @@ def test_single_workflow_populates_both_legacy_and_plural_fields() -> None:
             control=control,
             applicability=applicability,
         )
-        result = CanonicalExecutionResultProjector().project(
+        result = await CanonicalExecutionResultProjector().project(
             approved_plan=plan,
             prepared=completed,
             eligibility=eligibility,
@@ -802,13 +813,20 @@ def test_control_result_projects_exact_durable_provenance(
             control=control,
             applicability=applicability,
         )
-        result = CanonicalExecutionResultProjector().project(
+        reader = DurableControlTerminalToolEvidenceReader(
+            store=NoAttemptControlToolJournalStore(
+                current_attempt=1,
+                journal=(),
+            )
+        )
+        result = await CanonicalExecutionResultProjector(
+            control_tool_evidence_reader=reader
+        ).project(
             approved_plan=plan,
             prepared=prepared,
             eligibility=eligibility,
             control=control,
             control_applicability=applicability,
-            control_tool_journals={prepared.steps[0].step_id: ()},
         )
 
         assert result.plan_status is expected_status
@@ -889,8 +907,9 @@ def test_control_tool_join_uses_durable_current_attempt_not_retry_count() -> Non
                 lifecycle_manager=ExecutionLifecycleManager(),
                 execution_store=InMemoryExecutionStateStore(),
             ),
-            projector=CanonicalExecutionResultProjector(),
-            control_tool_evidence_reader=reader,
+            projector=CanonicalExecutionResultProjector(
+                control_tool_evidence_reader=reader
+            ),
         )
         result = await aggregator.aggregate(
             approved_plan=plan,
@@ -914,18 +933,11 @@ def test_control_tool_join_uses_durable_current_attempt_not_retry_count() -> Non
 
 
 def test_control_tool_join_missing_durable_attempt_fails_closed() -> None:
-    class MissingAttemptStore(StaticControlToolJournalStore):
-        async def load_step_attempt_cursor(
-            self,
-            *,
-            execution_id: str,
-            step_execution_id: str,
-        ) -> StepAttemptCursorRecord | None:
-            del execution_id, step_execution_id
-            return None
-
     async def scenario() -> None:
-        store = MissingAttemptStore(current_attempt=1, journal=())
+        store = NoAttemptControlToolJournalStore(
+            current_attempt=1,
+            journal=(),
+        )
         reader = DurableControlTerminalToolEvidenceReader(store=store)
         plan, prepared, control, applicability = await _control_terminal(
             ExecutionControlSignalType.CANCEL,
@@ -973,13 +985,20 @@ def test_control_terminal_result_rejects_missing_provenance() -> None:
             ExecutionAggregationProjectionError,
             match="EXECUTION_RESULT_CONTROL_PROVENANCE_MISSING",
         ):
-            CanonicalExecutionResultProjector().project(
+            reader = DurableControlTerminalToolEvidenceReader(
+                store=NoAttemptControlToolJournalStore(
+                    current_attempt=1,
+                    journal=(),
+                )
+            )
+            await CanonicalExecutionResultProjector(
+                control_tool_evidence_reader=reader
+            ).project(
                 approved_plan=plan,
                 prepared=prepared,
                 eligibility=eligibility,
                 control=_no_control(),
                 control_applicability=_no_control_applicability(),
-                control_tool_journals={prepared.steps[0].step_id: ()},
             )
 
     asyncio.run(scenario())
@@ -1007,7 +1026,7 @@ def test_projector_rejects_non_ready_aggregation() -> None:
             ExecutionAggregationProjectionError,
             match="EXECUTION_RESULT_AGGREGATION_NOT_READY",
         ):
-            CanonicalExecutionResultProjector().project(
+            await CanonicalExecutionResultProjector().project(
                 approved_plan=plan,
                 prepared=prepared,
                 eligibility=eligibility,
@@ -1032,7 +1051,7 @@ def test_exact_duplicate_tool_call_replay_dedupes_to_one_logical_result() -> Non
             applicability=applicability,
         )
 
-        result = CanonicalExecutionResultProjector().project(
+        result = await CanonicalExecutionResultProjector().project(
             approved_plan=plan,
             prepared=prepared,
             eligibility=eligibility,
@@ -1065,7 +1084,7 @@ def test_conflicting_duplicate_tool_call_fails_closed() -> None:
             ExecutionAggregationProjectionError,
             match="EXECUTION_RESULT_TOOL_CALL_CONFLICT",
         ):
-            CanonicalExecutionResultProjector().project(
+            await CanonicalExecutionResultProjector().project(
                 approved_plan=plan,
                 prepared=prepared,
                 eligibility=eligibility,

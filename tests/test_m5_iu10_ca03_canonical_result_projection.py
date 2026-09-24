@@ -22,6 +22,7 @@ from runtime.execution.aggregation_evidence import (
 )
 from runtime.execution.aggregation_result import (
     CanonicalExecutionResultProjector,
+    DurableControlTerminalToolEvidenceReader,
     ExecutionAggregationProjectionError,
     ExecutionAggregator,
 )
@@ -43,14 +44,18 @@ from runtime.execution.foundation import (
     PreparedExecution,
     StepLifecycleSnapshot,
 )
+from runtime.execution.invocation import ToolInvocationJournalEntry
 from runtime.execution.models import (
+    M5ToolResult,
     M5WorkflowResult,
     StepExecutionStatus,
+    ToolExecutionStatus,
     WorkflowExecutionStatus,
 )
 from runtime.execution.recovery_evidence import (
     DurableControlReadDecision,
     DurableControlReadStatus,
+    StepAttemptCursorRecord,
 )
 from runtime.execution.reliability_boundary import (
     StepFinalizationDecision,
@@ -453,6 +458,9 @@ async def _multi_workflow_terminal():
 
 async def _control_terminal(
     signal_type: ExecutionControlSignalType,
+    *,
+    tool_call_ids: tuple[str, ...] = (),
+    retry_count: int = 0,
 ):
     plan = build_approved_action_plan().model_copy(
         update={
@@ -472,7 +480,11 @@ async def _control_terminal(
         plan,
         execution_id=f"execution-iu10-ca03-{signal_type.value.lower()}",
     )
-    source = running.steps[0]
+    source = replace(
+        running.steps[0],
+        tool_call_ids=tool_call_ids,
+        retry_count=retry_count,
+    )
     step_status = {
         ExecutionControlSignalType.CANCEL: StepExecutionStatus.CANCELLED,
         ExecutionControlSignalType.PREEMPT: StepExecutionStatus.PREEMPTED,
@@ -534,6 +546,44 @@ def _ready_eligibility(
         evidence_readiness=evidence,
         skip_decisions=skips,
     )
+
+
+class StaticControlToolJournalStore:
+    def __init__(
+        self,
+        *,
+        current_attempt: int,
+        journal: tuple[ToolInvocationJournalEntry, ...],
+    ) -> None:
+        self.current_attempt = current_attempt
+        self.journal = journal
+        self.loaded_attempts: list[int] = []
+
+    async def load_step_attempt_cursor(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str,
+    ) -> StepAttemptCursorRecord | None:
+        return StepAttemptCursorRecord(
+            execution_id=execution_id,
+            step_execution_id=step_execution_id,
+            current_attempt=self.current_attempt,
+            revision=1,
+            updated_at=NOW + timedelta(seconds=3),
+            writer_recovery_epoch=1,
+        )
+
+    async def load_tool_journal(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str,
+        step_attempt_number: int,
+    ) -> tuple[ToolInvocationJournalEntry, ...]:
+        del execution_id, step_execution_id
+        self.loaded_attempts.append(step_attempt_number)
+        return self.journal
 
 
 def test_natural_aggregation_commits_once_then_replays_identically() -> None:
@@ -716,6 +766,7 @@ def test_single_workflow_populates_both_legacy_and_plural_fields() -> None:
 
     asyncio.run(scenario())
 
+
 @pytest.mark.parametrize(
     ("signal_type", "expected_status", "cancelled", "preempted"),
     [
@@ -763,6 +814,111 @@ def test_control_result_projects_exact_durable_provenance(
         assert result.cancellation["source"] == "runtime"
         assert result.cancellation["cancelled"] is cancelled
         assert result.cancellation["preempted"] is preempted
+
+    asyncio.run(scenario())
+
+
+def test_control_tool_join_uses_durable_current_attempt_not_retry_count() -> None:
+    async def scenario() -> None:
+        tool_result = M5ToolResult(
+            tool_call_id="tool-call-control",
+            tool_id="tool-001",
+            status=ToolExecutionStatus.CANCELLED,
+            error_code="CONTROL_CANCELLED",
+            error_message="cancelled at safe boundary",
+            started_at=NOW + timedelta(seconds=1),
+            finished_at=NOW + timedelta(seconds=2),
+            attempt=3,
+        )
+        journal = (
+            ToolInvocationJournalEntry(
+                tool_call_id="tool-call-control",
+                tool_id="tool-001",
+                tool_version="1.0.0",
+                result=tool_result,
+            ),
+        )
+        store = StaticControlToolJournalStore(
+            current_attempt=3,
+            journal=journal,
+        )
+        reader = DurableControlTerminalToolEvidenceReader(store=store)
+        plan, prepared, control, applicability = await _control_terminal(
+            ExecutionControlSignalType.CANCEL,
+            tool_call_ids=("tool-call-control",),
+            retry_count=98,
+        )
+
+        aggregator = ExecutionAggregator(
+            authority=ExecutionAggregationAuthority(),
+            lifecycle_service=ExecutionLifecycleService(
+                lifecycle_manager=ExecutionLifecycleManager(),
+                execution_store=InMemoryExecutionStateStore(),
+            ),
+            projector=CanonicalExecutionResultProjector(),
+            control_tool_evidence_reader=reader,
+        )
+        result = await aggregator.aggregate(
+            approved_plan=plan,
+            prepared=prepared,
+            control=control,
+            control_applicability=applicability,
+            at=NOW + timedelta(seconds=20),
+        )
+
+        assert store.loaded_attempts == [3]
+        assert result.prepared == prepared
+        assert result.execution_result.tool_results is not None
+        assert len(result.execution_result.tool_results) == 1
+        assert (
+            result.execution_result.tool_results[0]["tool_call_id"]
+            == "tool-call-control"
+        )
+        assert result.execution_result.tool_results[0]["status"] == "CANCELLED"
+
+    asyncio.run(scenario())
+
+
+def test_control_tool_join_missing_durable_attempt_fails_closed() -> None:
+    class MissingAttemptStore(StaticControlToolJournalStore):
+        async def load_step_attempt_cursor(
+            self,
+            *,
+            execution_id: str,
+            step_execution_id: str,
+        ) -> StepAttemptCursorRecord | None:
+            del execution_id, step_execution_id
+            return None
+
+    async def scenario() -> None:
+        store = MissingAttemptStore(current_attempt=1, journal=())
+        reader = DurableControlTerminalToolEvidenceReader(store=store)
+        plan, prepared, control, applicability = await _control_terminal(
+            ExecutionControlSignalType.CANCEL,
+            tool_call_ids=("tool-call-control",),
+            retry_count=0,
+        )
+        aggregator = ExecutionAggregator(
+            authority=ExecutionAggregationAuthority(),
+            lifecycle_service=ExecutionLifecycleService(
+                lifecycle_manager=ExecutionLifecycleManager(),
+                execution_store=InMemoryExecutionStateStore(),
+            ),
+            projector=CanonicalExecutionResultProjector(),
+            control_tool_evidence_reader=reader,
+        )
+
+        with pytest.raises(
+            ExecutionAggregationProjectionError,
+            match="EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_MISMATCH",
+        ):
+            await aggregator.aggregate(
+                approved_plan=plan,
+                prepared=prepared,
+                control=control,
+                control_applicability=applicability,
+                at=NOW + timedelta(seconds=20),
+            )
 
     asyncio.run(scenario())
 

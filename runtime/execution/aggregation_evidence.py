@@ -367,18 +367,34 @@ class StepAggregationEvidence:
         payload = normalized
         try:
             return cls(
-                schema_version=str(payload["schema_version"]),
-                execution_id=str(payload["execution_id"]),
-                step_execution_id=str(payload["step_execution_id"]),
-                step_id=str(payload["step_id"]),
+                schema_version=_required_str(
+                    payload["schema_version"],
+                    "schema_version",
+                ),
+                execution_id=_required_str(
+                    payload["execution_id"],
+                    "execution_id",
+                ),
+                step_execution_id=_required_str(
+                    payload["step_execution_id"],
+                    "step_execution_id",
+                ),
+                step_id=_required_str(payload["step_id"], "step_id"),
                 terminalization_kind=StepAggregationTerminalizationKind(
-                    str(payload["terminalization_kind"])
+                    _required_str(
+                        payload["terminalization_kind"],
+                        "terminalization_kind",
+                    )
                 ),
                 terminal_step_status=StepExecutionStatus(
-                    str(payload["terminal_step_status"])
+                    _required_str(
+                        payload["terminal_step_status"],
+                        "terminal_step_status",
+                    )
                 ),
-                terminal_reason_codes=tuple(
-                    str(item) for item in payload["terminal_reason_codes"]
+                terminal_reason_codes=_tuple_of_strings(
+                    payload["terminal_reason_codes"],
+                    "terminal_reason_codes",
                 ),
                 degraded=_required_bool(payload["degraded"], "degraded"),
                 observed_at=payload["observed_at"],
@@ -389,9 +405,9 @@ class StepAggregationEvidence:
                 final_attempt_status=_optional_str(
                     payload.get("final_attempt_status")
                 ),
-                final_attempt_reason_codes=tuple(
-                    str(item)
-                    for item in payload["final_attempt_reason_codes"]
+                final_attempt_reason_codes=_tuple_of_strings(
+                    payload["final_attempt_reason_codes"],
+                    "final_attempt_reason_codes",
                 ),
                 execution_owner=_optional_str(payload.get("execution_owner")),
                 owner_capability_id=_optional_str(
@@ -402,8 +418,9 @@ class StepAggregationEvidence:
                 ),
                 skill_result=_optional_dict(payload.get("skill_result")),
                 workflow_result=_optional_dict(payload.get("workflow_result")),
-                tool_call_ids=tuple(
-                    str(item) for item in payload["tool_call_ids"]
+                tool_call_ids=_tuple_of_strings(
+                    payload["tool_call_ids"],
+                    "tool_call_ids",
                 ),
                 tool_journal=_tuple_of_dicts(payload["tool_journal"]),
                 business_outputs=_tuple_of_dicts(payload["business_outputs"]),
@@ -910,6 +927,28 @@ def _tuple_of_dicts(value: object) -> tuple[dict[str, Any], ...]:
         if not isinstance(item, Mapping):
             raise ValueError("expected sequence of mappings")
         result.append(deepcopy(dict(item)))
+    return tuple(result)
+
+
+def _required_str(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be non-blank string")
+    return value
+
+
+def _tuple_of_strings(
+    value: object,
+    field_name: str,
+) -> tuple[str, ...]:
+    if not isinstance(value, (tuple, list)):
+        raise ValueError(f"{field_name} must be sequence")
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(
+                f"{field_name} must contain non-blank strings"
+            )
+        result.append(item)
     return tuple(result)
 
 

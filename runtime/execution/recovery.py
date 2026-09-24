@@ -47,6 +47,7 @@ def _step_payload(snapshot: StepLifecycleSnapshot) -> dict[str, Any]:
         "output": deepcopy(snapshot.output),
         "error": snapshot.error,
         "retry_count": snapshot.retry_count,
+        "terminal_reason_codes": list(snapshot.terminal_reason_codes),
         "started_at": snapshot.started_at,
         "finished_at": snapshot.finished_at,
     }

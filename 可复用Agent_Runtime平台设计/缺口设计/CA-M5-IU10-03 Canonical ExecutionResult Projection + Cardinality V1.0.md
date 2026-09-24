@@ -142,12 +142,19 @@ IU1 的 ExecutionResultProjector 保留为 skeleton/backward compatibility，不
 Projector 只接受：
 
 ~~~text
-ExecutionAggregationEligibilityStatus.READY_NATURAL
-or
 ExecutionAggregationEligibilityStatus.READY_EXISTING_TERMINAL
 ~~~
 
 且必须有 exact ExecutionAggregationDecision。
+
+~~~text
+READY_NATURAL
+~~~
+
+只能由 ExecutionAggregator 消费，用于先调用既有
+ExecutionLifecycleService.finish_execution(...) 提交终态；
+提交后重新执行 CA-02 + CA-01，只有得到 READY_EXISTING_TERMINAL
+才能进入 Canonical projector。这样不会在 durable terminal commit 之前发布结果。
 
 # 6. Projector independent fail-closed checks
 
@@ -435,6 +442,64 @@ cancellation = None
 
 允许存在 LATE_NOOP control，但它不能覆盖已经成立的自然 terminal result。
 
+# 16.1 Control-path durable Tool join
+
+CA-02 对 CONTROL_TERMINALIZED 只保存 Step 侧最小 terminal evidence，
+不会使用 retry_count + 1 猜 final attempt，也不会伪造 Tool journal。
+
+因此 CA-03 增加：
+
+~~~text
+ControlTerminalToolJournalStore
+ControlTerminalToolEvidenceReader
+DurableControlTerminalToolEvidenceReader
+~~~
+
+读取链：
+
+~~~text
+execution_id + step_execution_id
+        ↓
+Durable StepAttemptCursorRecord.current_attempt
+        ↓
+load_tool_journal(
+    execution_id,
+    step_execution_id,
+    current_attempt,
+)
+        ↓
+exact durable Tool journal
+~~~
+
+冻结：
+
+~~~text
+current_attempt comes from durable cursor
+!= retry_count + 1 inference
+~~~
+
+如果 CONTROL_TERMINALIZED Step 已持有 tool_call_ids：
+
+~~~text
+durable journal tool_call_ids
+must exactly equal
+StepAggregationEvidence.tool_call_ids
+~~~
+
+否则：
+
+~~~text
+EXECUTION_RESULT_CONTROL_TOOL_EVIDENCE_READER_MISSING
+or
+EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_MISMATCH
+~~~
+
+如果 Step 没有 tool_call_ids，则允许没有 durable attempt/journal；
+但若 reader 返回额外 Tool journal，也会因 exact identity mismatch 被拒绝。
+
+control-path Tool result 仍然只是 execution observation；
+CANCELLED / UNKNOWN 等状态不会被升级成 SUCCESS。
+
 # 17. Quality boundary
 
 quality 是 M5 execution aggregation quality，不是 M6 business truth。
@@ -618,17 +683,22 @@ tests/test_m5_iu10_ca03_canonical_result_projection.py
 17. CANCEL projects exact durable signal provenance
 18. PREEMPT remains PREEMPT, not CANCEL
 19. control terminal result without exact provenance is rejected
-20. non-ready aggregation cannot be projected
-21. Projector independently requires CA-02 READY evidence
-22. Projector validates execution/plan/status provenance
-23. Projector validates ApprovedPlan Step order
-24. duplicate logical Tool exact replay is deterministic
-25. conflicting duplicate tool_call_id fails closed
-26. no Registry lookup
-27. no capability invoke
-28. no retry / resume / replan
-29. no M6/M7/M8 dependency
-30. Canonical ExecutionResult validates successfully
+20. control Tool journal uses durable current-attempt cursor
+21. control Tool join never derives attempt from retry_count
+22. control Step Tool IDs must exactly match durable journal
+23. missing durable control Tool evidence fails closed
+24. non-ready aggregation cannot be projected
+25. Formal Projector accepts READY_EXISTING_TERMINAL only
+26. Projector independently requires CA-02 READY evidence
+27. Projector validates execution/plan/status provenance
+28. Projector validates ApprovedPlan Step order
+29. duplicate logical Tool exact replay is deterministic
+30. conflicting duplicate tool_call_id fails closed
+31. no Registry lookup
+32. no capability invoke
+33. no retry / resume / replan
+34. no M6/M7/M8 dependency
+35. Canonical ExecutionResult validates successfully
 ~~~
 
 # 24. Blocker impact

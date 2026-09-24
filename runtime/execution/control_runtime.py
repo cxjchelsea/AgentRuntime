@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.execution.concurrency_runtime import ToolConcurrencyRuntime
 from runtime.execution.control import (
     ExecutionControlLatch,
@@ -296,7 +297,18 @@ class ExecutionControlCoordinator:
             )
 
         terminal_at = self._now()
-        if self._control_applicability_recorder is not None:
+        control_terminal_replay = (
+            application.disposition is ExecutionControlDisposition.ALREADY_TERMINAL
+            and current_prepared.execution_record.status
+            in {
+                ExecutionPlanStatus.CANCELLED.value,
+                ExecutionPlanStatus.PREEMPTED.value,
+            }
+        )
+        if (
+            self._control_applicability_recorder is not None
+            and not control_terminal_replay
+        ):
             try:
                 applicability = await self._control_applicability_recorder.record(
                     latched_control=latched_control,

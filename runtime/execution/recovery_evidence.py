@@ -356,7 +356,7 @@ class DurableToolOperationOccurrenceAuthority(ToolOperationOccurrenceAuthority):
         )
 
 
-class DurableToolJournalEvidence:
+class DurableToolJournalEvidence(ToolInvocationJournalPersistence):
     """Recovery-facing journal recorder/reader for CoreApprovedToolInvoker wiring."""
 
     def __init__(

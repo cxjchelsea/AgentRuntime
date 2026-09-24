@@ -484,11 +484,11 @@ class StepAggregationEvidence:
             tool_journal=tuple(
                 _freeze_dataclass(entry) for entry in observation.tool_journal
             ),
-            business_outputs=tuple(
-                deepcopy(item) for item in observation.business_outputs
+            business_outputs=_freeze_mapping_tuple(
+                observation.business_outputs
             ),
-            capability_events=tuple(
-                deepcopy(item) for item in observation.capability_events
+            capability_events=_freeze_mapping_tuple(
+                observation.capability_events
             ),
             has_non_success_tool_observation=(
                 observation.has_non_success_tool_observation
@@ -927,6 +927,18 @@ def _freeze_value(value: Any) -> Any:
     raise ValueError(
         f"unsupported aggregation evidence value type: {type(value).__name__}"
     )
+
+
+def _freeze_mapping_tuple(
+    values: tuple[dict[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    frozen: list[dict[str, Any]] = []
+    for value in values:
+        item = _freeze_value(value)
+        if not isinstance(item, dict):
+            raise ValueError("aggregation evidence payload must freeze to mapping")
+        frozen.append(item)
+    return tuple(frozen)
 
 
 def _tuple_of_dicts(value: object) -> tuple[dict[str, Any], ...]:

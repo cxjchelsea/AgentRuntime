@@ -855,3 +855,75 @@ def test_recovered_reliability_result_uses_same_running_completion_boundary() ->
         assert decision.prepared.steps[0].degraded is True
 
     asyncio.run(scenario())
+
+
+
+def test_pending_skip_rejects_stale_current_step_pointer() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, service, store = await _running(plan)
+        drifted = replace(
+            prepared,
+            execution_record=replace(
+                prepared.execution_record,
+                current_step="step-001",
+            ),
+        )
+        authority = PendingStepSkipAuthority(
+            execution_id=drifted.execution_record.execution_id,
+            plan_id=drifted.execution_record.plan_id,
+            step_execution_id=drifted.steps[0].step_execution_id,
+            step_id="step-001",
+            kind=PendingStepSkipAuthorityKind.SCHEDULER_SKIP,
+            reason_codes=("REGISTERED_CONDITION_FALSE",),
+        )
+
+        with pytest.raises(ExecutionLifecycleError, match="current RUNNING Step"):
+            await service.skip_pending_step(
+                drifted,
+                authority=authority,
+                at=NOW + timedelta(seconds=1),
+            )
+
+        stored = await store.load("execution-iu10-ca00")
+        assert stored is not None
+        assert stored.step_results[0]["status"] == "PENDING"
+
+    asyncio.run(scenario())
+
+
+def test_running_completion_rejects_current_step_pointer_drift() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, service, store = await _running(plan)
+        running_step = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        drifted = replace(
+            running_step,
+            execution_record=replace(
+                running_step.execution_record,
+                current_step="different-step",
+            ),
+        )
+        result = _partial_reliability_result(
+            step_execution_id=running_step.steps[0].step_execution_id
+        )
+
+        decision = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=drifted,
+            reliability_result=result,
+            at=NOW + timedelta(seconds=2),
+        )
+
+        assert decision.status is RunningStepCompletionStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == ("STEP_COMPLETION_CURRENT_STEP_MISMATCH",)
+        persisted = await store.load("execution-iu10-ca00")
+        assert persisted is not None
+        assert persisted.step_results[0]["status"] == "RUNNING"
+
+    asyncio.run(scenario())

@@ -101,16 +101,31 @@ def _with_steps(
     steps: list[StepLifecycleSnapshot] = []
     for current, spec in zip(prepared.steps, states, strict=True):
         status, degraded, reasons = spec
+        executed_status = status in {
+            StepExecutionStatus.SUCCESS,
+            StepExecutionStatus.FAILED,
+            StepExecutionStatus.TIMEOUT,
+        }
         steps.append(
             replace(
                 current,
                 status=status,
                 degraded=degraded,
                 terminal_reason_codes=reasons,
-                finished_at=NOW if status not in {
-                    StepExecutionStatus.PENDING,
-                    StepExecutionStatus.RUNNING,
-                } else None,
+                started_at=(
+                    NOW
+                    if executed_status or status is StepExecutionStatus.RUNNING
+                    else None
+                ),
+                finished_at=(
+                    NOW
+                    if status
+                    not in {
+                        StepExecutionStatus.PENDING,
+                        StepExecutionStatus.RUNNING,
+                    }
+                    else None
+                ),
             )
         )
     payload: tuple[dict[str, Any], ...] = tuple(
@@ -898,6 +913,67 @@ def test_existing_terminal_execution_requires_finished_at() -> None:
         assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
         assert decision.reason_codes == (
             "AGGREGATION_TERMINAL_EXECUTION_TIMING_MISSING",
+        )
+
+    asyncio.run(scenario())
+
+
+
+def test_executed_terminal_step_requires_started_at() -> None:
+    async def scenario() -> None:
+        plan = _plan(optional=(False,))
+        prepared = _with_steps(
+            await _prepared(plan),
+            (StepExecutionStatus.SUCCESS, False, ("DONE",)),
+        )
+        broken_step = replace(prepared.steps[0], started_at=None)
+        broken_payload = tuple(
+            {
+                **prepared.execution_record.step_results[0],
+                "started_at": None,
+            }
+        )
+        broken = replace(
+            prepared,
+            steps=(broken_step,),
+            execution_record=replace(
+                prepared.execution_record,
+                step_results=broken_payload,
+            ),
+        )
+
+        decision = await _evaluate(plan, broken)
+
+        assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == (
+            "AGGREGATION_EXECUTED_STEP_START_MISSING",
+        )
+
+    asyncio.run(scenario())
+
+
+def test_persisted_step_status_drift_is_blocked() -> None:
+    async def scenario() -> None:
+        plan = _plan(optional=(False,))
+        prepared = _with_steps(
+            await _prepared(plan),
+            (StepExecutionStatus.SUCCESS, False, ("DONE",)),
+        )
+        persisted = dict(prepared.execution_record.step_results[0])
+        persisted["status"] = "FAILED"
+        drifted = replace(
+            prepared,
+            execution_record=replace(
+                prepared.execution_record,
+                step_results=(persisted,),
+            ),
+        )
+
+        decision = await _evaluate(plan, drifted)
+
+        assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == (
+            "AGGREGATION_PERSISTED_STEP_FACT_MISMATCH",
         )
 
     asyncio.run(scenario())

@@ -1088,3 +1088,95 @@ def test_tool_version_drift_from_approved_plan_is_unknown() -> None:
         )
 
     asyncio.run(scenario())
+
+
+
+def test_skill_tool_results_must_match_core_journal() -> None:
+    async def scenario() -> None:
+        plan = _skill_plan()
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        completed = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running,
+            reliability_result=_partial_reliability_result(
+                step_execution_id=running.steps[0].step_execution_id
+            ),
+            at=NOW + timedelta(seconds=3),
+        )
+        step = completed.prepared.steps[0]
+        assert step.aggregation_evidence is not None
+        skill_payload = dict(step.aggregation_evidence.skill_result or {})
+        skill_payload["tool_results"] = []
+        forged_evidence = replace(
+            step.aggregation_evidence,
+            skill_result=skill_payload,
+        )
+        forged_step = replace(step, aggregation_evidence=forged_evidence)
+        persisted: dict[str, Any] = dict(
+            completed.prepared.execution_record.step_results[0]
+        )
+        persisted["aggregation_evidence"] = forged_evidence.to_payload()
+        forged = replace(
+            completed.prepared,
+            steps=(forged_step,),
+            execution_record=replace(
+                completed.prepared.execution_record,
+                step_results=(persisted,),
+            ),
+        )
+
+        readiness, _ = project_ca01_evidence_inputs(
+            approved_plan=plan,
+            prepared=forged,
+        )
+
+        assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
+        assert readiness.reason_codes == (
+            "AGGREGATION_EVIDENCE_SKILL_TOOL_RESULT_MISMATCH",
+        )
+
+    asyncio.run(scenario())
+
+
+def test_frozen_physical_attempt_sequence_is_revalidated() -> None:
+    observation = _skill_observation(step_execution_id="exec:step-001")
+    evidence = StepAggregationEvidence.from_attempt_finalization(
+        execution_id="execution-iu10-ca02",
+        observation=observation,
+        terminal_step_status=StepExecutionStatus.SUCCESS,
+        terminal_reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
+        degraded=True,
+        terminalized_at=NOW + timedelta(seconds=3),
+    )
+    journal_entry = dict(evidence.tool_journal[0])
+    result = dict(journal_entry["result"])
+    journal_entry["attempts"] = [
+        {
+            "logical_tool_call_id": "tool-call-001",
+            "tool_id": "tool-001",
+            "tool_version": "1.0.0",
+            "physical_attempt": 2,
+            "result": result,
+            "operation_key": None,
+            "operation_fingerprint": None,
+            "idempotency_key": None,
+            "raw_result": None,
+            "permission_status": None,
+            "input_validation_status": None,
+            "output_validation_status": None,
+            "started_at": NOW + timedelta(seconds=1),
+            "finished_at": NOW + timedelta(seconds=2),
+        }
+    ]
+
+    with pytest.raises(ValueError, match="physical attempts"):
+        replace(
+            evidence,
+            tool_journal=(journal_entry,),
+        )

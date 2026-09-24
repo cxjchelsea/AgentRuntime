@@ -45,6 +45,7 @@ from runtime.execution.invocation import (
     ToolAttemptObservation,
     ToolInputValidator,
     ToolInvocationJournalEntry,
+    ToolInvocationJournalPersistence,
     ToolInvocationJournalReader,
     ToolOutputValidator,
     ToolPayloadValidationDecision,
@@ -206,6 +207,8 @@ class CoreApprovedToolInvoker(
         step_id: str | None = None,
         step_attempt_number: int = 1,
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
+        reserved_tool_call_ids: frozenset[str] = frozenset(),
+        journal_persistence: ToolInvocationJournalPersistence | None = None,
         reliability_runtime: ToolReliabilityRuntime | None = None,
         inflight_registry: InFlightOperationRegistry | None = None,
         inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
@@ -265,7 +268,11 @@ class CoreApprovedToolInvoker(
         self._step_execution_id = step_execution_id
         self._step_id = step_id
         self._step_attempt_number = step_attempt_number
+        if any(not item.strip() for item in reserved_tool_call_ids):
+            raise ValueError("reserved_tool_call_ids must contain non-blank ids")
         self._prior_attempt_journal = prior_attempt_journal
+        self._reserved_tool_call_ids = reserved_tool_call_ids
+        self._journal_persistence = journal_persistence
         self._reliability_runtime = reliability_runtime
         self._inflight_registry = inflight_registry
         self._inflight_identifier_factory = inflight_identifier_factory
@@ -301,23 +308,27 @@ class CoreApprovedToolInvoker(
                 "Tool invocation requires non-blank tool_id",
             )
 
+        journal_start = len(self._journal)
         if self._reliability_runtime is not None:
-            return await self._invoke_with_reliability(
+            result = await self._invoke_with_reliability(
                 tool_id=tool_id,
                 input_payload=input_payload,
             )
+        else:
+            tool_call_id = self._new_tool_call_id(tool_id)
+            attempt = await self.execute_physical_attempt(
+                logical_tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                input_payload=input_payload,
+                physical_attempt=1,
+                idempotency_key=None,
+                operation_key=None,
+                operation_fingerprint=None,
+            )
+            result = attempt.result
 
-        tool_call_id = self._new_tool_call_id(tool_id)
-        attempt = await self.execute_physical_attempt(
-            logical_tool_call_id=tool_call_id,
-            tool_id=tool_id,
-            input_payload=input_payload,
-            physical_attempt=1,
-            idempotency_key=None,
-            operation_key=None,
-            operation_fingerprint=None,
-        )
-        return attempt.result
+        await self._persist_journal_since(journal_start)
+        return result
 
     async def _invoke_with_reliability(
         self,
@@ -1293,7 +1304,10 @@ class CoreApprovedToolInvoker(
     ) -> None:
         existing = self._journal_entry(logical_tool_call_id)
         if existing is None:
-            if logical_tool_call_id in self._issued_tool_call_ids:
+            if (
+                logical_tool_call_id in self._issued_tool_call_ids
+                or logical_tool_call_id in self._reserved_tool_call_ids
+            ):
                 self._record_fault("TOOL_CALL_ID_COLLISION")
                 raise ToolInvocationBoundaryError(
                     "TOOL_CALL_ID_COLLISION",
@@ -1344,7 +1358,10 @@ class CoreApprovedToolInvoker(
                 "TOOL_CALL_ID_COLLISION",
                 "logical Tool call already has a journal entry",
             )
-        if result.tool_call_id in self._issued_tool_call_ids:
+        if (
+            result.tool_call_id in self._issued_tool_call_ids
+            or result.tool_call_id in self._reserved_tool_call_ids
+        ):
             raise ToolInvocationBoundaryError(
                 "TOOL_CALL_ID_COLLISION",
                 "logical Tool call id is already issued",
@@ -2225,6 +2242,24 @@ class CoreApprovedToolInvoker(
             "stale or unknown recovery epoch cannot admit physical Tool attempt",
         )
 
+    async def _persist_journal_since(self, start_index: int) -> None:
+        persistence = self._journal_persistence
+        if persistence is None:
+            return
+        for entry in self._journal[start_index:]:
+            try:
+                await persistence.persist(
+                    step_execution_id=self._step_execution_id,
+                    step_attempt_number=self._step_attempt_number,
+                    entry=entry,
+                )
+            except Exception as exc:
+                self._record_fault("TOOL_DURABLE_JOURNAL_WRITE_UNKNOWN")
+                raise ToolInvocationBoundaryError(
+                    "TOOL_DURABLE_JOURNAL_WRITE_UNKNOWN",
+                    "logical Tool result could not be durably journaled",
+                ) from exc
+
     def entries(self) -> tuple[ToolInvocationJournalEntry, ...]:
         return tuple(self._journal)
 
@@ -2273,7 +2308,10 @@ class CoreApprovedToolInvoker(
                 "TOOL_CALL_ID_UNAVAILABLE",
                 "Tool call id factory returned invalid id",
             )
-        if value in self._issued_tool_call_ids:
+        if (
+            value in self._issued_tool_call_ids
+            or value in self._reserved_tool_call_ids
+        ):
             self._record_fault("TOOL_CALL_ID_COLLISION")
             raise ToolInvocationBoundaryError(
                 "TOOL_CALL_ID_COLLISION",
@@ -2498,6 +2536,7 @@ class StepCapabilityExecutor:
         input_validator: ToolInputValidator,
         output_validator: ToolOutputValidator,
         identifier_factory: CapabilityInvocationIdentifierFactory,
+        journal_persistence: ToolInvocationJournalPersistence | None = None,
         reliability_runtime: ToolReliabilityRuntime | None = None,
         inflight_registry: InFlightOperationRegistry | None = None,
         inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
@@ -2510,6 +2549,7 @@ class StepCapabilityExecutor:
         self._input_validator = input_validator
         self._output_validator = output_validator
         self._identifier_factory = identifier_factory
+        self._journal_persistence = journal_persistence
         self._reliability_runtime = reliability_runtime
         self._execution_concurrency_runtime = execution_concurrency_runtime
         self._tool_concurrency_runtime = tool_concurrency_runtime
@@ -2540,6 +2580,12 @@ class StepCapabilityExecutor:
         self._inflight_registry = inflight_registry
         self._inflight_identifier_factory = inflight_identifier_factory
         self._inflight_clock = inflight_clock or (lambda: datetime.now(UTC))
+
+    @property
+    def tool_journal_persistence(
+        self,
+    ) -> ToolInvocationJournalPersistence | None:
+        return self._journal_persistence
 
     async def execute(
         self,
@@ -2677,6 +2723,7 @@ class StepCapabilityExecutor:
                 step_id=step.step_id,
                 step_attempt_number=attempt_number,
                 prior_attempt_journal=prior_attempt_journal,
+                journal_persistence=self._journal_persistence,
                 reliability_runtime=self._reliability_runtime,
                 inflight_registry=(
                     self._inflight_registry if owner_handle is not None else None
@@ -2752,6 +2799,9 @@ class StepCapabilityExecutor:
         resume_request: WorkflowResumeRequest,
         attempt_number: int = 1,
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
+        recovered_current_attempt_journal: tuple[
+            ToolInvocationJournalEntry, ...
+        ] = (),
         side_effect_admission_guard: RecoverySideEffectAdmissionGuard | None = None,
     ) -> StepCapabilityExecutionOutcome:
         """Resume the exact approved Workflow checkpoint through existing M5 gates."""
@@ -2881,6 +2931,11 @@ class StepCapabilityExecutor:
                 step_id=step.step_id,
                 step_attempt_number=attempt_number,
                 prior_attempt_journal=prior_attempt_journal,
+                reserved_tool_call_ids=frozenset(
+                    entry.tool_call_id
+                    for entry in recovered_current_attempt_journal
+                ),
+                journal_persistence=self._journal_persistence,
                 reliability_runtime=self._reliability_runtime,
                 inflight_registry=(
                     self._inflight_registry if owner_handle is not None else None
@@ -2957,38 +3012,72 @@ class StepCapabilityExecutor:
                 )
                 if boundary is not None:
                     outcome = boundary
-                elif result.tool_results and result.tool_results != journal_results:
-                    outcome = self._outcome(
-                        step=step,
-                        step_snapshot=step_snapshot,
-                        resolved=resolved,
-                        status=CapabilityExecutionStatus.UNKNOWN,
-                        reason_codes=("CAPABILITY_RESULT_TOOL_TRACE_MISMATCH",),
-                        workflow_result=result,
-                        tool_results=journal_results,
-                        tool_journal=tool_invoker.entries(),
-                    )
                 else:
-                    normalized = replace(result, tool_results=journal_results)
-                    status = (
-                        CapabilityExecutionStatus.WAITING
-                        if normalized.status is WorkflowExecutionStatus.WAITING
-                        else CapabilityExecutionStatus.EXECUTED
-                    )
-                    outcome = self._outcome(
-                        step=step,
-                        step_snapshot=step_snapshot,
-                        resolved=resolved,
-                        status=status,
-                        reason_codes=(
-                            "WORKFLOW_RECOVERY_WAITING"
-                            if status is CapabilityExecutionStatus.WAITING
-                            else "WORKFLOW_RESUMED",
+                    merged_journal = self._merge_resumed_attempt_journal(
+                        recovered_current_attempt_journal=(
+                            recovered_current_attempt_journal
                         ),
-                        workflow_result=normalized,
-                        tool_results=journal_results,
-                        tool_journal=tool_invoker.entries(),
+                        resumed_journal=tool_invoker.entries(),
                     )
+                    if merged_journal is None:
+                        outcome = self._outcome(
+                            step=step,
+                            step_snapshot=step_snapshot,
+                            resolved=resolved,
+                            status=CapabilityExecutionStatus.UNKNOWN,
+                            reason_codes=(
+                                "WORKFLOW_RECOVERY_TOOL_JOURNAL_CONFLICT",
+                            ),
+                            workflow_result=result,
+                            tool_results=journal_results,
+                            tool_journal=tool_invoker.entries(),
+                        )
+                    else:
+                        merged_results = tuple(
+                            entry.result for entry in merged_journal
+                        )
+                        if (
+                            result.tool_results
+                            and tuple(result.tool_results) != merged_results
+                        ):
+                            outcome = self._outcome(
+                                step=step,
+                                step_snapshot=step_snapshot,
+                                resolved=resolved,
+                                status=CapabilityExecutionStatus.UNKNOWN,
+                                reason_codes=(
+                                    "CAPABILITY_RESULT_TOOL_TRACE_MISMATCH",
+                                ),
+                                workflow_result=result,
+                                tool_results=merged_results,
+                                tool_journal=merged_journal,
+                            )
+                        else:
+                            normalized = replace(
+                                result,
+                                tool_results=merged_results,
+                            )
+                            status = (
+                                CapabilityExecutionStatus.WAITING
+                                if normalized.status
+                                is WorkflowExecutionStatus.WAITING
+                                else CapabilityExecutionStatus.EXECUTED
+                            )
+                            outcome = self._outcome(
+                                step=step,
+                                step_snapshot=step_snapshot,
+                                resolved=resolved,
+                                status=status,
+                                reason_codes=(
+                                    "WORKFLOW_RECOVERY_WAITING"
+                                    if status
+                                    is CapabilityExecutionStatus.WAITING
+                                    else "WORKFLOW_RESUMED",
+                                ),
+                                workflow_result=normalized,
+                                tool_results=merged_results,
+                                tool_journal=merged_journal,
+                            )
 
         if self._owner_may_still_be_inflight(outcome):
             return outcome
@@ -2999,6 +3088,29 @@ class StepCapabilityExecutor:
                 reason_codes=("INFLIGHT_OWNER_COMPLETION_UNKNOWN",),
             )
         return outcome
+
+    @staticmethod
+    def _merge_resumed_attempt_journal(
+        *,
+        recovered_current_attempt_journal: tuple[
+            ToolInvocationJournalEntry, ...
+        ],
+        resumed_journal: tuple[ToolInvocationJournalEntry, ...],
+    ) -> tuple[ToolInvocationJournalEntry, ...] | None:
+        """Preserve one exact Workflow attempt journal across checkpoint resume."""
+
+        merged: list[ToolInvocationJournalEntry] = []
+        by_call_id: dict[str, ToolInvocationJournalEntry] = {}
+        for entry in (*recovered_current_attempt_journal, *resumed_journal):
+            call_id = entry.tool_call_id
+            existing = by_call_id.get(call_id)
+            if existing is None:
+                by_call_id[call_id] = entry
+                merged.append(entry)
+                continue
+            if existing != entry:
+                return None
+        return tuple(merged)
 
     @staticmethod
     def _owner_may_still_be_inflight(

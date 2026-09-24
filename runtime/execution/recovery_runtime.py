@@ -7,6 +7,7 @@ invoke M6, or substitute capabilities.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -32,6 +33,7 @@ from runtime.execution.control_runtime import (
     ExecutionControlRuntimeResult,
 )
 from runtime.execution.foundation import PreparedExecution, StepLifecycleSnapshot
+from runtime.execution.invocation import ToolInvocationJournalPersistence
 from runtime.execution.recovery import (
     CurrentRecoveryEpochSideEffectAdmissionGuard,
     ExecutionRecoveryClaim,
@@ -45,6 +47,7 @@ from runtime.execution.recovery_evidence import (
     DurableReliabilityEvidenceStore,
     DurableStepAttemptSequenceAuthority,
     DurableTerminalControlStore,
+    DurableToolJournalEvidence,
     InFlightEvidenceState,
 )
 from runtime.execution.recovery_resource_lock import (
@@ -62,6 +65,7 @@ from runtime.execution.recovery_workflow import (
 )
 from runtime.execution.reliability_coordinator import (
     RecoveredStepReliabilityRunResult,
+    RecoveredWorkflowReliabilityRunResult,
     StepReliabilityCoordinationError,
     StepReliabilityCoordinator,
 )
@@ -92,11 +96,35 @@ class M5RecoveryRuntimeOutcome:
     capability_outcome: StepCapabilityExecutionOutcome | None = None
     schedule_decision: StepScheduleDecision | None = None
     control_result: ExecutionControlRuntimeResult | None = None
-    reliability_result: RecoveredStepReliabilityRunResult | None = None
+    reliability_result: (
+        RecoveredStepReliabilityRunResult
+        | RecoveredWorkflowReliabilityRunResult
+        | None
+    ) = None
 
     def __post_init__(self) -> None:
         if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
             raise ValueError("reason_codes must contain non-blank values")
+        if (
+            self.status is M5RecoveryRuntimeStatus.WORKFLOW_RESUMED
+            and not isinstance(
+                self.reliability_result,
+                RecoveredWorkflowReliabilityRunResult,
+            )
+        ):
+            raise ValueError(
+                "WORKFLOW_RESUMED requires recovered Workflow finalization authority"
+            )
+        if (
+            self.status is M5RecoveryRuntimeStatus.SKILL_RETRIED
+            and not isinstance(
+                self.reliability_result,
+                RecoveredStepReliabilityRunResult,
+            )
+        ):
+            raise ValueError(
+                "SKILL_RETRIED requires recovered Skill reliability authority"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +141,53 @@ class RecoveryExecutionBindingsFactory(Protocol):
         recovery_claim: ExecutionRecoveryClaim,
     ) -> RecoveryExecutionBindings:
         """Build IU6/IU7/IU8 authorities bound to the exact current recovery claim."""
+
+
+class RecoveryExecutionBindingsBuilder(Protocol):
+    def build(
+        self,
+        *,
+        recovery_claim: ExecutionRecoveryClaim,
+        tool_journal_persistence: ToolInvocationJournalPersistence,
+    ) -> RecoveryExecutionBindings:
+        """Build exact claim-bound execution authorities using durable Tool journaling."""
+
+
+class DurableRecoveryExecutionBindingsFactory:
+    """Enforce IU9 durable Tool journal wiring for recovered execution."""
+
+    def __init__(
+        self,
+        *,
+        builder: RecoveryExecutionBindingsBuilder,
+        reliability_store: DurableReliabilityEvidenceStore,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._builder = builder
+        self._reliability_store = reliability_store
+        self._clock = clock
+
+    def create(
+        self,
+        recovery_claim: ExecutionRecoveryClaim,
+    ) -> RecoveryExecutionBindings:
+        journal = DurableToolJournalEvidence(
+            store=self._reliability_store,
+            execution_id=recovery_claim.execution_id,
+            recovery_claim=recovery_claim,
+            clock=self._clock,
+        )
+        bindings = self._builder.build(
+            recovery_claim=recovery_claim,
+            tool_journal_persistence=journal,
+        )
+        if not isinstance(bindings, RecoveryExecutionBindings):
+            raise TypeError("recovery execution bindings builder returned invalid result")
+        if bindings.step_executor.tool_journal_persistence is not journal:
+            raise ValueError(
+                "recovery StepCapabilityExecutor must use exact durable Tool journal"
+            )
+        return bindings
 
 
 class RecoveryControlRuntimeFactory(Protocol):
@@ -403,7 +478,7 @@ class M5RecoveryRuntime:
                 recovery_decision=decision,
                 prepared=prepared,
             )
-        prior_journal = await self._reliability_store.load_tool_journal(
+        current_attempt_journal = await self._reliability_store.load_tool_journal(
             execution_id=recovery_claim.execution_id,
             step_execution_id=step_snapshot.step_execution_id,
             step_attempt_number=current_attempt,
@@ -426,14 +501,43 @@ class M5RecoveryRuntime:
                 execution_context=prepared.execution_context,
                 resume_request=request,
                 attempt_number=current_attempt,
-                prior_attempt_journal=prior_journal,
+                recovered_current_attempt_journal=current_attempt_journal,
                 side_effect_admission_guard=guard,
             )
+            if outcome.status not in {
+                CapabilityExecutionStatus.EXECUTED,
+                CapabilityExecutionStatus.WAITING,
+            }:
+                return self._capability_runtime_outcome(
+                    success_status=M5RecoveryRuntimeStatus.WORKFLOW_RESUMED,
+                    outcome=outcome,
+                    decision=decision,
+                    prepared=prepared,
+                )
+            try:
+                workflow_reliability = (
+                    bindings.skill_reliability_coordinator
+                    .finalize_recovered_workflow_outcome(
+                        step_snapshot=step_snapshot,
+                        outcome=outcome,
+                        current_attempt_number=current_attempt,
+                        resolved=resolution.resolved,
+                    )
+                )
+            except StepReliabilityCoordinationError as exc:
+                return M5RecoveryRuntimeOutcome(
+                    status=M5RecoveryRuntimeStatus.UNKNOWN,
+                    reason_codes=(exc.reason_code,),
+                    recovery_decision=decision,
+                    prepared=prepared,
+                    capability_outcome=outcome,
+                )
             return self._capability_runtime_outcome(
                 success_status=M5RecoveryRuntimeStatus.WORKFLOW_RESUMED,
                 outcome=outcome,
                 decision=decision,
                 prepared=prepared,
+                reliability_result=workflow_reliability,
             )
 
         if decision.disposition is RecoveryDisposition.RETRY_STEP:
@@ -446,7 +550,7 @@ class M5RecoveryRuntime:
                         resolved=resolution.resolved,
                         execution_context=prepared.execution_context,
                         expected_current_attempt=current_attempt,
-                        prior_attempt_journal=prior_journal,
+                        prior_attempt_journal=current_attempt_journal,
                         side_effect_admission_guard=guard,
                     )
                 )
@@ -666,6 +770,7 @@ class M5RecoveryRuntime:
         outcome: StepCapabilityExecutionOutcome,
         decision: RecoveryDecision,
         prepared: PreparedExecution,
+        reliability_result: RecoveredWorkflowReliabilityRunResult | None = None,
     ) -> M5RecoveryRuntimeOutcome:
         if outcome.status in {
             CapabilityExecutionStatus.EXECUTED,
@@ -682,6 +787,7 @@ class M5RecoveryRuntime:
             recovery_decision=decision,
             prepared=prepared,
             capability_outcome=outcome,
+            reliability_result=reliability_result,
         )
 
     @staticmethod

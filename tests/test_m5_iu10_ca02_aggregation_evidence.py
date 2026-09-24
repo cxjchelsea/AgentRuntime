@@ -983,3 +983,108 @@ def test_ambiguous_skill_and_workflow_owner_is_unknown() -> None:
         )
 
     asyncio.run(scenario())
+
+
+
+def test_owner_version_drift_from_approved_plan_is_unknown() -> None:
+    async def scenario() -> None:
+        plan = _skill_plan()
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        completed = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running,
+            reliability_result=_partial_reliability_result(
+                step_execution_id=running.steps[0].step_execution_id
+            ),
+            at=NOW + timedelta(seconds=3),
+        )
+        step = completed.prepared.steps[0]
+        assert step.aggregation_evidence is not None
+        forged_evidence = replace(
+            step.aggregation_evidence,
+            owner_capability_version="2.0.0",
+        )
+        forged_step = replace(step, aggregation_evidence=forged_evidence)
+        persisted: dict[str, Any] = dict(
+            completed.prepared.execution_record.step_results[0]
+        )
+        persisted["aggregation_evidence"] = forged_evidence.to_payload()
+        forged = replace(
+            completed.prepared,
+            steps=(forged_step,),
+            execution_record=replace(
+                completed.prepared.execution_record,
+                step_results=(persisted,),
+            ),
+        )
+
+        readiness, _ = project_ca01_evidence_inputs(
+            approved_plan=plan,
+            prepared=forged,
+        )
+
+        assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
+        assert readiness.reason_codes == (
+            "AGGREGATION_EVIDENCE_SKILL_OWNER_MISMATCH",
+        )
+
+    asyncio.run(scenario())
+
+
+def test_tool_version_drift_from_approved_plan_is_unknown() -> None:
+    async def scenario() -> None:
+        plan = _skill_plan()
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        completed = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running,
+            reliability_result=_partial_reliability_result(
+                step_execution_id=running.steps[0].step_execution_id
+            ),
+            at=NOW + timedelta(seconds=3),
+        )
+        step = completed.prepared.steps[0]
+        assert step.aggregation_evidence is not None
+        journal_entry = dict(step.aggregation_evidence.tool_journal[0])
+        journal_entry["tool_version"] = "2.0.0"
+        forged_evidence = replace(
+            step.aggregation_evidence,
+            tool_journal=(journal_entry,),
+        )
+        forged_step = replace(step, aggregation_evidence=forged_evidence)
+        persisted: dict[str, Any] = dict(
+            completed.prepared.execution_record.step_results[0]
+        )
+        persisted["aggregation_evidence"] = forged_evidence.to_payload()
+        forged = replace(
+            completed.prepared,
+            steps=(forged_step,),
+            execution_record=replace(
+                completed.prepared.execution_record,
+                step_results=(persisted,),
+            ),
+        )
+
+        readiness, _ = project_ca01_evidence_inputs(
+            approved_plan=plan,
+            prepared=forged,
+        )
+
+        assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
+        assert readiness.reason_codes == (
+            "AGGREGATION_EVIDENCE_APPROVED_TOOL_MISMATCH",
+        )
+
+    asyncio.run(scenario())

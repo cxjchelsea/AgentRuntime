@@ -1,6 +1,8 @@
 """M5 Execution Framework internal contracts and protocols."""
 
 from runtime.execution.aggregation_authority import (
+    AggregationControlApplicabilityDecision,
+    AggregationControlApplicabilityStatus,
     AggregationEvidenceReadinessDecision,
     AggregationEvidenceReadinessStatus,
     ExecutionAggregationAuthority,
@@ -416,6 +418,8 @@ from runtime.execution.stores import (
 __all__ = [
     "ActivityInstance",
     "ActivityStatus",
+    "AggregationControlApplicabilityStatus",
+    "AggregationControlApplicabilityDecision",
     "StepSkipAggregationDisposition",
     "StepAggregationEffect",
     "ExecutionAggregationEligibilityStatus",

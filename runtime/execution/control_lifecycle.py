@@ -12,6 +12,7 @@ from dataclasses import replace
 from datetime import datetime
 
 from runtime.contracts.enums import ExecutionPlanStatus
+from runtime.execution.aggregation_evidence import StepAggregationEvidence
 from runtime.execution.control import (
     ExecutionControlSignalType,
     LatchedExecutionControl,
@@ -134,10 +135,19 @@ class ExecutionControlLifecycleTransitioner:
                     transitioned_steps.append(step)
                     continue
                 transitioned_ids.add(step.step_id)
+                evidence = StepAggregationEvidence.from_control_terminalization(
+                    execution_id=prepared.execution_record.execution_id,
+                    step=step,
+                    terminal_step_status=step_status,
+                    terminal_reason_codes=application.reason_codes,
+                    terminalized_at=at,
+                )
                 transitioned_steps.append(
                     replace(
                         step,
                         status=step_status,
+                        terminal_reason_codes=application.reason_codes,
+                        aggregation_evidence=evidence,
                         finished_at=at,
                     )
                 )
@@ -152,10 +162,19 @@ class ExecutionControlLifecycleTransitioner:
                     application=application,
                 )
                 transitioned_ids.add(step.step_id)
+                evidence = StepAggregationEvidence.from_control_terminalization(
+                    execution_id=prepared.execution_record.execution_id,
+                    step=step,
+                    terminal_step_status=step_status,
+                    terminal_reason_codes=application.reason_codes,
+                    terminalized_at=at,
+                )
                 transitioned_steps.append(
                     replace(
                         step,
                         status=step_status,
+                        terminal_reason_codes=application.reason_codes,
+                        aggregation_evidence=evidence,
                         finished_at=at,
                     )
                 )
@@ -413,6 +432,11 @@ def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, ob
         "retry_count": snapshot.retry_count,
         "terminal_reason_codes": list(snapshot.terminal_reason_codes),
         "degraded": snapshot.degraded,
+        "aggregation_evidence": (
+            None
+            if snapshot.aggregation_evidence is None
+            else snapshot.aggregation_evidence.to_payload()
+        ),
         "started_at": snapshot.started_at,
         "finished_at": snapshot.finished_at,
     }

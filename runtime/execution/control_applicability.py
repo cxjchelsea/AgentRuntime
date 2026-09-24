@@ -38,9 +38,10 @@ from runtime.execution.recovery_evidence import (
 )
 
 
-def _require_non_blank(value: str, field_name: str) -> None:
+def _require_non_blank(value: str | None, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must not be blank")
+    return value
 
 
 def _require_aware(value: datetime, field_name: str) -> None:
@@ -228,8 +229,10 @@ class InMemoryDurableControlApplicabilityStore:
         recorded_at: datetime,
         required_claim: ExecutionRecoveryClaim,
     ) -> ControlApplicabilityWriteDecision:
-        execution_id = latched_control.signal.target_execution_id
-        _require_non_blank(execution_id, "execution_id")
+        execution_id = _require_non_blank(
+            latched_control.signal.target_execution_id,
+            "execution_id",
+        )
         _require_aware(recorded_at, "recorded_at")
         if recorded_at < latched_control.latched_at:
             return ControlApplicabilityWriteDecision(

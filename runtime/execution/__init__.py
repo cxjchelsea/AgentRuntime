@@ -24,6 +24,9 @@ from runtime.execution.aggregation_authority import (
 )
 from runtime.execution.aggregation_result import (
     CanonicalExecutionResultProjector,
+    ControlTerminalToolEvidenceReader,
+    ControlTerminalToolJournalStore,
+    DurableControlTerminalToolEvidenceReader,
     ExecutionAggregationProjectionError,
     ExecutionAggregationRunResult,
     ExecutionAggregator,
@@ -450,6 +453,8 @@ __all__ = [
     "AsyncTimeoutRunner",
     "BackoffCalculator",
     "CanonicalExecutionResultProjector",
+    "ControlTerminalToolEvidenceReader",
+    "ControlTerminalToolJournalStore",
     "CallableExecutionIdentifierFactory",
     "CapabilityExecutionOwner",
     "CapabilityExecutionStatus",
@@ -462,6 +467,7 @@ __all__ = [
     "CurrentRecoveryEpochSideEffectAdmissionGuard",
     "DurableControlReadDecision",
     "DurableControlReadStatus",
+    "DurableControlTerminalToolEvidenceReader",
     "DurableEvidenceMutationDecision",
     "DurableEvidenceMutationStatus",
     "DurableExecutionControlLatch",

@@ -700,3 +700,131 @@ python -m ruff format --check runtime tests
 ~~~text
 M5-IU10 Formal Implementation Verification Closure
 ~~~
+
+
+# 25. Formal Implementation Verification Closure
+
+本轮 Verification Closure 基于当前 PR #79 工作区实际提供的四项门禁结果。
+
+## 25.1 Verification evidence
+
+~~~text
+python -m pytest tests -q
+→ 980 passed
+
+python -m mypy runtime tests
+→ Success: no issues found in 219 source files
+
+python -m ruff check runtime tests
+→ All checks passed
+
+python -m ruff format --check runtime tests
+→ 219 files already formatted
+~~~
+
+四项门禁全部 GREEN。
+
+## 25.2 Gate-compatibility-only changes
+
+本轮门禁修复未改变 Formal Implementation 语义。
+
+仅包含：
+
+~~~text
+scheduler SKIP applicability expectation
+→ CA-01 / CA-02 semantics: NOT_APPLICABLE
+→ terminalized Step remains SUCCESS
+
+recovered Workflow verification clock
+→ use FormalRecoveryClock aligned with CA-02 NOW
+→ no semantic authority change
+
+_claim() return annotation
+→ ExecutionRecoveryClaim
+→ no runtime behavior change
+
+import / __all__ / format / SIM102 alignment
+→ tooling compatibility only
+~~~
+
+因此本轮没有新增 semantic implementation delta。
+
+## 25.3 Verification scope
+
+Verification 覆盖：
+
+~~~text
+Formal aggregation runtime
+terminal Step completion
+running Step finalization
+PARTIAL_SUCCESS
+scheduler SKIP
+WAITING / BLOCKED_UNKNOWN fail-closed
+existing terminal replay
+multi-Workflow canonical projection
+CANCEL / PREEMPT durable provenance
+LATE_NOOP
+IU8 terminal observer preservation
+CA-01 aggregation eligibility
+CA-02 crash-safe evidence
+CA-03 canonical ExecutionResult projection
+CA-04 durable control applicability
+durable Tool journal write-before-return
+live durable Tool binding
+recovery durable Tool binding
+one-claim Tool/control composition
+recovered Workflow same-attempt finalization
+recovered Workflow journal merge/conflict
+recovered current-attempt Tool ID reservation
+~~~
+
+## 25.4 Verification decision
+
+~~~text
+M5-IU10 FORMAL IMPLEMENTATION = PASSED
+M5-IU10 INDEPENDENT IMPLEMENTATION REVIEW = PASSED
+M5-IU10 VERIFICATION = PASSED
+
+NEW IMPLEMENTATION BLOCKER = NONE
+~~~
+
+Formal Implementation Verification Closure = CLOSED。
+
+## 25.5 Boundary after Verification Closure
+
+Verification Closure 不等于整个 M5-IU10 Closure。
+
+因此当前：
+
+~~~text
+M5-IU10 FORMAL IMPLEMENTATION = PASSED
+M5-IU10 VERIFICATION = PASSED
+M5-IU10 CLOSURE EVALUATION = PENDING
+
+M5-IU10 = IN PROGRESS
+M5 = IN PROGRESS
+~~~
+
+下一正式步骤：
+
+~~~text
+M5-IU10 Closure Evaluation
+~~~
+
+Closure Evaluation 需要重新确认：
+
+~~~text
+CA-M5-IU10-00..04 = PASSED
+B-M5-IU10-001..009 = CLOSED
+Formal Implementation = PASSED
+Verification = PASSED
+No open blocker
+No authority contradiction
+No cumulative regression
+~~~
+
+只有 Closure Evaluation 通过后，才可以将：
+
+~~~text
+M5-IU10 = PASSED
+~~~

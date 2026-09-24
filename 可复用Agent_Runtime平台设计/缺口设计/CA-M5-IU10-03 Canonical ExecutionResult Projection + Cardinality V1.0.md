@@ -785,13 +785,13 @@ production storage adapter selection
 
 ~~~text
 CA-M5-IU10-03 = CODE COMPLETE
-CA-M5-IU10-03 INDEPENDENT REVIEW = PENDING
+CA-M5-IU10-03 INDEPENDENT REVIEW = PASSED
 CA-M5-IU10-03 VERIFICATION = PENDING
 
-B-M5-IU10-003 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
-B-M5-IU10-004 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
-B-M5-IU10-005 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
-B-M5-IU10-006 = FIX_IMPLEMENTED_PENDING_REVIEW_AND_GATES
+B-M5-IU10-003 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-004 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-005 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-006 = FIX_IMPLEMENTED_PENDING_GATES
 
 M5-IU10 IMPLEMENTATION READINESS = NOT_READY
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
@@ -806,4 +806,114 @@ CA-M5-IU10-03 Independent Review
 -> four verification gates
 -> CA-M5-IU10-03 Verification Closure
 -> cumulative M5-IU10 Implementation Readiness Re-Review
+~~~
+
+
+# 27. Independent Review Closure
+
+Reviewed semantic HEAD：
+
+~~~text
+bfc88622a8b64ba2d7a0ac7a48450c04cd658e6b
+~~~
+
+Base：
+
+~~~text
+CA-M5-IU10-02 = PASSED
+dc0c3400d6dfd61a1935e8a194f2d450a08248dd
+~~~
+
+Independent Review findings：
+
+~~~text
+F-M5-IU10-CA03-001
+PROJECTOR_COULD_PUBLISH_FROM_READY_NATURAL_BEFORE_DURABLE_TERMINAL_COMMIT
+= CLOSED
+
+F-M5-IU10-CA03-002
+CONTROL_PATH_TOOL_JOURNAL_NOT_JOINED_FROM_DURABLE_CURRENT_ATTEMPT
+= CLOSED
+
+F-M5-IU10-CA03-003
+DURABLE_TOOL_EVIDENCE_COULD_SELF_AUTHORIZE_WITHOUT_APPROVED_PLAN
+= CLOSED
+
+F-M5-IU10-CA03-004
+CONTROL_NO_TOOL_PATH_COULD_DEFAULT_FROM_MISSING_READER
+= CLOSED
+
+F-M5-IU10-CA03-005
+PROJECTOR_COULD_ACCEPT_HAND_CONSTRUCTED_CONTROL_TOOL_MAPPING
+= CLOSED
+
+F-M5-IU10-CA03-006
+M0_CLOSURE_SCHEMA_VERSION_GATE_STALE
+= CLOSED
+
+F-M5-IU10-CA03-007
+FROZEN_EXECUTION_CONTRACT_DOCUMENTATION_DRIFT
+= CLOSED
+
+F-M5-IU10-CA03-008
+EVENT_TIMESTAMP_ORDER_WOULD_INVENT_UNFROZEN_TIME
+= CLOSED
+~~~
+
+Review confirms：
+
+~~~text
+Canonical multi-Workflow projection is lossless
+legacy workflow_result remains single-item compatibility only
+Formal Projector accepts READY_EXISTING_TERMINAL only
+natural terminalization reuses ExecutionLifecycleService
+terminal replay does not re-terminalize execution
+control result binds exact durable control latch
+control Tool truth joins through durable current-attempt cursor
+control Tool id/version rebinds to frozen ApprovedActionPlan
+no-Tool control path requires durable absence proof
+callers cannot inject hand-constructed control Tool journals
+Tool replay is deterministic by logical tool_call_id
+conflicting duplicate Tool evidence fails closed
+state_observations are not inferred without authority
+M5 quality does not claim M6 business truth
+no Registry lookup / capability invoke / retry / resume / replan
+no M6 / M7 / M8 authority leak
+~~~
+
+Independent Review decision：
+
+~~~text
+CA-M5-IU10-03 = CODE COMPLETE
+CA-M5-IU10-03 INDEPENDENT REVIEW = PASSED
+CA-M5-IU10-03 VERIFICATION = PENDING
+
+B-M5-IU10-003 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-004 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-005 = FIX_IMPLEMENTED_PENDING_GATES
+B-M5-IU10-006 = FIX_IMPLEMENTED_PENDING_GATES
+
+NEW CA-03 SEMANTIC BLOCKER = NONE
+
+M5-IU10 IMPLEMENTATION READINESS = NOT_READY
+FORMAL IMPLEMENTATION = NOT AUTHORIZED
+M5 = IN PROGRESS
+~~~
+
+下一步只允许执行四项 Verification Gate：
+
+~~~text
+python -m pytest tests -q
+python -m mypy runtime tests
+python -m ruff check runtime tests
+python -m ruff format --check runtime tests
+~~~
+
+四项门禁全部通过之前：
+
+~~~text
+CA-M5-IU10-03 != PASSED
+B-M5-IU10-003..006 != CLOSED
+M5-IU10 != READY
+FORMAL IMPLEMENTATION != AUTHORIZED
 ~~~

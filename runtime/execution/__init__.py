@@ -32,6 +32,7 @@ from runtime.execution.aggregation_result import (
     ExecutionAggregator,
 )
 from runtime.execution.aggregation_runtime import (
+    DurableControlRuntimeFactory,
     DurableRecoveryControlRuntimeFactory,
     M5ExecutionAggregationOutcome,
     M5ExecutionAggregationRuntime,
@@ -500,6 +501,7 @@ __all__ = [
     "DurableControlApplicabilityStore",
     "DurableControlReadDecision",
     "DurableControlReadStatus",
+    "DurableControlRuntimeFactory",
     "DurableControlTerminalToolEvidenceReader",
     "DurableEvidenceMutationDecision",
     "DurableEvidenceMutationStatus",

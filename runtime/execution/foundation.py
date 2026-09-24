@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Any, Protocol
 
 from runtime.contracts import ApprovedActionPlan, ExecutionResult, RuntimeContext
@@ -99,6 +100,39 @@ class StepLifecycleSnapshot:
             raise ValueError("retry_count must be >= 0")
         if any(not reason.strip() for reason in self.terminal_reason_codes):
             raise ValueError("terminal_reason_codes must not contain blank values")
+
+
+class PendingStepSkipAuthorityKind(str, Enum):
+    SCHEDULER_SKIP = "SCHEDULER_SKIP"
+    REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL = "REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL"
+
+
+@dataclass(frozen=True, slots=True)
+class PendingStepSkipAuthority:
+    execution_id: str
+    plan_id: str
+    step_execution_id: str
+    step_id: str
+    kind: PendingStepSkipAuthorityKind
+    reason_codes: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        values = (
+            self.execution_id,
+            self.plan_id,
+            self.step_execution_id,
+            self.step_id,
+        )
+        if any(not value.strip() for value in values):
+            raise ValueError("pending Step skip authority identifiers must not be blank")
+        if not isinstance(self.kind, PendingStepSkipAuthorityKind):
+            raise ValueError("kind must be PendingStepSkipAuthorityKind")
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
+            raise ValueError(
+                "pending Step skip authority requires non-blank reason_codes"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -359,7 +393,11 @@ class ExecutionLifecycleManager:
         step_id: str,
         at: datetime,
     ) -> PreparedExecution:
-        target = self._step(prepared, step_id)
+        target = self._step(prepared, authority.step_id)
+        if target.step_execution_id != authority.step_execution_id:
+            raise ExecutionLifecycleError(
+                "pending Step skip authority step_execution_id mismatch"
+            )
         if target.status is not StepExecutionStatus.PENDING:
             raise ExecutionLifecycleError("only PENDING step can start")
         if prepared.execution_record.status != "RUNNING":
@@ -441,8 +479,7 @@ class ExecutionLifecycleManager:
         self,
         prepared: PreparedExecution,
         *,
-        step_id: str,
-        reason_codes: tuple[str, ...],
+        authority: PendingStepSkipAuthority,
         at: datetime,
     ) -> PreparedExecution:
         """Terminalize one exact unstarted PENDING Step as SKIPPED."""
@@ -451,9 +488,13 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError(
                 "pending Step skip requires RUNNING execution"
             )
-        if not reason_codes or any(not reason.strip() for reason in reason_codes):
+        if (
+            authority.execution_id != prepared.execution_context.execution_id
+            or authority.execution_id != prepared.execution_record.execution_id
+            or authority.plan_id != prepared.execution_record.plan_id
+        ):
             raise ExecutionLifecycleError(
-                "pending Step skip requires non-blank reason_codes"
+                "pending Step skip authority does not match execution provenance"
             )
         if any(
             item.status is StepExecutionStatus.RUNNING for item in prepared.steps
@@ -483,10 +524,10 @@ class ExecutionLifecycleManager:
             replace(
                 item,
                 status=StepExecutionStatus.SKIPPED,
-                terminal_reason_codes=reason_codes,
+                terminal_reason_codes=authority.reason_codes,
                 finished_at=at,
             )
-            if item.step_id == step_id
+            if item.step_id == authority.step_id
             else item
             for item in prepared.steps
         )
@@ -648,14 +689,12 @@ class ExecutionLifecycleService:
         self,
         prepared: PreparedExecution,
         *,
-        step_id: str,
-        reason_codes: tuple[str, ...],
+        authority: PendingStepSkipAuthority,
         at: datetime,
     ) -> PreparedExecution:
         updated = self._lifecycle_manager.skip_pending_step(
             prepared,
-            step_id=step_id,
-            reason_codes=reason_codes,
+            authority=authority,
             at=at,
         )
         await self._persist(updated)

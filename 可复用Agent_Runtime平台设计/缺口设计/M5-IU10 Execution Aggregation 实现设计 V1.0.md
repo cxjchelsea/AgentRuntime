@@ -1073,3 +1073,138 @@ Terminal Step Completion Boundary
 -> CA-M5-IU10-01
 Aggregation Eligibility + Plan Status Authority
 ~~~
+
+
+# 34. Post-Readiness Amendment Record
+
+> 本节为 CA-00～03 完成后的累计 Readiness Re-Review 修订记录。
+> 第 30～33 节保留初始设计时点历史，不作为当前状态。
+
+CA-M5-IU10-00～03 全部通过后，累计 Re-Review 发现：
+
+~~~text
+B-M5-IU10-009
+DURABLE_CONTROL_APPLICABILITY_AUTHORITY_MISSING
+~~~
+
+根因：
+
+~~~text
+AggregationControlApplicabilityDecision 已存在
+ExecutionAggregationAuthority 已消费
+
+但 Formal Aggregator 仍可由 caller 直接提供：
+control
+control_applicability
+
+且没有 crash-safe authoritative producer
+区分：
+APPLIES
+vs
+LATE_NOOP
+~~~
+
+因此追加：
+
+~~~text
+CA-M5-IU10-04
+Durable Control Applicability Authority
+~~~
+
+CA-04 冻结：
+
+~~~text
+READY_TO_TERMINALIZE -> durable APPLIES
+ALREADY_TERMINAL -> durable LATE_NOOP
+
+exact durable latch binding
+recovery-epoch fenced immutable evidence
+write-before-control-lifecycle ordering
+control-terminal replay does not rewrite APPLIES as LATE_NOOP
+natural terminal commit后重新 resolve control authority
+ExecutionAggregator internally resolves authoritative control snapshot
+~~~
+
+当前实施状态以 CA-M5-IU10-04 文档与最新 Readiness Re-Review 为准。
+
+
+# 35. Final Implementation Readiness Record after CA-04
+
+> 当前状态以《M5-IU10 Implementation Readiness Re-Review V1.1》为准。
+> 第 33 节保留初始 NOT_READY 历史，第 34 节保留第一次 Re-Review BLOCKED 历史。
+
+CA-M5-IU10-04 Verification Closure 后，第二轮累计 Re-Review 结论：
+
+~~~text
+CA-M5-IU10-00 = PASSED
+CA-M5-IU10-01 = PASSED
+CA-M5-IU10-02 = PASSED
+CA-M5-IU10-03 = PASSED
+CA-M5-IU10-04 = PASSED
+
+B-M5-IU10-001..009 = CLOSED
+
+M5-IU10 IMPLEMENTATION READINESS RE-REVIEW = PASSED
+M5-IU10 IMPLEMENTATION READINESS = READY
+
+BLOCKERS = 0
+NEW BLOCKER = NONE
+
+FORMAL IMPLEMENTATION = AUTHORIZED
+
+M5 = IN PROGRESS
+NEXT REQUIRED = M5-IU10 Formal Implementation
+~~~
+
+Formal Implementation 只允许在已冻结 authority 上做 runtime wiring：
+
+~~~text
+Scheduler
+-> TerminalStepCompletionCoordinator
+
+IU6 finalization
+-> RunningStepCompletionCoordinator
+
+durable terminal control
++
+DurableControlApplicabilityRecorder
+-> durable control applicability
+
+DurableAggregationControlAuthority
+-> ExecutionAggregationAuthority
+
+project_ca01_evidence_inputs
+-> aggregation evidence / skip authority
+
+READY_NATURAL
+-> ExecutionLifecycleService.finish_execution
+-> re-resolve control authority
+-> re-evaluate
+
+READY_EXISTING_TERMINAL
+-> CanonicalExecutionResultProjector
+-> ExecutionResult
+~~~
+
+Formal path 必须保留：
+
+~~~text
+IU8 terminal observer / session release
+IU9 recovery-epoch fencing
+CA-02 crash-safe Step evidence
+CA-03 durable control Tool journal join
+CA-04 durable applicability authority
+~~~
+
+禁止：
+
+~~~text
+hand-built control applicability
+IU1 skeleton projector as final authority
+PENDING Step aggregation shortcut
+timestamp-derived LATE_NOOP
+Registry latest fallback
+M6/M7/M8 authority
+~~~
+
+本 READY 只授权实现，不代表 M5-IU10 已 PASSED。

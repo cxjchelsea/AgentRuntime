@@ -14,9 +14,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import datetime
-from typing import Any
+from enum import Enum
+from typing import Any, Protocol
 
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.execution import (
@@ -33,7 +34,10 @@ from runtime.execution.aggregation_authority import (
     ExecutionAggregationEligibilityDecision,
     ExecutionAggregationEligibilityStatus,
 )
-from runtime.execution.aggregation_evidence import project_ca01_evidence_inputs
+from runtime.execution.aggregation_evidence import (
+    StepAggregationTerminalizationKind,
+    project_ca01_evidence_inputs,
+)
 from runtime.execution.control import (
     ExecutionControlSignalType,
     LatchedExecutionControl,
@@ -43,9 +47,11 @@ from runtime.execution.foundation import (
     PreparedExecution,
     StepLifecycleSnapshot,
 )
+from runtime.execution.invocation import ToolInvocationJournalEntry
 from runtime.execution.recovery_evidence import (
     DurableControlReadDecision,
     DurableControlReadStatus,
+    StepAttemptCursorRecord,
 )
 
 
@@ -57,6 +63,60 @@ class ExecutionAggregationProjectionError(RuntimeError):
             raise ValueError("reason_code must not be blank")
         super().__init__(message or reason_code)
         self.reason_code = reason_code
+
+
+class ControlTerminalToolJournalStore(Protocol):
+    async def load_step_attempt_cursor(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str,
+    ) -> StepAttemptCursorRecord | None:
+        """Load the durable current attempt cursor for one Step."""
+
+    async def load_tool_journal(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str,
+        step_attempt_number: int,
+    ) -> tuple[ToolInvocationJournalEntry, ...]:
+        """Load the exact durable Tool journal for one Step attempt."""
+
+
+class ControlTerminalToolEvidenceReader(Protocol):
+    async def load(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str,
+    ) -> tuple[ToolInvocationJournalEntry, ...] | None:
+        """Return None when no durable Step attempt exists."""
+
+
+class DurableControlTerminalToolEvidenceReader:
+    """Join control-terminal Tool truth through the durable current-attempt cursor."""
+
+    def __init__(self, *, store: ControlTerminalToolJournalStore) -> None:
+        self._store = store
+
+    async def load(
+        self,
+        *,
+        execution_id: str,
+        step_execution_id: str,
+    ) -> tuple[ToolInvocationJournalEntry, ...] | None:
+        cursor = await self._store.load_step_attempt_cursor(
+            execution_id=execution_id,
+            step_execution_id=step_execution_id,
+        )
+        if cursor is None:
+            return None
+        return await self._store.load_tool_journal(
+            execution_id=execution_id,
+            step_execution_id=step_execution_id,
+            step_attempt_number=cursor.current_attempt,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,12 +144,17 @@ class CanonicalExecutionResultProjector:
         eligibility: ExecutionAggregationEligibilityDecision,
         control: DurableControlReadDecision,
         control_applicability: AggregationControlApplicabilityDecision,
+        control_tool_journals: Mapping[
+            str, tuple[ToolInvocationJournalEntry, ...]
+        ]
+        | None = None,
     ) -> ExecutionResult:
         decision = eligibility.aggregation_decision
-        if eligibility.status not in {
-            ExecutionAggregationEligibilityStatus.READY_NATURAL,
-            ExecutionAggregationEligibilityStatus.READY_EXISTING_TERMINAL,
-        } or decision is None:
+        if (
+            eligibility.status
+            is not ExecutionAggregationEligibilityStatus.READY_EXISTING_TERMINAL
+            or decision is None
+        ):
             raise ExecutionAggregationProjectionError(
                 "EXECUTION_RESULT_AGGREGATION_NOT_READY"
             )
@@ -198,7 +263,28 @@ class CanonicalExecutionResultProjector:
                         }
                     )
 
-            for source_index, entry in enumerate(evidence.tool_journal):
+            journal_entries: tuple[
+                Mapping[str, Any] | ToolInvocationJournalEntry, ...
+            ]
+            if (
+                evidence.terminalization_kind
+                is StepAggregationTerminalizationKind.CONTROL_TERMINALIZED
+            ):
+                joined = (
+                    ()
+                    if control_tool_journals is None
+                    else control_tool_journals.get(step.step_id, ())
+                )
+                joined_ids = tuple(item.tool_call_id for item in joined)
+                if joined_ids != evidence.tool_call_ids:
+                    raise ExecutionAggregationProjectionError(
+                        "EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_MISMATCH"
+                    )
+                journal_entries = joined
+            else:
+                journal_entries = evidence.tool_journal
+
+            for source_index, entry in enumerate(journal_entries):
                 _collect_tool_result(
                     entry=entry,
                     step=step,
@@ -329,10 +415,13 @@ class ExecutionAggregator:
         authority: ExecutionAggregationAuthority,
         lifecycle_service: ExecutionLifecycleService,
         projector: CanonicalExecutionResultProjector,
+        control_tool_evidence_reader: ControlTerminalToolEvidenceReader
+        | None = None,
     ) -> None:
         self._authority = authority
         self._lifecycle_service = lifecycle_service
         self._projector = projector
+        self._control_tool_evidence_reader = control_tool_evidence_reader
 
     async def aggregate(
         self,
@@ -399,18 +488,55 @@ class ExecutionAggregator:
                     "EXECUTION_RESULT_TERMINAL_REPLAY_RECHECK_FAILED"
                 )
 
+        control_tool_journals = await self._load_control_tool_journals(current)
         execution_result = self._projector.project(
             approved_plan=approved_plan,
             prepared=current,
             eligibility=eligibility,
             control=control,
             control_applicability=control_applicability,
+            control_tool_journals=control_tool_journals,
         )
         return ExecutionAggregationRunResult(
             prepared=current,
             eligibility=eligibility,
             execution_result=execution_result,
         )
+
+    async def _load_control_tool_journals(
+        self,
+        prepared: PreparedExecution,
+    ) -> dict[str, tuple[ToolInvocationJournalEntry, ...]]:
+        journals: dict[str, tuple[ToolInvocationJournalEntry, ...]] = {}
+        execution_id = prepared.execution_record.execution_id
+        for step in prepared.steps:
+            evidence = step.aggregation_evidence
+            if (
+                evidence is None
+                or evidence.terminalization_kind
+                is not StepAggregationTerminalizationKind.CONTROL_TERMINALIZED
+            ):
+                continue
+
+            if self._control_tool_evidence_reader is None:
+                if evidence.tool_call_ids:
+                    raise ExecutionAggregationProjectionError(
+                        "EXECUTION_RESULT_CONTROL_TOOL_EVIDENCE_READER_MISSING"
+                    )
+                journals[step.step_id] = ()
+                continue
+
+            loaded = await self._control_tool_evidence_reader.load(
+                execution_id=execution_id,
+                step_execution_id=step.step_execution_id,
+            )
+            entries = () if loaded is None else loaded
+            if tuple(item.tool_call_id for item in entries) != evidence.tool_call_ids:
+                raise ExecutionAggregationProjectionError(
+                    "EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_MISMATCH"
+                )
+            journals[step.step_id] = entries
+        return journals
 
 
 def _project_step_result(step: StepLifecycleSnapshot) -> StepExecutionResult:
@@ -454,7 +580,7 @@ def _project_step_timing(
 
 def _collect_tool_result(
     *,
-    entry: Mapping[str, Any],
+    entry: Mapping[str, Any] | ToolInvocationJournalEntry,
     step: StepLifecycleSnapshot,
     plan_index: int,
     source_index: int,
@@ -463,8 +589,13 @@ def _collect_tool_result(
     tool_durations: list[dict[str, Any]],
     errors: list[dict[str, Any]],
 ) -> None:
-    tool_call_id = entry.get("tool_call_id")
-    result = entry.get("result")
+    frozen = _freeze_projection_value(entry)
+    if not isinstance(frozen, dict):
+        raise ExecutionAggregationProjectionError(
+            "EXECUTION_RESULT_TOOL_JOURNAL_INVALID"
+        )
+    tool_call_id = frozen.get("tool_call_id")
+    result = frozen.get("result")
     if (
         not isinstance(tool_call_id, str)
         or not tool_call_id.strip()
@@ -474,7 +605,7 @@ def _collect_tool_result(
             "EXECUTION_RESULT_TOOL_JOURNAL_INVALID"
         )
 
-    frozen_entry = deepcopy(dict(entry))
+    frozen_entry = frozen
     existing = seen_tool_journal.get(tool_call_id)
     if existing is not None:
         if existing != frozen_entry:
@@ -521,6 +652,34 @@ def _collect_tool_result(
                 "message": error_message,
             }
         )
+
+
+def _freeze_projection_value(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, datetime):
+        return value
+    if is_dataclass(value) and not isinstance(value, type):
+        return {
+            field.name: _freeze_projection_value(getattr(value, field.name))
+            for field in fields(value)
+        }
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise ExecutionAggregationProjectionError(
+                "EXECUTION_RESULT_TOOL_JOURNAL_INVALID"
+            )
+        return {
+            key: _freeze_projection_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (tuple, list)):
+        return [_freeze_projection_value(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    raise ExecutionAggregationProjectionError(
+        "EXECUTION_RESULT_TOOL_JOURNAL_INVALID"
+    )
 
 
 def _control_payload(latched: LatchedExecutionControl) -> dict[str, Any]:

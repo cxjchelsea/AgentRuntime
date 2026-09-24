@@ -629,15 +629,14 @@ def test_late_noop_control_allows_natural_aggregation_after_all_steps_terminal()
             await _prepared(plan),
             (StepExecutionStatus.SUCCESS, False, ("DONE",)),
         )
+        control = _latched(ExecutionControlSignalType.CANCEL)
         decision = await _evaluate(
             plan,
             prepared,
-            control=_latched(ExecutionControlSignalType.CANCEL),
+            control=control,
             control_applicability=_control_applicability(
                 AggregationControlApplicabilityStatus.LATE_NOOP,
-                latched_control=_latched(
-                    ExecutionControlSignalType.CANCEL
-                ).latched_control,
+                latched_control=control.latched_control,
             ),
         )
 
@@ -652,12 +651,14 @@ def test_late_noop_control_rejects_unfinished_work() -> None:
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = await _prepared(plan)
+        control = _latched(ExecutionControlSignalType.CANCEL)
         decision = await _evaluate(
             plan,
             prepared,
-            control=_latched(ExecutionControlSignalType.CANCEL),
+            control=control,
             control_applicability=_control_applicability(
-                AggregationControlApplicabilityStatus.LATE_NOOP
+                AggregationControlApplicabilityStatus.LATE_NOOP,
+                latched_control=control.latched_control,
             ),
         )
 
@@ -681,7 +682,10 @@ def test_control_applicability_mismatch_is_blocked_unknown() -> None:
             prepared,
             control=_no_control(),
             control_applicability=_control_applicability(
-                AggregationControlApplicabilityStatus.APPLIES
+                AggregationControlApplicabilityStatus.APPLIES,
+                latched_control=_latched(
+                    ExecutionControlSignalType.CANCEL
+                ).latched_control,
             ),
         )
 

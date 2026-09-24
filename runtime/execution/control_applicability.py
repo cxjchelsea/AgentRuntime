@@ -60,6 +60,10 @@ class DurableControlApplicabilityRecord:
     status: ControlApplicabilityEvidenceStatus
     source_disposition: ExecutionControlDisposition
     source_reason_codes: tuple[str, ...]
+    source_nonterminal_step_ids_at_latch: tuple[str, ...]
+    source_affected_step_ids: tuple[str, ...]
+    source_running_step_id: str | None
+    source_preserve_running_step_result: bool
     revision: int
     recorded_at: datetime
     writer_recovery_epoch: int
@@ -86,6 +90,41 @@ class DurableControlApplicabilityRecord:
             not item.strip() for item in self.source_reason_codes
         ):
             raise ValueError("source_reason_codes must contain non-blank values")
+        if len(set(self.source_nonterminal_step_ids_at_latch)) != len(
+            self.source_nonterminal_step_ids_at_latch
+        ):
+            raise ValueError("source nonterminal Step ids must be unique")
+        if len(set(self.source_affected_step_ids)) != len(
+            self.source_affected_step_ids
+        ):
+            raise ValueError("source affected Step ids must be unique")
+        if not set(self.source_affected_step_ids).issubset(
+            set(self.source_nonterminal_step_ids_at_latch)
+        ):
+            raise ValueError("source affected Steps must be nonterminal at latch")
+        if (
+            self.source_running_step_id is not None
+            and self.source_running_step_id
+            not in self.source_nonterminal_step_ids_at_latch
+        ):
+            raise ValueError("source running Step must be nonterminal at latch")
+        if (
+            self.source_preserve_running_step_result
+            and self.source_running_step_id is None
+        ):
+            raise ValueError(
+                "preserved running result requires source running Step"
+            )
+        if (
+            self.status is ControlApplicabilityEvidenceStatus.APPLIES
+            and not self.source_affected_step_ids
+        ):
+            raise ValueError("APPLIES evidence requires affected Step provenance")
+        if (
+            self.status is ControlApplicabilityEvidenceStatus.LATE_NOOP
+            and self.source_affected_step_ids
+        ):
+            raise ValueError("LATE_NOOP evidence cannot claim affected Steps")
         if self.revision < 1:
             raise ValueError("revision must be >= 1")
         if self.writer_recovery_epoch < 1:
@@ -188,6 +227,11 @@ class InMemoryDurableControlApplicabilityStore:
         execution_id = latched_control.signal.target_execution_id
         _require_non_blank(execution_id, "execution_id")
         _require_aware(recorded_at, "recorded_at")
+        if recorded_at < latched_control.latched_at:
+            return ControlApplicabilityWriteDecision(
+                status=ControlApplicabilityWriteStatus.UNKNOWN,
+                reason_codes=("CONTROL_APPLICABILITY_TIME_REGRESSION",),
+            )
         if required_claim.execution_id != execution_id:
             return ControlApplicabilityWriteDecision(
                 status=ControlApplicabilityWriteStatus.UNKNOWN,
@@ -239,6 +283,13 @@ class InMemoryDurableControlApplicabilityStore:
                     and existing.status is mapped
                     and existing.source_disposition is application.disposition
                     and existing.source_reason_codes == application.reason_codes
+                    and existing.source_nonterminal_step_ids_at_latch
+                    == application.nonterminal_step_ids_at_latch
+                    and existing.source_affected_step_ids
+                    == application.affected_step_ids
+                    and existing.source_running_step_id == application.running_step_id
+                    and existing.source_preserve_running_step_result
+                    == application.preserve_running_step_result
                 ):
                     return ControlApplicabilityWriteDecision(
                         status=ControlApplicabilityWriteStatus.ALREADY_CURRENT,
@@ -256,6 +307,14 @@ class InMemoryDurableControlApplicabilityStore:
                 status=mapped,
                 source_disposition=application.disposition,
                 source_reason_codes=application.reason_codes,
+                source_nonterminal_step_ids_at_latch=(
+                    application.nonterminal_step_ids_at_latch
+                ),
+                source_affected_step_ids=application.affected_step_ids,
+                source_running_step_id=application.running_step_id,
+                source_preserve_running_step_result=(
+                    application.preserve_running_step_result
+                ),
                 revision=1,
                 recorded_at=recorded_at,
                 writer_recovery_epoch=required_claim.recovery_epoch,

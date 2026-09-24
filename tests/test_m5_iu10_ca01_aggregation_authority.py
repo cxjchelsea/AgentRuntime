@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Mapping
@@ -14,6 +15,7 @@ from runtime.execution.aggregation_authority import (
     AggregationEvidenceReadinessStatus,
     ExecutionAggregationAuthority,
     ExecutionAggregationEligibilityStatus,
+    StepSkipAggregationDecision,
     StepSkipAggregationDisposition,
 )
 from runtime.execution.control import (
@@ -22,6 +24,7 @@ from runtime.execution.control import (
     LatchedExecutionControl,
 )
 from runtime.execution.foundation import (
+    ApprovedPlanExecutionValidator,
     CallableExecutionIdentifierFactory,
     ExecutionContextBuilder,
     ExecutionFoundation,
@@ -68,10 +71,7 @@ async def _prepared(plan) -> PreparedExecution:
         step_execution_id_factory=lambda step_id: f"exec:{step_id}",
     )
     foundation = ExecutionFoundation(
-        plan_validator=__import__(
-            "runtime.execution.foundation",
-            fromlist=["ApprovedPlanExecutionValidator"],
-        ).ApprovedPlanExecutionValidator(),
+        plan_validator=ApprovedPlanExecutionValidator(),
         context_builder=ExecutionContextBuilder(identifier_factory=ids),
         record_factory=ExecutionRecordFactory(
             identifier_factory=ids,
@@ -148,6 +148,7 @@ def _evidence(
     status: AggregationEvidenceReadinessStatus = AggregationEvidenceReadinessStatus.READY,
 ) -> AggregationEvidenceReadinessDecision:
     return AggregationEvidenceReadinessDecision(
+        execution_id="execution-iu10-ca01",
         status=status,
         reason_codes=(f"EVIDENCE_{status.value}",),
     )
@@ -155,10 +156,13 @@ def _evidence(
 
 def _control_applicability(
     status: AggregationControlApplicabilityStatus,
+    *,
+    latched_control: LatchedExecutionControl | None = None,
 ) -> AggregationControlApplicabilityDecision:
     return AggregationControlApplicabilityDecision(
         status=status,
         reason_codes=(f"CONTROL_{status.value}",),
+        latched_control=latched_control,
     )
 
 
@@ -208,25 +212,43 @@ async def _evaluate(
 ):
     resolved_control = control or _no_control()
     if control_applicability is None:
-        default_status = (
-            AggregationControlApplicabilityStatus.NONE
-            if resolved_control.status is DurableControlReadStatus.NONE
-            else AggregationControlApplicabilityStatus.APPLIES
+        if resolved_control.status is DurableControlReadStatus.NONE:
+            control_applicability = _control_applicability(
+                AggregationControlApplicabilityStatus.NONE
+            )
+        elif resolved_control.status is DurableControlReadStatus.LATCHED:
+            control_applicability = _control_applicability(
+                AggregationControlApplicabilityStatus.APPLIES,
+                latched_control=resolved_control.latched_control,
+            )
+        else:
+            control_applicability = _control_applicability(
+                AggregationControlApplicabilityStatus.UNKNOWN
+            )
+
+    lifecycle_by_id = {step.step_id: step for step in prepared.steps}
+    skip_decisions = {
+        step_id: StepSkipAggregationDecision(
+            execution_id=prepared.execution_record.execution_id,
+            step_execution_id=lifecycle_by_id[step_id].step_execution_id,
+            step_id=step_id,
+            disposition=disposition,
+            reason_codes=(f"SKIP_{disposition.value}",),
         )
-        control_applicability = _control_applicability(default_status)
+        for step_id, disposition in (skips or {}).items()
+        if step_id in lifecycle_by_id
+    }
     return ExecutionAggregationAuthority().evaluate(
         approved_plan=plan,
         prepared=prepared,
         control=resolved_control,
         control_applicability=control_applicability,
         evidence_readiness=evidence or _evidence(),
-        skip_dispositions=skips or {},
+        skip_decisions=skip_decisions,
     )
 
 
 def test_pending_or_running_step_waits_instead_of_failing() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = await _prepared(plan)
@@ -245,8 +267,6 @@ def test_pending_or_running_step_waits_instead_of_failing() -> None:
 
 
 def test_unknown_control_blocks_before_natural_aggregation() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -261,8 +281,6 @@ def test_unknown_control_blocks_before_natural_aggregation() -> None:
 
 
 def test_latched_control_requires_iu7_terminalization_before_aggregation() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -283,8 +301,6 @@ def test_latched_control_requires_iu7_terminalization_before_aggregation() -> No
 
 
 def test_control_terminal_replay_preserves_cancel_and_preempt() -> None:
-    import asyncio
-
     async def scenario() -> None:
         for signal_type, expected, step_status in (
             (
@@ -321,8 +337,6 @@ def test_control_terminal_replay_preserves_cancel_and_preempt() -> None:
 
 
 def test_cancelled_execution_without_control_provenance_is_blocked() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -340,8 +354,6 @@ def test_cancelled_execution_without_control_provenance_is_blocked() -> None:
 
 
 def test_required_success_and_optional_success_is_success() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False, True))
         prepared = _with_steps(
@@ -358,8 +370,6 @@ def test_required_success_and_optional_success_is_success() -> None:
 
 
 def test_required_timeout_precedes_required_failure() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False, False))
         prepared = _with_steps(
@@ -375,8 +385,6 @@ def test_required_timeout_precedes_required_failure() -> None:
 
 
 def test_required_unsatisfied_is_failed() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False, True))
         prepared = _with_steps(
@@ -392,8 +400,6 @@ def test_required_unsatisfied_is_failed() -> None:
 
 
 def test_required_degraded_is_partial_success() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -415,8 +421,6 @@ def test_required_degraded_is_partial_success() -> None:
 
 
 def test_optional_failure_after_required_success_is_partial_success() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False, True))
         prepared = _with_steps(
@@ -435,8 +439,6 @@ def test_optional_failure_after_required_success_is_partial_success() -> None:
 
 
 def test_required_not_applicable_skip_does_not_fail_plan() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False, False))
         prepared = _with_steps(
@@ -456,8 +458,6 @@ def test_required_not_applicable_skip_does_not_fail_plan() -> None:
 
 
 def test_required_unsatisfied_skip_fails_plan() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -480,8 +480,6 @@ def test_required_unsatisfied_skip_fails_plan() -> None:
 
 
 def test_skipped_step_without_provenance_is_blocked_unknown() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -496,8 +494,6 @@ def test_skipped_step_without_provenance_is_blocked_unknown() -> None:
 
 
 def test_missing_or_unknown_rich_evidence_blocks_terminal_aggregation() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -522,8 +518,6 @@ def test_missing_or_unknown_rich_evidence_blocks_terminal_aggregation() -> None:
 
 
 def test_existing_terminal_replay_requires_exact_natural_status_match() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False, True))
         base = await _prepared(plan)
@@ -556,8 +550,6 @@ def test_existing_terminal_replay_requires_exact_natural_status_match() -> None:
 
 
 def test_all_optional_without_progress_resolves_failed_or_timeout() -> None:
-    import asyncio
-
     async def scenario() -> None:
         failed_plan = _plan(optional=(True, True))
         failed = _with_steps(
@@ -586,8 +578,6 @@ def test_all_optional_without_progress_resolves_failed_or_timeout() -> None:
 
 
 def test_all_not_applicable_steps_is_execution_success() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False, True))
         prepared = _with_steps(
@@ -611,8 +601,6 @@ def test_all_not_applicable_steps_is_execution_success() -> None:
 
 
 def test_control_terminal_replay_rejects_opposite_step_terminal_status() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -635,8 +623,6 @@ def test_control_terminal_replay_rejects_opposite_step_terminal_status() -> None
 
 
 def test_late_noop_control_allows_natural_aggregation_after_all_steps_terminal() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -648,7 +634,10 @@ def test_late_noop_control_allows_natural_aggregation_after_all_steps_terminal()
             prepared,
             control=_latched(ExecutionControlSignalType.CANCEL),
             control_applicability=_control_applicability(
-                AggregationControlApplicabilityStatus.LATE_NOOP
+                AggregationControlApplicabilityStatus.LATE_NOOP,
+                latched_control=_latched(
+                    ExecutionControlSignalType.CANCEL
+                ).latched_control,
             ),
         )
 
@@ -660,8 +649,6 @@ def test_late_noop_control_allows_natural_aggregation_after_all_steps_terminal()
 
 
 def test_late_noop_control_rejects_unfinished_work() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = await _prepared(plan)
@@ -683,8 +670,6 @@ def test_late_noop_control_rejects_unfinished_work() -> None:
 
 
 def test_control_applicability_mismatch_is_blocked_unknown() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -709,8 +694,6 @@ def test_control_applicability_mismatch_is_blocked_unknown() -> None:
 
 
 def test_step_provenance_drift_is_blocked_before_status_calculation() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -728,8 +711,6 @@ def test_step_provenance_drift_is_blocked_before_status_calculation() -> None:
 
 
 def test_current_step_pointer_drift_is_blocked() -> None:
-    import asyncio
-
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -747,5 +728,123 @@ def test_current_step_pointer_drift_is_blocked() -> None:
 
         assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
         assert decision.reason_codes == ("AGGREGATION_CURRENT_STEP_MISMATCH",)
+
+    asyncio.run(scenario())
+
+
+
+def test_evidence_readiness_from_other_execution_is_rejected() -> None:
+    async def scenario() -> None:
+        plan = _plan(optional=(False,))
+        prepared = _with_steps(
+            await _prepared(plan),
+            (StepExecutionStatus.SUCCESS, False, ("DONE",)),
+        )
+        foreign = AggregationEvidenceReadinessDecision(
+            execution_id="execution-other",
+            status=AggregationEvidenceReadinessStatus.READY,
+            reason_codes=("FOREIGN_READY",),
+        )
+
+        decision = await _evaluate(plan, prepared, evidence=foreign)
+
+        assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == (
+            "AGGREGATION_EVIDENCE_EXECUTION_MISMATCH",
+        )
+
+    asyncio.run(scenario())
+
+
+def test_control_applicability_must_bind_exact_latched_control() -> None:
+    async def scenario() -> None:
+        plan = _plan(optional=(False,))
+        prepared = _with_steps(
+            await _prepared(plan),
+            (StepExecutionStatus.CANCELLED, False, ("CONTROL",)),
+            execution_status="CANCELLED",
+        )
+        exact_control = _latched(ExecutionControlSignalType.CANCEL)
+        different_signal = ExecutionControlSignal(
+            signal_type=ExecutionControlSignalType.CANCEL,
+            reason_code="DIFFERENT_REASON",
+            source="runtime",
+            signal_id="signal-other",
+            target_execution_id="execution-iu10-ca01",
+            issued_at=NOW,
+        )
+        foreign_latch = LatchedExecutionControl(
+            signal=different_signal,
+            observed_at=NOW,
+            latched_at=NOW,
+        )
+        applicability = _control_applicability(
+            AggregationControlApplicabilityStatus.APPLIES,
+            latched_control=foreign_latch,
+        )
+
+        decision = await _evaluate(
+            plan,
+            prepared,
+            control=exact_control,
+            control_applicability=applicability,
+        )
+
+        assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == (
+            "AGGREGATION_CONTROL_APPLICABILITY_AUTHORITY_MISMATCH",
+        )
+
+    asyncio.run(scenario())
+
+
+def test_skip_decision_from_other_step_execution_is_rejected() -> None:
+    async def scenario() -> None:
+        plan = _plan(optional=(False,))
+        prepared = _with_steps(
+            await _prepared(plan),
+            (StepExecutionStatus.SKIPPED, False, ("CONDITION_FALSE",)),
+        )
+        forged = StepSkipAggregationDecision(
+            execution_id=prepared.execution_record.execution_id,
+            step_execution_id="other-step-execution",
+            step_id="step-001",
+            disposition=StepSkipAggregationDisposition.NOT_APPLICABLE,
+            reason_codes=("FORGED_SKIP",),
+        )
+
+        decision = ExecutionAggregationAuthority().evaluate(
+            approved_plan=plan,
+            prepared=prepared,
+            control=_no_control(),
+            control_applicability=_control_applicability(
+                AggregationControlApplicabilityStatus.NONE
+            ),
+            evidence_readiness=_evidence(),
+            skip_decisions={"step-001": forged},
+        )
+
+        assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == ("AGGREGATION_STEP_EFFECT_UNKNOWN",)
+
+    asyncio.run(scenario())
+
+
+def test_aggregation_decision_is_bound_to_exact_execution_and_plan() -> None:
+    async def scenario() -> None:
+        plan = _plan(optional=(False,))
+        prepared = _with_steps(
+            await _prepared(plan),
+            (StepExecutionStatus.SUCCESS, False, ("DONE",)),
+        )
+
+        decision = await _evaluate(plan, prepared)
+
+        assert decision.aggregation_decision is not None
+        assert (
+            decision.aggregation_decision.execution_id
+            == prepared.execution_record.execution_id
+        )
+        assert decision.aggregation_decision.plan_id == plan.plan_id
 
     asyncio.run(scenario())

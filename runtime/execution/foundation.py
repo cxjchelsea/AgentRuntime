@@ -89,6 +89,7 @@ class StepLifecycleSnapshot:
     error: str | None = None
     retry_count: int = 0
     terminal_reason_codes: tuple[str, ...] = ()
+    degraded: bool = False
     started_at: datetime | None = None
     finished_at: datetime | None = None
 
@@ -100,6 +101,8 @@ class StepLifecycleSnapshot:
             raise ValueError("retry_count must be >= 0")
         if any(not reason.strip() for reason in self.terminal_reason_codes):
             raise ValueError("terminal_reason_codes must not contain blank values")
+        if self.degraded and self.status is not StepExecutionStatus.SUCCESS:
+            raise ValueError("degraded Step lifecycle requires SUCCESS status")
 
 
 class PendingStepSkipAuthorityKind(str, Enum):
@@ -450,6 +453,7 @@ class ExecutionLifecycleManager:
         tool_call_ids: tuple[str, ...] = (),
         retry_count: int | None = None,
         terminal_reason_codes: tuple[str, ...] = (),
+        degraded: bool = False,
     ) -> PreparedExecution:
         target = self._step(prepared, step_id)
         if target.status is not StepExecutionStatus.RUNNING:
@@ -464,6 +468,10 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError(
                 "terminal_reason_codes must not contain blank values"
             )
+        if degraded and status is not StepExecutionStatus.SUCCESS:
+            raise ExecutionLifecycleError(
+                "degraded Step lifecycle requires SUCCESS status"
+            )
 
         steps = tuple(
             replace(
@@ -474,6 +482,7 @@ class ExecutionLifecycleManager:
                 tool_call_ids=tool_call_ids,
                 retry_count=item.retry_count if retry_count is None else retry_count,
                 terminal_reason_codes=terminal_reason_codes,
+                degraded=degraded,
                 finished_at=at,
             )
             if item.step_id == step_id
@@ -686,6 +695,7 @@ class ExecutionLifecycleService:
         tool_call_ids: tuple[str, ...] = (),
         retry_count: int | None = None,
         terminal_reason_codes: tuple[str, ...] = (),
+        degraded: bool = False,
     ) -> PreparedExecution:
         updated = self._lifecycle_manager.finish_step(
             prepared,
@@ -697,6 +707,7 @@ class ExecutionLifecycleService:
             tool_call_ids=tool_call_ids,
             retry_count=retry_count,
             terminal_reason_codes=terminal_reason_codes,
+            degraded=degraded,
         )
         await self._persist(updated)
         return updated
@@ -891,6 +902,7 @@ def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, An
         "error": snapshot.error,
         "retry_count": snapshot.retry_count,
         "terminal_reason_codes": list(snapshot.terminal_reason_codes),
+        "degraded": snapshot.degraded,
         "started_at": snapshot.started_at,
         "finished_at": snapshot.finished_at,
     }

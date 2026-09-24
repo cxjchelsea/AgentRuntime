@@ -270,6 +270,15 @@ class ExecutionAggregationAuthority:
                 "AGGREGATION_CONTROL_TERMINAL_HAS_NONTERMINAL_STEP"
             )
 
+        opposite_step_status = {
+            ExecutionPlanStatus.CANCELLED: StepExecutionStatus.PREEMPTED,
+            ExecutionPlanStatus.PREEMPTED: StepExecutionStatus.CANCELLED,
+        }[expected]
+        if any(step.status is opposite_step_status for step in prepared.steps):
+            return self._blocked(
+                "AGGREGATION_CONTROL_STEP_TERMINAL_STATUS_MISMATCH"
+            )
+
         evidence_error = self._evidence_error(evidence_readiness)
         if evidence_error is not None:
             return self._blocked(evidence_error)

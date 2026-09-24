@@ -102,6 +102,26 @@ class M5RecoveryRuntimeOutcome:
     def __post_init__(self) -> None:
         if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
             raise ValueError("reason_codes must contain non-blank values")
+        if (
+            self.status is M5RecoveryRuntimeStatus.WORKFLOW_RESUMED
+            and not isinstance(
+                self.reliability_result,
+                RecoveredWorkflowReliabilityRunResult,
+            )
+        ):
+            raise ValueError(
+                "WORKFLOW_RESUMED requires recovered Workflow finalization authority"
+            )
+        if (
+            self.status is M5RecoveryRuntimeStatus.SKILL_RETRIED
+            and not isinstance(
+                self.reliability_result,
+                RecoveredStepReliabilityRunResult,
+            )
+        ):
+            raise ValueError(
+                "SKILL_RETRIED requires recovered Skill reliability authority"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -434,6 +454,16 @@ class M5RecoveryRuntime:
                 prior_attempt_journal=prior_journal,
                 side_effect_admission_guard=guard,
             )
+            if outcome.status not in {
+                CapabilityExecutionStatus.EXECUTED,
+                CapabilityExecutionStatus.WAITING,
+            }:
+                return self._capability_runtime_outcome(
+                    success_status=M5RecoveryRuntimeStatus.WORKFLOW_RESUMED,
+                    outcome=outcome,
+                    decision=decision,
+                    prepared=prepared,
+                )
             try:
                 workflow_reliability = (
                     bindings.skill_reliability_coordinator

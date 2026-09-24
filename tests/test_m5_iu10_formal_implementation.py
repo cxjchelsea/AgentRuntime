@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from dataclasses import replace
 from datetime import timedelta
+from typing import Any, cast
 
 import pytest
 
@@ -50,13 +52,28 @@ from runtime.execution.recovery import (
     RecoveryClaimStatus,
 )
 from runtime.execution.recovery_evidence import InMemoryDurableRecoveryEvidenceStore
+from runtime.execution.reliability import (
+    IdempotencyMode,
+    ReliabilityCapabilityKind,
+    ResolvedIdempotencyPolicy,
+    ResolvedReliabilityPolicy,
+    ResolvedRetryPolicy,
+    ResolvedTimeoutPolicy,
+    SideEffectClass,
+)
 from runtime.execution.reliability_boundary import (
     StepFinalizationDecision,
     StepFinalizationDisposition,
     StepReliabilityDecision,
     StepReliabilityDisposition,
 )
-from runtime.execution.reliability_coordinator import StepReliabilityRunResult
+from runtime.execution.reliability_coordinator import (
+    RecoveredWorkflowReliabilityRunResult,
+    StepReliabilityCoordinator,
+    StepReliabilityRunResult,
+)
+from runtime.execution.reliability_runtime import StepReliabilityRuntime
+from runtime.execution.result_collection import StepResultCollector
 from runtime.execution.scheduler import (
     SequentialStepScheduler,
     StepConditionDecision,
@@ -76,12 +93,50 @@ from tests.test_m5_iu10_ca03_canonical_result_projection import (
     _control_terminal,
     _multi_workflow_terminal,
 )
+from tests.test_m5_iu4_capability_execution import (
+    _approved_step,
+    _snapshot,
+    _workflow_resolved,
+)
 from tests.test_m5_iu7_formal_implementation import (
     StaticInterruptController,
     StaticWatcher,
     _observed as iu7_observed,
     _prepared as iu7_prepared,
 )
+from tests.test_m5_iu9_formal_implementation import (
+    NoopSleeper,
+    NoopTimeoutRunner,
+    RecoveryWorkflow,
+    SimpleStepFinalizationEvaluator,
+    SimpleStepReliabilityEvaluator,
+    StaticClock,
+    UnusedReplayEvaluator,
+    UnusedRetryEvaluator,
+    _context as recovery_context,
+    _executor as recovery_executor,
+)
+from runtime.execution.recovery_workflow import WorkflowResumeRequest
+
+
+class WorkflowPolicyResolver:
+    def resolve(self, **kwargs: Any) -> ResolvedReliabilityPolicy:
+        assert kwargs["capability_kind"] is ReliabilityCapabilityKind.WORKFLOW
+        assert kwargs["capability_id"] == "DOMAIN_WORKFLOW"
+        assert kwargs["capability_version"] == "4.5.6"
+        return ResolvedReliabilityPolicy(
+            capability_kind=ReliabilityCapabilityKind.WORKFLOW,
+            capability_id="DOMAIN_WORKFLOW",
+            capability_version="4.5.6",
+            policy_identity="workflow-policy@formal-recovery",
+            timeout=ResolvedTimeoutPolicy(timeout_seconds=None),
+            retry=ResolvedRetryPolicy(
+                enabled=False,
+                max_attempts=1,
+            ),
+            idempotency=ResolvedIdempotencyPolicy(mode=IdempotencyMode.NATURAL),
+            side_effect_class=SideEffectClass.NONE,
+        )
 
 
 class RecordingTerminalObserver:
@@ -585,6 +640,128 @@ def test_durable_recovery_control_factory_binds_latch_and_applicability_to_same_
             is ControlApplicabilityEvidenceStatus.APPLIES
         )
         assert evidence.record.writer_recovery_epoch == claim.recovery_epoch
+
+    asyncio.run(scenario())
+
+
+def test_recovered_workflow_resume_reuses_current_attempt_and_enters_iu10_completion() -> None:
+    async def scenario() -> None:
+        plan, step = _approved_step(owner=__import__(
+            "runtime.execution.capability_resolution",
+            fromlist=["CapabilityExecutionOwner"],
+        ).CapabilityExecutionOwner.WORKFLOW)
+        plan = plan.model_copy(update={"tool_plan": {"tool_calls": []}})
+        workflow = RecoveryWorkflow()
+        snapshot = replace(
+            _snapshot(step),
+            started_at=NOW,
+        )
+        request = WorkflowResumeRequest(
+            execution_id="execution-iu4",
+            step_execution_id=snapshot.step_execution_id,
+            workflow_instance_id="wf-instance-existing",
+            workflow_id="DOMAIN_WORKFLOW",
+            workflow_version="4.5.6",
+            checkpoint_id="cp-formal",
+            checkpoint_generation=2,
+            state_reference="state://wf/formal",
+            resume_token="resume-formal",
+        )
+        outcome = await recovery_executor().resume_workflow_from_checkpoint(
+            approved_plan=plan,
+            step=step,
+            step_snapshot=snapshot,
+            resolved=_workflow_resolved(workflow),
+            execution_context=recovery_context(),
+            resume_request=request,
+            attempt_number=3,
+        )
+        assert outcome.status.value == "EXECUTED"
+
+        coordinator = StepReliabilityCoordinator(
+            step_executor=recovery_executor(),
+            result_collector=StepResultCollector(),
+            runtime=StepReliabilityRuntime(
+                policy_resolver=WorkflowPolicyResolver(),
+                clock=StaticClock(),
+                timeout_runner=NoopTimeoutRunner(),
+                retry_decision_evaluator=UnusedRetryEvaluator(),
+                retry_sleeper=NoopSleeper(),
+                replay_safety_evaluator=UnusedReplayEvaluator(),
+                attempt_sequence_authority=cast(Any, object()),
+                step_reliability_evaluator=SimpleStepReliabilityEvaluator(),
+                step_finalization_evaluator=SimpleStepFinalizationEvaluator(),
+            ),
+        )
+        finalized = coordinator.finalize_recovered_workflow_outcome(
+            step_snapshot=snapshot,
+            outcome=outcome,
+            current_attempt_number=3,
+            resolved=_workflow_resolved(workflow),
+        )
+
+        assert isinstance(finalized, RecoveredWorkflowReliabilityRunResult)
+        assert finalized.current_attempt_number == 3
+        assert finalized.final_observation.attempt_number == 3
+        assert finalized.final_observation.status.value == "SUCCESS"
+        assert (
+            finalized.finalization_decision.disposition
+            is StepFinalizationDisposition.FINALIZE
+        )
+
+        state_store = InMemoryExecutionStateStore()
+        prepared = iu7_prepared(running=True)
+        del prepared
+        from runtime.contracts.execution import ExecutionContext
+        from runtime.execution.models import ExecutionRecord
+        from runtime.execution.foundation import PreparedExecution
+
+        execution_id = "execution-iu4"
+        context = ExecutionContext(
+            execution_id=execution_id,
+            plan_id=plan.plan_id,
+            request_id=plan.request_id,
+            session_id="session-formal-workflow",
+            identity_scope="scope-formal",
+            policy_snapshot={"policy": "frozen"},
+        )
+        prepared = PreparedExecution(
+            execution_context=context,
+            execution_record=ExecutionRecord(
+                execution_id=execution_id,
+                plan_id=plan.plan_id,
+                request_id=plan.request_id,
+                identity_scope=context.identity_scope,
+                status="RUNNING",
+                current_step=step.step_id,
+                step_results=(),
+                created_at=NOW,
+                updated_at=NOW,
+            ),
+            steps=(snapshot,),
+            started_at=NOW,
+        )
+        assert await state_store.create(prepared.execution_record) is True
+        service = ExecutionLifecycleService(
+            lifecycle_manager=ExecutionLifecycleManager(),
+            execution_store=state_store,
+        )
+        runtime, _, _, _ = _runtime(lifecycle_service=service)
+
+        result = await runtime.complete_running_step(
+            approved_plan=plan,
+            prepared=prepared,
+            reliability_result=finalized,
+            at=NOW + timedelta(seconds=11),
+        )
+
+        assert result.status is M5ExecutionAggregationRuntimeStatus.AGGREGATED
+        assert result.aggregation_result is not None
+        assert (
+            result.aggregation_result.execution_result.plan_status
+            is ExecutionPlanStatus.SUCCESS
+        )
+        assert result.prepared.steps[0].retry_count == 2
 
     asyncio.run(scenario())
 

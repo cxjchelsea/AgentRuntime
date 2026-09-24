@@ -45,6 +45,29 @@ class AggregationEvidenceReadinessDecision:
             raise ValueError("reason_codes must contain non-blank values")
 
 
+class AggregationControlApplicabilityStatus(str, Enum):
+    NONE = "NONE"
+    APPLIES = "APPLIES"
+    LATE_NOOP = "LATE_NOOP"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True, slots=True)
+class AggregationControlApplicabilityDecision:
+    status: AggregationControlApplicabilityStatus
+    reason_codes: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, AggregationControlApplicabilityStatus):
+            raise ValueError(
+                "status must be AggregationControlApplicabilityStatus"
+            )  # noqa: TRY004
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
+            raise ValueError("reason_codes must contain non-blank values")
+
+
 class StepSkipAggregationDisposition(str, Enum):
     NOT_APPLICABLE = "NOT_APPLICABLE"
     UNSATISFIED = "UNSATISFIED"
@@ -134,6 +157,7 @@ class ExecutionAggregationAuthority:
         approved_plan: ApprovedActionPlan,
         prepared: PreparedExecution,
         control: DurableControlReadDecision,
+        control_applicability: AggregationControlApplicabilityDecision,
         evidence_readiness: AggregationEvidenceReadinessDecision,
         skip_dispositions: Mapping[str, StepSkipAggregationDisposition],
     ) -> ExecutionAggregationEligibilityDecision:
@@ -144,17 +168,43 @@ class ExecutionAggregationAuthority:
         if control.status is DurableControlReadStatus.UNKNOWN:
             return self._blocked("AGGREGATION_CONTROL_STATE_UNKNOWN")
 
+        if control_applicability.status is AggregationControlApplicabilityStatus.UNKNOWN:
+            return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_UNKNOWN")
+
+        if control.status is DurableControlReadStatus.NONE:
+            if control_applicability.status is not AggregationControlApplicabilityStatus.NONE:
+                return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_MISMATCH")
+        else:
+            if control_applicability.status is AggregationControlApplicabilityStatus.NONE:
+                return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_MISMATCH")
+
         existing = self._TERMINAL_EXECUTION_STATUSES.get(
             prepared.execution_record.status
         )
 
         if control.status is DurableControlReadStatus.LATCHED:
-            return self._evaluate_latched_control(
-                prepared=prepared,
-                control=control,
-                existing=existing,
-                evidence_readiness=evidence_readiness,
-            )
+            if (
+                control_applicability.status
+                is AggregationControlApplicabilityStatus.APPLIES
+            ):
+                return self._evaluate_latched_control(
+                    prepared=prepared,
+                    control=control,
+                    existing=existing,
+                    evidence_readiness=evidence_readiness,
+                )
+            if (
+                control_applicability.status
+                is AggregationControlApplicabilityStatus.LATE_NOOP
+            ):
+                late_control_error = self._late_control_error(
+                    prepared=prepared,
+                    existing=existing,
+                )
+                if late_control_error is not None:
+                    return self._blocked(late_control_error)
+            else:
+                return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_MISMATCH")
 
         if existing in {
             ExecutionPlanStatus.CANCELLED,
@@ -305,6 +355,7 @@ class ExecutionAggregationAuthority:
             or prepared.execution_context.plan_id != approved_plan.plan_id
             or prepared.execution_context.request_id != approved_plan.request_id
             or prepared.execution_context.execution_id != record.execution_id
+            or prepared.execution_context.identity_scope != record.identity_scope
         ):
             return "AGGREGATION_EXECUTION_PROVENANCE_MISMATCH"
 
@@ -313,9 +364,51 @@ class ExecutionAggregationAuthority:
         if plan_ids != lifecycle_ids or len(set(plan_ids)) != len(plan_ids):
             return "AGGREGATION_STEP_ALIGNMENT_MISMATCH"
 
-        for step in prepared.steps:
-            if not step.step_execution_id.strip():
+        for plan_step, lifecycle in zip(
+            approved_plan.steps,
+            prepared.steps,
+            strict=True,
+        ):
+            if (
+                lifecycle.action != plan_step.action
+                or lifecycle.skill_id != plan_step.skill_id
+                or lifecycle.workflow_id != plan_step.workflow_id
+            ):
+                return "AGGREGATION_STEP_PROVENANCE_MISMATCH"
+            if not lifecycle.step_execution_id.strip():
                 return "AGGREGATION_STEP_EXECUTION_ID_INVALID"
+
+        running = tuple(
+            step
+            for step in prepared.steps
+            if step.status is StepExecutionStatus.RUNNING
+        )
+        if len(running) > 1:
+            return "AGGREGATION_MULTIPLE_RUNNING_STEPS"
+        expected_current = running[0].step_id if running else None
+        if record.current_step != expected_current:
+            return "AGGREGATION_CURRENT_STEP_MISMATCH"
+        return None
+
+    @staticmethod
+    def _late_control_error(
+        *,
+        prepared: PreparedExecution,
+        existing: ExecutionPlanStatus | None,
+    ) -> str | None:
+        if any(
+            step.status in {
+                StepExecutionStatus.PENDING,
+                StepExecutionStatus.RUNNING,
+            }
+            for step in prepared.steps
+        ):
+            return "AGGREGATION_LATE_CONTROL_HAS_UNFINISHED_WORK"
+        if existing in {
+            ExecutionPlanStatus.CANCELLED,
+            ExecutionPlanStatus.PREEMPTED,
+        }:
+            return "AGGREGATION_LATE_CONTROL_TERMINAL_STATUS_MISMATCH"
         return None
 
     @staticmethod

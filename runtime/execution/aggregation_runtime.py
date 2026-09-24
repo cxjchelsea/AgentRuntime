@@ -47,6 +47,7 @@ from runtime.execution.recovery_evidence import (
 )
 from runtime.execution.reliability_coordinator import (
     RecoveredStepReliabilityRunResult,
+    RecoveredWorkflowReliabilityRunResult,
     StepReliabilityRunResult,
 )
 from runtime.execution.scheduler import SequentialStepScheduler, StepScheduleDecision
@@ -282,7 +283,11 @@ class M5ExecutionAggregationRuntime:
         *,
         approved_plan: ApprovedActionPlan,
         prepared: PreparedExecution,
-        reliability_result: StepReliabilityRunResult | RecoveredStepReliabilityRunResult,
+        reliability_result: (
+            StepReliabilityRunResult
+            | RecoveredStepReliabilityRunResult
+            | RecoveredWorkflowReliabilityRunResult
+        ),
         at: datetime,
     ) -> M5ExecutionAggregationOutcome:
         """Commit one IU6-authorized running Step, then re-enter the same IU10 path."""

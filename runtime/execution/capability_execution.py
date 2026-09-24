@@ -45,6 +45,7 @@ from runtime.execution.invocation import (
     ToolAttemptObservation,
     ToolInputValidator,
     ToolInvocationJournalEntry,
+    ToolInvocationJournalPersistence,
     ToolInvocationJournalReader,
     ToolOutputValidator,
     ToolPayloadValidationDecision,
@@ -206,6 +207,7 @@ class CoreApprovedToolInvoker(
         step_id: str | None = None,
         step_attempt_number: int = 1,
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
+        journal_persistence: ToolInvocationJournalPersistence | None = None,
         reliability_runtime: ToolReliabilityRuntime | None = None,
         inflight_registry: InFlightOperationRegistry | None = None,
         inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
@@ -266,6 +268,7 @@ class CoreApprovedToolInvoker(
         self._step_id = step_id
         self._step_attempt_number = step_attempt_number
         self._prior_attempt_journal = prior_attempt_journal
+        self._journal_persistence = journal_persistence
         self._reliability_runtime = reliability_runtime
         self._inflight_registry = inflight_registry
         self._inflight_identifier_factory = inflight_identifier_factory
@@ -301,23 +304,27 @@ class CoreApprovedToolInvoker(
                 "Tool invocation requires non-blank tool_id",
             )
 
+        journal_start = len(self._journal)
         if self._reliability_runtime is not None:
-            return await self._invoke_with_reliability(
+            result = await self._invoke_with_reliability(
                 tool_id=tool_id,
                 input_payload=input_payload,
             )
+        else:
+            tool_call_id = self._new_tool_call_id(tool_id)
+            attempt = await self.execute_physical_attempt(
+                logical_tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                input_payload=input_payload,
+                physical_attempt=1,
+                idempotency_key=None,
+                operation_key=None,
+                operation_fingerprint=None,
+            )
+            result = attempt.result
 
-        tool_call_id = self._new_tool_call_id(tool_id)
-        attempt = await self.execute_physical_attempt(
-            logical_tool_call_id=tool_call_id,
-            tool_id=tool_id,
-            input_payload=input_payload,
-            physical_attempt=1,
-            idempotency_key=None,
-            operation_key=None,
-            operation_fingerprint=None,
-        )
-        return attempt.result
+        await self._persist_journal_since(journal_start)
+        return result
 
     async def _invoke_with_reliability(
         self,
@@ -2225,6 +2232,24 @@ class CoreApprovedToolInvoker(
             "stale or unknown recovery epoch cannot admit physical Tool attempt",
         )
 
+    async def _persist_journal_since(self, start_index: int) -> None:
+        persistence = self._journal_persistence
+        if persistence is None:
+            return
+        for entry in self._journal[start_index:]:
+            try:
+                await persistence.persist(
+                    step_execution_id=self._step_execution_id,
+                    step_attempt_number=self._step_attempt_number,
+                    entry=entry,
+                )
+            except Exception as exc:
+                self._record_fault("TOOL_DURABLE_JOURNAL_WRITE_UNKNOWN")
+                raise ToolInvocationBoundaryError(
+                    "TOOL_DURABLE_JOURNAL_WRITE_UNKNOWN",
+                    "logical Tool result could not be durably journaled",
+                ) from exc
+
     def entries(self) -> tuple[ToolInvocationJournalEntry, ...]:
         return tuple(self._journal)
 
@@ -2498,6 +2523,7 @@ class StepCapabilityExecutor:
         input_validator: ToolInputValidator,
         output_validator: ToolOutputValidator,
         identifier_factory: CapabilityInvocationIdentifierFactory,
+        journal_persistence: ToolInvocationJournalPersistence | None = None,
         reliability_runtime: ToolReliabilityRuntime | None = None,
         inflight_registry: InFlightOperationRegistry | None = None,
         inflight_identifier_factory: InFlightOperationIdentifierFactory | None = None,
@@ -2510,6 +2536,7 @@ class StepCapabilityExecutor:
         self._input_validator = input_validator
         self._output_validator = output_validator
         self._identifier_factory = identifier_factory
+        self._journal_persistence = journal_persistence
         self._reliability_runtime = reliability_runtime
         self._execution_concurrency_runtime = execution_concurrency_runtime
         self._tool_concurrency_runtime = tool_concurrency_runtime
@@ -2677,6 +2704,7 @@ class StepCapabilityExecutor:
                 step_id=step.step_id,
                 step_attempt_number=attempt_number,
                 prior_attempt_journal=prior_attempt_journal,
+                journal_persistence=self._journal_persistence,
                 reliability_runtime=self._reliability_runtime,
                 inflight_registry=(
                     self._inflight_registry if owner_handle is not None else None
@@ -2881,6 +2909,7 @@ class StepCapabilityExecutor:
                 step_id=step.step_id,
                 step_attempt_number=attempt_number,
                 prior_attempt_journal=prior_attempt_journal,
+                journal_persistence=self._journal_persistence,
                 reliability_runtime=self._reliability_runtime,
                 inflight_registry=(
                     self._inflight_registry if owner_handle is not None else None

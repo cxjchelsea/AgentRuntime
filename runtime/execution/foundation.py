@@ -28,6 +28,7 @@ from runtime.contracts.execution import (
     StepExecutionResult,
 )
 from runtime.contracts.planning import PLANNING_SCHEMA_VERSION
+from runtime.execution.aggregation_evidence import StepAggregationEvidence
 from runtime.execution.models import ExecutionRecord, StepExecutionStatus
 from runtime.execution.stores import ExecutionStateStore
 
@@ -90,6 +91,7 @@ class StepLifecycleSnapshot:
     retry_count: int = 0
     terminal_reason_codes: tuple[str, ...] = ()
     degraded: bool = False
+    aggregation_evidence: StepAggregationEvidence | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
 
@@ -103,6 +105,26 @@ class StepLifecycleSnapshot:
             raise ValueError("terminal_reason_codes must not contain blank values")
         if self.degraded and self.status is not StepExecutionStatus.SUCCESS:
             raise ValueError("degraded Step lifecycle requires SUCCESS status")
+        if self.aggregation_evidence is not None:
+            evidence = self.aggregation_evidence
+            if (
+                evidence.step_execution_id != self.step_execution_id
+                or evidence.step_id != self.step_id
+                or evidence.terminal_step_status is not self.status
+                or evidence.terminal_reason_codes != self.terminal_reason_codes
+                or evidence.degraded is not self.degraded
+                or evidence.tool_call_ids != self.tool_call_ids
+            ):
+                raise ValueError(
+                    "aggregation evidence must exactly match Step lifecycle facts"
+                )
+            if (
+                self.finished_at is not None
+                and evidence.terminalized_at != self.finished_at
+            ):
+                raise ValueError(
+                    "aggregation evidence terminalized_at must match finished_at"
+                )
 
 
 class PendingStepSkipAuthorityKind(str, Enum):
@@ -457,6 +479,7 @@ class ExecutionLifecycleManager:
         retry_count: int | None = None,
         terminal_reason_codes: tuple[str, ...] = (),
         degraded: bool = False,
+        aggregation_evidence: StepAggregationEvidence | None = None,
     ) -> PreparedExecution:
         target = self._step(prepared, step_id)
         if target.status is not StepExecutionStatus.RUNNING:
@@ -475,6 +498,17 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError(
                 "degraded Step lifecycle requires SUCCESS status"
             )
+        if aggregation_evidence is not None:
+            self._validate_aggregation_evidence(
+                prepared=prepared,
+                target=target,
+                evidence=aggregation_evidence,
+                status=status,
+                terminal_reason_codes=terminal_reason_codes,
+                degraded=degraded,
+                tool_call_ids=tool_call_ids,
+                at=at,
+            )
 
         steps = tuple(
             replace(
@@ -486,6 +520,7 @@ class ExecutionLifecycleManager:
                 retry_count=item.retry_count if retry_count is None else retry_count,
                 terminal_reason_codes=terminal_reason_codes,
                 degraded=degraded,
+                aggregation_evidence=aggregation_evidence,
                 finished_at=at,
             )
             if item.step_id == step_id
@@ -505,6 +540,7 @@ class ExecutionLifecycleManager:
         *,
         authority: PendingStepSkipAuthority,
         at: datetime,
+        aggregation_evidence: StepAggregationEvidence | None = None,
     ) -> PreparedExecution:
         """Terminalize one exact unstarted PENDING Step as SKIPPED."""
 
@@ -549,12 +585,24 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError(
                 "pending Step skip cannot precede latest execution observation"
             )
+        if aggregation_evidence is not None:
+            self._validate_aggregation_evidence(
+                prepared=prepared,
+                target=target,
+                evidence=aggregation_evidence,
+                status=StepExecutionStatus.SKIPPED,
+                terminal_reason_codes=authority.reason_codes,
+                degraded=False,
+                tool_call_ids=(),
+                at=at,
+            )
 
         steps = tuple(
             replace(
                 item,
                 status=StepExecutionStatus.SKIPPED,
                 terminal_reason_codes=authority.reason_codes,
+                aggregation_evidence=aggregation_evidence,
                 finished_at=at,
             )
             if item.step_id == authority.step_id
@@ -611,6 +659,50 @@ class ExecutionLifecycleManager:
                 updated_at=at,
             ),
         )
+
+    @staticmethod
+    def _validate_aggregation_evidence(
+        *,
+        prepared: PreparedExecution,
+        target: StepLifecycleSnapshot,
+        evidence: StepAggregationEvidence,
+        status: StepExecutionStatus,
+        terminal_reason_codes: tuple[str, ...],
+        degraded: bool,
+        tool_call_ids: tuple[str, ...],
+        at: datetime,
+    ) -> None:
+        if evidence.execution_id != prepared.execution_record.execution_id:
+            raise ExecutionLifecycleError(
+                "aggregation evidence execution_id mismatch"
+            )
+        if (
+            evidence.step_execution_id != target.step_execution_id
+            or evidence.step_id != target.step_id
+        ):
+            raise ExecutionLifecycleError(
+                "aggregation evidence Step identity mismatch"
+            )
+        if evidence.terminal_step_status is not status:
+            raise ExecutionLifecycleError(
+                "aggregation evidence terminal status mismatch"
+            )
+        if evidence.terminal_reason_codes != terminal_reason_codes:
+            raise ExecutionLifecycleError(
+                "aggregation evidence terminal reasons mismatch"
+            )
+        if evidence.degraded is not degraded:
+            raise ExecutionLifecycleError(
+                "aggregation evidence degraded fact mismatch"
+            )
+        if evidence.tool_call_ids != tool_call_ids:
+            raise ExecutionLifecycleError(
+                "aggregation evidence Tool identity mismatch"
+            )
+        if evidence.terminalized_at != at:
+            raise ExecutionLifecycleError(
+                "aggregation evidence terminal time mismatch"
+            )
 
     @staticmethod
     def _step(
@@ -701,6 +793,7 @@ class ExecutionLifecycleService:
         retry_count: int | None = None,
         terminal_reason_codes: tuple[str, ...] = (),
         degraded: bool = False,
+        aggregation_evidence: StepAggregationEvidence | None = None,
     ) -> PreparedExecution:
         updated = self._lifecycle_manager.finish_step(
             prepared,
@@ -713,6 +806,7 @@ class ExecutionLifecycleService:
             retry_count=retry_count,
             terminal_reason_codes=terminal_reason_codes,
             degraded=degraded,
+            aggregation_evidence=aggregation_evidence,
         )
         await self._persist(updated)
         return updated
@@ -723,11 +817,13 @@ class ExecutionLifecycleService:
         *,
         authority: PendingStepSkipAuthority,
         at: datetime,
+        aggregation_evidence: StepAggregationEvidence | None = None,
     ) -> PreparedExecution:
         updated = self._lifecycle_manager.skip_pending_step(
             prepared,
             authority=authority,
             at=at,
+            aggregation_evidence=aggregation_evidence,
         )
         await self._persist(updated)
         return updated
@@ -895,7 +991,7 @@ class InMemoryExecutionStateStore:
 
 
 def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, Any]:
-    return {
+    payload: dict[str, object] = {
         "step_execution_id": snapshot.step_execution_id,
         "step_id": snapshot.step_id,
         "action": snapshot.action,
@@ -911,3 +1007,6 @@ def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, An
         "started_at": snapshot.started_at,
         "finished_at": snapshot.finished_at,
     }
+    if snapshot.aggregation_evidence is not None:
+        payload["aggregation_evidence"] = snapshot.aggregation_evidence.to_payload()
+    return payload

@@ -39,6 +39,7 @@ def _normalize_step_record_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = deepcopy(payload)
     normalized.setdefault("terminal_reason_codes", [])
     normalized.setdefault("degraded", False)
+    normalized.setdefault("aggregation_evidence", None)
     return normalized
 
 
@@ -56,6 +57,11 @@ def _step_payload(snapshot: StepLifecycleSnapshot) -> dict[str, Any]:
         "retry_count": snapshot.retry_count,
         "terminal_reason_codes": list(snapshot.terminal_reason_codes),
         "degraded": snapshot.degraded,
+        "aggregation_evidence": (
+            None
+            if snapshot.aggregation_evidence is None
+            else snapshot.aggregation_evidence.to_payload()
+        ),
         "started_at": snapshot.started_at,
         "finished_at": snapshot.finished_at,
     }

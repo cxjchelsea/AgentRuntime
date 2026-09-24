@@ -503,12 +503,18 @@ class ExecutionAggregationAuthority:
             "retry_count": lifecycle.retry_count,
             "terminal_reason_codes": list(lifecycle.terminal_reason_codes),
             "degraded": lifecycle.degraded,
+            "aggregation_evidence": (
+                None
+                if lifecycle.aggregation_evidence is None
+                else lifecycle.aggregation_evidence.to_payload()
+            ),
             "started_at": lifecycle.started_at,
             "finished_at": lifecycle.finished_at,
         }
         normalized = dict(persisted)
         normalized.setdefault("terminal_reason_codes", [])
         normalized.setdefault("degraded", False)
+        normalized.setdefault("aggregation_evidence", None)
         return all(normalized.get(key) == value for key, value in expected.items())
 
     @classmethod

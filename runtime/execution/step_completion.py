@@ -13,6 +13,7 @@ from enum import Enum
 from typing import Protocol
 
 from runtime.contracts.planning import ApprovedActionPlan
+from runtime.execution.aggregation_evidence import StepAggregationEvidence
 from runtime.execution.foundation import (
     ExecutionLifecycleService,
     PendingStepSkipAuthority,
@@ -186,10 +187,30 @@ class TerminalStepCompletionCoordinator:
             kind=kind,
             reason_codes=decision.reason_codes,
         )
+        skip_disposition = (
+            "UNSATISFIED"
+            if (
+                decision.reason_codes
+                in {
+                    ("DEPENDENCY_NOT_SUCCESSFUL",),
+                    self._REMAINDER_SKIP_REASON,
+                }
+            )
+            else "NOT_APPLICABLE"
+        )
+        evidence = StepAggregationEvidence.from_scheduler_skip(
+            execution_id=prepared.execution_record.execution_id,
+            step_execution_id=target.step_execution_id,
+            step_id=target.step_id,
+            terminal_reason_codes=decision.reason_codes,
+            scheduler_skip_disposition=skip_disposition,
+            terminalized_at=at,
+        )
         updated = await self._lifecycle_service.skip_pending_step(
             prepared,
             authority=authority,
             at=at,
+            aggregation_evidence=evidence,
         )
         return TerminalStepCompletionDecision(
             status=TerminalStepCompletionStatus.TERMINALIZED,
@@ -332,7 +353,17 @@ class RunningStepCompletionCoordinator:
                 step_id=observation.step_id,
             )
 
-        tool_call_ids = tuple(entry.tool_call_id for entry in observation.tool_journal)
+        tool_call_ids = tuple(
+            entry.tool_call_id for entry in observation.tool_journal
+        )
+        evidence = StepAggregationEvidence.from_attempt_finalization(
+            execution_id=prepared.execution_record.execution_id,
+            observation=observation,
+            terminal_step_status=finalization.terminal_status,
+            terminal_reason_codes=finalization.reason_codes,
+            degraded=finalization.degraded,
+            terminalized_at=at,
+        )
         updated = await self._lifecycle_service.finish_step(
             prepared,
             step_id=observation.step_id,
@@ -342,6 +373,7 @@ class RunningStepCompletionCoordinator:
             retry_count=observation.attempt_number - 1,
             terminal_reason_codes=finalization.reason_codes,
             degraded=finalization.degraded,
+            aggregation_evidence=evidence,
         )
         return RunningStepCompletionDecision(
             status=RunningStepCompletionStatus.TERMINALIZED,

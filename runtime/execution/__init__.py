@@ -1,5 +1,14 @@
 """M5 Execution Framework internal contracts and protocols."""
 
+from runtime.execution.aggregation_evidence import (
+    AGGREGATION_EVIDENCE_SCHEMA_VERSION,
+    StepAggregationEvidence,
+    StepAggregationEvidenceAssessment,
+    StepAggregationEvidenceAuthority,
+    StepAggregationEvidenceReadStatus,
+    StepAggregationTerminalizationKind,
+    project_ca01_evidence_inputs,
+)
 from runtime.execution.aggregation_authority import (
     AggregationControlApplicabilityDecision,
     AggregationControlApplicabilityStatus,
@@ -417,6 +426,7 @@ from runtime.execution.stores import (
 )
 
 __all__ = [
+    "AGGREGATION_EVIDENCE_SCHEMA_VERSION",
     "ActivityInstance",
     "ActivityStatus",
     "AggregationControlApplicabilityDecision",
@@ -685,6 +695,11 @@ __all__ = [
     "StepAttemptSequenceDecision",
     "StepAttemptSequenceStatus",
     "StepAggregationEffect",
+    "StepAggregationEvidence",
+    "StepAggregationEvidenceAssessment",
+    "StepAggregationEvidenceAuthority",
+    "StepAggregationEvidenceReadStatus",
+    "StepAggregationTerminalizationKind",
     "StepAttemptStatus",
     "StepCapabilityExecutionOutcome",
     "StepCapabilityExecutor",
@@ -765,5 +780,6 @@ __all__ = [
     "WorkflowRecoveryImplementation",
     "WorkflowResumeRequest",
     "WorkflowVersionAuthority",
+    "project_ca01_evidence_inputs",
     "project_workflow_authority",
 ]

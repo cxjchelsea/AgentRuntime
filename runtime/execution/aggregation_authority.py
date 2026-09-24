@@ -435,9 +435,13 @@ class ExecutionAggregationAuthority:
         if plan_ids != lifecycle_ids or len(set(plan_ids)) != len(plan_ids):
             return "AGGREGATION_STEP_ALIGNMENT_MISMATCH"
 
-        for plan_step, lifecycle in zip(
+        if len(record.step_results) != len(prepared.steps):
+            return "AGGREGATION_PERSISTED_STEP_COUNT_MISMATCH"
+
+        for plan_step, lifecycle, persisted in zip(
             approved_plan.steps,
             prepared.steps,
+            record.step_results,
             strict=True,
         ):
             if (
@@ -448,6 +452,13 @@ class ExecutionAggregationAuthority:
                 return "AGGREGATION_STEP_PROVENANCE_MISMATCH"
             if not lifecycle.step_execution_id.strip():
                 return "AGGREGATION_STEP_EXECUTION_ID_INVALID"
+            if (
+                persisted.get("step_execution_id") != lifecycle.step_execution_id
+                or persisted.get("step_id") != lifecycle.step_id
+                or persisted.get("status") != lifecycle.status.value
+                or persisted.get("degraded", False) != lifecycle.degraded
+            ):
+                return "AGGREGATION_PERSISTED_STEP_FACT_MISMATCH"
 
         running = tuple(
             step
@@ -491,6 +502,16 @@ class ExecutionAggregationAuthority:
                 continue
             if step.finished_at is None:
                 return "AGGREGATION_TERMINAL_STEP_FINISH_MISSING"
+            if (
+                step.status
+                in {
+                    StepExecutionStatus.SUCCESS,
+                    StepExecutionStatus.FAILED,
+                    StepExecutionStatus.TIMEOUT,
+                }
+                and step.started_at is None
+            ):
+                return "AGGREGATION_EXECUTED_STEP_START_MISSING"
             if step.started_at is not None and step.finished_at < step.started_at:
                 return "AGGREGATION_STEP_TIME_REGRESSION"
 

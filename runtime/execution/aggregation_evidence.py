@@ -26,6 +26,37 @@ if TYPE_CHECKING:
 
 AGGREGATION_EVIDENCE_SCHEMA_VERSION = "m5-iu10-ca02-v1"
 
+_AGGREGATION_EVIDENCE_PAYLOAD_KEYS = frozenset(
+    {
+        "schema_version",
+        "execution_id",
+        "step_execution_id",
+        "step_id",
+        "terminalization_kind",
+        "terminal_step_status",
+        "terminal_reason_codes",
+        "degraded",
+        "observed_at",
+        "terminalized_at",
+        "final_attempt_number",
+        "final_attempt_status",
+        "final_attempt_reason_codes",
+        "execution_owner",
+        "owner_capability_id",
+        "owner_capability_version",
+        "skill_result",
+        "workflow_result",
+        "tool_call_ids",
+        "tool_journal",
+        "business_outputs",
+        "capability_events",
+        "has_non_success_tool_observation",
+        "has_unknown_tool_observation",
+        "has_untrusted_success_observation",
+        "scheduler_skip_disposition",
+    }
+)
+
 
 class StepAggregationTerminalizationKind(str, Enum):
     ATTEMPT_FINALIZED = "ATTEMPT_FINALIZED"
@@ -328,6 +359,12 @@ class StepAggregationEvidence:
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> "StepAggregationEvidence":
+        if set(payload) != _AGGREGATION_EVIDENCE_PAYLOAD_KEYS:
+            raise ValueError("invalid StepAggregationEvidence payload keys")
+        normalized = _freeze_value(payload)
+        if not isinstance(normalized, dict):
+            raise ValueError("invalid StepAggregationEvidence payload")
+        payload = normalized
         try:
             return cls(
                 schema_version=str(payload["schema_version"]),
@@ -343,7 +380,7 @@ class StepAggregationEvidence:
                 terminal_reason_codes=tuple(
                     str(item) for item in payload["terminal_reason_codes"]
                 ),
-                degraded=bool(payload["degraded"]),
+                degraded=_required_bool(payload["degraded"], "degraded"),
                 observed_at=payload["observed_at"],
                 terminalized_at=payload["terminalized_at"],
                 final_attempt_number=_optional_int(
@@ -354,7 +391,7 @@ class StepAggregationEvidence:
                 ),
                 final_attempt_reason_codes=tuple(
                     str(item)
-                    for item in payload.get("final_attempt_reason_codes", ())
+                    for item in payload["final_attempt_reason_codes"]
                 ),
                 execution_owner=_optional_str(payload.get("execution_owner")),
                 owner_capability_id=_optional_str(
@@ -366,23 +403,22 @@ class StepAggregationEvidence:
                 skill_result=_optional_dict(payload.get("skill_result")),
                 workflow_result=_optional_dict(payload.get("workflow_result")),
                 tool_call_ids=tuple(
-                    str(item) for item in payload.get("tool_call_ids", ())
+                    str(item) for item in payload["tool_call_ids"]
                 ),
-                tool_journal=_tuple_of_dicts(payload.get("tool_journal", ())),
-                business_outputs=_tuple_of_dicts(
-                    payload.get("business_outputs", ())
+                tool_journal=_tuple_of_dicts(payload["tool_journal"]),
+                business_outputs=_tuple_of_dicts(payload["business_outputs"]),
+                capability_events=_tuple_of_dicts(payload["capability_events"]),
+                has_non_success_tool_observation=_required_bool(
+                    payload["has_non_success_tool_observation"],
+                    "has_non_success_tool_observation",
                 ),
-                capability_events=_tuple_of_dicts(
-                    payload.get("capability_events", ())
+                has_unknown_tool_observation=_required_bool(
+                    payload["has_unknown_tool_observation"],
+                    "has_unknown_tool_observation",
                 ),
-                has_non_success_tool_observation=bool(
-                    payload.get("has_non_success_tool_observation", False)
-                ),
-                has_unknown_tool_observation=bool(
-                    payload.get("has_unknown_tool_observation", False)
-                ),
-                has_untrusted_success_observation=bool(
-                    payload.get("has_untrusted_success_observation", False)
+                has_untrusted_success_observation=_required_bool(
+                    payload["has_untrusted_success_observation"],
+                    "has_untrusted_success_observation",
                 ),
                 scheduler_skip_disposition=_optional_str(
                     payload.get("scheduler_skip_disposition")
@@ -875,6 +911,12 @@ def _tuple_of_dicts(value: object) -> tuple[dict[str, Any], ...]:
             raise ValueError("expected sequence of mappings")
         result.append(deepcopy(dict(item)))
     return tuple(result)
+
+
+def _required_bool(value: object, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{field_name} must be bool")
+    return value
 
 
 def _optional_int(value: object | None) -> int | None:

@@ -59,8 +59,8 @@ from runtime.execution.step_completion import (
 )
 
 
-class DurableRecoveryControlRuntimeFactory:
-    """Build the IU7 recovery control path with CA-04 durability bound to one claim."""
+class DurableControlRuntimeFactory:
+    """Build a durable IU7 control path with CA-04 truth bound to one claim."""
 
     def __init__(
         self,
@@ -106,6 +106,11 @@ class DurableRecoveryControlRuntimeFactory:
                 recovery_claim=recovery_claim,
             ),
         )
+
+
+class DurableRecoveryControlRuntimeFactory(DurableControlRuntimeFactory):
+    """Recovery-facing structural adapter for M5RecoveryRuntime."""
+
 
 
 class M5ExecutionAggregationRuntimeStatus(str, Enum):

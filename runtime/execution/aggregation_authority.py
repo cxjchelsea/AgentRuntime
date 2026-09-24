@@ -216,6 +216,10 @@ class ExecutionAggregationAuthority:
         if alignment_error is not None:
             return self._blocked(alignment_error)
 
+        lifecycle_error = self._lifecycle_consistency_error(prepared)
+        if lifecycle_error is not None:
+            return self._blocked(lifecycle_error)
+
         if control.status is DurableControlReadStatus.UNKNOWN:
             return self._blocked("AGGREGATION_CONTROL_STATE_UNKNOWN")
 
@@ -455,6 +459,41 @@ class ExecutionAggregationAuthority:
         expected_current = running[0].step_id if running else None
         if record.current_step != expected_current:
             return "AGGREGATION_CURRENT_STEP_MISMATCH"
+        return None
+
+    @classmethod
+    def _lifecycle_consistency_error(
+        cls,
+        prepared: PreparedExecution,
+    ) -> str | None:
+        status = prepared.execution_record.status
+        terminal_execution = status in cls._TERMINAL_EXECUTION_STATUSES
+
+        if status == "RUNNING":
+            if prepared.started_at is None:
+                return "AGGREGATION_RUNNING_EXECUTION_START_MISSING"
+            if prepared.finished_at is not None:
+                return "AGGREGATION_RUNNING_EXECUTION_HAS_FINISHED_AT"
+        elif terminal_execution:
+            if prepared.started_at is None or prepared.finished_at is None:
+                return "AGGREGATION_TERMINAL_EXECUTION_TIMING_MISSING"
+            if prepared.finished_at < prepared.started_at:
+                return "AGGREGATION_EXECUTION_TIME_REGRESSION"
+
+        for step in prepared.steps:
+            if step.status is StepExecutionStatus.PENDING:
+                if step.started_at is not None or step.finished_at is not None:
+                    return "AGGREGATION_PENDING_STEP_TIMING_INVALID"
+                continue
+            if step.status is StepExecutionStatus.RUNNING:
+                if step.started_at is None or step.finished_at is not None:
+                    return "AGGREGATION_RUNNING_STEP_TIMING_INVALID"
+                continue
+            if step.finished_at is None:
+                return "AGGREGATION_TERMINAL_STEP_FINISH_MISSING"
+            if step.started_at is not None and step.finished_at < step.started_at:
+                return "AGGREGATION_STEP_TIME_REGRESSION"
+
         return None
 
     @staticmethod

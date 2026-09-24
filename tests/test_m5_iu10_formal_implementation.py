@@ -15,6 +15,7 @@ from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.execution import ExecutionContext
 from runtime.execution.aggregation_runtime import (
     DurableLiveExecutionBindingsFactory,
+    DurableM5ExecutionBindingsFactory,
     DurableRecoveryControlRuntimeFactory,
     M5ExecutionAggregationRuntime,
     M5ExecutionAggregationRuntimeStatus,
@@ -1343,5 +1344,66 @@ def test_durable_live_bindings_factory_requires_exact_claim_bound_journal() -> N
             match="must use exact durable Tool journal",
         ):
             bad.create(claim)
+
+    asyncio.run(scenario())
+
+
+def test_durable_m5_bindings_use_one_exact_claim_for_live_tool_and_control() -> None:
+    async def scenario() -> None:
+        prepared = iu7_prepared(running=False)
+        observed = iu7_observed()
+        claims, reliability, applicability = _stores()
+        claim = await _claim(
+            claims,
+            execution_id=prepared.execution_record.execution_id,
+            claim_id="formal-shared-claim",
+        )
+
+        state_store = InMemoryExecutionStateStore()
+        assert await state_store.create(prepared.execution_record) is True
+        control_lifecycle = ExecutionControlLifecycleService(
+            transitioner=ExecutionControlLifecycleTransitioner(),
+            execution_store=state_store,
+        )
+        control_factory = DurableRecoveryControlRuntimeFactory(
+            watcher=StaticWatcher(observed),
+            control_store=reliability,
+            control_applicability_store=applicability,
+            interrupt_coordinator=InFlightInterruptCoordinator(
+                registry=InMemoryInFlightOperationRegistry(),
+                interrupt_controller=StaticInterruptController(),
+            ),
+            application_evaluator=ExecutionControlApplicationEvaluator(),
+            lifecycle_service=control_lifecycle,
+            clock=lambda: NOW + timedelta(seconds=10),
+        )
+        live_builder = RecordingLiveBindingsBuilder()
+        live_factory = DurableLiveExecutionBindingsFactory(
+            builder=live_builder,
+            reliability_store=reliability,
+        )
+        factory = DurableM5ExecutionBindingsFactory(
+            live_execution_factory=live_factory,
+            control_runtime_factory=control_factory,
+        )
+
+        bindings = factory.create(claim)
+
+        assert live_builder.claim is claim
+        assert isinstance(
+            bindings.live_execution.tool_journal_persistence,
+            DurableToolJournalEvidence,
+        )
+        result = await bindings.control_runtime.observe_and_apply(
+            prepared,
+            observed=observed,
+        )
+        assert result.prepared.execution_record.status == "CANCELLED"
+
+        evidence = await applicability.read(
+            prepared.execution_record.execution_id
+        )
+        assert evidence.record is not None
+        assert evidence.record.writer_recovery_epoch == claim.recovery_epoch
 
     asyncio.run(scenario())

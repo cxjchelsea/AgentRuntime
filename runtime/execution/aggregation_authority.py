@@ -452,11 +452,9 @@ class ExecutionAggregationAuthority:
                 return "AGGREGATION_STEP_PROVENANCE_MISMATCH"
             if not lifecycle.step_execution_id.strip():
                 return "AGGREGATION_STEP_EXECUTION_ID_INVALID"
-            if (
-                persisted.get("step_execution_id") != lifecycle.step_execution_id
-                or persisted.get("step_id") != lifecycle.step_id
-                or persisted.get("status") != lifecycle.status.value
-                or persisted.get("degraded", False) != lifecycle.degraded
+            if not cls._persisted_step_matches(
+                lifecycle=lifecycle,
+                persisted=persisted,
             ):
                 return "AGGREGATION_PERSISTED_STEP_FACT_MISMATCH"
 
@@ -471,6 +469,33 @@ class ExecutionAggregationAuthority:
         if record.current_step != expected_current:
             return "AGGREGATION_CURRENT_STEP_MISMATCH"
         return None
+
+    @staticmethod
+    def _persisted_step_matches(
+        *,
+        lifecycle: StepLifecycleSnapshot,
+        persisted: Mapping[str, object],
+    ) -> bool:
+        expected: dict[str, object] = {
+            "step_execution_id": lifecycle.step_execution_id,
+            "step_id": lifecycle.step_id,
+            "action": lifecycle.action,
+            "status": lifecycle.status.value,
+            "skill_id": lifecycle.skill_id,
+            "workflow_id": lifecycle.workflow_id,
+            "tool_call_ids": list(lifecycle.tool_call_ids),
+            "output": lifecycle.output,
+            "error": lifecycle.error,
+            "retry_count": lifecycle.retry_count,
+            "terminal_reason_codes": list(lifecycle.terminal_reason_codes),
+            "degraded": lifecycle.degraded,
+            "started_at": lifecycle.started_at,
+            "finished_at": lifecycle.finished_at,
+        }
+        normalized = dict(persisted)
+        normalized.setdefault("terminal_reason_codes", [])
+        normalized.setdefault("degraded", False)
+        return all(normalized.get(key) == value for key, value in expected.items())
 
     @classmethod
     def _lifecycle_consistency_error(

@@ -380,6 +380,13 @@ class DurableAggregationControlAuthority:
                 "AGGREGATION_CONTROL_STATE_UNKNOWN",
             )
 
+        if evidence.status is ControlApplicabilityReadStatus.UNKNOWN:
+            return self._snapshot(
+                control,
+                AggregationControlApplicabilityStatus.UNKNOWN,
+                "AGGREGATION_CONTROL_APPLICABILITY_READ_UNKNOWN",
+            )
+
         if control.status is DurableControlReadStatus.NONE:
             if evidence.status is ControlApplicabilityReadStatus.NONE:
                 return self._snapshot(
@@ -404,12 +411,6 @@ class DurableAggregationControlAuthority:
                 "AGGREGATION_CONTROL_LATCH_MISSING",
             )
 
-        if evidence.status is ControlApplicabilityReadStatus.UNKNOWN:
-            return self._snapshot(
-                control,
-                AggregationControlApplicabilityStatus.UNKNOWN,
-                "AGGREGATION_CONTROL_APPLICABILITY_READ_UNKNOWN",
-            )
         if (
             evidence.status is ControlApplicabilityReadStatus.NONE
             or evidence.record is None

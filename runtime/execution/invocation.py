@@ -240,3 +240,14 @@ class ApprovedToolInvoker(Protocol):
 class ToolInvocationJournalReader(Protocol):
     def entries(self) -> tuple[ToolInvocationJournalEntry, ...]:
         """Return the Core-owned authoritative Tool invocation journal."""
+
+
+class ToolInvocationJournalPersistence(Protocol):
+    async def persist(
+        self,
+        *,
+        step_execution_id: str,
+        step_attempt_number: int,
+        entry: ToolInvocationJournalEntry,
+    ) -> None:
+        """Durably accept one exact logical Tool journal entry or fail closed."""

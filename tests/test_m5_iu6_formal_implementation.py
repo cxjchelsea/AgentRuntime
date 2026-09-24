@@ -163,8 +163,9 @@ def test_finalization_only_maps_authorized_terminal_statuses() -> None:
 
     assert success.disposition is StepFinalizationDisposition.FINALIZE
     assert success.terminal_status is StepExecutionStatus.SUCCESS
-    assert partial.disposition is StepFinalizationDisposition.UNKNOWN
-    assert partial.terminal_status is None
+    assert partial.disposition is StepFinalizationDisposition.FINALIZE
+    assert partial.terminal_status is StepExecutionStatus.SUCCESS
+    assert partial.degraded is True
 
 
 def test_retry_evaluator_requires_safe_replay_and_budget() -> None:

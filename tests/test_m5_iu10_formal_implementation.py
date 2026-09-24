@@ -68,9 +68,11 @@ from runtime.execution.recovery_evidence import (
     InMemoryDurableRecoveryEvidenceStore,
 )
 from runtime.execution.recovery_runtime import (
+    DurableRecoveryExecutionBindingsFactory,
     M5RecoveryRuntime,
     M5RecoveryRuntimeOutcome,
     M5RecoveryRuntimeStatus,
+    RecoveryExecutionBindings,
 )
 from runtime.execution.recovery_workflow import WorkflowResumeRequest
 from runtime.execution.reliability import (
@@ -144,6 +146,35 @@ from tests.test_m5_iu9_formal_implementation import (
     _context as recovery_context,
     _executor as recovery_executor,
 )
+
+
+class RecordingRecoveryBindingsBuilder:
+    def __init__(self, *, bind_persistence: bool = True) -> None:
+        self.bind_persistence = bind_persistence
+        self.persistence: Any = None
+
+    def build(
+        self,
+        *,
+        recovery_claim,
+        tool_journal_persistence,
+    ) -> RecoveryExecutionBindings:
+        del recovery_claim
+        self.persistence = tool_journal_persistence
+        executor = StepCapabilityExecutor(
+            permission_context_provider=StaticPermissionProvider(),
+            permission_evaluator=StaticPermissionEvaluator(),
+            input_validator=StaticValidator(),
+            output_validator=StaticValidator(),
+            identifier_factory=CountingIdentifierFactory(),
+            journal_persistence=(
+                tool_journal_persistence if self.bind_persistence else None
+            ),
+        )
+        return RecoveryExecutionBindings(
+            step_executor=executor,
+            skill_reliability_coordinator=cast(Any, object()),
+        )
 
 
 class WorkflowPolicyResolver:
@@ -717,6 +748,42 @@ def test_durable_recovery_control_factory_binds_latch_and_applicability_to_same_
             is ControlApplicabilityEvidenceStatus.APPLIES
         )
         assert evidence.record.writer_recovery_epoch == claim.recovery_epoch
+
+    asyncio.run(scenario())
+
+
+def test_durable_recovery_bindings_factory_injects_exact_claim_bound_journal() -> None:
+    async def scenario() -> None:
+        claims = InMemoryRecoveryClaimAuthority()
+        claim = await _claim(
+            claims,
+            execution_id="execution-iu4",
+            claim_id="formal-bindings-journal",
+        )
+        store = InMemoryDurableRecoveryEvidenceStore(
+            claim_authority=claims
+        )
+        builder = RecordingRecoveryBindingsBuilder()
+        factory = DurableRecoveryExecutionBindingsFactory(
+            builder=builder,
+            reliability_store=store,
+            clock=lambda: NOW + timedelta(seconds=1),
+        )
+
+        bindings = factory.create(claim)
+
+        assert isinstance(builder.persistence, DurableToolJournalEvidence)
+        assert bindings.step_executor.tool_journal_persistence is builder.persistence
+
+        bad = DurableRecoveryExecutionBindingsFactory(
+            builder=RecordingRecoveryBindingsBuilder(bind_persistence=False),
+            reliability_store=store,
+        )
+        with pytest.raises(
+            ValueError,
+            match="must use exact durable Tool journal",
+        ):
+            bad.create(claim)
 
     asyncio.run(scenario())
 

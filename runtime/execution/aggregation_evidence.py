@@ -437,6 +437,39 @@ class StepAggregationEvidenceAuthority:
 
         skip_decisions: dict[str, StepSkipAggregationDecision] = {}
         execution_id = prepared.execution_record.execution_id
+        persisted_by_step: dict[str, Mapping[str, Any]] = {}
+        for payload in prepared.execution_record.step_results:
+            step_id = payload.get("step_id")
+            if not isinstance(step_id, str) or not step_id.strip():
+                return (
+                    StepAggregationEvidenceAssessment(
+                        status=StepAggregationEvidenceReadStatus.UNKNOWN,
+                        reason_codes=(
+                            "AGGREGATION_EVIDENCE_PERSISTED_STEP_ID_INVALID",
+                        ),
+                    ),
+                    {},
+                )
+            if step_id in persisted_by_step:
+                return (
+                    StepAggregationEvidenceAssessment(
+                        status=StepAggregationEvidenceReadStatus.UNKNOWN,
+                        reason_codes=(
+                            "AGGREGATION_EVIDENCE_PERSISTED_STEP_DUPLICATE",
+                        ),
+                    ),
+                    {},
+                )
+            persisted_by_step[step_id] = payload
+
+        if len(persisted_by_step) != len(prepared.steps):
+            return (
+                StepAggregationEvidenceAssessment(
+                    status=StepAggregationEvidenceReadStatus.UNKNOWN,
+                    reason_codes=("AGGREGATION_EVIDENCE_PERSISTED_STEP_COUNT_MISMATCH",),
+                ),
+                {},
+            )
 
         for step in prepared.steps:
             if step.status in {
@@ -452,11 +485,44 @@ class StepAggregationEvidenceAuthority:
                 )
 
             evidence = step.aggregation_evidence
+            persisted = persisted_by_step.get(step.step_id)
+            if persisted is None:
+                return (
+                    StepAggregationEvidenceAssessment(
+                        status=StepAggregationEvidenceReadStatus.UNKNOWN,
+                        reason_codes=(
+                            "AGGREGATION_EVIDENCE_PERSISTED_STEP_MISSING",
+                        ),
+                    ),
+                    {},
+                )
             if evidence is None:
+                if persisted.get("aggregation_evidence") is not None:
+                    return (
+                        StepAggregationEvidenceAssessment(
+                            status=StepAggregationEvidenceReadStatus.UNKNOWN,
+                            reason_codes=(
+                                "AGGREGATION_EVIDENCE_TYPED_PERSISTED_MISMATCH",
+                            ),
+                        ),
+                        {},
+                    )
                 return (
                     StepAggregationEvidenceAssessment(
                         status=StepAggregationEvidenceReadStatus.MISSING,
                         reason_codes=("AGGREGATION_EVIDENCE_TERMINAL_STEP_MISSING",),
+                    ),
+                    {},
+                )
+
+            persisted_evidence = persisted.get("aggregation_evidence")
+            if persisted_evidence != evidence.to_payload():
+                return (
+                    StepAggregationEvidenceAssessment(
+                        status=StepAggregationEvidenceReadStatus.UNKNOWN,
+                        reason_codes=(
+                            "AGGREGATION_EVIDENCE_PERSISTED_PAYLOAD_MISMATCH",
+                        ),
                     ),
                     {},
                 )

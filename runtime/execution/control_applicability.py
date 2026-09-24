@@ -28,7 +28,7 @@ from runtime.execution.control_application import (
 )
 from runtime.execution.recovery import (
     ExecutionRecoveryClaim,
-    RecoveryClaimAuthority,
+    InMemoryRecoveryClaimAuthority,
     RecoveryEpochValidationStatus,
 )
 from runtime.execution.recovery_evidence import (
@@ -211,7 +211,11 @@ class DurableControlApplicabilityStore(Protocol):
 class InMemoryDurableControlApplicabilityStore:
     """Reference applicability store with recovery-epoch fencing."""
 
-    def __init__(self, *, claim_authority: RecoveryClaimAuthority) -> None:
+    def __init__(
+        self,
+        *,
+        claim_authority: InMemoryRecoveryClaimAuthority,
+    ) -> None:
         self._claim_authority = claim_authority
         self._lock = asyncio.Lock()
         self._records: dict[str, DurableControlApplicabilityRecord] = {}
@@ -257,25 +261,19 @@ class InMemoryDurableControlApplicabilityStore:
                 reason_codes=("CONTROL_APPLICABILITY_SOURCE_NOT_FINAL",),
             )
 
-        try:
-            fence = await self._claim_authority.validate_current(required_claim)
-        except Exception:  # noqa: BLE001
-            return ControlApplicabilityWriteDecision(
-                status=ControlApplicabilityWriteStatus.UNKNOWN,
-                reason_codes=("CONTROL_APPLICABILITY_RECOVERY_EPOCH_UNKNOWN",),
-            )
-        if fence.status is RecoveryEpochValidationStatus.STALE:
-            return ControlApplicabilityWriteDecision(
-                status=ControlApplicabilityWriteStatus.CONFLICT,
-                reason_codes=("CONTROL_APPLICABILITY_STALE_RECOVERY_EPOCH",),
-            )
-        if fence.status is not RecoveryEpochValidationStatus.CURRENT:
-            return ControlApplicabilityWriteDecision(
-                status=ControlApplicabilityWriteStatus.UNKNOWN,
-                reason_codes=("CONTROL_APPLICABILITY_RECOVERY_EPOCH_UNKNOWN",),
-            )
-
         async with self._lock:
+            fence = self._claim_authority._validate_current_sync(required_claim)
+            if fence.status is RecoveryEpochValidationStatus.STALE:
+                return ControlApplicabilityWriteDecision(
+                    status=ControlApplicabilityWriteStatus.CONFLICT,
+                    reason_codes=("CONTROL_APPLICABILITY_STALE_RECOVERY_EPOCH",),
+                )
+            if fence.status is not RecoveryEpochValidationStatus.CURRENT:
+                return ControlApplicabilityWriteDecision(
+                    status=ControlApplicabilityWriteStatus.UNKNOWN,
+                    reason_codes=("CONTROL_APPLICABILITY_RECOVERY_EPOCH_UNKNOWN",),
+                )
+
             existing = self._records.get(execution_id)
             if existing is not None:
                 if (

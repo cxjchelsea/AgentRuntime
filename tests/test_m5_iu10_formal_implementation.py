@@ -98,6 +98,7 @@ from tests.test_m5_iu10_ca02_aggregation_evidence import (
 )
 from tests.test_m5_iu10_ca03_canonical_result_projection import (
     _control_terminal,
+    _multi_workflow_plan,
     _multi_workflow_terminal,
 )
 from tests.test_m5_iu4_capability_execution import (
@@ -308,6 +309,56 @@ def test_formal_runtime_aggregates_natural_workflow_terminal_statuses(
         assert outcome.status is M5ExecutionAggregationRuntimeStatus.AGGREGATED
         assert outcome.aggregation_result is not None
         assert outcome.aggregation_result.execution_result.plan_status is plan_status
+
+    asyncio.run(scenario())
+
+
+def test_formal_runtime_closes_required_failure_remainder_before_failed_aggregation() -> None:
+    async def scenario() -> None:
+        plan = _multi_workflow_plan()
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        observation = _workflow_observation(
+            step_execution_id=running.steps[0].step_execution_id,
+            status=WorkflowExecutionStatus.FAILED,
+        )
+        reliability = StepReliabilityRunResult(
+            attempts=(observation,),
+            reliability_decision=StepReliabilityDecision(
+                disposition=StepReliabilityDisposition.FINALIZE,
+                reason_codes=("FORMAL_REQUIRED_FAILURE",),
+            ),
+            finalization_decision=StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.FINALIZE,
+                reason_codes=("FORMAL_REQUIRED_FAILURE_FINALIZED",),
+                terminal_status=StepExecutionStatus.FAILED,
+            ),
+        )
+        runtime, _, _, _ = _runtime(lifecycle_service=service)
+
+        outcome = await runtime.complete_running_step(
+            approved_plan=plan,
+            prepared=running,
+            reliability_result=reliability,
+            at=NOW + timedelta(seconds=3),
+        )
+
+        assert outcome.status is M5ExecutionAggregationRuntimeStatus.AGGREGATED
+        assert outcome.terminalized_step_ids == ("step-002",)
+        assert [step.status for step in outcome.prepared.steps] == [
+            StepExecutionStatus.FAILED,
+            StepExecutionStatus.SKIPPED,
+        ]
+        assert outcome.prepared.steps[1].aggregation_evidence is not None
+        assert outcome.aggregation_result is not None
+        assert (
+            outcome.aggregation_result.execution_result.plan_status
+            is ExecutionPlanStatus.FAILED
+        )
 
     asyncio.run(scenario())
 

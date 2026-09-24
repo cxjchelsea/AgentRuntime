@@ -455,6 +455,9 @@ ControlTerminalToolEvidenceReader
 DurableControlTerminalToolEvidenceReader
 ~~~
 
+`CanonicalExecutionResultProjector` 自身持有 reader 依赖并执行 durable join。
+调用方不能向 projector 直接注入一个 hand-constructed journal mapping 来绕过 durable provenance。
+
 读取链：
 
 ~~~text
@@ -503,8 +506,6 @@ durable evidence 只证明“发生过什么”，不能自行证明“被批准
 
 ~~~text
 EXECUTION_RESULT_CONTROL_TOOL_EVIDENCE_READER_MISSING
-or
-EXECUTION_RESULT_CONTROL_TOOL_PROJECTION_MISSING
 or
 EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_MISMATCH
 or

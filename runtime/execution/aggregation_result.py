@@ -230,6 +230,7 @@ class CanonicalExecutionResultProjector:
 
         seen_tool_journal: dict[str, dict[str, Any]] = {}
         approved_capability_projector = ApprovedStepCapabilityProjector()
+        consumed_control_tool_steps: set[str] = set()
 
         for plan_index, plan_step in enumerate(approved_plan.steps):
             step = step_by_id[plan_step.step_id]
@@ -287,32 +288,34 @@ class CanonicalExecutionResultProjector:
                     if control_tool_journals is None
                     else control_tool_journals.get(step.step_id, ())
                 )
+                consumed_control_tool_steps.add(step.step_id)
                 joined_ids = tuple(item.tool_call_id for item in joined)
                 if joined_ids != evidence.tool_call_ids:
                     raise ExecutionAggregationProjectionError(
                         "EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_MISMATCH"
                     )
-                try:
-                    approved_capabilities = approved_capability_projector.project(
-                        approved_plan=approved_plan,
-                        step=plan_step,
-                    )
-                except ApprovedCapabilityProjectionError as exc:
-                    raise ExecutionAggregationProjectionError(
-                        "EXECUTION_RESULT_CONTROL_APPROVED_CAPABILITY_UNKNOWN"
-                    ) from exc
-                approved_tool_versions = {
-                    item.capability_id: item.version
-                    for item in approved_capabilities.tools
-                }
-                for item in joined:
-                    if (
-                        approved_tool_versions.get(item.tool_id)
-                        != item.tool_version
-                    ):
-                        raise ExecutionAggregationProjectionError(
-                            "EXECUTION_RESULT_CONTROL_TOOL_NOT_APPROVED"
+                if joined:
+                    try:
+                        approved_capabilities = approved_capability_projector.project(
+                            approved_plan=approved_plan,
+                            step=plan_step,
                         )
+                    except ApprovedCapabilityProjectionError as exc:
+                        raise ExecutionAggregationProjectionError(
+                            "EXECUTION_RESULT_CONTROL_APPROVED_CAPABILITY_UNKNOWN"
+                        ) from exc
+                    approved_tool_versions = {
+                        item.capability_id: item.version
+                        for item in approved_capabilities.tools
+                    }
+                    for item in joined:
+                        if (
+                            approved_tool_versions.get(item.tool_id)
+                            != item.tool_version
+                        ):
+                            raise ExecutionAggregationProjectionError(
+                                "EXECUTION_RESULT_CONTROL_TOOL_NOT_APPROVED"
+                            )
                 journal_entries = joined
             else:
                 journal_entries = evidence.tool_journal
@@ -339,6 +342,15 @@ class CanonicalExecutionResultProjector:
                         "step_id": step.step_id,
                         "message": step.error,
                     }
+                )
+
+        if control_tool_journals is not None:
+            extra_control_steps = (
+                set(control_tool_journals) - consumed_control_tool_steps
+            )
+            if extra_control_steps:
+                raise ExecutionAggregationProjectionError(
+                    "EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_EXTRA_STEP"
                 )
 
         cancellation = self._project_control(

@@ -24,6 +24,7 @@ from runtime.contracts import (
     CoreIdentity,
     DomainExtensions,
     DomainIdentityExtension,
+    EXECUTION_RESULT_SCHEMA_VERSION,
     ExecutionPlanStatus,
     ExecutionResult,
     ExecutionTiming,
@@ -292,7 +293,10 @@ def test_fourteen_core_contracts_can_instantiate() -> None:
     # M4-CA1：Planning Contract 默认升到 1.1.0，全局 SCHEMA_VERSION 仍为 1.0.0
     assert _minimal_action_plan_draft().schema_version == PLANNING_SCHEMA_VERSION
     assert _minimal_approved_action_plan().schema_version == PLANNING_SCHEMA_VERSION
-    assert _minimal_execution_result().schema_version == SCHEMA_VERSION
+    assert (
+        _minimal_execution_result().schema_version
+        == EXECUTION_RESULT_SCHEMA_VERSION
+    )
     assert _minimal_validated_result().schema_version == SCHEMA_VERSION
     assert _minimal_response_plan().schema_version == SCHEMA_VERSION
     assert _minimal_runtime_response().schema_version == SCHEMA_VERSION
@@ -518,8 +522,12 @@ def test_execution_result_uses_plan_status_and_step_results() -> None:
     """ExecutionResult 使用 plan_status 与 step_results 层级。"""
     execution_result = _minimal_execution_result()
     dumped_fields = execution_result.model_dump()
+    assert execution_result.schema_version == "1.1.0"
     assert "plan_status" in dumped_fields
     assert "step_results" in dumped_fields
+    assert "workflow_result" in dumped_fields
+    assert "workflow_results" in dumped_fields
+    assert execution_result.workflow_results is None
     assert "status" not in dumped_fields
     assert "executed_skill" not in dumped_fields
     assert "business_result" not in dumped_fields

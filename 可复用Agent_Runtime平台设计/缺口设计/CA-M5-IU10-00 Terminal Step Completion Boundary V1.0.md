@@ -83,8 +83,23 @@ Aggregator 后续不得自行把 PENDING 解释成 SKIPPED。
 新增：
 
 ~~~text
+PendingStepSkipAuthorityKind
+PendingStepSkipAuthority
 ExecutionLifecycleManager.skip_pending_step(...)
 ExecutionLifecycleService.skip_pending_step(...)
+~~~
+
+Coordinator 根据当前 Scheduler decision 生成 typed authority，生命周期层只接受该 authority，而不是裸 step_id/reason_codes。
+
+authority 必须精确绑定：
+
+~~~text
+execution_id
+plan_id
+step_execution_id
+step_id
+kind
+reason_codes
 ~~~
 
 约束：
@@ -324,6 +339,9 @@ tests/test_m5_iu6_formal_implementation.py
 10. degraded cannot pair with FAILED/non-final disposition
 11. StepExecutionStatus enum remains unchanged
 12. legacy recovery payload without terminal_reason_codes remains readable
+13. forged step_execution_id skip authority is rejected
+14. skip authority kind cannot impersonate required-failure provenance
+15. PARTIAL_SUCCESS remains non-terminal while IU6 still requests RETRY
 ~~~
 
 # 11. Findings
@@ -332,14 +350,34 @@ tests/test_m5_iu6_formal_implementation.py
 F-M5-IU10-CA00-001
 RECOVERY_STEP_PAYLOAD_ADDITIVE_FIELD_COULD_BREAK_LEGACY_SNAPSHOT_EXACTNESS
 = CLOSED
+
+F-M5-IU10-CA00-002
+PENDING_SKIP_MUTATION_SURFACE_NOT_AUTHORITY_SEALED
+= CLOSED
 ~~~
 
-Fix：
+Fix 1：
 
 ~~~text
 legacy missing terminal_reason_codes
 -> normalize to []
 before exact typed-step comparison
+~~~
+
+Fix 2：
+
+~~~text
+current Scheduler decision
+-> TerminalStepCompletionCoordinator
+-> exact PendingStepSkipAuthority
+-> lifecycle mutation
+~~~
+
+并要求：
+
+~~~text
+SCHEDULER_SKIP
+!= REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL provenance
 ~~~
 
 # 12. Blocker impact

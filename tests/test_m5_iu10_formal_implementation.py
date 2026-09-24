@@ -67,6 +67,7 @@ from tests.test_m5_iu10_ca02_aggregation_evidence import (
     _partial_reliability_result,
     _plain_plan,
     _running,
+    _skill_observation,
     _skill_plan,
     _workflow_observation,
     _workflow_plan,
@@ -81,6 +82,17 @@ from tests.test_m5_iu7_formal_implementation import (
     _observed as iu7_observed,
     _prepared as iu7_prepared,
 )
+
+
+class RecordingTerminalObserver:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.execution_ids: list[str] = []
+
+    async def on_terminal_execution(self, prepared, *, observed_at) -> None:
+        del observed_at
+        self.calls += 1
+        self.execution_ids.append(prepared.execution_record.execution_id)
 
 
 class FalseConditionEvaluator:
@@ -573,6 +585,131 @@ def test_durable_recovery_control_factory_binds_latch_and_applicability_to_same_
             is ControlApplicabilityEvidenceStatus.APPLIES
         )
         assert evidence.record.writer_recovery_epoch == claim.recovery_epoch
+
+    asyncio.run(scenario())
+
+
+def test_formal_runtime_natural_terminal_preserves_terminal_observer_boundary() -> None:
+    async def scenario() -> None:
+        plan = _skill_plan()
+        prepared, _, store = await _running(plan)
+        observer = RecordingTerminalObserver()
+        service = ExecutionLifecycleService(
+            lifecycle_manager=ExecutionLifecycleManager(),
+            execution_store=store,
+            terminal_observer=observer,
+        )
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        runtime, _, _, _ = _runtime(lifecycle_service=service)
+
+        outcome = await runtime.complete_running_step(
+            approved_plan=plan,
+            prepared=running,
+            reliability_result=_partial_reliability_result(
+                step_execution_id=running.steps[0].step_execution_id
+            ),
+            at=NOW + timedelta(seconds=3),
+        )
+
+        assert outcome.status is M5ExecutionAggregationRuntimeStatus.AGGREGATED
+        assert observer.calls == 1
+        assert observer.execution_ids == [
+            prepared.execution_record.execution_id
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_formal_control_projection_reads_durable_current_attempt_not_retry_count() -> None:
+    async def scenario() -> None:
+        plan, prepared, control, _ = await _control_terminal(
+            ExecutionControlSignalType.CANCEL,
+            tool_call_ids=("tool-call-001",),
+            retry_count=98,
+        )
+        assert control.latched_control is not None
+        latched = control.latched_control
+
+        state_store = InMemoryExecutionStateStore()
+        assert await state_store.create(prepared.execution_record) is True
+        service = ExecutionLifecycleService(
+            lifecycle_manager=ExecutionLifecycleManager(),
+            execution_store=state_store,
+        )
+        runtime, claims, reliability, applicability = _runtime(
+            lifecycle_service=service
+        )
+        claim = await _claim(
+            claims,
+            execution_id=prepared.execution_record.execution_id,
+            claim_id="formal-control-tool",
+        )
+
+        latch = await reliability.latch(
+            observed=ObservedExecutionControl(
+                signal=latched.signal,
+                observed_at=latched.observed_at,
+            ),
+            latched_at=latched.latched_at,
+            required_claim=claim,
+        )
+        assert latch.status is ExecutionControlLatchStatus.LATCHED
+        assert latch.latched_control is not None
+
+        step = prepared.steps[0]
+        write = await applicability.record(
+            latched_control=latch.latched_control,
+            application=ExecutionControlApplication(
+                signal=latched.signal,
+                disposition=ExecutionControlDisposition.READY_TO_TERMINALIZE,
+                reason_codes=("CONTROL_AFFECTS_RUNNING_WORK",),
+                nonterminal_step_ids_at_latch=(step.step_execution_id,),
+                affected_step_ids=(step.step_execution_id,),
+                handoff_required=False,
+            ),
+            recorded_at=latched.latched_at,
+            required_claim=claim,
+        )
+        assert write.status is ControlApplicabilityWriteStatus.RECORDED
+
+        baseline = await reliability.ensure_step_attempt_baseline(
+            execution_id=prepared.execution_record.execution_id,
+            step_execution_id=step.step_execution_id,
+            recorded_at=NOW + timedelta(seconds=1),
+            required_claim=claim,
+        )
+        assert baseline.status.value in {"RECORDED", "ALREADY_CURRENT"}
+        journal = _skill_observation(
+            step_execution_id=step.step_execution_id
+        ).tool_journal
+        assert len(journal) == 1
+        appended = await reliability.append_tool_journal_entry(
+            execution_id=prepared.execution_record.execution_id,
+            step_execution_id=step.step_execution_id,
+            step_attempt_number=1,
+            expected_current_length=0,
+            entry=journal[0],
+            recorded_at=NOW + timedelta(seconds=2),
+            required_claim=claim,
+        )
+        assert appended.status.value in {"APPENDED", "ALREADY_CURRENT"}
+
+        outcome = await runtime.advance(
+            approved_plan=plan,
+            prepared=prepared,
+            at=NOW + timedelta(seconds=20),
+        )
+
+        assert outcome.status is M5ExecutionAggregationRuntimeStatus.AGGREGATED
+        assert outcome.aggregation_result is not None
+        result = outcome.aggregation_result.execution_result
+        assert result.tool_results is not None
+        assert len(result.tool_results) == 1
+        assert result.tool_results[0]["tool_call_id"] == "tool-call-001"
 
     asyncio.run(scenario())
 

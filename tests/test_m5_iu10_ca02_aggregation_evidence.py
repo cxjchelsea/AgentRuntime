@@ -875,6 +875,7 @@ def test_unknown_tool_truth_blocks_terminal_evidence_readiness() -> None:
 
     asyncio.run(scenario())
 
+
 def test_recovered_attempt_number_survives_terminal_evidence() -> None:
     async def scenario() -> None:
         plan = _workflow_plan()

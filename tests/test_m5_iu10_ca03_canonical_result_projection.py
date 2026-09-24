@@ -462,20 +462,24 @@ async def _control_terminal(
     tool_call_ids: tuple[str, ...] = (),
     retry_count: int = 0,
 ):
-    plan = build_approved_action_plan().model_copy(
-        update={
-            "steps": [
-                build_approved_action_plan().steps[0].model_copy(
-                    update={
-                        "action": "CONTROLLED_ACTION",
-                        "skill_id": None,
-                        "workflow_id": None,
-                        "optional": False,
-                    }
-                )
-            ]
-        }
-    )
+    if tool_call_ids:
+        plan = _skill_plan()
+    else:
+        base = build_approved_action_plan()
+        plan = base.model_copy(
+            update={
+                "steps": [
+                    base.steps[0].model_copy(
+                        update={
+                            "action": "CONTROLLED_ACTION",
+                            "skill_id": None,
+                            "workflow_id": None,
+                            "optional": False,
+                        }
+                    )
+                ]
+            }
+        )
     running, _ = await _base_running(
         plan,
         execution_id=f"execution-iu10-ca03-{signal_type.value.lower()}",

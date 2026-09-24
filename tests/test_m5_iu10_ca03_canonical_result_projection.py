@@ -74,6 +74,7 @@ from tests.test_m5_iu10_ca02_aggregation_evidence import (
     NOW,
     _partial_reliability_result,
     _running,
+    _skill_observation as ca02_skill_observation,
     _skill_plan,
     _workflow_observation as ca02_workflow_observation,
     _workflow_plan,
@@ -171,6 +172,132 @@ async def _base_running(plan, *, execution_id: str) -> tuple[
         execution_store=store,
     )
     return await service.start_execution(created, at=NOW), service
+
+
+def _two_skill_plan():
+    base = _skill_plan()
+    source = base.steps[0]
+    step_1 = source.model_copy(
+        update={
+            "step_id": "step-001",
+            "action": "SKILL_ACTION_1",
+        }
+    )
+    step_2 = source.model_copy(
+        update={
+            "step_id": "step-002",
+            "action": "SKILL_ACTION_2",
+            "depends_on": ["step-001"],
+        }
+    )
+    return base.model_copy(
+        update={
+            "steps": [step_1, step_2],
+            "capability_plan": {
+                "bindings": [
+                    {
+                        "action_id": "SKILL_ACTION_1",
+                        "skill_id": "skill-001",
+                        "skill_version": "1.0.0",
+                        "workflow_id": None,
+                        "workflow_version": None,
+                        "execution_owner": "SKILL",
+                    },
+                    {
+                        "action_id": "SKILL_ACTION_2",
+                        "skill_id": "skill-001",
+                        "skill_version": "1.0.0",
+                        "workflow_id": None,
+                        "workflow_version": None,
+                        "execution_owner": "SKILL",
+                    },
+                ],
+                "selected_skills": ["skill-001"],
+                "selected_workflows": [],
+            },
+        }
+    )
+
+
+async def _two_skill_terminal(*, conflicting_duplicate: bool):
+    plan = _two_skill_plan()
+    running, service = await _base_running(
+        plan,
+        execution_id="execution-iu10-ca03-tools",
+    )
+    current = running
+    for index, step_id in enumerate(("step-001", "step-002"), start=1):
+        current = await service.start_step(
+            current,
+            step_id=step_id,
+            at=NOW + timedelta(seconds=index * 2 - 1),
+        )
+        step = next(item for item in current.steps if item.step_id == step_id)
+        observation = replace(
+            ca02_skill_observation(
+                step_execution_id=step.step_execution_id
+            ),
+            step_id=step_id,
+            observed_at=NOW + timedelta(seconds=index * 2),
+        )
+        if conflicting_duplicate and index == 2:
+            payload = StepAggregationEvidence.from_attempt_finalization(
+                execution_id=current.execution_record.execution_id,
+                observation=observation,
+                terminal_step_status=StepExecutionStatus.SUCCESS,
+                terminal_reason_codes=(
+                    "STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",
+                ),
+                degraded=True,
+                terminalized_at=NOW + timedelta(seconds=index * 2),
+            ).to_payload()
+            journal = payload["tool_journal"]
+            assert isinstance(journal, list)
+            assert len(journal) == 1
+            entry = journal[0]
+            assert isinstance(entry, dict)
+            result = entry["result"]
+            assert isinstance(result, dict)
+            result["data"] = {"value": 2}
+            skill_result = payload["skill_result"]
+            assert isinstance(skill_result, dict)
+            skill_tool_results = skill_result["tool_results"]
+            assert isinstance(skill_tool_results, list)
+            assert len(skill_tool_results) == 1
+            assert isinstance(skill_tool_results[0], dict)
+            skill_tool_results[0]["data"] = {"value": 2}
+            evidence = StepAggregationEvidence.from_payload(payload)
+        else:
+            evidence = StepAggregationEvidence.from_attempt_finalization(
+                execution_id=current.execution_record.execution_id,
+                observation=observation,
+                terminal_step_status=StepExecutionStatus.SUCCESS,
+                terminal_reason_codes=(
+                    "STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",
+                ),
+                degraded=True,
+                terminalized_at=NOW + timedelta(seconds=index * 2),
+            )
+
+        current = await service.finish_step(
+            current,
+            step_id=step_id,
+            status=StepExecutionStatus.SUCCESS,
+            at=NOW + timedelta(seconds=index * 2),
+            tool_call_ids=("tool-call-001",),
+            terminal_reason_codes=(
+                "STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",
+            ),
+            degraded=True,
+            aggregation_evidence=evidence,
+        )
+
+    completed = await service.finish_execution(
+        current,
+        status=ExecutionPlanStatus.PARTIAL_SUCCESS,
+        at=NOW + timedelta(seconds=5),
+    )
+    return plan, completed
 
 
 def _multi_workflow_plan():
@@ -697,6 +824,64 @@ def test_projector_rejects_non_ready_aggregation() -> None:
                 eligibility=eligibility,
                 control=_no_control(),
                 control_applicability=_no_control_applicability(),
+            )
+
+    asyncio.run(scenario())
+
+
+def test_exact_duplicate_tool_call_replay_dedupes_to_one_logical_result() -> None:
+    async def scenario() -> None:
+        plan, prepared = await _two_skill_terminal(
+            conflicting_duplicate=False
+        )
+        control = _no_control()
+        applicability = _no_control_applicability()
+        eligibility = _ready_eligibility(
+            plan=plan,
+            prepared=prepared,
+            control=control,
+            applicability=applicability,
+        )
+
+        result = CanonicalExecutionResultProjector().project(
+            approved_plan=plan,
+            prepared=prepared,
+            eligibility=eligibility,
+            control=control,
+            control_applicability=applicability,
+        )
+
+        assert result.tool_results is not None
+        assert len(result.tool_results) == 1
+        assert result.tool_results[0]["tool_call_id"] == "tool-call-001"
+
+    asyncio.run(scenario())
+
+
+def test_conflicting_duplicate_tool_call_fails_closed() -> None:
+    async def scenario() -> None:
+        plan, prepared = await _two_skill_terminal(
+            conflicting_duplicate=True
+        )
+        control = _no_control()
+        applicability = _no_control_applicability()
+        eligibility = _ready_eligibility(
+            plan=plan,
+            prepared=prepared,
+            control=control,
+            applicability=applicability,
+        )
+
+        with pytest.raises(
+            ExecutionAggregationProjectionError,
+            match="EXECUTION_RESULT_TOOL_CALL_CONFLICT",
+        ):
+            CanonicalExecutionResultProjector().project(
+                approved_plan=plan,
+                prepared=prepared,
+                eligibility=eligibility,
+                control=control,
+                control_applicability=applicability,
             )
 
     asyncio.run(scenario())

@@ -10,7 +10,6 @@ import pytest
 
 from runtime.execution import (
     ApprovedPlanExecutionValidator,
-    BasicStepFinalizationEvaluator,
     CallableExecutionIdentifierFactory,
     ExecutionContextBuilder,
     ExecutionFoundation,
@@ -39,6 +38,7 @@ from runtime.execution import (
     TerminalStepCompletionStatus,
 )
 from runtime.execution.capability_resolution import CapabilityExecutionOwner
+from runtime.execution.reliability_defaults import BasicStepFinalizationEvaluator
 from tests.orchestration_stubs import (
     build_approved_action_plan,
     build_runtime_context,

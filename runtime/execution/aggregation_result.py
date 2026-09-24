@@ -46,6 +46,7 @@ from runtime.execution.control import (
     ExecutionControlSignalType,
     LatchedExecutionControl,
 )
+from runtime.execution.control_applicability import AggregationControlAuthority
 from runtime.execution.foundation import (
     ExecutionLifecycleService,
     PreparedExecution,
@@ -459,20 +460,26 @@ class ExecutionAggregator:
         authority: ExecutionAggregationAuthority,
         lifecycle_service: ExecutionLifecycleService,
         projector: CanonicalExecutionResultProjector,
+        control_authority: AggregationControlAuthority,
     ) -> None:
         self._authority = authority
         self._lifecycle_service = lifecycle_service
         self._projector = projector
+        self._control_authority = control_authority
 
     async def aggregate(
         self,
         *,
         approved_plan: ApprovedActionPlan,
         prepared: PreparedExecution,
-        control: DurableControlReadDecision,
-        control_applicability: AggregationControlApplicabilityDecision,
         at: datetime,
     ) -> ExecutionAggregationRunResult:
+        control_snapshot = await self._control_authority.resolve(
+            execution_id=prepared.execution_record.execution_id,
+        )
+        control = control_snapshot.control
+        control_applicability = control_snapshot.applicability
+
         evidence_readiness, skip_decisions = project_ca01_evidence_inputs(
             approved_plan=approved_plan,
             prepared=prepared,

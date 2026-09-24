@@ -130,6 +130,12 @@ def _with_steps(
         }
         for step in steps
     )
+    running_ids = [
+        step.step_id
+        for step in steps
+        if step.status is StepExecutionStatus.RUNNING
+    ]
+    current_step = running_ids[0] if len(running_ids) == 1 else None
     return replace(
         prepared,
         steps=tuple(steps),
@@ -137,7 +143,7 @@ def _with_steps(
         execution_record=replace(
             prepared.execution_record,
             status=execution_status,
-            current_step=None,
+            current_step=current_step,
             step_results=payload,
             updated_at=NOW,
         ),
@@ -850,5 +856,46 @@ def test_aggregation_decision_is_bound_to_exact_execution_and_plan() -> None:
             == prepared.execution_record.execution_id
         )
         assert decision.aggregation_decision.plan_id == plan.plan_id
+
+    asyncio.run(scenario())
+
+
+
+def test_terminal_step_missing_finished_at_is_blocked() -> None:
+    async def scenario() -> None:
+        plan = _plan(optional=(False,))
+        prepared = _with_steps(
+            await _prepared(plan),
+            (StepExecutionStatus.SUCCESS, False, ("DONE",)),
+        )
+        broken_step = replace(prepared.steps[0], finished_at=None)
+        broken = replace(prepared, steps=(broken_step,))
+
+        decision = await _evaluate(plan, broken)
+
+        assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == (
+            "AGGREGATION_TERMINAL_STEP_FINISH_MISSING",
+        )
+
+    asyncio.run(scenario())
+
+
+def test_existing_terminal_execution_requires_finished_at() -> None:
+    async def scenario() -> None:
+        plan = _plan(optional=(False,))
+        prepared = _with_steps(
+            await _prepared(plan),
+            (StepExecutionStatus.SUCCESS, False, ("DONE",)),
+            execution_status="SUCCESS",
+        )
+        broken = replace(prepared, finished_at=None)
+
+        decision = await _evaluate(plan, broken)
+
+        assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
+        assert decision.reason_codes == (
+            "AGGREGATION_TERMINAL_EXECUTION_TIMING_MISSING",
+        )
 
     asyncio.run(scenario())

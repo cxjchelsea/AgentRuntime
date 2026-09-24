@@ -1,5 +1,18 @@
 """M5 Execution Framework internal contracts and protocols."""
 
+from runtime.execution.aggregation_authority import (
+    AggregationControlApplicabilityDecision,
+    AggregationControlApplicabilityStatus,
+    AggregationEvidenceReadinessDecision,
+    AggregationEvidenceReadinessStatus,
+    ExecutionAggregationAuthority,
+    ExecutionAggregationDecision,
+    ExecutionAggregationEligibilityDecision,
+    ExecutionAggregationEligibilityStatus,
+    StepAggregationEffect,
+    StepSkipAggregationDecision,
+    StepSkipAggregationDisposition,
+)
 from runtime.execution.authority import (
     ApprovedWorkflowAuthority,
     project_workflow_authority,
@@ -406,6 +419,10 @@ from runtime.execution.stores import (
 __all__ = [
     "ActivityInstance",
     "ActivityStatus",
+    "AggregationControlApplicabilityDecision",
+    "AggregationControlApplicabilityStatus",
+    "AggregationEvidenceReadinessDecision",
+    "AggregationEvidenceReadinessStatus",
     "ApprovedCapabilityReference",
     "ApprovedPlanExecutionError",
     "ApprovedPlanExecutionValidator",
@@ -451,6 +468,10 @@ __all__ = [
     "DurableTerminalControlStore",
     "DurableToolJournalEvidence",
     "DurableToolOperationOccurrenceAuthority",
+    "ExecutionAggregationAuthority",
+    "ExecutionAggregationDecision",
+    "ExecutionAggregationEligibilityDecision",
+    "ExecutionAggregationEligibilityStatus",
     "ExecutionCapabilityDisabledError",
     "ExecutionCapabilityNotFoundError",
     "ExecutionClock",
@@ -663,6 +684,7 @@ __all__ = [
     "StepAttemptSequenceAuthority",
     "StepAttemptSequenceDecision",
     "StepAttemptSequenceStatus",
+    "StepAggregationEffect",
     "StepAttemptStatus",
     "StepCapabilityExecutionOutcome",
     "StepCapabilityExecutor",
@@ -691,6 +713,8 @@ __all__ = [
     "StepResultCollector",
     "StepScheduleDecision",
     "StepScheduleStatus",
+    "StepSkipAggregationDecision",
+    "StepSkipAggregationDisposition",
     "StepScheduler",
     "TerminalStepCompletionCoordinator",
     "TerminalStepCompletionDecision",

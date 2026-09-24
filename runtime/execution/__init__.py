@@ -351,6 +351,7 @@ from runtime.execution.reliability_boundary import (
 )
 from runtime.execution.reliability_coordinator import (
     RecoveredStepReliabilityRunResult,
+    RecoveredWorkflowReliabilityRunResult,
     StepReliabilityCoordinationError,
     StepReliabilityCoordinator,
     StepReliabilityRunResult,
@@ -662,6 +663,7 @@ __all__ = [
     "ProviderFenceStatus",
     "ProviderFencingAuthority",
     "RecoveredStepReliabilityRunResult",
+    "RecoveredWorkflowReliabilityRunResult",
     "RecoveryClaimAuthority",
     "RecoveryClaimCoordinator",
     "RecoveryClaimDecision",

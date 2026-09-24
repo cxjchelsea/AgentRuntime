@@ -501,7 +501,7 @@ class M5RecoveryRuntime:
                 execution_context=prepared.execution_context,
                 resume_request=request,
                 attempt_number=current_attempt,
-                recovered_current_attempt_journal=prior_journal,
+                recovered_current_attempt_journal=current_attempt_journal,
                 side_effect_admission_guard=guard,
             )
             if outcome.status not in {

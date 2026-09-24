@@ -2969,26 +2969,50 @@ class StepCapabilityExecutor:
                         tool_journal=tool_invoker.entries(),
                     )
                 else:
-                    normalized = replace(result, tool_results=journal_results)
-                    status = (
-                        CapabilityExecutionStatus.WAITING
-                        if normalized.status is WorkflowExecutionStatus.WAITING
-                        else CapabilityExecutionStatus.EXECUTED
+                    merged_journal = self._merge_resumed_attempt_journal(
+                        prior_attempt_journal=prior_attempt_journal,
+                        resumed_journal=tool_invoker.entries(),
                     )
-                    outcome = self._outcome(
-                        step=step,
-                        step_snapshot=step_snapshot,
-                        resolved=resolved,
-                        status=status,
-                        reason_codes=(
-                            "WORKFLOW_RECOVERY_WAITING"
-                            if status is CapabilityExecutionStatus.WAITING
-                            else "WORKFLOW_RESUMED",
-                        ),
-                        workflow_result=normalized,
-                        tool_results=journal_results,
-                        tool_journal=tool_invoker.entries(),
-                    )
+                    if merged_journal is None:
+                        outcome = self._outcome(
+                            step=step,
+                            step_snapshot=step_snapshot,
+                            resolved=resolved,
+                            status=CapabilityExecutionStatus.UNKNOWN,
+                            reason_codes=(
+                                "WORKFLOW_RECOVERY_TOOL_JOURNAL_CONFLICT",
+                            ),
+                            workflow_result=result,
+                            tool_results=journal_results,
+                            tool_journal=tool_invoker.entries(),
+                        )
+                    else:
+                        merged_results = tuple(
+                            entry.result for entry in merged_journal
+                        )
+                        normalized = replace(
+                            result,
+                            tool_results=merged_results,
+                        )
+                        status = (
+                            CapabilityExecutionStatus.WAITING
+                            if normalized.status is WorkflowExecutionStatus.WAITING
+                            else CapabilityExecutionStatus.EXECUTED
+                        )
+                        outcome = self._outcome(
+                            step=step,
+                            step_snapshot=step_snapshot,
+                            resolved=resolved,
+                            status=status,
+                            reason_codes=(
+                                "WORKFLOW_RECOVERY_WAITING"
+                                if status is CapabilityExecutionStatus.WAITING
+                                else "WORKFLOW_RESUMED",
+                            ),
+                            workflow_result=normalized,
+                            tool_results=merged_results,
+                            tool_journal=merged_journal,
+                        )
 
         if self._owner_may_still_be_inflight(outcome):
             return outcome
@@ -2999,6 +3023,27 @@ class StepCapabilityExecutor:
                 reason_codes=("INFLIGHT_OWNER_COMPLETION_UNKNOWN",),
             )
         return outcome
+
+    @staticmethod
+    def _merge_resumed_attempt_journal(
+        *,
+        prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...],
+        resumed_journal: tuple[ToolInvocationJournalEntry, ...],
+    ) -> tuple[ToolInvocationJournalEntry, ...] | None:
+        """Preserve one exact Workflow attempt journal across checkpoint resume."""
+
+        merged: list[ToolInvocationJournalEntry] = []
+        by_call_id: dict[str, ToolInvocationJournalEntry] = {}
+        for entry in (*prior_attempt_journal, *resumed_journal):
+            call_id = entry.tool_call_id
+            existing = by_call_id.get(call_id)
+            if existing is None:
+                by_call_id[call_id] = entry
+                merged.append(entry)
+                continue
+            if existing != entry:
+                return None
+        return tuple(merged)
 
     @staticmethod
     def _owner_may_still_be_inflight(

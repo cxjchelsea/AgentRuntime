@@ -2992,17 +2992,6 @@ class StepCapabilityExecutor:
                 )
                 if boundary is not None:
                     outcome = boundary
-                elif result.tool_results and result.tool_results != journal_results:
-                    outcome = self._outcome(
-                        step=step,
-                        step_snapshot=step_snapshot,
-                        resolved=resolved,
-                        status=CapabilityExecutionStatus.UNKNOWN,
-                        reason_codes=("CAPABILITY_RESULT_TOOL_TRACE_MISMATCH",),
-                        workflow_result=result,
-                        tool_results=journal_results,
-                        tool_journal=tool_invoker.entries(),
-                    )
                 else:
                     merged_journal = self._merge_resumed_attempt_journal(
                         prior_attempt_journal=prior_attempt_journal,
@@ -3025,29 +3014,48 @@ class StepCapabilityExecutor:
                         merged_results = tuple(
                             entry.result for entry in merged_journal
                         )
-                        normalized = replace(
-                            result,
-                            tool_results=merged_results,
-                        )
-                        status = (
-                            CapabilityExecutionStatus.WAITING
-                            if normalized.status is WorkflowExecutionStatus.WAITING
-                            else CapabilityExecutionStatus.EXECUTED
-                        )
-                        outcome = self._outcome(
-                            step=step,
-                            step_snapshot=step_snapshot,
-                            resolved=resolved,
-                            status=status,
-                            reason_codes=(
-                                "WORKFLOW_RECOVERY_WAITING"
-                                if status is CapabilityExecutionStatus.WAITING
-                                else "WORKFLOW_RESUMED",
-                            ),
-                            workflow_result=normalized,
-                            tool_results=merged_results,
-                            tool_journal=merged_journal,
-                        )
+                        if (
+                            result.tool_results
+                            and tuple(result.tool_results) != merged_results
+                        ):
+                            outcome = self._outcome(
+                                step=step,
+                                step_snapshot=step_snapshot,
+                                resolved=resolved,
+                                status=CapabilityExecutionStatus.UNKNOWN,
+                                reason_codes=(
+                                    "CAPABILITY_RESULT_TOOL_TRACE_MISMATCH",
+                                ),
+                                workflow_result=result,
+                                tool_results=merged_results,
+                                tool_journal=merged_journal,
+                            )
+                        else:
+                            normalized = replace(
+                                result,
+                                tool_results=merged_results,
+                            )
+                            status = (
+                                CapabilityExecutionStatus.WAITING
+                                if normalized.status
+                                is WorkflowExecutionStatus.WAITING
+                                else CapabilityExecutionStatus.EXECUTED
+                            )
+                            outcome = self._outcome(
+                                step=step,
+                                step_snapshot=step_snapshot,
+                                resolved=resolved,
+                                status=status,
+                                reason_codes=(
+                                    "WORKFLOW_RECOVERY_WAITING"
+                                    if status
+                                    is CapabilityExecutionStatus.WAITING
+                                    else "WORKFLOW_RESUMED",
+                                ),
+                                workflow_result=normalized,
+                                tool_results=merged_results,
+                                tool_journal=merged_journal,
+                            )
 
         if self._owner_may_still_be_inflight(outcome):
             return outcome

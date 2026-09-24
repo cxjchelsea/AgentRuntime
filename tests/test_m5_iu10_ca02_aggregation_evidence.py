@@ -15,6 +15,7 @@ from runtime.execution.aggregation_authority import (
 )
 from runtime.execution.aggregation_evidence import (
     StepAggregationEvidence,
+    StepAggregationEvidenceAuthority,
     StepAggregationEvidenceReadStatus,
     StepAggregationTerminalizationKind,
     project_ca01_evidence_inputs,
@@ -35,9 +36,11 @@ from runtime.execution.invocation import ToolInvocationJournalEntry
 from runtime.execution.models import (
     M5SkillResult,
     M5ToolResult,
+    M5WorkflowResult,
     SkillExecutionStatus,
     StepExecutionStatus,
     ToolExecutionStatus,
+    WorkflowExecutionStatus,
 )
 from runtime.execution.recovery import (
     ExecutionRecoveryClaim,
@@ -49,7 +52,10 @@ from runtime.execution.reliability_boundary import (
     StepReliabilityDecision,
     StepReliabilityDisposition,
 )
-from runtime.execution.reliability_coordinator import StepReliabilityRunResult
+from runtime.execution.reliability_coordinator import (
+    RecoveredStepReliabilityRunResult,
+    StepReliabilityRunResult,
+)
 from runtime.execution.result_collection import (
     StepAttemptObservation,
     StepAttemptStatus,
@@ -79,6 +85,19 @@ def _skill_plan():
         update={
             "action": "SKILL_ACTION",
             "skill_id": "skill-001",
+            "optional": False,
+        }
+    )
+    return base.model_copy(update={"steps": [step]})
+
+
+def _workflow_plan():
+    base = build_approved_action_plan()
+    step = base.steps[0].model_copy(
+        update={
+            "action": "WORKFLOW_ACTION",
+            "skill_id": None,
+            "workflow_id": "workflow-001",
             "optional": False,
         }
     )
@@ -171,6 +190,48 @@ def _skill_observation(
     )
 
 
+def _workflow_observation(
+    *,
+    step_execution_id: str,
+    status: WorkflowExecutionStatus = WorkflowExecutionStatus.COMPLETED,
+    attempt_number: int = 1,
+) -> StepAttemptObservation:
+    workflow_result = M5WorkflowResult(
+        workflow_instance_id="workflow-instance-001",
+        workflow_id="workflow-001",
+        status=status,
+        completed_steps=("node-001",) if status is WorkflowExecutionStatus.COMPLETED else (),
+        important_outputs={"answer": "done"},
+    )
+    attempt_status = {
+        WorkflowExecutionStatus.COMPLETED: StepAttemptStatus.SUCCESS,
+        WorkflowExecutionStatus.FAILED: StepAttemptStatus.FAILED,
+        WorkflowExecutionStatus.TIMEOUT: StepAttemptStatus.TIMEOUT,
+        WorkflowExecutionStatus.WAITING: StepAttemptStatus.WAITING,
+        WorkflowExecutionStatus.RUNNING: StepAttemptStatus.IN_PROGRESS,
+        WorkflowExecutionStatus.CREATED: StepAttemptStatus.IN_PROGRESS,
+        WorkflowExecutionStatus.CANCELLED: StepAttemptStatus.CANCELLED,
+        WorkflowExecutionStatus.PREEMPTED: StepAttemptStatus.PREEMPTED,
+    }[status]
+    return StepAttemptObservation(
+        step_id="step-001",
+        step_execution_id=step_execution_id,
+        attempt_number=attempt_number,
+        status=attempt_status,
+        execution_owner=CapabilityExecutionOwner.WORKFLOW,
+        reason_codes=(f"WORKFLOW_{status.value}",),
+        observed_at=NOW + timedelta(seconds=2),
+        owner_capability_id="workflow-001",
+        owner_capability_version="1.0.0",
+        workflow_result=workflow_result,
+        business_outputs=({"answer": "done"},),
+        capability_events=(),
+        has_non_success_tool_observation=False,
+        has_unknown_tool_observation=False,
+        has_untrusted_success_observation=False,
+    )
+
+
 def _partial_reliability_result(
     *,
     step_execution_id: str,
@@ -232,6 +293,8 @@ def test_attempt_finalization_persists_rich_evidence_atomically() -> None:
         assert evidence.terminal_step_status is StepExecutionStatus.SUCCESS
         assert evidence.degraded is True
         assert evidence.final_attempt_number == 1
+        assert evidence.final_attempt_status == "PARTIAL_SUCCESS"
+        assert evidence.final_attempt_reason_codes == ("SKILL_PARTIAL",)
         assert evidence.execution_owner == "SKILL"
         assert evidence.owner_capability_id == "skill-001"
         assert evidence.skill_result is not None
@@ -248,6 +311,10 @@ def test_attempt_finalization_persists_rich_evidence_atomically() -> None:
         readiness, skips = project_ca01_evidence_inputs(decision.prepared)
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
         assert skips == {}
+        raw_assessment, _ = StepAggregationEvidenceAuthority().assess(
+            decision.prepared
+        )
+        assert raw_assessment.status is StepAggregationEvidenceReadStatus.READY
 
     asyncio.run(scenario())
 
@@ -564,3 +631,205 @@ def test_live_runtime_object_cannot_enter_crash_safe_evidence() -> None:
             degraded=True,
             terminalized_at=NOW + timedelta(seconds=3),
         )
+
+
+
+def test_workflow_completed_terminal_evidence_is_ready() -> None:
+    async def scenario() -> None:
+        plan = _workflow_plan()
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        observation = _workflow_observation(
+            step_execution_id=running.steps[0].step_execution_id
+        )
+        result = StepReliabilityRunResult(
+            attempts=(observation,),
+            reliability_decision=StepReliabilityDecision(
+                disposition=StepReliabilityDisposition.FINALIZE,
+                reason_codes=("STEP_RETRY_NOT_AUTHORIZED",),
+            ),
+            finalization_decision=StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.FINALIZE,
+                reason_codes=("STEP_SUCCESS_FINALIZATION_AUTHORIZED",),
+                terminal_status=StepExecutionStatus.SUCCESS,
+            ),
+        )
+
+        completed = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running,
+            reliability_result=result,
+            at=NOW + timedelta(seconds=3),
+        )
+
+        evidence = completed.prepared.steps[0].aggregation_evidence
+        assert evidence is not None
+        assert evidence.execution_owner == "WORKFLOW"
+        assert evidence.workflow_result is not None
+        assert evidence.workflow_result["status"] == "COMPLETED"
+        assert evidence.business_outputs == ({"answer": "done"},)
+        readiness, _ = project_ca01_evidence_inputs(completed.prepared)
+        assert readiness.status is AggregationEvidenceReadinessStatus.READY
+
+    asyncio.run(scenario())
+
+
+def test_workflow_waiting_payload_cannot_masquerade_as_terminal_success() -> None:
+    async def scenario() -> None:
+        plan = _workflow_plan()
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        valid_observation = _workflow_observation(
+            step_execution_id=running.steps[0].step_execution_id
+        )
+        valid_result = StepReliabilityRunResult(
+            attempts=(valid_observation,),
+            reliability_decision=StepReliabilityDecision(
+                disposition=StepReliabilityDisposition.FINALIZE,
+                reason_codes=("STEP_RETRY_NOT_AUTHORIZED",),
+            ),
+            finalization_decision=StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.FINALIZE,
+                reason_codes=("STEP_SUCCESS_FINALIZATION_AUTHORIZED",),
+                terminal_status=StepExecutionStatus.SUCCESS,
+            ),
+        )
+        completed = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running,
+            reliability_result=valid_result,
+            at=NOW + timedelta(seconds=3),
+        )
+        step = completed.prepared.steps[0]
+        assert step.aggregation_evidence is not None
+        waiting_payload = dict(step.aggregation_evidence.workflow_result or {})
+        waiting_payload["status"] = "WAITING"
+        forged_evidence = replace(
+            step.aggregation_evidence,
+            workflow_result=waiting_payload,
+        )
+        forged_step = replace(step, aggregation_evidence=forged_evidence)
+        persisted: dict[str, Any] = dict(
+            completed.prepared.execution_record.step_results[0]
+        )
+        persisted["aggregation_evidence"] = forged_evidence.to_payload()
+        forged = replace(
+            completed.prepared,
+            steps=(forged_step,),
+            execution_record=replace(
+                completed.prepared.execution_record,
+                step_results=(persisted,),
+            ),
+        )
+
+        readiness, _ = project_ca01_evidence_inputs(forged)
+
+        assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
+        assert readiness.reason_codes == (
+            "AGGREGATION_EVIDENCE_WORKFLOW_STATUS_MISMATCH",
+        )
+
+    asyncio.run(scenario())
+
+
+def test_unknown_tool_truth_blocks_terminal_evidence_readiness() -> None:
+    async def scenario() -> None:
+        plan = _skill_plan()
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        completed = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running,
+            reliability_result=_partial_reliability_result(
+                step_execution_id=running.steps[0].step_execution_id
+            ),
+            at=NOW + timedelta(seconds=3),
+        )
+        step = completed.prepared.steps[0]
+        assert step.aggregation_evidence is not None
+        forged_evidence = replace(
+            step.aggregation_evidence,
+            has_unknown_tool_observation=True,
+        )
+        forged_step = replace(step, aggregation_evidence=forged_evidence)
+        persisted: dict[str, Any] = dict(
+            completed.prepared.execution_record.step_results[0]
+        )
+        persisted["aggregation_evidence"] = forged_evidence.to_payload()
+        forged = replace(
+            completed.prepared,
+            steps=(forged_step,),
+            execution_record=replace(
+                completed.prepared.execution_record,
+                step_results=(persisted,),
+            ),
+        )
+
+        readiness, _ = project_ca01_evidence_inputs(forged)
+
+        assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
+        assert readiness.reason_codes == (
+            "AGGREGATION_EVIDENCE_TOOL_TRUTH_UNKNOWN",
+        )
+
+    asyncio.run(scenario())
+
+
+def test_recovered_attempt_number_survives_terminal_evidence() -> None:
+    async def scenario() -> None:
+        plan = _workflow_plan()
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        observation = _workflow_observation(
+            step_execution_id=running.steps[0].step_execution_id,
+            attempt_number=2,
+        )
+        recovered = RecoveredStepReliabilityRunResult(
+            prior_attempt_number=1,
+            attempts=(observation,),
+            reliability_decision=StepReliabilityDecision(
+                disposition=StepReliabilityDisposition.FINALIZE,
+                reason_codes=("STEP_RETRY_NOT_AUTHORIZED",),
+            ),
+            finalization_decision=StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.FINALIZE,
+                reason_codes=("STEP_SUCCESS_FINALIZATION_AUTHORIZED",),
+                terminal_status=StepExecutionStatus.SUCCESS,
+            ),
+        )
+
+        completed = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running,
+            reliability_result=recovered,
+            at=NOW + timedelta(seconds=3),
+        )
+
+        step = completed.prepared.steps[0]
+        assert step.retry_count == 1
+        assert step.aggregation_evidence is not None
+        assert step.aggregation_evidence.final_attempt_number == 2
+        readiness, _ = project_ca01_evidence_inputs(completed.prepared)
+        assert readiness.status is AggregationEvidenceReadinessStatus.READY
+
+    asyncio.run(scenario())

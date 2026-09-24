@@ -33,7 +33,10 @@ from runtime.execution.aggregation_result import (
 )
 from runtime.execution.aggregation_runtime import (
     DurableControlRuntimeFactory,
+    DurableLiveExecutionBindings,
+    DurableLiveExecutionBindingsFactory,
     DurableRecoveryControlRuntimeFactory,
+    LiveExecutionBindingsBuilder,
     M5ExecutionAggregationOutcome,
     M5ExecutionAggregationRuntime,
     M5ExecutionAggregationRuntimeStatus,
@@ -513,6 +516,8 @@ __all__ = [
     "DurableInFlightEvidenceStore",
     "DurableInFlightOperationObservation",
     "DurableInFlightOperationRegistry",
+    "DurableLiveExecutionBindings",
+    "DurableLiveExecutionBindingsFactory",
     "DurableOperationResourceBindingReadDecision",
     "DurableOperationResourceBindingReadStatus",
     "DurableOperationResourceBindingRecord",
@@ -629,6 +634,7 @@ __all__ = [
     "InterruptOutcome",
     "InterruptOutcomeStatus",
     "LatchedExecutionControl",
+    "LiveExecutionBindingsBuilder",
     "M5ExecutionAggregationOutcome",
     "M5ExecutionAggregationRuntime",
     "M5ExecutionAggregationRuntimeStatus",

@@ -174,7 +174,10 @@ class SequentialStepScheduler:
         for prior_step in approved_plan.steps[:pending_index]:
             prior_lifecycle = step_by_id[prior_step.step_id]
             if (
-                prior_lifecycle.status in self._NON_SUCCESS_TERMINAL
+                (
+                    prior_lifecycle.status in self._NON_SUCCESS_TERMINAL
+                    or prior_lifecycle.degraded
+                )
                 and prior_step.optional is not True
             ):
                 return StepScheduleDecision(
@@ -195,7 +198,10 @@ class SequentialStepScheduler:
                     step_id=candidate.step_id,
                     reason_codes=("DEPENDENCY_NOT_TERMINAL",),
                 )
-            if dependency.status is not StepExecutionStatus.SUCCESS:
+            if (
+                dependency.status is not StepExecutionStatus.SUCCESS
+                or dependency.degraded
+            ):
                 return StepScheduleDecision(
                     status=StepScheduleStatus.SKIP,
                     step_id=candidate.step_id,

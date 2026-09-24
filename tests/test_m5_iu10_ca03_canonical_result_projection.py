@@ -6,6 +6,7 @@ import asyncio
 import inspect
 from dataclasses import replace
 from datetime import timedelta
+
 import pytest
 
 import runtime.execution.aggregation_result as aggregation_result_module

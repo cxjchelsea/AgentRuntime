@@ -315,7 +315,7 @@ cross-service exactly-once       -> not claimed
 ~~~text
 M5-IU9 FORMAL IMPLEMENTATION = CODE COMPLETE
 M5-IU9 FORMAL IMPLEMENTATION REVIEW = PASSED
-M5-IU9 FORMAL IMPLEMENTATION VERIFICATION = PENDING
+M5-IU9 FORMAL IMPLEMENTATION VERIFICATION = PASSED
 
 M5-IU9 = IN PROGRESS
 M5 = IN PROGRESS
@@ -324,8 +324,108 @@ M5 = IN PROGRESS
 下一步：
 
 ~~~text
-Formal Implementation Independent Review
--> four gates
--> Formal Implementation Verification Closure
+Formal Implementation Independent Review = PASSED
+-> four gates = PASSED
+-> Formal Implementation Verification Closure = PASSED
 -> M5-IU9 Closure Evaluation
 ~~~
+
+## 15. Verification Closure
+
+绑定对象：
+
+~~~text
+PR #72
+HEAD = 09856eef967f4ccda1f7223681eb6eaa62c1c99a
+base review head = 25183dfea4d4540d5ceb1be7b661334b113add15
+~~~
+
+相对 base review head 的唯一新增提交：
+
+~~~text
+09856eef967f4ccda1f7223681eb6eaa62c1c99a
+M5-IU9: satisfy formal implementation gates
+~~~
+
+该 delta 经 exact patch 复核：
+
+~~~text
+tests/test_m5_iu9_formal_implementation.py
+- frozen Workflow plan 补显式空 tool_plan
+- import / format
+
+runtime/execution/__init__.py
+- import / __all__ 排序
+
+runtime/execution/capability_execution.py
+- noqa / format
+
+runtime/execution/recovery.py
+- 去除过时 quoted annotation
+
+runtime/execution/recovery_runtime.py
+- import / format
+
+runtime/execution/reliability_coordinator.py
+- format only
+~~~
+
+未改变：
+
+~~~text
+RecoveryCoordinator frozen ordering
+terminal lifecycle > control > reconciliation > resume/retry/scheduler
+Tool reconciliation authority
+Workflow exact resume identity/version
+Skill recovered retry IU6 re-entry
+current recovery epoch side-effect guard
+IU7 control authority
+IU8 ResourceLock authority
+SequentialStepScheduler authority
+~~~
+
+四项门禁：
+
+~~~text
+python -m pytest tests -q
+= 841 passed
+
+python -m mypy runtime tests
+= Success, 207 files
+
+python -m ruff check runtime tests
+= PASSED
+
+python -m ruff format --check runtime tests
+= PASSED
+~~~
+
+Closure：
+
+~~~text
+M5-IU9 FORMAL IMPLEMENTATION = CODE COMPLETE
+M5-IU9 FORMAL IMPLEMENTATION REVIEW = PASSED
+M5-IU9 FORMAL IMPLEMENTATION VERIFICATION = PASSED
+
+FORMAL IMPLEMENTATION VERIFICATION CLOSURE = PASSED
+
+M5-IU9 = IN PROGRESS
+M5 = IN PROGRESS
+~~~
+
+本 Closure 不等于：
+
+~~~text
+M5-IU9 FORMAL IMPLEMENTATION = PASSED
+M5-IU9 = PASSED
+M5-IU9 = CLOSED
+M5 = PASSED
+~~~
+
+下一步必须是：
+
+~~~text
+M5-IU9 Closure Evaluation
+~~~
+
+在该 Closure Evaluation 完成之前，不进入 M5-IU10。

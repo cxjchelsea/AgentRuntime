@@ -133,6 +133,22 @@ class PendingStepSkipAuthority:
             raise ValueError(
                 "pending Step skip authority requires non-blank reason_codes"
             )
+        required_failure_reason = ("REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL",)
+        if (
+            self.kind
+            is PendingStepSkipAuthorityKind.REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL
+            and self.reason_codes != required_failure_reason
+        ):
+            raise ValueError(
+                "required-previous-step skip authority requires exact reason"
+            )
+        if (
+            self.kind is PendingStepSkipAuthorityKind.SCHEDULER_SKIP
+            and self.reason_codes == required_failure_reason
+        ):
+            raise ValueError(
+                "scheduler SKIP authority cannot impersonate required-failure BLOCKED"
+            )
 
 
 @dataclass(frozen=True, slots=True)

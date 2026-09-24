@@ -35,6 +35,10 @@ from runtime.execution.foundation import (
     StepLifecycleSnapshot,
 )
 from runtime.execution.models import ExecutionRecord, StepExecutionStatus
+from runtime.execution.recovery import (
+    ExecutionRecoveryClaim,
+    ExecutionRecoverySnapshotFactory,
+)
 
 START = datetime(2026, 9, 22, 14, 0, tzinfo=UTC)
 LATCHED = START + timedelta(seconds=5)
@@ -592,3 +596,37 @@ def test_service_persists_mutation_but_not_late_control_noop() -> None:
     assert late_result is late
     stored_after_noop = asyncio.run(store.load("execution-001"))
     assert stored_after_noop == updated.execution_record
+
+
+
+def test_control_terminalized_payload_can_be_captured_by_recovery_snapshot() -> None:
+    prepared = _prepared()
+    updated = ExecutionControlLifecycleTransitioner().terminalize(
+        prepared,
+        latched_control=_latched(),
+        application=_application(),
+        at=TERMINALIZED,
+    )
+    claim = ExecutionRecoveryClaim(
+        claim_id="claim-control-terminal",
+        execution_id=updated.execution_record.execution_id,
+        recovery_owner_id="worker-control-terminal",
+        recovery_epoch=1,
+        source_snapshot_generation=0,
+        claimed_at=TERMINALIZED,
+    )
+
+    snapshot = ExecutionRecoverySnapshotFactory().capture(
+        updated,
+        checkpoint_id="checkpoint-control-terminal",
+        generation=1,
+        captured_at=TERMINALIZED + timedelta(seconds=1),
+        claim=claim,
+    )
+
+    restored = snapshot.restore_prepared_execution()
+    assert restored.execution_record.status == "CANCELLED"
+    assert restored.execution_record.step_results[0]["tool_call_ids"] == [
+        "tool-call-committed"
+    ]
+    assert restored.execution_record.step_results[0]["degraded"] is False

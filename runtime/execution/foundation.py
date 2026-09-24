@@ -991,7 +991,7 @@ class InMemoryExecutionStateStore:
 
 
 def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, Any]:
-    return {
+    payload = {
         "step_execution_id": snapshot.step_execution_id,
         "step_id": snapshot.step_id,
         "action": snapshot.action,
@@ -1004,11 +1004,9 @@ def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, An
         "retry_count": snapshot.retry_count,
         "terminal_reason_codes": list(snapshot.terminal_reason_codes),
         "degraded": snapshot.degraded,
-        "aggregation_evidence": (
-            None
-            if snapshot.aggregation_evidence is None
-            else snapshot.aggregation_evidence.to_payload()
-        ),
         "started_at": snapshot.started_at,
         "finished_at": snapshot.finished_at,
     }
+    if snapshot.aggregation_evidence is not None:
+        payload["aggregation_evidence"] = snapshot.aggregation_evidence.to_payload()
+    return payload

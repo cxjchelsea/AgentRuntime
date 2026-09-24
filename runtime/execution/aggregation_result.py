@@ -38,6 +38,10 @@ from runtime.execution.aggregation_evidence import (
     StepAggregationTerminalizationKind,
     project_ca01_evidence_inputs,
 )
+from runtime.execution.capability_resolution import (
+    ApprovedCapabilityProjectionError,
+    ApprovedStepCapabilityProjector,
+)
 from runtime.execution.control import (
     ExecutionControlSignalType,
     LatchedExecutionControl,
@@ -112,6 +116,13 @@ class DurableControlTerminalToolEvidenceReader:
         )
         if cursor is None:
             return None
+        if (
+            cursor.execution_id != execution_id
+            or cursor.step_execution_id != step_execution_id
+        ):
+            raise ExecutionAggregationProjectionError(
+                "EXECUTION_RESULT_CONTROL_ATTEMPT_CURSOR_MISMATCH"
+            )
         return await self._store.load_tool_journal(
             execution_id=execution_id,
             step_execution_id=step_execution_id,
@@ -218,6 +229,7 @@ class CanonicalExecutionResultProjector:
         tool_durations: list[dict[str, Any]] = []
 
         seen_tool_journal: dict[str, dict[str, Any]] = {}
+        approved_capability_projector = ApprovedStepCapabilityProjector()
 
         for plan_index, plan_step in enumerate(approved_plan.steps):
             step = step_by_id[plan_step.step_id]
@@ -280,6 +292,27 @@ class CanonicalExecutionResultProjector:
                     raise ExecutionAggregationProjectionError(
                         "EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_MISMATCH"
                     )
+                try:
+                    approved_capabilities = approved_capability_projector.project(
+                        approved_plan=approved_plan,
+                        step=plan_step,
+                    )
+                except ApprovedCapabilityProjectionError as exc:
+                    raise ExecutionAggregationProjectionError(
+                        "EXECUTION_RESULT_CONTROL_APPROVED_CAPABILITY_UNKNOWN"
+                    ) from exc
+                approved_tool_versions = {
+                    item.capability_id: item.version
+                    for item in approved_capabilities.tools
+                }
+                for item in joined:
+                    if (
+                        approved_tool_versions.get(item.tool_id)
+                        != item.tool_version
+                    ):
+                        raise ExecutionAggregationProjectionError(
+                            "EXECUTION_RESULT_CONTROL_TOOL_NOT_APPROVED"
+                        )
                 journal_entries = joined
             else:
                 journal_entries = evidence.tool_journal

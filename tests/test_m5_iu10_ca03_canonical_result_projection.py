@@ -932,6 +932,56 @@ def test_control_tool_join_uses_durable_current_attempt_not_retry_count() -> Non
     asyncio.run(scenario())
 
 
+def test_control_tool_join_rejects_unapproved_tool_version() -> None:
+    async def scenario() -> None:
+        tool_result = M5ToolResult(
+            tool_call_id="tool-call-control",
+            tool_id="tool-001",
+            status=ToolExecutionStatus.CANCELLED,
+            attempt=1,
+        )
+        journal = (
+            ToolInvocationJournalEntry(
+                tool_call_id="tool-call-control",
+                tool_id="tool-001",
+                tool_version="9.9.9",
+                result=tool_result,
+            ),
+        )
+        reader = DurableControlTerminalToolEvidenceReader(
+            store=StaticControlToolJournalStore(
+                current_attempt=3,
+                journal=journal,
+            )
+        )
+        plan, prepared, control, applicability = await _control_terminal(
+            ExecutionControlSignalType.CANCEL,
+            tool_call_ids=("tool-call-control",),
+        )
+        eligibility = _ready_eligibility(
+            plan=plan,
+            prepared=prepared,
+            control=control,
+            applicability=applicability,
+        )
+
+        with pytest.raises(
+            ExecutionAggregationProjectionError,
+            match="EXECUTION_RESULT_CONTROL_TOOL_NOT_APPROVED",
+        ):
+            await CanonicalExecutionResultProjector(
+                control_tool_evidence_reader=reader
+            ).project(
+                approved_plan=plan,
+                prepared=prepared,
+                eligibility=eligibility,
+                control=control,
+                control_applicability=applicability,
+            )
+
+    asyncio.run(scenario())
+
+
 def test_control_tool_join_missing_durable_attempt_fails_closed() -> None:
     async def scenario() -> None:
         store = NoAttemptControlToolJournalStore(

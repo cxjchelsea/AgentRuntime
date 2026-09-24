@@ -782,6 +782,11 @@ class StepAggregationEvidenceAuthority:
                     evidence.capability_events
                 ):
                     return "AGGREGATION_EVIDENCE_SKILL_EVENT_MISMATCH"
+                journal_results = [
+                    entry.get("result") for entry in evidence.tool_journal
+                ]
+                if evidence.skill_result.get("tool_results", []) != journal_results:
+                    return "AGGREGATION_EVIDENCE_SKILL_TOOL_RESULT_MISMATCH"
             elif step.workflow_id is not None:
                 if (
                     evidence.execution_owner != "WORKFLOW"
@@ -810,6 +815,11 @@ class StepAggregationEvidenceAuthority:
                     return "AGGREGATION_EVIDENCE_WORKFLOW_OUTPUT_MISMATCH"
                 if evidence.capability_events:
                     return "AGGREGATION_EVIDENCE_WORKFLOW_EVENT_MISMATCH"
+                journal_results = [
+                    entry.get("result") for entry in evidence.tool_journal
+                ]
+                if evidence.workflow_result.get("tool_results", []) != journal_results:
+                    return "AGGREGATION_EVIDENCE_WORKFLOW_TOOL_RESULT_MISMATCH"
             elif (
                 evidence.execution_owner != "NONE"
                 or evidence.owner_capability_id is not None

@@ -833,3 +833,94 @@ def test_recovered_attempt_number_survives_terminal_evidence() -> None:
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
 
     asyncio.run(scenario())
+
+
+
+def test_serialized_evidence_rejects_extra_or_coerced_fields() -> None:
+    observation = _skill_observation(step_execution_id="exec:step-001")
+    evidence = StepAggregationEvidence.from_attempt_finalization(
+        execution_id="execution-iu10-ca02",
+        observation=observation,
+        terminal_step_status=StepExecutionStatus.SUCCESS,
+        terminal_reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
+        degraded=True,
+        terminalized_at=NOW + timedelta(seconds=3),
+    )
+    payload = evidence.to_payload()
+
+    with_extra = dict(payload)
+    with_extra["unexpected"] = "value"
+    with pytest.raises(ValueError, match="payload keys"):
+        StepAggregationEvidence.from_payload(with_extra)
+
+    coerced = dict(payload)
+    coerced["execution_id"] = 123
+    with pytest.raises(ValueError, match="execution_id"):
+        StepAggregationEvidence.from_payload(coerced)
+
+
+def test_tool_truth_flags_cannot_be_forged() -> None:
+    observation = _skill_observation(step_execution_id="exec:step-001")
+
+    with pytest.raises(ValueError, match="unknown Tool evidence flag"):
+        StepAggregationEvidence(
+            schema_version="m5-iu10-ca02-v1",
+            execution_id="execution-iu10-ca02",
+            step_execution_id=observation.step_execution_id,
+            step_id=observation.step_id,
+            terminalization_kind=StepAggregationTerminalizationKind.ATTEMPT_FINALIZED,
+            terminal_step_status=StepExecutionStatus.SUCCESS,
+            terminal_reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
+            degraded=True,
+            observed_at=observation.observed_at,
+            terminalized_at=NOW + timedelta(seconds=3),
+            final_attempt_number=1,
+            final_attempt_status="PARTIAL_SUCCESS",
+            final_attempt_reason_codes=observation.reason_codes,
+            execution_owner="SKILL",
+            owner_capability_id="skill-001",
+            owner_capability_version="1.0.0",
+            skill_result={
+                "skill_id": "skill-001",
+                "status": "PARTIAL_SUCCESS",
+                "business_outputs": [],
+                "tool_results": [],
+                "events": [],
+                "error": None,
+                "metadata": {},
+            },
+            has_unknown_tool_observation=True,
+        )
+
+
+def test_ambiguous_skill_and_workflow_owner_is_unknown() -> None:
+    async def scenario() -> None:
+        plan = _skill_plan()
+        ambiguous_step = plan.steps[0].model_copy(
+            update={"workflow_id": "workflow-001"}
+        )
+        plan = plan.model_copy(update={"steps": [ambiguous_step]})
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        completed = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running,
+            reliability_result=_partial_reliability_result(
+                step_execution_id=running.steps[0].step_execution_id
+            ),
+            at=NOW + timedelta(seconds=3),
+        )
+
+        readiness, _ = project_ca01_evidence_inputs(completed.prepared)
+
+        assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
+        assert readiness.reason_codes == (
+            "AGGREGATION_EVIDENCE_STEP_OWNER_AMBIGUOUS",
+        )
+
+    asyncio.run(scenario())

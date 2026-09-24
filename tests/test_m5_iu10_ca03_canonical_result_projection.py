@@ -75,6 +75,8 @@ from tests.test_m5_iu10_ca02_aggregation_evidence import (
     _partial_reliability_result,
     _running,
     _skill_plan,
+    _workflow_observation as ca02_workflow_observation,
+    _workflow_plan,
 )
 
 
@@ -529,29 +531,54 @@ def test_multiple_workflows_are_lossless_and_legacy_field_is_not_ambiguous() -> 
 
 def test_single_workflow_populates_both_legacy_and_plural_fields() -> None:
     async def scenario() -> None:
-        plan, prepared = await _multi_workflow_terminal()
-        one_step_plan = plan.model_copy(update={"steps": [plan.steps[0]]})
-        one_step = prepared.steps[0]
-        one_step_prepared = replace(
+        plan = _workflow_plan()
+        prepared, service, _ = await _running(plan)
+        running = await service.start_step(
             prepared,
-            steps=(one_step,),
-            execution_record=replace(
-                prepared.execution_record,
-                step_results=(_persisted_step_payload(one_step),),
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        observation = ca02_workflow_observation(
+            step_execution_id=running.steps[0].step_execution_id
+        )
+        reliability = StepReliabilityRunResult(
+            attempts=(observation,),
+            reliability_decision=StepReliabilityDecision(
+                disposition=StepReliabilityDisposition.FINALIZE,
+                reason_codes=("STEP_RETRY_NOT_AUTHORIZED",),
+            ),
+            finalization_decision=StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.FINALIZE,
+                reason_codes=("STEP_SUCCESS_FINALIZATION_AUTHORIZED",),
+                terminal_status=StepExecutionStatus.SUCCESS,
             ),
         )
+        step_done = (
+            await RunningStepCompletionCoordinator(
+                lifecycle_service=service
+            ).complete(
+                prepared=running,
+                reliability_result=reliability,
+                at=NOW + timedelta(seconds=3),
+            )
+        ).prepared
+        completed = await service.finish_execution(
+            step_done,
+            status=ExecutionPlanStatus.SUCCESS,
+            at=NOW + timedelta(seconds=4),
+        )
+
         control = _no_control()
         applicability = _no_control_applicability()
         eligibility = _ready_eligibility(
-            plan=one_step_plan,
-            prepared=one_step_prepared,
+            plan=plan,
+            prepared=completed,
             control=control,
             applicability=applicability,
         )
-
         result = CanonicalExecutionResultProjector().project(
-            approved_plan=one_step_plan,
-            prepared=one_step_prepared,
+            approved_plan=plan,
+            prepared=completed,
             eligibility=eligibility,
             control=control,
             control_applicability=applicability,
@@ -560,9 +587,9 @@ def test_single_workflow_populates_both_legacy_and_plural_fields() -> None:
         assert result.workflow_results is not None
         assert len(result.workflow_results) == 1
         assert result.workflow_result == result.workflow_results[0]
+        assert result.workflow_result["workflow_id"] == "workflow-001"
 
     asyncio.run(scenario())
-
 
 @pytest.mark.parametrize(
     ("signal_type", "expected_status", "cancelled", "preempted"),

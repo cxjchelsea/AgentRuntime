@@ -808,6 +808,7 @@ def test_control_result_projects_exact_durable_provenance(
             eligibility=eligibility,
             control=control,
             control_applicability=applicability,
+            control_tool_journals={prepared.steps[0].step_id: ()},
         )
 
         assert result.plan_status is expected_status
@@ -818,6 +819,35 @@ def test_control_result_projects_exact_durable_provenance(
         assert result.cancellation["source"] == "runtime"
         assert result.cancellation["cancelled"] is cancelled
         assert result.cancellation["preempted"] is preempted
+
+    asyncio.run(scenario())
+
+
+def test_control_aggregator_requires_durable_tool_absence_proof() -> None:
+    async def scenario() -> None:
+        plan, prepared, control, applicability = await _control_terminal(
+            ExecutionControlSignalType.CANCEL
+        )
+        aggregator = ExecutionAggregator(
+            authority=ExecutionAggregationAuthority(),
+            lifecycle_service=ExecutionLifecycleService(
+                lifecycle_manager=ExecutionLifecycleManager(),
+                execution_store=InMemoryExecutionStateStore(),
+            ),
+            projector=CanonicalExecutionResultProjector(),
+        )
+
+        with pytest.raises(
+            ExecutionAggregationProjectionError,
+            match="EXECUTION_RESULT_CONTROL_TOOL_EVIDENCE_READER_MISSING",
+        ):
+            await aggregator.aggregate(
+                approved_plan=plan,
+                prepared=prepared,
+                control=control,
+                control_applicability=applicability,
+                at=NOW + timedelta(seconds=20),
+            )
 
     asyncio.run(scenario())
 
@@ -949,6 +979,7 @@ def test_control_terminal_result_rejects_missing_provenance() -> None:
                 eligibility=eligibility,
                 control=_no_control(),
                 control_applicability=_no_control_applicability(),
+                control_tool_journals={prepared.steps[0].step_id: ()},
             )
 
     asyncio.run(scenario())

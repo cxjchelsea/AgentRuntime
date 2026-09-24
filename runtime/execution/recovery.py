@@ -38,6 +38,7 @@ def _require_aware(value: datetime, field_name: str) -> None:
 def _normalize_step_record_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = deepcopy(payload)
     normalized.setdefault("terminal_reason_codes", [])
+    normalized.setdefault("degraded", False)
     return normalized
 
 
@@ -54,6 +55,7 @@ def _step_payload(snapshot: StepLifecycleSnapshot) -> dict[str, Any]:
         "error": snapshot.error,
         "retry_count": snapshot.retry_count,
         "terminal_reason_codes": list(snapshot.terminal_reason_codes),
+        "degraded": snapshot.degraded,
         "started_at": snapshot.started_at,
         "finished_at": snapshot.finished_at,
     }

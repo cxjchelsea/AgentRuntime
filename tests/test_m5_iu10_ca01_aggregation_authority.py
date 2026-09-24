@@ -927,11 +927,11 @@ def test_executed_terminal_step_requires_started_at() -> None:
             (StepExecutionStatus.SUCCESS, False, ("DONE",)),
         )
         broken_step = replace(prepared.steps[0], started_at=None)
-        broken_payload = tuple(
+        broken_payload: tuple[dict[str, Any], ...] = (
             {
                 **prepared.execution_record.step_results[0],
                 "started_at": None,
-            }
+            },
         )
         broken = replace(
             prepared,
@@ -959,7 +959,9 @@ def test_persisted_step_status_drift_is_blocked() -> None:
             await _prepared(plan),
             (StepExecutionStatus.SUCCESS, False, ("DONE",)),
         )
-        persisted = dict(prepared.execution_record.step_results[0])
+        persisted: dict[str, Any] = dict(
+            prepared.execution_record.step_results[0]
+        )
         persisted["status"] = "FAILED"
         drifted = replace(
             prepared,

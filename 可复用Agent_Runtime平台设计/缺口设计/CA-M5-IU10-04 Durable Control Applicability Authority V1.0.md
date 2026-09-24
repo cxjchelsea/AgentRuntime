@@ -296,6 +296,42 @@ lifecycle no-op
 
 重启后 exact durable latch + exact durable LATE_NOOP 可以继续 natural / existing-terminal aggregation，不会因为 latch 存在永久卡死。
 
+# 12.1 Control-terminal exact replay
+
+`ALREADY_TERMINAL` 不能被机械地解释成新的 LATE_NOOP。
+
+存在另一种合法来源：
+
+~~~text
+control previously APPLIES
+↓
+CANCEL/PREEMPT lifecycle already persisted
+↓
+same exact control is replayed
+↓
+IU7 current application = ALREADY_TERMINAL
+~~~
+
+如果此时重新写 LATE_NOOP，会伪造历史并与已持久化 APPLIES 冲突。
+
+因此当：
+
+~~~text
+application = ALREADY_TERMINAL
++
+current execution status = CANCELLED / PREEMPTED
+~~~
+
+CA-04 将其视为：
+
+~~~text
+control-terminal replay
+~~~
+
+不创建新的 LATE_NOOP evidence，不覆盖既有 APPLIES。
+
+对于 pre-CA04 legacy execution 如果 APPLIES evidence 缺失，也不允许根据当前 control-terminal lifecycle 反向补写历史；aggregation 保持 UNKNOWN/fail closed。
+
 # 13. Durable read authority
 
 新增：
@@ -472,7 +508,8 @@ tests/test_m5_iu10_ca04_control_applicability.py
 17. Aggregator no longer accepts caller control
 18. Aggregator no longer accepts caller control_applicability
 19. no timestamp-based LATE_NOOP inference
-20. no M6/M7/M8 authority introduced
+20. control-terminal exact replay is not reclassified as LATE_NOOP
+21. no M6/M7/M8 authority introduced
 ~~~
 
 # 22. Blocker impact

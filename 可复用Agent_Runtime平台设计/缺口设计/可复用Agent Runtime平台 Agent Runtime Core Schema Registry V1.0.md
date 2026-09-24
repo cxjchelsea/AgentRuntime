@@ -2004,6 +2004,13 @@ trace_context
 
 # 59. ExecutionResult
 
+CA-M5-IU10-03 后：
+
+```text
+ExecutionResult schema_version default = 1.1.0
+旧 1.0.0 payload = backward compatible input
+```
+
 ```text
 ExecutionResult
 
@@ -2016,6 +2023,7 @@ step_results[]
 skill_results[]
 
 workflow_result
+workflow_results[]
 
 tool_results[]
 
@@ -2033,6 +2041,17 @@ cancellation
 
 quality
 ```
+
+Workflow cardinality：
+
+```text
+0 Workflow  -> workflow_result=None, workflow_results=[]
+1 Workflow  -> workflow_result=exact sole item, workflow_results=[same item]
+>1 Workflow -> workflow_result=None, workflow_results=[all items in ApprovedPlan order]
+```
+
+`workflow_result` 是单 Workflow backward-compatible view；
+`workflow_results[]` 是 lossless canonical multi-Workflow field。
 
 ---
 

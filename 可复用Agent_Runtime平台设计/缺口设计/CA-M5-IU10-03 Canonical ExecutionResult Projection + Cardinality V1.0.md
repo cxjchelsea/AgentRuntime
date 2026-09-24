@@ -504,6 +504,8 @@ durable evidence 只证明“发生过什么”，不能自行证明“被批准
 ~~~text
 EXECUTION_RESULT_CONTROL_TOOL_EVIDENCE_READER_MISSING
 or
+EXECUTION_RESULT_CONTROL_TOOL_PROJECTION_MISSING
+or
 EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_MISMATCH
 or
 EXECUTION_RESULT_CONTROL_APPROVED_CAPABILITY_UNKNOWN
@@ -511,8 +513,20 @@ or
 EXECUTION_RESULT_CONTROL_TOOL_NOT_APPROVED
 ~~~
 
-如果 Step 没有 tool_call_ids，则允许没有 durable attempt/journal；
-但若 reader 返回额外 Tool journal，也会因 exact identity mismatch 被拒绝。
+即使 Step 没有 tool_call_ids，也不能因为 reader 缺失就默认“没有 Tool”。
+
+正式语义：
+
+~~~text
+CONTROL_TERMINALIZED
+-> durable Tool evidence reader REQUIRED
+-> cursor=None 可证明 no durable Step attempt
+-> exact journal=() 可证明 no Tool journal
+~~~
+
+reader 缺失本身不是 absence evidence。
+
+如果 reader 返回额外 Tool journal，也会因 exact identity mismatch 被拒绝。
 
 control-path Tool result 仍然只是 execution observation；
 CANCELLED / UNKNOWN 等状态不会被升级成 SUCCESS。
@@ -704,19 +718,20 @@ tests/test_m5_iu10_ca03_canonical_result_projection.py
 21. control Tool join never derives attempt from retry_count
 22. control Step Tool IDs must exactly match durable journal
 23. control Tool id/version must match frozen ApprovedPlan
-24. missing durable control Tool evidence fails closed
-25. non-ready aggregation cannot be projected
-26. Formal Projector accepts READY_EXISTING_TERMINAL only
-27. Projector independently requires CA-02 READY evidence
-28. Projector validates execution/plan/status provenance
-29. Projector validates ApprovedPlan Step order
-30. duplicate logical Tool exact replay is deterministic
-31. conflicting duplicate tool_call_id fails closed
-32. no Registry lookup
-33. no capability invoke
-34. no retry / resume / replan
-35. no M6/M7/M8 dependency
-36. Canonical ExecutionResult validates successfully
+24. control no-Tool path still requires durable absence proof
+25. missing durable control Tool reader/projection fails closed
+26. non-ready aggregation cannot be projected
+27. Formal Projector accepts READY_EXISTING_TERMINAL only
+28. Projector independently requires CA-02 READY evidence
+29. Projector validates execution/plan/status provenance
+30. Projector validates ApprovedPlan Step order
+31. duplicate logical Tool exact replay is deterministic
+32. conflicting duplicate tool_call_id fails closed
+33. no Registry lookup
+34. no capability invoke
+35. no retry / resume / replan
+36. no M6/M7/M8 dependency
+37. Canonical ExecutionResult validates successfully
 ~~~
 
 # 24. Blocker impact

@@ -13,7 +13,10 @@ from enum import Enum
 
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.planning import ApprovedActionPlan
-from runtime.execution.aggregation_authority import ExecutionAggregationAuthority
+from runtime.execution.aggregation_authority import (
+    ExecutionAggregationAuthority,
+    ExecutionAggregationEligibilityStatus,
+)
 from runtime.execution.aggregation_result import (
     CanonicalExecutionResultProjector,
     DurableControlTerminalToolEvidenceReader,
@@ -50,7 +53,11 @@ from runtime.execution.reliability_coordinator import (
     RecoveredWorkflowReliabilityRunResult,
     StepReliabilityRunResult,
 )
-from runtime.execution.scheduler import SequentialStepScheduler, StepScheduleDecision
+from runtime.execution.scheduler import (
+    SequentialStepScheduler,
+    StepScheduleDecision,
+    StepScheduleStatus,
+)
 from runtime.execution.step_completion import (
     RunningStepCompletionCoordinator,
     RunningStepCompletionDecision,
@@ -138,14 +145,37 @@ class M5ExecutionAggregationOutcome:
             not reason.strip() for reason in self.reason_codes
         ):
             raise ValueError("reason_codes must contain non-blank values")
+        if len(set(self.terminalized_step_ids)) != len(
+            self.terminalized_step_ids
+        ) or any(not step_id.strip() for step_id in self.terminalized_step_ids):
+            raise ValueError("terminalized_step_ids must be unique non-blank ids")
+
         if self.status is M5ExecutionAggregationRuntimeStatus.AGGREGATED:
-            if self.aggregation_result is None:
+            result = self.aggregation_result
+            if result is None:
                 raise ValueError("AGGREGATED outcome requires aggregation_result")
+            if result.prepared != self.prepared:
+                raise ValueError(
+                    "AGGREGATED outcome must expose exact aggregation prepared state"
+                )
+            if (
+                result.eligibility.status
+                is not ExecutionAggregationEligibilityStatus.READY_EXISTING_TERMINAL
+            ):
+                raise ValueError(
+                    "AGGREGATED outcome requires READY_EXISTING_TERMINAL authority"
+                )
         elif self.aggregation_result is not None:
             raise ValueError("only AGGREGATED outcome can carry aggregation_result")
+
         if self.status is M5ExecutionAggregationRuntimeStatus.STEP_READY:
-            if self.schedule_decision is None:
-                raise ValueError("STEP_READY outcome requires schedule_decision")
+            if (
+                self.schedule_decision is None
+                or self.schedule_decision.status is not StepScheduleStatus.READY
+            ):
+                raise ValueError(
+                    "STEP_READY outcome requires exact READY schedule decision"
+                )
 
 
 class M5ExecutionAggregationRuntime:

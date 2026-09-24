@@ -31,10 +31,13 @@ class AggregationEvidenceReadinessStatus(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class AggregationEvidenceReadinessDecision:
+    execution_id: str
     status: AggregationEvidenceReadinessStatus
     reason_codes: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        if not self.execution_id.strip():
+            raise ValueError("execution_id must not be blank")
         if not isinstance(self.status, AggregationEvidenceReadinessStatus):
             raise ValueError(
                 "status must be AggregationEvidenceReadinessStatus"
@@ -56,6 +59,7 @@ class AggregationControlApplicabilityStatus(str, Enum):
 class AggregationControlApplicabilityDecision:
     status: AggregationControlApplicabilityStatus
     reason_codes: tuple[str, ...]
+    latched_control: object | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, AggregationControlApplicabilityStatus):
@@ -66,12 +70,52 @@ class AggregationControlApplicabilityDecision:
             not reason.strip() for reason in self.reason_codes
         ):
             raise ValueError("reason_codes must contain non-blank values")
+        if self.status in {
+            AggregationControlApplicabilityStatus.APPLIES,
+            AggregationControlApplicabilityStatus.LATE_NOOP,
+        }:
+            if self.latched_control is None:
+                raise ValueError(
+                    "APPLIES/LATE_NOOP requires exact latched_control"
+                )
+        elif self.latched_control is not None:
+            raise ValueError(
+                "NONE/UNKNOWN control applicability cannot carry latched_control"
+            )
 
 
 class StepSkipAggregationDisposition(str, Enum):
     NOT_APPLICABLE = "NOT_APPLICABLE"
     UNSATISFIED = "UNSATISFIED"
     UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True, slots=True)
+class StepSkipAggregationDecision:
+    execution_id: str
+    step_execution_id: str
+    step_id: str
+    disposition: StepSkipAggregationDisposition
+    reason_codes: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if any(
+            not value.strip()
+            for value in (
+                self.execution_id,
+                self.step_execution_id,
+                self.step_id,
+            )
+        ):
+            raise ValueError("skip aggregation identifiers must not be blank")
+        if not isinstance(self.disposition, StepSkipAggregationDisposition):
+            raise ValueError(
+                "disposition must be StepSkipAggregationDisposition"
+            )  # noqa: TRY004
+        if not self.reason_codes or any(
+            not reason.strip() for reason in self.reason_codes
+        ):
+            raise ValueError("reason_codes must contain non-blank values")
 
 
 class StepAggregationEffect(str, Enum):
@@ -91,10 +135,14 @@ class ExecutionAggregationEligibilityStatus(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class ExecutionAggregationDecision:
+    execution_id: str
+    plan_id: str
     plan_status: ExecutionPlanStatus
     reason_codes: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        if not self.execution_id.strip() or not self.plan_id.strip():
+            raise ValueError("aggregation decision identifiers must not be blank")
         if not isinstance(self.plan_status, ExecutionPlanStatus):
             raise ValueError("plan_status must be ExecutionPlanStatus")  # noqa: TRY004
         if not self.reason_codes or any(
@@ -159,7 +207,7 @@ class ExecutionAggregationAuthority:
         control: DurableControlReadDecision,
         control_applicability: AggregationControlApplicabilityDecision,
         evidence_readiness: AggregationEvidenceReadinessDecision,
-        skip_dispositions: Mapping[str, StepSkipAggregationDisposition],
+        skip_decisions: Mapping[str, StepSkipAggregationDecision],
     ) -> ExecutionAggregationEligibilityDecision:
         alignment_error = self._alignment_error(approved_plan, prepared)
         if alignment_error is not None:
@@ -167,6 +215,12 @@ class ExecutionAggregationAuthority:
 
         if control.status is DurableControlReadStatus.UNKNOWN:
             return self._blocked("AGGREGATION_CONTROL_STATE_UNKNOWN")
+
+        if (
+            evidence_readiness.execution_id
+            != prepared.execution_record.execution_id
+        ):
+            return self._blocked("AGGREGATION_EVIDENCE_EXECUTION_MISMATCH")
 
         if control_applicability.status is AggregationControlApplicabilityStatus.UNKNOWN:
             return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_UNKNOWN")
@@ -177,6 +231,13 @@ class ExecutionAggregationAuthority:
         else:
             if control_applicability.status is AggregationControlApplicabilityStatus.NONE:
                 return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_MISMATCH")
+            if (
+                control.latched_control is None
+                or control_applicability.latched_control != control.latched_control
+            ):
+                return self._blocked(
+                    "AGGREGATION_CONTROL_APPLICABILITY_AUTHORITY_MISMATCH"
+                )
 
         existing = self._TERMINAL_EXECUTION_STATUSES.get(
             prepared.execution_record.status
@@ -253,13 +314,14 @@ class ExecutionAggregationAuthority:
         effects = self._step_effects(
             approved_plan=approved_plan,
             prepared=prepared,
-            skip_dispositions=skip_dispositions,
+            skip_decisions=skip_decisions,
         )
         if effects is None:
             return self._blocked("AGGREGATION_STEP_EFFECT_UNKNOWN")
 
         aggregation = self._natural_plan_status(
             approved_plan=approved_plan,
+            prepared=prepared,
             effects=effects,
         )
 
@@ -337,6 +399,8 @@ class ExecutionAggregationAuthority:
             status=ExecutionAggregationEligibilityStatus.READY_EXISTING_TERMINAL,
             reason_codes=("AGGREGATION_CONTROL_TERMINAL_REPLAY_AUTHORIZED",),
             aggregation_decision=ExecutionAggregationDecision(
+                execution_id=prepared.execution_record.execution_id,
+                plan_id=prepared.execution_record.plan_id,
                 plan_status=expected,
                 reason_codes=("AGGREGATION_CONTROL_STATUS_PRESERVED",),
             ),
@@ -429,7 +493,7 @@ class ExecutionAggregationAuthority:
         *,
         approved_plan: ApprovedActionPlan,
         prepared: PreparedExecution,
-        skip_dispositions: Mapping[str, StepSkipAggregationDisposition],
+        skip_decisions: Mapping[str, StepSkipAggregationDecision],
     ) -> dict[str, StepAggregationEffect] | None:
         effects: dict[str, StepAggregationEffect] = {}
         lifecycle_by_id = {step.step_id: step for step in prepared.steps}
@@ -450,7 +514,17 @@ class ExecutionAggregationAuthority:
                 effects[step.step_id] = StepAggregationEffect.TIMEOUT
                 continue
             if step.status is StepExecutionStatus.SKIPPED:
-                disposition = skip_dispositions.get(step.step_id)
+                skip_decision = skip_decisions.get(step.step_id)
+                if skip_decision is None:
+                    return None
+                if (
+                    skip_decision.execution_id
+                    != prepared.execution_record.execution_id
+                    or skip_decision.step_execution_id != step.step_execution_id
+                    or skip_decision.step_id != step.step_id
+                ):
+                    return None
+                disposition = skip_decision.disposition
                 if disposition is StepSkipAggregationDisposition.NOT_APPLICABLE:
                     effects[step.step_id] = StepAggregationEffect.NOT_APPLICABLE
                     continue
@@ -460,7 +534,7 @@ class ExecutionAggregationAuthority:
                 return None
             return None
 
-        extra_skip_ids = set(skip_dispositions) - {
+        extra_skip_ids = set(skip_decisions) - {
             step.step_id
             for step in prepared.steps
             if step.status is StepExecutionStatus.SKIPPED
@@ -473,6 +547,7 @@ class ExecutionAggregationAuthority:
     def _natural_plan_status(
         *,
         approved_plan: ApprovedActionPlan,
+        prepared: PreparedExecution,
         effects: Mapping[str, StepAggregationEffect],
     ) -> ExecutionAggregationDecision:
         required_effects = [
@@ -488,18 +563,24 @@ class ExecutionAggregationAuthority:
 
         if StepAggregationEffect.TIMEOUT in required_effects:
             return ExecutionAggregationDecision(
+                execution_id=prepared.execution_record.execution_id,
+                plan_id=approved_plan.plan_id,
                 plan_status=ExecutionPlanStatus.TIMEOUT,
                 reason_codes=("AGGREGATION_REQUIRED_STEP_TIMEOUT",),
             )
 
         if StepAggregationEffect.UNSATISFIED in required_effects:
             return ExecutionAggregationDecision(
+                execution_id=prepared.execution_record.execution_id,
+                plan_id=approved_plan.plan_id,
                 plan_status=ExecutionPlanStatus.FAILED,
                 reason_codes=("AGGREGATION_REQUIRED_STEP_UNSATISFIED",),
             )
 
         if StepAggregationEffect.DEGRADED in required_effects:
             return ExecutionAggregationDecision(
+                execution_id=prepared.execution_record.execution_id,
+                plan_id=approved_plan.plan_id,
                 plan_status=ExecutionPlanStatus.PARTIAL_SUCCESS,
                 reason_codes=("AGGREGATION_REQUIRED_STEP_DEGRADED",),
             )
@@ -515,6 +596,8 @@ class ExecutionAggregationAuthority:
         )
         if not optional_problem:
             return ExecutionAggregationDecision(
+                execution_id=prepared.execution_record.execution_id,
+                plan_id=approved_plan.plan_id,
                 plan_status=ExecutionPlanStatus.SUCCESS,
                 reason_codes=("AGGREGATION_ALL_APPLICABLE_STEPS_SATISFIED",),
             )
@@ -530,17 +613,23 @@ class ExecutionAggregationAuthority:
         )
         if has_progress:
             return ExecutionAggregationDecision(
+                execution_id=prepared.execution_record.execution_id,
+                plan_id=approved_plan.plan_id,
                 plan_status=ExecutionPlanStatus.PARTIAL_SUCCESS,
                 reason_codes=("AGGREGATION_OPTIONAL_STEP_NOT_FULLY_SATISFIED",),
             )
 
         if StepAggregationEffect.TIMEOUT in optional_effects:
             return ExecutionAggregationDecision(
+                execution_id=prepared.execution_record.execution_id,
+                plan_id=approved_plan.plan_id,
                 plan_status=ExecutionPlanStatus.TIMEOUT,
                 reason_codes=("AGGREGATION_ALL_APPLICABLE_WORK_TIMED_OUT",),
             )
 
         return ExecutionAggregationDecision(
+            execution_id=prepared.execution_record.execution_id,
+            plan_id=approved_plan.plan_id,
             plan_status=ExecutionPlanStatus.FAILED,
             reason_codes=("AGGREGATION_ALL_APPLICABLE_WORK_UNSATISFIED",),
         )

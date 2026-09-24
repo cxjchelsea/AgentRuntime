@@ -1224,3 +1224,56 @@ def test_formal_runtime_does_not_use_skeleton_projector_or_hand_built_control() 
     assert "DurableAggregationControlAuthority(" in source
     assert "CanonicalExecutionResultProjector(" in source
     assert "DurableControlTerminalToolEvidenceReader(" in source
+
+
+def test_recovered_current_attempt_tool_call_id_collision_blocks_before_physical_invoke() -> None:
+    class ReusedIdentifierFactory:
+        def new_tool_call_id(
+            self,
+            *,
+            step_execution_id: str,
+            tool_id: str,
+        ) -> str:
+            del step_execution_id, tool_id
+            return "tool-call-recovered"
+
+        def new_workflow_instance_id(
+            self,
+            *,
+            step_execution_id: str,
+            workflow_id: str,
+        ) -> str:
+            del step_execution_id, workflow_id
+            return "workflow-instance-unused"
+
+    async def scenario() -> None:
+        tool = RecordingTool()
+        invoker = CoreApprovedToolInvoker(
+            resolved_tools=(_tool(tool),),
+            execution_context=recovery_context(),
+            step_execution_id="step-execution-001",
+            permission_context_provider=StaticPermissionProvider(),
+            permission_evaluator=StaticPermissionEvaluator(),
+            input_validator=StaticValidator(),
+            output_validator=StaticValidator(),
+            identifier_factory=ReusedIdentifierFactory(),
+            reserved_tool_call_ids=frozenset({"tool-call-recovered"}),
+        )
+
+        with pytest.raises(
+            ToolInvocationBoundaryError,
+            match="duplicate id",
+        ):
+            await invoker.invoke(
+                tool_id="DOMAIN_TOOL",
+                input_payload={"value": 1},
+            )
+
+        assert invoker.boundary_faults == ("TOOL_CALL_ID_COLLISION",)
+        assert tool.calls == 0
+
+    asyncio.run(scenario())
+
+    source = inspect.getsource(StepCapabilityExecutor.resume_workflow_from_checkpoint)
+    assert "reserved_tool_call_ids=frozenset(" in source
+    assert "recovered_current_attempt_journal" in source

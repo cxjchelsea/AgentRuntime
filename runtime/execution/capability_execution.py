@@ -2997,7 +2997,9 @@ class StepCapabilityExecutor:
                     outcome = boundary
                 else:
                     merged_journal = self._merge_resumed_attempt_journal(
-                        prior_attempt_journal=recovered_current_attempt_journal,
+                        recovered_current_attempt_journal=(
+                            recovered_current_attempt_journal
+                        ),
                         resumed_journal=tool_invoker.entries(),
                     )
                     if merged_journal is None:
@@ -3073,14 +3075,16 @@ class StepCapabilityExecutor:
     @staticmethod
     def _merge_resumed_attempt_journal(
         *,
-        prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...],
+        recovered_current_attempt_journal: tuple[
+            ToolInvocationJournalEntry, ...
+        ],
         resumed_journal: tuple[ToolInvocationJournalEntry, ...],
     ) -> tuple[ToolInvocationJournalEntry, ...] | None:
         """Preserve one exact Workflow attempt journal across checkpoint resume."""
 
         merged: list[ToolInvocationJournalEntry] = []
         by_call_id: dict[str, ToolInvocationJournalEntry] = {}
-        for entry in (*prior_attempt_journal, *resumed_journal):
+        for entry in (*recovered_current_attempt_journal, *resumed_journal):
             call_id = entry.tool_call_id
             existing = by_call_id.get(call_id)
             if existing is None:

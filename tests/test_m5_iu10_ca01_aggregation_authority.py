@@ -886,7 +886,20 @@ def test_terminal_step_missing_finished_at_is_blocked() -> None:
             (StepExecutionStatus.SUCCESS, False, ("DONE",)),
         )
         broken_step = replace(prepared.steps[0], finished_at=None)
-        broken = replace(prepared, steps=(broken_step,))
+        broken_payload: tuple[dict[str, Any], ...] = (
+            {
+                **prepared.execution_record.step_results[0],
+                "finished_at": None,
+            },
+        )
+        broken = replace(
+            prepared,
+            steps=(broken_step,),
+            execution_record=replace(
+                prepared.execution_record,
+                step_results=broken_payload,
+            ),
+        )
 
         decision = await _evaluate(plan, broken)
 

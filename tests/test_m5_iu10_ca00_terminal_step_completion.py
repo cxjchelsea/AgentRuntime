@@ -304,10 +304,13 @@ def test_waiting_unknown_or_unrelated_blocked_cannot_terminalize_pending_step(
     asyncio.run(scenario())
 
 
-def _partial_observation() -> StepAttemptObservation:
+def _partial_observation(
+    *,
+    step_execution_id: str = "step-exec-001",
+) -> StepAttemptObservation:
     return StepAttemptObservation(
         step_id="step-001",
-        step_execution_id="step-exec-001",
+        step_execution_id=step_execution_id,
         attempt_number=1,
         status=StepAttemptStatus.PARTIAL_SUCCESS,
         execution_owner=CapabilityExecutionOwner.SKILL,
@@ -459,8 +462,11 @@ def test_partial_success_is_not_terminalized_while_iu6_still_requests_retry() ->
 
 
 
-def _partial_reliability_result() -> StepReliabilityRunResult:
-    observation = _partial_observation()
+def _partial_reliability_result(
+    *,
+    step_execution_id: str = "step-exec-001",
+) -> StepReliabilityRunResult:
+    observation = _partial_observation(step_execution_id=step_execution_id)
     return StepReliabilityRunResult(
         attempts=(observation,),
         reliability_decision=StepReliabilityDecision(
@@ -492,7 +498,9 @@ def test_running_partial_success_commits_degraded_terminal_step() -> None:
 
         decision = await coordinator.complete(
             prepared=running_step,
-            reliability_result=_partial_reliability_result(),
+            reliability_result=_partial_reliability_result(
+                step_execution_id=running_step.steps[0].step_execution_id
+            ),
             at=NOW + timedelta(seconds=2),
         )
 
@@ -616,7 +624,9 @@ def test_degraded_lifecycle_fact_survives_recovery_snapshot_roundtrip() -> None:
             lifecycle_service=service
         ).complete(
             prepared=running_step,
-            reliability_result=_partial_reliability_result(),
+            reliability_result=_partial_reliability_result(
+                step_execution_id=running_step.steps[0].step_execution_id
+            ),
             at=NOW + timedelta(seconds=2),
         )
         claim = ExecutionRecoveryClaim(

@@ -735,7 +735,9 @@ M5 = IN PROGRESS
 ~~~
 
 
-# 24. Independent Review decision
+# 24. Independent Review decision（历史时点）
+
+> 本节记录 Independent Review 完成时的历史状态；当前正式状态以第 25 节 Verification Closure 为准。
 
 累计复核范围：
 

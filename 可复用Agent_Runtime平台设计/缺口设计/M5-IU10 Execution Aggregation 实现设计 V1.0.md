@@ -788,7 +788,83 @@ IU10 正式实现必须升级为 evidence-aware aggregation/projection，不能�
 
 最终兼容方式由 CA-M5-IU10-03 冻结。
 
-# 29. Blockers
+# 29. Independent Design Review 新发现的前置闭环缺口
+
+## 29.1 Scheduler decision 尚未形成 terminal Step lifecycle
+
+现有 SequentialStepScheduler 可以返回：
+
+~~~text
+SKIP
+BLOCKED / REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL
+~~~
+
+但现有 ExecutionLifecycleManager 只允许：
+
+~~~text
+PENDING -> RUNNING
+RUNNING -> terminal
+~~~
+
+没有：
+
+~~~text
+PENDING -> SKIPPED
+~~~
+
+的正式 authority。
+
+因此会出现：
+
+~~~text
+required Step 1 = FAILED
+Step 2 = PENDING
+Scheduler = BLOCKED
+Step 2 永远保持 PENDING
+-> IU10 永远无法满足 all Steps terminal
+~~~
+
+这不能由 Aggregator 临时把 PENDING 当 SKIPPED。
+
+## 29.2 Skill PARTIAL_SUCCESS 尚未形成 terminal Step lifecycle
+
+当前：
+
+~~~text
+M5SkillResult.status = PARTIAL_SUCCESS
+-> StepAttemptStatus.PARTIAL_SUCCESS
+~~~
+
+但 BasicStepFinalizationEvaluator 只映射：
+
+~~~text
+SUCCESS -> Step SUCCESS
+FAILED -> Step FAILED
+TIMEOUT -> Step TIMEOUT
+~~~
+
+PARTIAL_SUCCESS 当前返回：
+
+~~~text
+StepFinalizationDisposition.UNKNOWN
+STEP_STATUS_REQUIRES_LATER_AUTHORITY
+~~~
+
+因此 partial Skill 也无法形成可聚合的 terminal Step。
+
+初步建议由 CA-M5-IU10-00 冻结：
+
+~~~text
+PARTIAL_SUCCESS owner observation
+-> Step lifecycle SUCCESS
+-> aggregation evidence preserves PARTIAL_SUCCESS / degraded=true
+~~~
+
+这样不修改既有 StepExecutionStatus 枚举，同时 Plan Aggregator 可依据 rich evidence 产出 PARTIAL_SUCCESS。
+
+该映射必须由 Controlled Amendment 正式评审后才能冻结。
+
+# 30. Blockers
 
 ~~~text
 B-M5-IU10-001
@@ -814,9 +890,45 @@ SKELETON_EXECUTION_RESULT_PROJECTOR_INCOMPLETE
 B-M5-IU10-006
 AGGREGATION_REPLAY_DETERMINISM_NOT_FROZEN
 = OPEN
+
+B-M5-IU10-007
+PENDING_STEP_TERMINALIZATION_AUTHORITY_MISSING
+= OPEN
+
+B-M5-IU10-008
+PARTIAL_SUCCESS_STEP_FINALIZATION_AUTHORITY_MISSING
+= OPEN
 ~~~
 
-# 30. Controlled Amendment Plan
+# 31. Controlled Amendment Plan
+
+## CA-M5-IU10-00 Terminal Step Completion Boundary
+
+冻结：
+
+~~~text
+scheduler SKIP -> exact PENDING Step terminalization authority
+required-upstream-failure remainder handling
+terminal reason preservation
+no mutation for WAITING / UNKNOWN / unrelated BLOCKED
+PARTIAL_SUCCESS owner observation terminal mapping
+degradation evidence preservation
+existing lifecycle/store mutation boundary reuse
+~~~
+
+必须保证：
+
+~~~text
+Aggregator never converts PENDING to SKIPPED by itself
+Aggregator never converts PARTIAL_SUCCESS to SUCCESS/FAILED by itself
+~~~
+
+目标：
+
+~~~text
+B-M5-IU10-007
+B-M5-IU10-008
+~~~
 
 ## CA-M5-IU10-01 Aggregation Eligibility + Plan Status Authority
 
@@ -882,7 +994,7 @@ B-M5-IU10-005
 B-M5-IU10-006
 ~~~
 
-# 31. Planned verification scenarios
+# 32. Planned verification scenarios
 
 至少覆盖：
 
@@ -922,9 +1034,14 @@ B-M5-IU10-006
 33. no M6 invocation
 34. no response generation
 35. ExecutionResult validates Canonical schema
+36. scheduler SKIP can terminalize exact PENDING Step without capability invoke
+37. required upstream failure can deterministically close remaining unexecuted Steps
+38. scheduler WAITING / UNKNOWN cannot terminalize PENDING Step
+39. Skill PARTIAL_SUCCESS reaches terminal Step only through frozen completion authority
+40. PARTIAL_SUCCESS degradation survives into plan aggregation
 ~~~
 
-# 32. Readiness decision
+# 33. Readiness decision
 
 ~~~text
 M5-IU10 IMPLEMENTATION DESIGN = COMPLETE
@@ -939,6 +1056,8 @@ B-M5-IU10-003
 B-M5-IU10-004
 B-M5-IU10-005
 B-M5-IU10-006
+B-M5-IU10-007
+B-M5-IU10-008
 
 FORMAL IMPLEMENTATION = NOT AUTHORIZED
 
@@ -949,6 +1068,8 @@ M5 = IN PROGRESS
 
 ~~~text
 M5-IU10 Independent Design Review
+-> CA-M5-IU10-00
+Terminal Step Completion Boundary
 -> CA-M5-IU10-01
 Aggregation Eligibility + Plan Status Authority
 ~~~

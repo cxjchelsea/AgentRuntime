@@ -14,12 +14,14 @@ from runtime.execution.control import (
     ExecutionControlLatchStatus,
     ExecutionControlSignal,
     ExecutionControlSignalType,
+    LatchedExecutionControl,
     ObservedExecutionControl,
 )
 from runtime.execution.control_application import (
     ExecutionControlApplication,
     ExecutionControlDisposition,
 )
+import runtime.execution.control_applicability as control_applicability_module
 from runtime.execution.control_applicability import (
     ControlApplicabilityEvidenceStatus,
     ControlApplicabilityReadStatus,
@@ -128,7 +130,7 @@ async def _latched_fixture(
     InMemoryRecoveryClaimAuthority,
     ExecutionRecoveryClaim,
     InMemoryDurableRecoveryEvidenceStore,
-    object,
+    LatchedExecutionControl,
 ]:
     claims = InMemoryRecoveryClaimAuthority()
     claim = await _claim(
@@ -554,9 +556,9 @@ def test_control_runtime_persists_applicability_before_lifecycle_mutation() -> N
 
 
 def test_ca04_does_not_infer_late_noop_from_timestamps() -> None:
-    import runtime.execution.control_applicability as module
-
-    source = inspect.getsource(module.DurableAggregationControlAuthority)
+    source = inspect.getsource(
+        control_applicability_module.DurableAggregationControlAuthority
+    )
 
     assert "finished_at" not in source
     assert "latched_at >" not in source

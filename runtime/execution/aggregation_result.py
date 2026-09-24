@@ -452,7 +452,7 @@ class CanonicalExecutionResultProjector:
 
 
 class ExecutionAggregator:
-    """CA-03 integration boundary for natural commit and terminal replay."""
+    """CA-03/04 formal aggregation boundary with authoritative control resolution."""
 
     def __init__(
         self,

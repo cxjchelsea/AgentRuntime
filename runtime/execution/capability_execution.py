@@ -2568,6 +2568,12 @@ class StepCapabilityExecutor:
         self._inflight_identifier_factory = inflight_identifier_factory
         self._inflight_clock = inflight_clock or (lambda: datetime.now(UTC))
 
+    @property
+    def tool_journal_persistence(
+        self,
+    ) -> ToolInvocationJournalPersistence | None:
+        return self._journal_persistence
+
     async def execute(
         self,
         *,

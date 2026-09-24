@@ -523,6 +523,10 @@ class ExecutionLifecycleManager:
             raise ExecutionLifecycleError(
                 "pending Step skip cannot occur while another Step is RUNNING"
             )
+        if prepared.execution_record.current_step is not None:
+            raise ExecutionLifecycleError(
+                "pending Step skip requires no current RUNNING Step"
+            )
 
         target = self._step(prepared, authority.step_id)
         if target.step_execution_id != authority.step_execution_id:

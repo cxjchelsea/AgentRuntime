@@ -114,6 +114,9 @@ def _application(
     disposition: ExecutionControlDisposition,
     reason_codes: tuple[str, ...] | None = None,
 ) -> ExecutionControlApplication:
+    nonterminal: tuple[str, ...]
+    affected: tuple[str, ...]
+
     if disposition is ExecutionControlDisposition.READY_TO_TERMINALIZE:
         nonterminal = ("step-001",)
         affected = ("step-001",)

@@ -147,7 +147,15 @@ class CanonicalExecutionResultProjector:
         }
     )
 
-    def project(
+    def __init__(
+        self,
+        *,
+        control_tool_evidence_reader: ControlTerminalToolEvidenceReader
+        | None = None,
+    ) -> None:
+        self._control_tool_evidence_reader = control_tool_evidence_reader
+
+    async def project(
         self,
         *,
         approved_plan: ApprovedActionPlan,
@@ -155,10 +163,6 @@ class CanonicalExecutionResultProjector:
         eligibility: ExecutionAggregationEligibilityDecision,
         control: DurableControlReadDecision,
         control_applicability: AggregationControlApplicabilityDecision,
-        control_tool_journals: Mapping[
-            str, tuple[ToolInvocationJournalEntry, ...]
-        ]
-        | None = None,
     ) -> ExecutionResult:
         decision = eligibility.aggregation_decision
         if (
@@ -230,7 +234,6 @@ class CanonicalExecutionResultProjector:
 
         seen_tool_journal: dict[str, dict[str, Any]] = {}
         approved_capability_projector = ApprovedStepCapabilityProjector()
-        consumed_control_tool_steps: set[str] = set()
 
         for plan_index, plan_step in enumerate(approved_plan.steps):
             step = step_by_id[plan_step.step_id]
@@ -283,15 +286,15 @@ class CanonicalExecutionResultProjector:
                 evidence.terminalization_kind
                 is StepAggregationTerminalizationKind.CONTROL_TERMINALIZED
             ):
-                if (
-                    control_tool_journals is None
-                    or step.step_id not in control_tool_journals
-                ):
+                if self._control_tool_evidence_reader is None:
                     raise ExecutionAggregationProjectionError(
-                        "EXECUTION_RESULT_CONTROL_TOOL_PROJECTION_MISSING"
+                        "EXECUTION_RESULT_CONTROL_TOOL_EVIDENCE_READER_MISSING"
                     )
-                joined = control_tool_journals[step.step_id]
-                consumed_control_tool_steps.add(step.step_id)
+                loaded = await self._control_tool_evidence_reader.load(
+                    execution_id=record.execution_id,
+                    step_execution_id=step.step_execution_id,
+                )
+                joined = () if loaded is None else loaded
                 joined_ids = tuple(item.tool_call_id for item in joined)
                 if joined_ids != evidence.tool_call_ids:
                     raise ExecutionAggregationProjectionError(
@@ -345,15 +348,6 @@ class CanonicalExecutionResultProjector:
                         "step_id": step.step_id,
                         "message": step.error,
                     }
-                )
-
-        if control_tool_journals is not None:
-            extra_control_steps = (
-                set(control_tool_journals) - consumed_control_tool_steps
-            )
-            if extra_control_steps:
-                raise ExecutionAggregationProjectionError(
-                    "EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_EXTRA_STEP"
                 )
 
         cancellation = self._project_control(
@@ -463,13 +457,10 @@ class ExecutionAggregator:
         authority: ExecutionAggregationAuthority,
         lifecycle_service: ExecutionLifecycleService,
         projector: CanonicalExecutionResultProjector,
-        control_tool_evidence_reader: ControlTerminalToolEvidenceReader
-        | None = None,
     ) -> None:
         self._authority = authority
         self._lifecycle_service = lifecycle_service
         self._projector = projector
-        self._control_tool_evidence_reader = control_tool_evidence_reader
 
     async def aggregate(
         self,
@@ -536,53 +527,18 @@ class ExecutionAggregator:
                     "EXECUTION_RESULT_TERMINAL_REPLAY_RECHECK_FAILED"
                 )
 
-        control_tool_journals = await self._load_control_tool_journals(current)
-        execution_result = self._projector.project(
+        execution_result = await self._projector.project(
             approved_plan=approved_plan,
             prepared=current,
             eligibility=eligibility,
             control=control,
             control_applicability=control_applicability,
-            control_tool_journals=control_tool_journals,
         )
         return ExecutionAggregationRunResult(
             prepared=current,
             eligibility=eligibility,
             execution_result=execution_result,
         )
-
-    async def _load_control_tool_journals(
-        self,
-        prepared: PreparedExecution,
-    ) -> dict[str, tuple[ToolInvocationJournalEntry, ...]]:
-        journals: dict[str, tuple[ToolInvocationJournalEntry, ...]] = {}
-        execution_id = prepared.execution_record.execution_id
-        for step in prepared.steps:
-            evidence = step.aggregation_evidence
-            if (
-                evidence is None
-                or evidence.terminalization_kind
-                is not StepAggregationTerminalizationKind.CONTROL_TERMINALIZED
-            ):
-                continue
-
-            if self._control_tool_evidence_reader is None:
-                raise ExecutionAggregationProjectionError(
-                    "EXECUTION_RESULT_CONTROL_TOOL_EVIDENCE_READER_MISSING"
-                )
-
-            loaded = await self._control_tool_evidence_reader.load(
-                execution_id=execution_id,
-                step_execution_id=step.step_execution_id,
-            )
-            entries = () if loaded is None else loaded
-            if tuple(item.tool_call_id for item in entries) != evidence.tool_call_ids:
-                raise ExecutionAggregationProjectionError(
-                    "EXECUTION_RESULT_CONTROL_TOOL_JOURNAL_MISMATCH"
-                )
-            journals[step.step_id] = entries
-        return journals
-
 
 def _project_step_result(step: StepLifecycleSnapshot) -> StepExecutionResult:
     return StepExecutionResult(

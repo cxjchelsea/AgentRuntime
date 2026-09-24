@@ -62,6 +62,7 @@ from runtime.execution.recovery_workflow import (
 )
 from runtime.execution.reliability_coordinator import (
     RecoveredStepReliabilityRunResult,
+    RecoveredWorkflowReliabilityRunResult,
     StepReliabilityCoordinationError,
     StepReliabilityCoordinator,
 )
@@ -92,7 +93,11 @@ class M5RecoveryRuntimeOutcome:
     capability_outcome: StepCapabilityExecutionOutcome | None = None
     schedule_decision: StepScheduleDecision | None = None
     control_result: ExecutionControlRuntimeResult | None = None
-    reliability_result: RecoveredStepReliabilityRunResult | None = None
+    reliability_result: (
+        RecoveredStepReliabilityRunResult
+        | RecoveredWorkflowReliabilityRunResult
+        | None
+    ) = None
 
     def __post_init__(self) -> None:
         if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
@@ -429,11 +434,30 @@ class M5RecoveryRuntime:
                 prior_attempt_journal=prior_journal,
                 side_effect_admission_guard=guard,
             )
+            try:
+                workflow_reliability = (
+                    bindings.skill_reliability_coordinator
+                    .finalize_recovered_workflow_outcome(
+                        step_snapshot=step_snapshot,
+                        outcome=outcome,
+                        current_attempt_number=current_attempt,
+                        resolved=resolution.resolved,
+                    )
+                )
+            except StepReliabilityCoordinationError as exc:
+                return M5RecoveryRuntimeOutcome(
+                    status=M5RecoveryRuntimeStatus.UNKNOWN,
+                    reason_codes=(exc.reason_code,),
+                    recovery_decision=decision,
+                    prepared=prepared,
+                    capability_outcome=outcome,
+                )
             return self._capability_runtime_outcome(
                 success_status=M5RecoveryRuntimeStatus.WORKFLOW_RESUMED,
                 outcome=outcome,
                 decision=decision,
                 prepared=prepared,
+                reliability_result=workflow_reliability,
             )
 
         if decision.disposition is RecoveryDisposition.RETRY_STEP:
@@ -666,6 +690,7 @@ class M5RecoveryRuntime:
         outcome: StepCapabilityExecutionOutcome,
         decision: RecoveryDecision,
         prepared: PreparedExecution,
+        reliability_result: RecoveredWorkflowReliabilityRunResult | None = None,
     ) -> M5RecoveryRuntimeOutcome:
         if outcome.status in {
             CapabilityExecutionStatus.EXECUTED,
@@ -682,6 +707,7 @@ class M5RecoveryRuntime:
             recovery_decision=decision,
             prepared=prepared,
             capability_outcome=outcome,
+            reliability_result=reliability_result,
         )
 
     @staticmethod

@@ -411,6 +411,7 @@ def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, ob
         "output": snapshot.output,
         "error": snapshot.error,
         "retry_count": snapshot.retry_count,
+        "terminal_reason_codes": list(snapshot.terminal_reason_codes),
         "started_at": snapshot.started_at,
         "finished_at": snapshot.finished_at,
     }

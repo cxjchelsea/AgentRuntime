@@ -41,7 +41,10 @@ M6
 ~~~text
 AggregationEvidenceReadinessStatus
 AggregationEvidenceReadinessDecision
+AggregationControlApplicabilityStatus
+AggregationControlApplicabilityDecision
 StepSkipAggregationDisposition
+StepSkipAggregationDecision
 StepAggregationEffect
 ExecutionAggregationEligibilityStatus
 ExecutionAggregationDecision
@@ -108,6 +111,8 @@ Formal Implementation 强制要求：
 ~~~text
 AggregationEvidenceReadinessDecision.READY
 必须由 CA-02 authoritative evidence layer 产生
+
+并且必须绑定 exact execution_id。
 ~~~
 
 禁止：
@@ -118,9 +123,60 @@ missing evidence -> READY fallback
 unknown evidence -> FAILED
 ~~~
 
-# 5. Control precedence
+# 5. Control precedence + applicability authority
 
-直接消费 IU9 durable control read：DurableControlReadDecision。
+IU9 durable control read 只回答：
+
+~~~text
+是否存在 durable latched CANCEL / PREEMPT
+~~~
+
+它不回答：
+
+~~~text
+这个 control 在 aggregation 时仍应覆盖自然完成，
+还是已经被证明为 late no-op
+~~~
+
+因此 CA-01 新增：
+
+~~~text
+AggregationControlApplicabilityStatus
+
+NONE
+APPLIES
+LATE_NOOP
+UNKNOWN
+~~~
+
+以及 exact：
+
+~~~text
+AggregationControlApplicabilityDecision
+- status
+- reason_codes
+- latched_control?
+~~~
+
+规则：
+
+~~~text
+NONE
+-> durable control 必须 NONE
+
+APPLIES
+-> 必须携带并 exact 等于当前 DurableControlReadDecision.latched_control
+
+LATE_NOOP
+-> 必须携带并 exact 等于当前 DurableControlReadDecision.latched_control
+
+UNKNOWN
+-> BLOCKED_UNKNOWN
+~~~
+
+CA-01 不根据时间戳或 Step 状态自行推断 applicability。
+后续 CA-03 必须提供 durable / authoritative applicability provenance。
+
 
 ## 5.1 UNKNOWN
 
@@ -142,7 +198,45 @@ AGGREGATION_CONTROL_TERMINALIZATION_REQUIRED
 
 IU10 不抢 IU7 mutation authority。
 
-## 5.3 Existing terminal control replay
+## 5.3 Late-control race
+
+Independent Review 发现真实竞态：
+
+~~~text
+last Step terminalized
+↓
+execution lifecycle still RUNNING
+↓
+CANCEL/PREEMPT arrives
+↓
+IU7 sees no unfinished Step
+-> ALREADY_TERMINAL / no Step mutation
+↓
+durable latch exists
+but execution still RUNNING
+~~~
+
+如果把“durable latch exists”直接解释成“必须 control-terminalize”，会永久阻塞 natural aggregation。
+
+冻结：
+
+~~~text
+LATE_NOOP
++ exact same latched control
++ all Steps terminal
++ no CANCELLED/PREEMPTED execution lifecycle
+->
+允许继续 natural aggregation
+~~~
+
+如果 LATE_NOOP 仍有 PENDING/RUNNING Step：
+
+~~~text
+BLOCKED_UNKNOWN
+AGGREGATION_LATE_CONTROL_HAS_UNFINISHED_WORK
+~~~
+
+## 5.4 Existing terminal control replay
 
 ~~~text
 CANCEL latch + execution CANCELLED
@@ -245,12 +339,25 @@ Step FAILED                   -> UNSATISFIED
 Step TIMEOUT                  -> TIMEOUT
 ~~~
 
-SKIPPED 必须有额外 provenance：
+SKIPPED 必须有额外 provenance。
+
+不是裸 enum，而是 exact：
+
+~~~text
+StepSkipAggregationDecision
+- execution_id
+- step_execution_id
+- step_id
+- disposition
+- reason_codes
+~~~
+
+映射：
 
 ~~~text
 NOT_APPLICABLE -> NOT_APPLICABLE
 UNSATISFIED    -> UNSATISFIED
-UNKNOWN/missing -> BLOCKED_UNKNOWN
+UNKNOWN/missing/identity mismatch -> BLOCKED_UNKNOWN
 ~~~
 
 # 10. Why SKIPPED is not equal to FAILED
@@ -386,6 +493,17 @@ AGGREGATION_EXISTING_TERMINAL_STATUS_MISMATCH
 
 CA-01 只产出 ExecutionAggregationDecision，不直接调用 finish_execution。
 
+ExecutionAggregationDecision 必须绑定：
+
+~~~text
+execution_id
+plan_id
+plan_status
+reason_codes
+~~~
+
+不得把一个 execution 的 aggregation decision 用到另一个 execution。
+
 Formal wiring：
 
 ~~~text
@@ -408,6 +526,11 @@ Approved Step order
 Prepared Step order
 unique step_id
 nonblank step_execution_id
+exact ActionStep.action
+exact skill_id / workflow_id
+ExecutionContext.identity_scope == ExecutionRecord.identity_scope
+ExecutionRecord.current_step == exact RUNNING Step or None
+at most one RUNNING Step
 ~~~
 
 不一致：
@@ -449,9 +572,45 @@ tests/test_m5_iu10_ca01_aggregation_authority.py
 20. existing terminal mismatch -> BLOCKED_UNKNOWN
 21. all optional with no progress -> FAILED / TIMEOUT
 22. all NOT_APPLICABLE -> SUCCESS
+23. late no-op control after all Steps terminal -> natural aggregation
+24. late no-op with unfinished work -> BLOCKED_UNKNOWN
+25. control applicability must bind exact latched control
+26. evidence readiness from other execution -> BLOCKED_UNKNOWN
+27. skip decision from other step_execution_id -> BLOCKED_UNKNOWN
+28. aggregation decision binds exact execution_id + plan_id
+29. Step action/capability provenance drift -> BLOCKED_UNKNOWN
+30. current_step pointer drift -> BLOCKED_UNKNOWN
 ~~~
 
-# 18. Blocker impact
+# 18. Independent Review findings
+
+~~~text
+F-M5-IU10-CA01-001
+ALL_STEPS_TERMINAL_LATCHED_CONTROL_COULD_DEADLOCK_AGGREGATION
+= CLOSED
+
+F-M5-IU10-CA01-002
+CONTROL_APPLICABILITY_NOT_BOUND_TO_EXACT_LATCH
+= CLOSED
+
+F-M5-IU10-CA01-003
+EVIDENCE_READINESS_NOT_BOUND_TO_EXECUTION
+= CLOSED
+
+F-M5-IU10-CA01-004
+SKIP_DISPOSITION_NOT_BOUND_TO_EXACT_STEP_EXECUTION
+= CLOSED
+
+F-M5-IU10-CA01-005
+AGGREGATION_DECISION_NOT_BOUND_TO_EXECUTION_PLAN
+= CLOSED
+
+F-M5-IU10-CA01-006
+STEP_PROVENANCE_AND_CURRENT_STEP_ALIGNMENT_INCOMPLETE
+= CLOSED
+~~~
+
+# 19. Blocker impact
 
 ~~~text
 B-M5-IU10-001
@@ -471,18 +630,26 @@ B-M5-IU10-007 = CLOSED
 B-M5-IU10-008 = CLOSED
 ~~~
 
-# 19. Formal Implementation dependency
+# 20. Formal Implementation dependency
 
 CA-01 依赖后续 CA-02 提供 authoritative：
 
 ~~~text
 AggregationEvidenceReadinessDecision
-StepSkipAggregationDisposition
+StepSkipAggregationDecision
 ~~~
+
+并依赖后续 CA-03 / B-004 control provenance 提供：
+
+~~~text
+AggregationControlApplicabilityDecision
+~~~
+
+Formal Implementation 不得手工构造 READY / LATE_NOOP / APPLIES 来绕过 evidence/control provenance。
 
 所以 CA-01 即使 PASSED，M5-IU10 仍不能 READY。
 
-# 20. Non-goals
+# 21. Non-goals
 
 ~~~text
 rich evidence persistence
@@ -496,7 +663,7 @@ response generation
 state/memory mutation
 ~~~
 
-# 21. Current status
+# 22. Current status
 
 ~~~text
 CA-M5-IU10-01 = CODE COMPLETE

@@ -22,6 +22,12 @@ from runtime.execution.aggregation_authority import (
     StepSkipAggregationDecision,
     StepSkipAggregationDisposition,
 )
+from runtime.execution.aggregation_result import (
+    CanonicalExecutionResultProjector,
+    ExecutionAggregationProjectionError,
+    ExecutionAggregationRunResult,
+    ExecutionAggregator,
+)
 from runtime.execution.authority import (
     ApprovedWorkflowAuthority,
     project_workflow_authority,
@@ -443,6 +449,7 @@ __all__ = [
     "ApprovedWorkflowAuthority",
     "AsyncTimeoutRunner",
     "BackoffCalculator",
+    "CanonicalExecutionResultProjector",
     "CallableExecutionIdentifierFactory",
     "CapabilityExecutionOwner",
     "CapabilityExecutionStatus",
@@ -479,6 +486,9 @@ __all__ = [
     "DurableToolJournalEvidence",
     "DurableToolOperationOccurrenceAuthority",
     "ExecutionAggregationAuthority",
+    "ExecutionAggregationProjectionError",
+    "ExecutionAggregationRunResult",
+    "ExecutionAggregator",
     "ExecutionAggregationDecision",
     "ExecutionAggregationEligibilityDecision",
     "ExecutionAggregationEligibilityStatus",

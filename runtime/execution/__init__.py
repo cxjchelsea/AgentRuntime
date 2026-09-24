@@ -378,6 +378,12 @@ from runtime.execution.scheduler import (
     StepScheduleDecision,
     StepScheduleStatus,
 )
+from runtime.execution.step_completion import (
+    StepScheduler,
+    TerminalStepCompletionCoordinator,
+    TerminalStepCompletionDecision,
+    TerminalStepCompletionStatus,
+)
 from runtime.execution.stores import (
     ExecutionStateStore,
     IdempotencyCompletionAuthority,
@@ -673,6 +679,10 @@ __all__ = [
     "StepResultCollector",
     "StepScheduleDecision",
     "StepScheduleStatus",
+    "TerminalStepCompletionStatus",
+    "TerminalStepCompletionDecision",
+    "TerminalStepCompletionCoordinator",
+    "StepScheduler",
     "TimeoutRunResult",
     "TimeoutRunStatus",
     "ToolAttemptObservation",

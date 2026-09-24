@@ -729,6 +729,24 @@ def test_control_runtime_persists_applicability_before_lifecycle_mutation() -> N
     assert record_at < terminalize_at
 
 
+def test_ca04_has_no_downstream_or_replanning_authority() -> None:
+    source = inspect.getsource(control_applicability_module)
+
+    forbidden = (
+        "runtime.validation",
+        "runtime.response",
+        "runtime.update",
+        "runtime.registries",
+        ".invoke(",
+        ".resume(",
+        ".retry(",
+        "replan",
+        "capability substitution",
+    )
+    for token in forbidden:
+        assert token not in source
+
+
 def test_ca04_does_not_infer_late_noop_from_timestamps() -> None:
     source = inspect.getsource(
         control_applicability_module.DurableAggregationControlAuthority

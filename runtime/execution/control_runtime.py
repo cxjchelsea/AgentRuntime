@@ -21,16 +21,16 @@ from runtime.execution.control import (
     LatchedExecutionControl,
     ObservedExecutionControl,
 )
+from runtime.execution.control_applicability import (
+    ControlApplicabilityRecorder,
+    ControlApplicabilityWriteStatus,
+)
 from runtime.execution.control_application import (
     ExecutionControlApplication,
     ExecutionControlApplicationEvaluator,
     ExecutionControlDisposition,
     HierarchicalInterruptSummary,
     InFlightInterruptCoordinator,
-)
-from runtime.execution.control_applicability import (
-    ControlApplicabilityRecorder,
-    ControlApplicabilityWriteStatus,
 )
 from runtime.execution.control_lifecycle import ExecutionControlLifecycleService
 from runtime.execution.foundation import ExecutionTerminalObserver, PreparedExecution

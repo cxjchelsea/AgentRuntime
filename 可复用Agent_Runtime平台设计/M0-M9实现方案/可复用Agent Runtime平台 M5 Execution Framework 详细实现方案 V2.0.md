@@ -1623,6 +1623,14 @@ Cancellation / Preemption 是否已触发
 避免形成两套 Capability Truth。
 ```
 
+其中 Safety Lock 必须采用显式三态：
+
+```text
+true    = 有安全锁，按 restricted_actions 判定
+false   = 明确无安全锁，可继续后续检查
+unknown = 无法确认，不得按 false 处理，返回 UNKNOWN
+```
+
 注意：
 
 如果发现环境变化：
@@ -1641,6 +1649,16 @@ Cancellation / Preemption 是否已触发
 ---
 
 # Step 4：Step Scheduler
+
+特别注意：
+
+```text
+StepScheduleStatus.COMPLETE
+!=
+ExecutionPlanStatus.SUCCESS
+```
+
+`COMPLETE` 只表示当前没有剩余 PENDING Step，调度结束；最终 Execution success / partial success / failed 由后续 Execution Aggregator 根据全部 Step 结果判定。
 
 负责：
 

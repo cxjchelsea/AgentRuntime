@@ -277,6 +277,29 @@ def test_runtime_execution_check_preserves_unknown_session_validity() -> None:
     assert decision.reason_codes == ("SESSION_VALIDITY_UNKNOWN",)
 
 
+def test_unknown_safety_lock_state_is_preserved_and_never_allowed() -> None:
+    plan, prepared = _prepared()
+    checker, _ = _runtime_checker(
+        snapshot=RuntimeExecutionSnapshot(
+            session_id="session-001",
+            identity_scope="scope-001",
+            current_state=RuntimeControlState.IDLE,
+            session_active=True,
+            safety_lock=None,
+        )
+    )
+
+    decision = asyncio.run(
+        checker.check(
+            step=plan.steps[0],
+            execution_context=prepared.execution_context,
+        )
+    )
+
+    assert decision.status is RuntimeExecutionCheckStatus.UNKNOWN
+    assert decision.reason_codes == ("SAFETY_LOCK_STATE_UNKNOWN",)
+
+
 def test_safety_lock_blocks_only_explicitly_restricted_action() -> None:
     plan, prepared = _prepared()
     checker, _ = _runtime_checker(
@@ -589,6 +612,25 @@ def test_scheduler_reports_complete_when_no_pending_steps_remain() -> None:
 
     assert decision.status is StepScheduleStatus.COMPLETE
     assert decision.step_id is None
+
+
+def test_scheduler_complete_means_no_pending_steps_not_execution_success() -> None:
+    plan, prepared = _prepared()
+    first_done = _finish_first_step(
+        plan,
+        prepared,
+        status=StepExecutionStatus.FAILED,
+    )
+
+    decision = asyncio.run(
+        SequentialStepScheduler().next_step(
+            approved_plan=plan,
+            prepared=first_done,
+        )
+    )
+
+    assert decision.status is StepScheduleStatus.COMPLETE
+    assert decision.reason_codes == ("NO_PENDING_STEPS",)
 
 
 def test_scheduler_rejects_plan_execution_alignment_drift() -> None:

@@ -161,10 +161,32 @@ restricted_actions
 BLOCKED
 ```
 
-如果 safety_lock 已开启但 restricted_actions 不可得：
+Safety Lock 采用显式三态语义：
 
 ```text
-UNKNOWN
+safety_lock = true
++ restricted_actions 命中当前 action
+→ BLOCKED
+
+safety_lock = true
++ restricted_actions 不可得
+→ UNKNOWN
+
+safety_lock = false
+→ 继续后续检查
+
+safety_lock = null / unknown
+→ UNKNOWN
+```
+
+因此：
+
+```text
+UNKNOWN safety_lock
+!=
+false
+!=
+ALLOWED
 ```
 
 不默认放行。
@@ -228,6 +250,16 @@ UNKNOWN
 ```
 
 Scheduler 只做决策，不直接调用 LifecycleManager，不修改 Step 状态。
+
+特别说明：
+
+```text
+StepScheduleStatus.COMPLETE
+!=
+ExecutionPlanStatus.SUCCESS
+```
+
+`COMPLETE` 只表示“当前没有剩余 PENDING Step，调度工作结束”，不表示业务执行成功，也不表示整个 Execution 应当被标为 SUCCESS。最终 `SUCCESS / PARTIAL_SUCCESS / FAILED` 必须由后续 Execution Aggregator 根据全部 Step 结果决定。
 
 ### 3.3 dependency
 
@@ -390,18 +422,20 @@ Response / Update
 1. Cancel / Preempt 只消费已有 signal，不重新算 priority
 2. identity/session drift fail closed
 3. session validity unknown 不放行
-4. safety lock restriction 正确阻断
-5. policy validity 只校验 snapshot，不重算 Policy
-6. Runtime-state eligibility 可注入且 UNKNOWN 保留
-7. Scheduler 只在 RUNNING execution 上调度
-8. 严格保持 ApprovedPlan 原顺序
-9. dependency pending/running -> WAITING
-10. failed dependency -> SKIP
-11. required previous failure -> BLOCKED
-12. optional previous failure可以继续
-13. 简单条件必须通过注入 evaluator，不解析 Domain 规则
-14. Scheduler 不修改 lifecycle
-15. IU2 不进入 Capability / Tool / M6
+4. safety_lock = None 时返回 UNKNOWN，不得静默放行
+5. safety lock restriction 正确阻断
+6. policy validity 只校验 snapshot，不重算 Policy
+7. Runtime-state eligibility 可注入且 UNKNOWN 保留
+8. Scheduler 只在 RUNNING execution 上调度
+9. 严格保持 ApprovedPlan 原顺序
+10. dependency pending/running -> WAITING
+11. failed dependency -> SKIP
+12. required previous failure -> BLOCKED
+13. optional previous failure可以继续
+14. 简单条件必须通过注入 evaluator，不解析 Domain 规则
+15. Scheduler 不修改 lifecycle
+16. StepScheduleStatus.COMPLETE 只表示调度结束，不表示 Execution success
+17. IU2 不进入 Capability / Tool / M6
 ```
 
 ## 7. Verification

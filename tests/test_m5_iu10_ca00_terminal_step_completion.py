@@ -22,6 +22,8 @@ from runtime.execution import (
     InMemoryExecutionStateStore,
     PendingStepSkipAuthority,
     PendingStepSkipAuthorityKind,
+    RunningStepCompletionCoordinator,
+    RunningStepCompletionStatus,
     SequentialStepScheduler,
     StepAttemptObservation,
     StepAttemptStatus,
@@ -32,6 +34,7 @@ from runtime.execution import (
     StepFinalizationDisposition,
     StepReliabilityDecision,
     StepReliabilityDisposition,
+    StepReliabilityRunResult,
     StepScheduleDecision,
     StepScheduleStatus,
     TerminalStepCompletionCoordinator,
@@ -362,7 +365,7 @@ def test_recovery_snapshot_accepts_legacy_step_payload_without_terminal_reasons(
             {
                 key: value
                 for key, value in item.items()
-                if key != "terminal_reason_codes"
+                if key not in {"terminal_reason_codes", "degraded"}
             }
             for item in prepared.execution_record.step_results
         )
@@ -392,7 +395,9 @@ def test_recovery_snapshot_accepts_legacy_step_payload_without_terminal_reasons(
 
         restored = snapshot.restore_prepared_execution()
         assert restored.steps[0].terminal_reason_codes == ()
+        assert restored.steps[0].degraded is False
         assert "terminal_reason_codes" not in legacy_payload[0]
+        assert "degraded" not in legacy_payload[0]
 
     asyncio.run(scenario())
 
@@ -451,3 +456,189 @@ def test_partial_success_is_not_terminalized_while_iu6_still_requests_retry() ->
     assert decision.disposition is StepFinalizationDisposition.UNKNOWN
     assert decision.terminal_status is None
     assert decision.degraded is False
+
+
+
+def _partial_reliability_result() -> StepReliabilityRunResult:
+    observation = _partial_observation()
+    return StepReliabilityRunResult(
+        attempts=(observation,),
+        reliability_decision=StepReliabilityDecision(
+            disposition=StepReliabilityDisposition.FINALIZE,
+            reason_codes=("STEP_RETRY_NOT_AUTHORIZED",),
+        ),
+        finalization_decision=StepFinalizationDecision(
+            disposition=StepFinalizationDisposition.FINALIZE,
+            reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
+            terminal_status=StepExecutionStatus.SUCCESS,
+            degraded=True,
+        ),
+        owner_policy_identity="skill-policy@partial",
+    )
+
+
+def test_running_partial_success_commits_degraded_terminal_step() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, service, store = await _running(plan)
+        running_step = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        coordinator = RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        )
+
+        decision = await coordinator.complete(
+            prepared=running_step,
+            reliability_result=_partial_reliability_result(),
+            at=NOW + timedelta(seconds=2),
+        )
+
+        assert decision.status is RunningStepCompletionStatus.TERMINALIZED
+        assert decision.degraded is True
+        step = decision.prepared.steps[0]
+        assert step.status is StepExecutionStatus.SUCCESS
+        assert step.degraded is True
+        assert step.terminal_reason_codes == (
+            "STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",
+        )
+        assert step.retry_count == 0
+        persisted = await store.load("execution-iu10-ca00")
+        assert persisted is not None
+        assert persisted.step_results[0]["status"] == "SUCCESS"
+        assert persisted.step_results[0]["degraded"] is True
+        assert persisted.step_results[0]["terminal_reason_codes"] == [
+            "STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED"
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_running_completion_does_not_mutate_wait_recovery_step() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, service, store = await _running(plan)
+        running_step = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        observation = _partial_observation()
+        result = StepReliabilityRunResult(
+            attempts=(observation,),
+            reliability_decision=StepReliabilityDecision(
+                disposition=StepReliabilityDisposition.WAIT_RECOVERY,
+                reason_codes=("STEP_RETRY_SAFETY_UNKNOWN",),
+            ),
+            finalization_decision=StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.WAIT_RECOVERY,
+                reason_codes=("STEP_WAIT_RECOVERY",),
+            ),
+            owner_policy_identity="skill-policy@partial",
+        )
+        coordinator = RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        )
+
+        decision = await coordinator.complete(
+            prepared=running_step,
+            reliability_result=result,
+            at=NOW + timedelta(seconds=2),
+        )
+
+        assert decision.status is RunningStepCompletionStatus.WAIT_RECOVERY
+        assert decision.prepared is running_step
+        assert decision.prepared.steps[0].status is StepExecutionStatus.RUNNING
+        persisted = await store.load("execution-iu10-ca00")
+        assert persisted is not None
+        assert persisted.step_results[0]["status"] == "RUNNING"
+
+    asyncio.run(scenario())
+
+
+def test_running_completion_rejects_step_execution_identity_drift() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, service, store = await _running(plan)
+        running_step = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        observation = replace(
+            _partial_observation(),
+            step_execution_id="different-step-execution",
+        )
+        result = StepReliabilityRunResult(
+            attempts=(observation,),
+            reliability_decision=StepReliabilityDecision(
+                disposition=StepReliabilityDisposition.FINALIZE,
+                reason_codes=("STEP_RETRY_NOT_AUTHORIZED",),
+            ),
+            finalization_decision=StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.FINALIZE,
+                reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
+                terminal_status=StepExecutionStatus.SUCCESS,
+                degraded=True,
+            ),
+        )
+        coordinator = RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        )
+
+        decision = await coordinator.complete(
+            prepared=running_step,
+            reliability_result=result,
+            at=NOW + timedelta(seconds=2),
+        )
+
+        assert decision.status is RunningStepCompletionStatus.BLOCKED_UNKNOWN
+        assert decision.prepared is running_step
+        persisted = await store.load("execution-iu10-ca00")
+        assert persisted is not None
+        assert persisted.step_results[0]["status"] == "RUNNING"
+
+    asyncio.run(scenario())
+
+
+def test_degraded_lifecycle_fact_survives_recovery_snapshot_roundtrip() -> None:
+    async def scenario() -> None:
+        plan = _plan_with_steps(count=1)
+        prepared, service, _ = await _running(plan)
+        running_step = await service.start_step(
+            prepared,
+            step_id="step-001",
+            at=NOW + timedelta(seconds=1),
+        )
+        completed = await RunningStepCompletionCoordinator(
+            lifecycle_service=service
+        ).complete(
+            prepared=running_step,
+            reliability_result=_partial_reliability_result(),
+            at=NOW + timedelta(seconds=2),
+        )
+        claim = ExecutionRecoveryClaim(
+            claim_id="claim-ca00-degraded",
+            execution_id=completed.prepared.execution_record.execution_id,
+            recovery_owner_id="worker-ca00",
+            recovery_epoch=1,
+            source_snapshot_generation=0,
+            claimed_at=NOW,
+        )
+
+        snapshot = ExecutionRecoverySnapshotFactory().capture(
+            completed.prepared,
+            checkpoint_id="checkpoint-ca00-degraded",
+            generation=1,
+            captured_at=NOW + timedelta(seconds=3),
+            claim=claim,
+        )
+
+        restored = snapshot.restore_prepared_execution()
+        assert restored.steps[0].status is StepExecutionStatus.SUCCESS
+        assert restored.steps[0].degraded is True
+        assert restored.execution_record.step_results[0]["degraded"] is True
+
+    asyncio.run(scenario())

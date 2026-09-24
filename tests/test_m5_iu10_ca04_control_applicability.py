@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import runtime.execution.control_applicability as control_applicability_module
 from runtime.execution.aggregation_authority import (
@@ -31,10 +32,12 @@ from runtime.execution.control_application import (
 from runtime.execution.control_applicability import (
     AggregationControlAuthoritySnapshot,
     ControlApplicabilityEvidenceStatus,
+    ControlApplicabilityReadDecision,
     ControlApplicabilityReadStatus,
     ControlApplicabilityWriteStatus,
     DurableAggregationControlAuthority,
     DurableControlApplicabilityRecorder,
+    DurableControlApplicabilityStore,
     InMemoryDurableControlApplicabilityStore,
 )
 from runtime.execution.control_runtime import ExecutionControlCoordinator
@@ -204,7 +207,10 @@ def test_none_requires_durable_control_none_and_no_orphan_evidence() -> None:
 
 def test_applicability_read_failure_never_collapses_to_none() -> None:
     class RaisingApplicabilityStore:
-        async def read(self, execution_id: str):
+        async def read(
+            self,
+            execution_id: str,
+        ) -> ControlApplicabilityReadDecision:
             del execution_id
             raise RuntimeError("storage unavailable")
 
@@ -221,7 +227,10 @@ def test_applicability_read_failure_never_collapses_to_none() -> None:
         )
         authority = DurableAggregationControlAuthority(
             control_store=control_store,
-            applicability_store=RaisingApplicabilityStore(),
+            applicability_store=cast(
+                DurableControlApplicabilityStore,
+                RaisingApplicabilityStore(),
+            ),
         )
 
         snapshot = await authority.resolve(execution_id="execution-ca04")

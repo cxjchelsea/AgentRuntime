@@ -1,5 +1,15 @@
 """M5 Execution Framework internal contracts and protocols."""
 
+from runtime.execution.aggregation_authority import (
+    AggregationEvidenceReadinessDecision,
+    AggregationEvidenceReadinessStatus,
+    ExecutionAggregationAuthority,
+    ExecutionAggregationDecision,
+    ExecutionAggregationEligibilityDecision,
+    ExecutionAggregationEligibilityStatus,
+    StepAggregationEffect,
+    StepSkipAggregationDisposition,
+)
 from runtime.execution.authority import (
     ApprovedWorkflowAuthority,
     project_workflow_authority,
@@ -406,6 +416,14 @@ from runtime.execution.stores import (
 __all__ = [
     "ActivityInstance",
     "ActivityStatus",
+    "StepSkipAggregationDisposition",
+    "StepAggregationEffect",
+    "ExecutionAggregationEligibilityStatus",
+    "ExecutionAggregationEligibilityDecision",
+    "ExecutionAggregationDecision",
+    "ExecutionAggregationAuthority",
+    "AggregationEvidenceReadinessStatus",
+    "AggregationEvidenceReadinessDecision",
     "ApprovedCapabilityReference",
     "ApprovedPlanExecutionError",
     "ApprovedPlanExecutionValidator",

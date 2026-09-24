@@ -96,6 +96,8 @@ from runtime.execution.foundation import (
     ExecutionResultProjector,
     ExecutionTerminalObserver,
     InMemoryExecutionStateStore,
+    PendingStepSkipAuthority,
+    PendingStepSkipAuthorityKind,
     PreparedExecution,
     StepLifecycleSnapshot,
 )
@@ -553,6 +555,8 @@ __all__ = [
     "OwnerFrameSupersessionBasis",
     "PermissionDecision",
     "PermissionDecisionStatus",
+    "PendingStepSkipAuthorityKind",
+    "PendingStepSkipAuthority",
     "PhysicalToolAttemptExecutor",
     "PolicySnapshotValidityDecision",
     "PolicySnapshotValidityEvaluator",

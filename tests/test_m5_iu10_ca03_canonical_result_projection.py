@@ -1097,6 +1097,8 @@ def test_projector_rejects_non_ready_aggregation() -> None:
         eligibility = ExecutionAggregationAuthority().evaluate(
             approved_plan=plan,
             prepared=prepared,
+            control=_no_control(),
+            control_applicability=_no_control_applicability(),
             evidence_readiness=evidence,
             skip_decisions=skips,
         )

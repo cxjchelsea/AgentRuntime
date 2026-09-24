@@ -297,6 +297,7 @@ from runtime.execution.reliability_boundary import (
     ToolOperationOccurrenceStatus,
 )
 from runtime.execution.reliability_coordinator import (
+    RecoveredStepReliabilityRunResult,
     StepReliabilityCoordinationError,
     StepReliabilityCoordinator,
     StepReliabilityRunResult,
@@ -589,6 +590,7 @@ __all__ = [
     "RecoverySideEffectAdmissionGuard",
     "RecoverySideEffectAdmissionStatus",
     "RecoverySnapshotWriteDecision",
+    "RecoveredStepReliabilityRunResult",
     "RecoverySnapshotWriteStatus",
     "ReliabilityCapabilityKind",
     "ReliabilityPolicyResolver",

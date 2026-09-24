@@ -734,6 +734,16 @@ class StepAggregationEvidenceAuthority:
                 evidence.terminalization_kind
                 is StepAggregationTerminalizationKind.ATTEMPT_FINALIZED
             ):
+                if step.skill_id is not None and step.workflow_id is not None:
+                    return (
+                        StepAggregationEvidenceAssessment(
+                            status=StepAggregationEvidenceReadStatus.UNKNOWN,
+                            reason_codes=(
+                                "AGGREGATION_EVIDENCE_STEP_OWNER_AMBIGUOUS",
+                            ),
+                        ),
+                        {},
+                    )
                 try:
                     approved_capabilities = projector.project(
                         approved_plan=approved_plan,

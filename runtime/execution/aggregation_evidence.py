@@ -125,6 +125,53 @@ class StepAggregationEvidence:
             raise ValueError("tool_journal entries require tool_call_id")
         if len(set(journal_ids)) != len(journal_ids):
             raise ValueError("tool_journal tool_call_id values must be unique")
+        derived_non_success = False
+        derived_unknown = False
+        derived_untrusted_success = False
+        for entry in self.tool_journal:
+            tool_call_id = entry.get("tool_call_id")
+            tool_id = entry.get("tool_id")
+            result = entry.get("result")
+            if (
+                not isinstance(tool_call_id, str)
+                or not tool_call_id.strip()
+                or not isinstance(tool_id, str)
+                or not tool_id.strip()
+                or not isinstance(result, Mapping)
+            ):
+                raise ValueError("tool_journal entry structure is invalid")
+            if (
+                result.get("tool_call_id") != tool_call_id
+                or result.get("tool_id") != tool_id
+            ):
+                raise ValueError("tool_journal result identity mismatch")
+            result_status = result.get("status")
+            if not isinstance(result_status, str) or not result_status.strip():
+                raise ValueError("tool_journal result status is invalid")
+            if result_status != "SUCCESS":
+                derived_non_success = True
+            if result_status == "UNKNOWN":
+                derived_unknown = True
+            raw_result = entry.get("raw_result")
+            if raw_result is not None:
+                if not isinstance(raw_result, Mapping):
+                    raise ValueError("tool_journal raw_result must be mapping")
+                if (
+                    raw_result.get("tool_call_id") != tool_call_id
+                    or raw_result.get("tool_id") != tool_id
+                ):
+                    raise ValueError("tool_journal raw_result identity mismatch")
+                if (
+                    raw_result.get("status") == "SUCCESS"
+                    and result_status == "UNKNOWN"
+                ):
+                    derived_untrusted_success = True
+        if self.has_non_success_tool_observation is not derived_non_success:
+            raise ValueError("non-success Tool evidence flag is inconsistent")
+        if self.has_unknown_tool_observation is not derived_unknown:
+            raise ValueError("unknown Tool evidence flag is inconsistent")
+        if self.has_untrusted_success_observation is not derived_untrusted_success:
+            raise ValueError("untrusted-success Tool evidence flag is inconsistent")
 
         if (
             self.terminalization_kind
@@ -192,6 +239,12 @@ class StepAggregationEvidence:
             raise ValueError("SCHEDULER_SKIPPED cannot carry owner result")
         if self.tool_call_ids or self.tool_journal:
             raise ValueError("SCHEDULER_SKIPPED cannot carry Tool execution evidence")
+        if (
+            self.has_non_success_tool_observation
+            or self.has_unknown_tool_observation
+            or self.has_untrusted_success_observation
+        ):
+            raise ValueError("SCHEDULER_SKIPPED cannot carry Tool truth flags")
         if self.business_outputs or self.capability_events:
             raise ValueError(
                 "SCHEDULER_SKIPPED cannot carry capability-produced payloads"
@@ -226,6 +279,12 @@ class StepAggregationEvidence:
             raise ValueError(
                 "CONTROL_TERMINALIZED does not reconstruct live Tool journal in CA-02"
             )
+        if (
+            self.has_non_success_tool_observation
+            or self.has_unknown_tool_observation
+            or self.has_untrusted_success_observation
+        ):
+            raise ValueError("CONTROL_TERMINALIZED cannot invent Tool truth flags")
         if self.business_outputs or self.capability_events:
             raise ValueError(
                 "CONTROL_TERMINALIZED cannot invent capability payloads"
@@ -631,6 +690,8 @@ class StepAggregationEvidenceAuthority:
         ):
             if step.status is StepExecutionStatus.SKIPPED:
                 return "AGGREGATION_EVIDENCE_KIND_STATUS_MISMATCH"
+            if step.skill_id is not None and step.workflow_id is not None:
+                return "AGGREGATION_EVIDENCE_STEP_OWNER_AMBIGUOUS"
             if (
                 evidence.has_unknown_tool_observation
                 or evidence.has_untrusted_success_observation
@@ -696,7 +757,12 @@ class StepAggregationEvidenceAuthority:
                     return "AGGREGATION_EVIDENCE_WORKFLOW_OUTPUT_MISMATCH"
                 if evidence.capability_events:
                     return "AGGREGATION_EVIDENCE_WORKFLOW_EVENT_MISMATCH"
-            elif evidence.execution_owner != "NONE":
+            elif (
+                evidence.execution_owner != "NONE"
+                or evidence.owner_capability_id is not None
+                or evidence.skill_result is not None
+                or evidence.workflow_result is not None
+            ):
                 return "AGGREGATION_EVIDENCE_OWNER_MISMATCH"
             if (
                 evidence.final_attempt_number is None

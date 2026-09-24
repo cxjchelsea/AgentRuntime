@@ -117,6 +117,34 @@ class RecoveredStepReliabilityRunResult:
         return self.attempts[-1]
 
 
+@dataclass(frozen=True, slots=True)
+class RecoveredWorkflowReliabilityRunResult:
+    """Recovered Workflow result finalized on its existing exact Step attempt."""
+
+    current_attempt_number: int
+    observation: StepAttemptObservation
+    reliability_decision: StepReliabilityDecision
+    finalization_decision: StepFinalizationDecision
+    owner_policy_identity: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.current_attempt_number < 1:
+            raise ValueError("current_attempt_number must be >= 1")
+        if self.observation.attempt_number != self.current_attempt_number:
+            raise ValueError(
+                "recovered Workflow observation must retain the current attempt number"
+            )
+        if (
+            self.observation.execution_owner
+            is not CapabilityExecutionOwner.WORKFLOW
+        ):
+            raise ValueError("recovered Workflow result requires WORKFLOW owner")
+
+    @property
+    def final_observation(self) -> StepAttemptObservation:
+        return self.observation
+
+
 class StepReliabilityCoordinator:
     """Execute/observe/retry one Step without owning lifecycle finalization."""
 
@@ -130,6 +158,93 @@ class StepReliabilityCoordinator:
         self._step_executor = step_executor
         self._result_collector = result_collector
         self._runtime = runtime
+
+    def finalize_recovered_workflow_outcome(
+        self,
+        *,
+        step_snapshot: StepLifecycleSnapshot,
+        outcome: StepCapabilityExecutionOutcome,
+        current_attempt_number: int,
+        resolved: ResolvedStepCapabilities,
+    ) -> RecoveredWorkflowReliabilityRunResult:
+        """Project one resumed Workflow outcome through existing IU5/IU6 authorities.
+
+        Workflow resume continues the existing attempt. It must not claim a new
+        retry attempt merely to become eligible for IU10 lifecycle completion.
+        """
+
+        if resolved.execution_owner is not CapabilityExecutionOwner.WORKFLOW:
+            raise StepReliabilityCoordinationError(
+                "RECOVERY_WORKFLOW_FINALIZATION_REQUIRES_WORKFLOW_OWNER",
+                "recovered Workflow finalization requires exact Workflow ownership",
+            )
+        if current_attempt_number < 1:
+            raise StepReliabilityCoordinationError(
+                "RECOVERY_WORKFLOW_ATTEMPT_INVALID",
+                "current recovered Workflow attempt must be >= 1",
+            )
+
+        owner_policy, policy_error = self._resolve_owner_policy(resolved)
+        if owner_policy is None or policy_error is not None:
+            raise StepReliabilityCoordinationError(
+                policy_error or "RECOVERY_WORKFLOW_POLICY_UNKNOWN",
+                "exact Workflow reliability policy is required for finalization",
+            )
+
+        try:
+            observation = self._result_collector.collect(
+                step_snapshot=step_snapshot,
+                outcome=outcome,
+                attempt_number=current_attempt_number,
+                observed_at=self._clock_now(),
+            )
+        except StepResultCollectionError as exc:
+            raise StepReliabilityCoordinationError(
+                exc.reason_code,
+                "IU5 result collection failed after recovered Workflow resume",
+            ) from exc
+
+        reliability_decision = self._step_reliability_decision(
+            observation=observation,
+            replay_safety=None,
+            retry_decision=None,
+        )
+        try:
+            finalization = self._runtime.step_finalization_evaluator.evaluate(
+                observation=observation,
+                reliability_decision=reliability_decision,
+            )
+        except Exception:  # noqa: BLE001
+            finalization = None
+        if not isinstance(finalization, StepFinalizationDecision) or not isinstance(
+            finalization.disposition,
+            StepFinalizationDisposition,
+        ):
+            finalization = StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.UNKNOWN,
+                reason_codes=("STEP_FINALIZATION_EVALUATOR_UNKNOWN",),
+            )
+        elif (
+            reliability_decision.disposition
+            in {
+                StepReliabilityDisposition.ABORT_UNKNOWN,
+                StepReliabilityDisposition.WAIT_RECOVERY,
+                StepReliabilityDisposition.KEEP_RUNNING,
+            }
+            and finalization.disposition is StepFinalizationDisposition.FINALIZE
+        ):
+            finalization = StepFinalizationDecision(
+                disposition=StepFinalizationDisposition.UNKNOWN,
+                reason_codes=("STEP_FINALIZATION_AUTHORITY_INCONSISTENT",),
+            )
+
+        return RecoveredWorkflowReliabilityRunResult(
+            current_attempt_number=current_attempt_number,
+            observation=observation,
+            reliability_decision=reliability_decision,
+            finalization_decision=finalization,
+            owner_policy_identity=owner_policy.policy_identity,
+        )
 
     async def run(
         self,

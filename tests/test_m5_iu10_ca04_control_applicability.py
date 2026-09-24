@@ -712,6 +712,15 @@ def test_execution_aggregator_no_longer_accepts_hand_built_applicability() -> No
     assert "at" in params
 
 
+def test_control_terminal_replay_is_not_reclassified_as_late_noop() -> None:
+    source = inspect.getsource(ExecutionControlCoordinator._finalize_application)
+
+    assert "control_terminal_replay" in source
+    assert "ExecutionPlanStatus.CANCELLED.value" in source
+    assert "ExecutionPlanStatus.PREEMPTED.value" in source
+    assert "and not control_terminal_replay" in source
+
+
 def test_control_runtime_persists_applicability_before_lifecycle_mutation() -> None:
     source = inspect.getsource(ExecutionControlCoordinator._finalize_application)
 

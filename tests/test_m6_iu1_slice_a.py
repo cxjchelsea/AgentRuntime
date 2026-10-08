@@ -210,3 +210,54 @@ def test_duplicate_tool_result_records_are_rejected():
     )
     assert result.status is AdmissionStatus.REJECTED
     assert AdmissionReason.DUPLICATE_TOOL_RESULT in result.reasons
+
+
+def test_m4_policy_snapshot_must_be_exact_full_policy_decision():
+    execution, context, approved = _inputs()
+    approved.policy_snapshot["priority"] = "not-an-integer"
+    result = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
+    )
+    assert result.status is AdmissionStatus.REJECTED
+    assert AdmissionReason.INVALID_POLICY_SNAPSHOT in result.reasons
+
+
+def test_m5_producer_tool_result_call_id_shape():
+    execution, context, approved = _inputs()
+    execution.step_results = [
+        StepExecutionResult(step_id="step-001", tool_call_ids=["tool-call-001"])
+    ]
+    execution.tool_results = [
+        {"tool_call_id": "tool-call-001", "status": "SUCCESS", "tool_id": "tool-001"}
+    ]
+    result = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
+    )
+    assert result.status is AdmissionStatus.ADMITTED
+    assert result.envelope is not None
+    assert result.envelope.rule_binding_status == "UNRESOLVED"
+    assert result.envelope.evidence_refs[-1].source_id == "tool-call-001"
+
+
+def test_unpinned_alias_does_not_replace_m5_tool_call_id():
+    execution, context, approved = _inputs()
+    execution.step_results = [
+        StepExecutionResult(step_id="step-001", tool_call_ids=["tool-call-001"])
+    ]
+    execution.tool_results = [{"call_id": "tool-call-001", "status": "SUCCESS"}]
+    result = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
+    )
+    assert AdmissionReason.TOOL_OWNER_MISMATCH in result.reasons

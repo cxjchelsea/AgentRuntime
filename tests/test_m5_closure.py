@@ -8,6 +8,7 @@ scenarios and adds only stage-boundary assertions.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import inspect
 from datetime import timedelta
 
@@ -169,6 +170,19 @@ M5_GATE_EVIDENCE: dict[str, tuple[str, ...]] = {
 def test_m5_closure_gate_manifest_covers_exactly_m5_01_through_m5_25() -> None:
     assert tuple(M5_GATE_EVIDENCE) == M5_GATE_IDS
     assert all(M5_GATE_EVIDENCE[gate_id] for gate_id in M5_GATE_IDS)
+
+
+def test_m5_closure_gate_evidence_nodeids_resolve() -> None:
+    for evidence_items in M5_GATE_EVIDENCE.values():
+        for evidence in evidence_items:
+            if not evidence.startswith("tests/"):
+                continue
+            path, separator, test_name = evidence.partition("::")
+            assert separator == "::"
+            module_name = path.removesuffix(".py").replace("/", ".")
+            module = importlib.import_module(module_name)
+            candidate = getattr(module, test_name, None)
+            assert callable(candidate), evidence
 
 
 def test_m5_closure_c01_capability_collection_and_canonical_aggregation() -> None:

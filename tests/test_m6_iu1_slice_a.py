@@ -1,11 +1,11 @@
 """Slice A pure boundary tests; no business-success or M2 grant assumptions."""
 from runtime.contracts.execution import StepExecutionResult
-from tests.orchestration_stubs import build_policy_decision
 from runtime.validation.slice_a import AdmissionReason, AdmissionStatus, admit_validation_input
 from tests.orchestration_stubs import (
     build_approved_action_plan,
     build_execution_result,
     build_runtime_context,
+    build_policy_decision,
 )
 
 
@@ -131,3 +131,23 @@ def test_valid_tool_result_reference_only_not_success():
     assert result.envelope is not None
     assert result.envelope.rule_binding_status == "UNRESOLVED"
     assert result.envelope.evidence_refs[-1].source_path == "tool_results[0]"
+
+
+def test_duplicate_tool_result_records_are_rejected():
+    execution, context, approved = _inputs()
+    execution.step_results = [
+        StepExecutionResult(step_id="step-001", tool_call_ids=["call-1"])
+    ]
+    execution.tool_results = [
+        {"tool_call_id": "call-1", "step_id": "step-001"},
+        {"tool_call_id": "call-1", "step_id": "step-001"},
+    ]
+    result = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
+    )
+    assert result.status is AdmissionStatus.REJECTED
+    assert AdmissionReason.DUPLICATE_TOOL_RESULT in result.reasons

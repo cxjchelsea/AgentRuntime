@@ -135,3 +135,52 @@ If both blockers are verified closed:
 M5 FINAL CLOSURE READINESS = READY
 NEXT = Independent M5 Closure Review
 ~~~
+
+
+## 7. Verification Closure Update
+
+This section supersedes the pre-verification blocker disposition in Section 5
+for current-state reporting while preserving the historical sequence.
+
+Verified Evidence Pack test/code tree:
+
+~~~text
+365099ba6e6d1e5b6b19c7d81b659e5d3db6fe8a
+~~~
+
+Accepted exact-workspace evidence:
+
+~~~text
+python -m pytest tests -q
+-> 992 passed
+
+python -m mypy runtime tests
+-> Success: no issues found in 220 source files
+
+python -m ruff check runtime tests
+-> All checks passed
+
+python -m ruff format --check runtime tests
+-> 220 files already formatted
+~~~
+
+Closure:
+
+~~~text
+M5 CLOSURE EVIDENCE PACK VERIFICATION = PASSED
+M5 CLOSURE EVIDENCE PACK VERIFICATION CLOSURE = CLOSED
+
+B-M5-CL-001 = CLOSED
+B-M5-CL-002 = CLOSED
+
+OPEN M5 CLOSURE EVIDENCE BLOCKER = NONE
+M5 FINAL CLOSURE READINESS = READY
+~~~
+
+Scope note:
+
+~~~text
+ActionStep.on_failure / fallback_plan / stop_conditions execution semantics
+remain deferred because no frozen Core FailureDisposition / Resolver Contract
+exists. M5 Closure must not claim those open-string semantics are implemented.
+~~~

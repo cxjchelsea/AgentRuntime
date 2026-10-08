@@ -2,6 +2,7 @@
 
 This module never promotes execution observations to business truth.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -72,7 +73,9 @@ class ValidationAdmissionDecision:
 
 
 def _serialized(data: Any) -> str:
-    return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return json.dumps(
+        data, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
 
 
 def _digest(value: str) -> str:
@@ -81,7 +84,9 @@ def _digest(value: str) -> str:
 
 def _ref(path: str, source_id: str, observed_at: Any) -> EvidenceReference:
     timestamp = observed_at.isoformat() if observed_at is not None else None
-    return EvidenceReference(_digest(_serialized((path, source_id))), path, source_id, timestamp)
+    return EvidenceReference(
+        _digest(_serialized((path, source_id))), path, source_id, timestamp
+    )
 
 
 def admit_validation_input(
@@ -99,7 +104,11 @@ def admit_validation_input(
         if code not in errors:
             errors.append(code)
 
-    if not expected_request_id or execution.request_id != approved.request_id or execution.request_id != expected_request_id:
+    if (
+        not expected_request_id
+        or execution.request_id != approved.request_id
+        or execution.request_id != expected_request_id
+    ):
         reject(AdmissionReason.REQUEST_MISMATCH)
     if execution.plan_id != approved.plan_id:
         reject(AdmissionReason.PLAN_MISMATCH)
@@ -107,13 +116,22 @@ def admit_validation_input(
         reject(AdmissionReason.EMPTY_IDENTITY)
     elif execution.identity_scope != context.identity_context.identity_scope:
         reject(AdmissionReason.IDENTITY_SCOPE_MISMATCH)
-    if not expected_session_id or context.session_context.session_id != expected_session_id:
+    if (
+        not expected_session_id
+        or context.session_context.session_id != expected_session_id
+    ):
         reject(AdmissionReason.SESSION_MISMATCH)
 
     policy = approved.policy_snapshot
-    if not isinstance(policy, dict) or not all(
-        k in policy for k in ("policy_decision_id", "allowed", "blocked", "validation_mode")
-    ) or policy.get("allowed") is not True or policy.get("blocked") is not False:
+    if (
+        not isinstance(policy, dict)
+        or not all(
+            k in policy
+            for k in ("policy_decision_id", "allowed", "blocked", "validation_mode")
+        )
+        or policy.get("allowed") is not True
+        or policy.get("blocked") is not False
+    ):
         reject(AdmissionReason.INVALID_POLICY_SNAPSHOT)
     goal_ids = [goal.goal_id for goal in approved.goals]
     if len(goal_ids) != len(set(goal_ids)):
@@ -151,12 +169,17 @@ def admit_validation_input(
         elif isinstance(call_id, str):
             seen_result_ids.add(call_id)
         if step_id is not None:
-            owners = {step.step_id for step in execution.step_results
-                      if call_id in (step.tool_call_ids or ())}
+            owners = {
+                step.step_id
+                for step in execution.step_results
+                if call_id in (step.tool_call_ids or ())
+            }
             if not isinstance(step_id, str) or step_id not in owners:
                 reject(AdmissionReason.TOOL_OWNER_MISMATCH)
     if errors:
-        return ValidationAdmissionDecision(AdmissionStatus.REJECTED, tuple(errors), None)
+        return ValidationAdmissionDecision(
+            AdmissionStatus.REJECTED, tuple(errors), None
+        )
 
     try:
         execution_json = _serialized(execution.model_dump(mode="json"))
@@ -167,7 +190,9 @@ def admit_validation_input(
         return ValidationAdmissionDecision(
             AdmissionStatus.REJECTED, (AdmissionReason.NONCANONICAL_SOURCE,), None
         )
-    digest = _digest(_serialized((execution_json, approved_json, context_json, policy_json)))
+    digest = _digest(
+        _serialized((execution_json, approved_json, context_json, policy_json))
+    )
     refs: list[EvidenceReference] = []
     for index, step in enumerate(execution.step_results):
         if step.step_id:
@@ -182,5 +207,12 @@ def admit_validation_input(
     return ValidationAdmissionDecision(
         AdmissionStatus.ADMITTED,
         (),
-        ValidationInputEnvelope(execution_json, approved_json, context_json, policy_json, digest, tuple(refs)),
+        ValidationInputEnvelope(
+            execution_json,
+            approved_json,
+            context_json,
+            policy_json,
+            digest,
+            tuple(refs),
+        ),
     )

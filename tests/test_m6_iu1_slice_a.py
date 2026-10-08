@@ -1,11 +1,16 @@
 """Slice A pure boundary tests; no business-success or M2 grant assumptions."""
+
 from runtime.contracts.execution import StepExecutionResult
-from runtime.validation.slice_a import AdmissionReason, AdmissionStatus, admit_validation_input
+from runtime.validation.slice_a import (
+    AdmissionReason,
+    AdmissionStatus,
+    admit_validation_input,
+)
 from tests.orchestration_stubs import (
     build_approved_action_plan,
     build_execution_result,
-    build_runtime_context,
     build_policy_decision,
+    build_runtime_context,
 )
 
 
@@ -17,8 +22,20 @@ def _inputs():
 
 def test_healthy_admission_deterministic_and_no_success_promotion():
     execution, context, approved = _inputs()
-    first = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
-    second = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
+    first = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
+    )
+    second = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
+    )
     assert first == second
     assert first.status is AdmissionStatus.ADMITTED
     assert first.reasons == ()
@@ -32,7 +49,13 @@ def test_plan_request_and_scope_mismatch_fail_closed():
     execution.plan_id = "other"
     execution.request_id = "other"
     execution.identity_scope = "wrong"
-    result = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
+    result = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
+    )
     assert result.status is AdmissionStatus.REJECTED
     assert result.envelope is None
     assert set(result.reasons) == {
@@ -44,7 +67,13 @@ def test_plan_request_and_scope_mismatch_fail_closed():
 
 def test_trusted_session_expectation_is_never_guessed():
     execution, context, approved = _inputs()
-    result = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="another")
+    result = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="another",
+    )
     assert result.status is AdmissionStatus.REJECTED
     assert AdmissionReason.SESSION_MISMATCH in result.reasons
 
@@ -55,7 +84,13 @@ def test_unknown_and_duplicate_steps_fail_closed():
         StepExecutionResult(step_id="unknown", tool_call_ids=["call-1"]),
         StepExecutionResult(step_id="unknown", tool_call_ids=["call-1"]),
     ]
-    result = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
+    result = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
+    )
     assert result.envelope is None
     assert AdmissionReason.UNKNOWN_EXECUTION_STEP in result.reasons
     assert AdmissionReason.DUPLICATE_EXECUTION_STEP in result.reasons
@@ -68,10 +103,17 @@ def test_step_reference_keeps_unobserved_time_absent_and_inputs_unchanged():
         StepExecutionResult(step_id="step-001", tool_call_ids=["call-1"])
     ]
     before = execution.model_dump(mode="json")
-    result = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
+    result = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
+    )
     assert result.envelope is not None
     assert [x.source_path for x in result.envelope.evidence_refs] == [
-        "step_results[0]", "step_results[0].tool_call_ids[0]"
+        "step_results[0]",
+        "step_results[0].tool_call_ids[0]",
     ]
     assert all(x.observed_at is None for x in result.envelope.evidence_refs)
     assert execution.model_dump(mode="json") == before
@@ -80,7 +122,13 @@ def test_step_reference_keeps_unobserved_time_absent_and_inputs_unchanged():
 def test_duplicate_approved_step_ids_rejected():
     execution, context, approved = _inputs()
     approved.steps.append(approved.steps[0].model_copy(deep=True))
-    result = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
+    result = admit_validation_input(
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
+    )
     assert result.status is AdmissionStatus.REJECTED
     assert AdmissionReason.DUPLICATE_PLAN_STEP in result.reasons
 
@@ -99,8 +147,11 @@ def test_invalid_snapshot_rejected():
     execution, context, approved = _inputs()
     approved.policy_snapshot = {"allowed": True}
     result = admit_validation_input(
-        execution, context, approved,
-        expected_request_id="request-001", expected_session_id="session-001",
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
     )
     assert AdmissionReason.INVALID_POLICY_SNAPSHOT in result.reasons
 
@@ -112,8 +163,11 @@ def test_tool_result_wrong_owner_rejected():
     ]
     execution.tool_results = [{"tool_call_id": "call-unknown", "step_id": "step-001"}]
     result = admit_validation_input(
-        execution, context, approved,
-        expected_request_id="request-001", expected_session_id="session-001",
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
     )
     assert AdmissionReason.TOOL_OWNER_MISMATCH in result.reasons
 
@@ -123,10 +177,15 @@ def test_valid_tool_result_reference_only_not_success():
     execution.step_results = [
         StepExecutionResult(step_id="step-001", tool_call_ids=["call-1"])
     ]
-    execution.tool_results = [{"tool_call_id": "call-1", "step_id": "step-001", "status": "SUCCESS"}]
+    execution.tool_results = [
+        {"tool_call_id": "call-1", "step_id": "step-001", "status": "SUCCESS"}
+    ]
     result = admit_validation_input(
-        execution, context, approved,
-        expected_request_id="request-001", expected_session_id="session-001",
+        execution,
+        context,
+        approved,
+        expected_request_id="request-001",
+        expected_session_id="session-001",
     )
     assert result.envelope is not None
     assert result.envelope.rule_binding_status == "UNRESOLVED"

@@ -1480,6 +1480,14 @@ approval_status = APPROVED
 
 禁止再使用歧义名称 `ActionPlan`。
 
+M4-CA1 后：
+
+```text
+ActionPlanDraft schema_version default = 1.1.0
+ApprovedActionPlan schema_version default = 1.1.0
+旧 1.0.0 payload = backward compatible input
+```
+
 M5 只接受：
 
 ```text
@@ -1503,6 +1511,12 @@ strategy
 
 steps[]
 
+knowledge_requirement
+
+retrieval_plan
+
+evidence_requirement
+
 memory_usage
 
 capability_plan
@@ -1525,6 +1539,93 @@ trace
 
 quality
 ```
+
+---
+
+# 44.1 KnowledgeRequirement
+
+```text
+KnowledgeRequirement
+
+required
+reason
+domain
+knowledge_type
+query_target
+source_constraints[]
+freshness_requirement
+evidence_level
+population
+scenario
+safety_level
+```
+
+除 `required` 外，本轮不新增业务值枚举；Domain / KnowledgeType / Population / Scenario / SafetyLevel 继续由 Domain Package / Config 注入。
+
+---
+
+# 44.2 RetrievalPlan
+
+```text
+RetrievalPlan
+
+required
+domain
+query
+query_variants[]
+retrieval_mode
+filters
+source_policy
+vector_top_k
+sparse_top_k
+merge_policy
+rerank_enabled
+rerank_top_n
+freshness_requirement
+minimum_evidence
+fallback_policy
+```
+
+`RetrievalPlan` 是 M4 规划输出，不是执行结果。
+
+---
+
+# 44.3 EvidenceRequirement
+
+```text
+EvidenceRequirement
+
+required
+minimum_count
+minimum_trust
+freshness_required
+source_diversity_required
+conflict_check_required
+citation_required
+```
+
+正式边界：
+
+```text
+EvidenceRequirement != EvidenceItem
+EvidenceRequirement != EvidencePack
+EvidenceRequirement != VerifiedFact
+```
+
+---
+
+# 44.4 RetrievalMode
+
+```text
+VECTOR
+KEYWORD
+HYBRID
+STRUCTURED_LOOKUP
+EXTERNAL_API
+NONE
+```
+
+该枚举属于跨 Domain Knowledge Infrastructure control vocabulary。
 
 ---
 
@@ -1903,6 +2004,13 @@ trace_context
 
 # 59. ExecutionResult
 
+CA-M5-IU10-03 后：
+
+```text
+ExecutionResult schema_version default = 1.1.0
+旧 1.0.0 payload = backward compatible input
+```
+
 ```text
 ExecutionResult
 
@@ -1915,6 +2023,7 @@ step_results[]
 skill_results[]
 
 workflow_result
+workflow_results[]
 
 tool_results[]
 
@@ -1932,6 +2041,17 @@ cancellation
 
 quality
 ```
+
+Workflow cardinality：
+
+```text
+0 Workflow  -> workflow_result=None, workflow_results=[]
+1 Workflow  -> workflow_result=exact sole item, workflow_results=[same item]
+>1 Workflow -> workflow_result=None, workflow_results=[all items in ApprovedPlan order]
+```
+
+`workflow_result` 是单 Workflow backward-compatible view；
+`workflow_results[]` 是 lossless canonical multi-Workflow field。
 
 ---
 
@@ -4193,6 +4313,17 @@ FORCED
 DETERMINISTIC
 AGENT_PLANNED
 DEGRADED
+```
+
+## RetrievalMode
+
+```text
+VECTOR
+KEYWORD
+HYBRID
+STRUCTURED_LOOKUP
+EXTERNAL_API
+NONE
 ```
 
 ## ValidationStatus

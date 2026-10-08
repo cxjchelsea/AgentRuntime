@@ -3,7 +3,7 @@
 
 > **Phase 0 Fix**  
 > M5 只能消费 `ApprovedActionPlan`，不得接受 `ActionPlanDraft` 或歧义 `ActionPlan`。  
-> `ExecutionResult` 使用 `plan_status` + `step_results[]` / `skill_results[]` / `tool_results[]`。  
+> `ExecutionResult` 使用 `plan_status` + `step_results[]` / `skill_results[]` / `tool_results[]`。M5 内部结果先使用 typed internal contracts，再投影到现有 Canonical `ExecutionResult`，本 Fix Pack 不修改主链 Contract。  
 > `elder_id` 已从 ExecutionContext 删除，改 `identity_scope`。
 
 > **平台化转换说明**  
@@ -22,6 +22,47 @@
 ## 平台扩展补充：Execution Core 与 Domain Adapter
 
 M5 Core 只提供 Skill / Workflow / Tool 执行协议、超时、重试、幂等、取消、并发和 Side Effect 管理。具体 Skill、Workflow、Tool Adapter 均由 Domain Package 注册。
+
+## Readiness Contract Fix Pack
+
+在进入 M5-IU1 前，以下内部执行合同已冻结为 M5 Core readiness baseline：
+
+```text
+Internal Result Contracts
+Tool / Skill / Workflow Implementation Protocols
+ExecutionControlSignalSource
+ExecutionStateStore / WorkflowCheckpointStore
+IdempotencyStore / ResourceLockProvider
+Workflow / Tool optional execution metadata
+```
+
+这些对象用于 M5 内部执行可靠性，不改变冻结的主链：
+
+```text
+ApprovedActionPlan
+→ ExecutionEngine
+→ ExecutionResult
+```
+
+Registry 的 `implementation_ref` 在执行前必须满足对应 Protocol；解析失败、版本歧义或实现类型不匹配时必须 fail closed，不允许自行替换 Capability。
+
+---
+
+## Readiness Supplement
+
+在 Readiness Re-Review 后补充冻结：
+
+```text
+ExecutionPermissionContext / Provider / Evaluator
+PermissionDecision(ALLOWED / DENIED / UNKNOWN)
+
+ApprovedWorkflowAuthority
+project_workflow_authority(...)
+```
+
+前者补齐 Tool 执行前权限判定合同；后者明确 Workflow authority 来自已经批准的 `ApprovedActionPlan` 以及现有 `forced_workflow` 约束，不新增不存在的 `allowed_workflows / forbidden_workflows` Policy 字段。
+
+---
 
 # 01. 阶段定位
 
@@ -418,15 +459,13 @@ ExecutionContext
 M5 必须继承：
 
 ```text
-PolicyDecision
+PolicyDecision / Policy Snapshot
 
-Policy Snapshot
+Allowed / Forbidden Tools
 
-Allowed Tools
+Allowed / Forbidden Skills
 
-Allowed Skills
-
-Allowed Workflows
+forced_workflow（如存在）
 
 Safety Lock
 
@@ -434,6 +473,22 @@ Preemption Decision
 
 Required Confirmation
 ```
+
+当前冻结的 PolicyDecision **不存在** generic `allowed_workflows / forbidden_workflows`。Workflow 执行权限不得由 M5 自行发明该字段，而应来自：
+
+```text
+ApprovedActionPlan 中已经批准的 workflow_id
++
+policy_snapshot.forced_workflow（如存在）
++
+WorkflowRegistry enabled/version
++
+Runtime execution eligibility
++
+Execution Permission
+```
+
+因此，Workflow authority 是已批准计划的执行投影，不是新的 M5 Policy。
 
 ---
 
@@ -658,7 +713,7 @@ workflow_result
 
 tool_results[]
 
-business_result
+business_outputs
 
 state_observations
 
@@ -813,7 +868,7 @@ metadata
 
 # 7.9 ToolStatus
 
-建议：
+Readiness Fix Pack 后冻结为：
 
 ```text
 SUCCESS
@@ -827,7 +882,11 @@ CANCELLED
 UNAVAILABLE
 
 REJECTED
+
+UNKNOWN
 ```
+
+其中 `UNKNOWN` 表示外部副作用可能已经发生，但当前无法确认结果；不得静默改写成 FAILED。
 
 ---
 
@@ -840,7 +899,7 @@ skill_id
 
 status
 
-business_result
+business_outputs[]
 
 tool_results[]
 
@@ -1068,23 +1127,23 @@ ToolDefinition
 
 tool_id
 
-name
-
 description
 
 input_schema
 
 output_schema
 
-timeout
+timeout_policy
 
 retry_policy
 
-idempotent
+idempotency_mode
 
 side_effect_level
 
-required_permission
+required_permissions[]
+
+resource_locks[]
 
 enabled
 
@@ -1129,6 +1188,10 @@ supported_events[]
 checkpoint_enabled
 
 allowed_states[]
+
+timeout_policy
+
+resume_policy
 
 enabled
 ```
@@ -1551,11 +1614,21 @@ Policy Snapshot 是否仍有效
 
 Safety Lock 是否变化
 
-Capability 是否启用
-
 Session 是否仍有效
 
-Cancellation 是否已触发
+Cancellation / Preemption 是否已触发
+
+说明：Capability 是否存在、enabled、version、implementation_ref 与 execution permission
+统一由 Step 5 Capability Resolution 检查。IU2 Runtime Execution Check 不重复读取 Registry，
+避免形成两套 Capability Truth。
+```
+
+其中 Safety Lock 必须采用显式三态：
+
+```text
+true    = 有安全锁，按 restricted_actions 判定
+false   = 明确无安全锁，可继续后续检查
+unknown = 无法确认，不得按 false 处理，返回 UNKNOWN
 ```
 
 注意：
@@ -1576,6 +1649,16 @@ Cancellation 是否已触发
 ---
 
 # Step 4：Step Scheduler
+
+特别注意：
+
+```text
+StepScheduleStatus.COMPLETE
+!=
+ExecutionPlanStatus.SUCCESS
+```
+
+`COMPLETE` 只表示当前没有剩余 PENDING Step，调度结束；最终 Execution success / partial success / failed 由后续 Execution Aggregator 根据全部 Step 结果判定。
 
 负责：
 
@@ -1645,21 +1728,17 @@ optional = true
 optional = false
 ```
 
-且失败，则根据：
+且失败，IU2 第一版先 fail closed，返回：
 
 ```text
-on_failure
+BLOCKED
+REQUIRED_PREVIOUS_STEP_NOT_SUCCESSFUL
 ```
 
-执行：
-
-```text
-STOP_PLAN
-
-RUN_FALLBACK
-
-CONTINUE_IF_SAFE
-```
+当前 `ActionStep.on_failure` 仍是开放字符串，并没有冻结 Core `FailureDisposition`
+语义，因此 IU2 不直接解释 `STOP_PLAN / RUN_FALLBACK / CONTINUE_IF_SAFE`。
+后续若需要执行这些策略，必须先冻结 FailureDisposition / Resolver Contract，
+再由 Runtime 执行，不允许 Scheduler 自行发明 fallback。
 
 ---
 
@@ -1684,47 +1763,64 @@ PLAY_CONTENT
 
 ## 11.4.5 简单条件执行
 
-支持：
+当前 Canonical `ActionStep` 没有独立 `execution_condition` 字段，
+因此第一版 Runtime Core 不解析业务条件字符串，也不把 `completion_condition`
+误用成执行条件。
+
+简单执行条件通过注入 `StepConditionEvaluator` 处理，Core 只消费：
 
 ```text
-IF_PREVIOUS_SUCCESS
-
-IF_PREVIOUS_FAILED
-
-IF_TOOL_RESULT_AVAILABLE
+SATISFIED
+NOT_SATISFIED
+WAITING
+UNKNOWN
 ```
 
-复杂业务条件放在：
-
-```text
-Skill / Workflow
-```
-
-内部。
+复杂业务条件继续放在 Skill / Workflow 或 Domain 注册规则中。
 
 ---
 
 # Step 5：Capability Resolution
 
-根据 ActionStep 找：
+Capability Resolution 只能解析已经进入 ApprovedActionPlan 的 capability authority，不允许从当前 Registry 重新发现或选择新的 Skill / Workflow / Tool。
+
+批准来源包括：
 
 ```text
-Skill
-
-Workflow
-
-Tool
+ActionStep.skill_id
+ActionStep.workflow_id
+ApprovedActionPlan.capability_plan
+ApprovedActionPlan.tool_plan
+policy_snapshot.forced_workflow（如存在）
 ```
 
-通过：
+其中 `ActionStep.tool_requirement` 只是在单 required-tool 场景下的投影，不是完整 Tool authority。多个 required tools 时完整批准集合必须读取 `ApprovedActionPlan.tool_plan.tool_calls[]`。
+
+Registry 只用于 exact resolution / current eligibility check：
 
 ```text
 SkillRegistry
-
 WorkflowRegistry
-
 ToolRegistry
 ```
+
+禁止：
+
+```text
+Registry Discovery -> new Capability Selection
+missing capability -> substitute another capability
+disabled approved version -> choose newest version
+```
+
+Capability version 必须在 planning/approval 时固定，并通过现有 opaque subplan 保存：
+
+```text
+capability_plan.bindings[].skill_version
+capability_plan.bindings[].workflow_version
+tool_plan.tool_calls[].tool_version
+```
+
+M5 按 `id + approved_version` exact lookup；不得仅按 ID 重新选择执行时唯一 enabled version。
 
 ---
 
@@ -2044,7 +2140,9 @@ Tool 的职责只有：
 
 ---
 
-# Step 7：Tool Input / Output Validation
+# Step 6A：Tool Input / Output Validation
+
+> 实施映射澄清：Tool Input / Output Validation 是真实 Tool invocation boundary 的组成部分，已纳入 M5-IU4 Capability Execution。它不再占用主流程“⑦ Collect Step / Tool Result”的编号。
 
 执行前：
 
@@ -2068,7 +2166,7 @@ INVALID_PARAMETER
 
 ---
 
-## 11.7.1 Tool Output Validation
+## 11.6A.1 Tool Output Validation
 
 Tool 返回后：
 
@@ -2086,9 +2184,98 @@ TOOL_INVALID_OUTPUT
 
 ---
 
+# Step 7：Collect Step / Tool Result
+
+本步骤只负责收集一次执行尝试的真实观察，不负责提前终态化 Step。
+
+正式输入：
+
+```text
+RUNNING StepLifecycleSnapshot
++
+StepCapabilityExecutionOutcome
+```
+
+输出使用 M5 internal attempt observation，至少需要无损表达：
+
+```text
+SUCCESS
+PARTIAL_SUCCESS
+FAILED
+WAITING
+IN_PROGRESS
+CANCELLED
+TIMEOUT
+PREEMPTED
+BLOCKED
+UNKNOWN
+NO_EXTERNAL_EXECUTION
+```
+
+特别注意：
+
+```text
+Attempt observation
+!= Step terminal lifecycle
+
+WAITING / IN_PROGRESS
+不得映射成 FAILED
+
+UNKNOWN
+不得映射成 FAILED
+
+NO_EXTERNAL_EXECUTION
+不得直接映射成 SUCCESS
+
+FAILED / TIMEOUT
+在 Retry / Idempotency 处理前不得提前调用 finish_step
+```
+
+Core Tool journal 仍是唯一 Tool execution truth；Result Collection 不重新调用 Tool、不重做 Registry resolution、不重做 Permission / Validation。
+
+真正的 Step terminal lifecycle mutation 在后续 Reliability / Control / Finalization 已确定“不再 retry、不再 waiting、不再 recovery”后发生。
+
+---
+
 # Step 8：Timeout / Retry / Idempotency
 
 这是 M5 的可靠性核心。
+
+> 实施映射：Step 8 对应 M5-IU6。IU6 必须建立在 IU5 StepAttemptObservation 之上，且不得把 Retry 实现成通用 while-loop。正式实现前必须先冻结 typed Reliability Policy、Timeout Runner、Replay Safety、logical Tool call / physical attempt、Idempotency provenance、Step attempt sequence 与 Step finalization authority。
+
+第一版边界：
+
+```text
+允许讨论 / 实现：
+Tool timeout
+Tool retry
+Tool idempotency
+ExecutionContext.deadline admission
+Skill owner replay（目标能力；仅 replay-safe 且具备跨 Step attempt 的 Tool operation correlation 后允许）
+Step attempt sequencing
+Step finalization decision
+
+不自动重放：
+Workflow owner start
+
+继续后置：
+Workflow WAITING timeout
+Workflow resume / Recovery
+Resource Lock
+Cancellation / Preemption handling
+Plan stop/fallback
+Aggregation
+M6
+```
+
+Reliability 必须保持：
+
+```text
+TIMEOUT != FAILED
+UNKNOWN side effect != safe to replay
+Retry != Replan
+Retry != Capability substitution
+```
 
 ---
 
@@ -2282,6 +2469,8 @@ create_help_event
 
 # Step 9：Cancellation / Preemption
 
+> Implementation Unit：**M5-IU7**。IU7 只消费 Runtime/M2 已经解析好的 CANCEL/PREEMPT authority，不比较 priority、不重算 Policy、不重新解释 IU6 timeout/retry policy。
+
 每个 ExecutionContext 必须有：
 
 ```text
@@ -2382,6 +2571,8 @@ Cleanup
 
 # Step 10：Concurrency / Resource Lock
 
+> Implementation Unit：**M5-IU8**。
+
 系统可能同时存在：
 
 ```text
@@ -2455,6 +2646,8 @@ tool_plan.execution_mode
 ---
 
 # Step 11：Persistence / Checkpoint / Recovery
+
+> Implementation Unit：**M5-IU9**。
 
 关键 Execution 不能只存在内存。
 
@@ -2557,6 +2750,8 @@ UNKNOWN
 ---
 
 # Step 12：Execution Aggregation
+
+> Implementation Unit：**M5-IU10**。
 
 所有 Step 完成、失败或中断后：
 
@@ -2730,10 +2925,20 @@ Tool存在
 当前有权限调用
 ```
 
+同时：
+
+```text
+Planning Authorization
+!=
+Execution Permission
+```
+
+M2/M4 决定 Tool 是否可以进入 ApprovedActionPlan；M5 在真正调用前还必须检查当前执行主体、绑定、设备、环境、角色、Workflow State 等执行权限事实。
+
 权限来源：
 
 ```text
-PolicyDecision
+PolicyDecision / Approved Plan
 
 User Binding
 
@@ -2745,6 +2950,26 @@ Role
 
 Workflow State
 ```
+
+Readiness Supplement 冻结以下内部合同：
+
+```text
+ExecutionPermissionContext
+ExecutionPermissionContextProvider
+PermissionDecision
+PermissionDecisionStatus
+ExecutionPermissionEvaluator
+```
+
+PermissionDecisionStatus：
+
+```text
+ALLOWED
+DENIED
+UNKNOWN
+```
+
+其中 `UNKNOWN` 不得当作 ALLOWED，也不得触发 Capability substitution 或 Replan。具体执行行为由后续 M5-IU fail-closed 规则实现。
 
 ---
 

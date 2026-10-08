@@ -91,6 +91,17 @@ class PlanningMode(str, Enum):
     DEGRADED = "DEGRADED"
 
 
+class RetrievalMode(str, Enum):
+    """跨 Domain 的知识检索控制模式。"""
+
+    VECTOR = "VECTOR"
+    KEYWORD = "KEYWORD"
+    HYBRID = "HYBRID"
+    STRUCTURED_LOOKUP = "STRUCTURED_LOOKUP"
+    EXTERNAL_API = "EXTERNAL_API"
+    NONE = "NONE"
+
+
 class PlanApprovalStatus(str, Enum):
     """计划批准状态。"""
 

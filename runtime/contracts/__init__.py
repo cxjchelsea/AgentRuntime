@@ -31,6 +31,7 @@ from runtime.contracts.enums import (
     PlanningMode,
     ResponseType,
     ResponseValidationStatus,
+    RetrievalMode,
     RuntimeControlState,
     SafetyPhase,
     SafetyRiskLevel,
@@ -38,9 +39,18 @@ from runtime.contracts.enums import (
     ValidationMode,
     ValidationStatus,
 )
-from runtime.contracts.execution import ExecutionResult, ExecutionTiming
+from runtime.contracts.execution import (
+    EXECUTION_RESULT_SCHEMA_VERSION,
+    ExecutionResult,
+    ExecutionTiming,
+)
 from runtime.contracts.identity import CoreIdentity, DomainIdentityExtension
 from runtime.contracts.input import RuntimeInput
+from runtime.contracts.knowledge_planning import (
+    EvidenceRequirement,
+    KnowledgeRequirement,
+    RetrievalPlan,
+)
 from runtime.contracts.planning import ActionPlanDraft, ApprovedActionPlan, PlanningGoal
 from runtime.contracts.policy import PolicyDecision
 from runtime.contracts.response import (
@@ -60,7 +70,6 @@ from runtime.contracts.update import MemoryUpdate, StateUpdate, UpdateResult
 from runtime.contracts.validation import ClaimPolicy, ValidatedResult
 
 __all__ = [
-    "SCHEMA_VERSION",
     "ActionPlanDraft",
     "ApprovedActionPlan",
     "BusinessStatus",
@@ -76,6 +85,8 @@ __all__ = [
     "DomainIdentityExtension",
     "DomainSchemaReference",
     "Entity",
+    "EvidenceRequirement",
+    "EXECUTION_RESULT_SCHEMA_VERSION",
     "ExecutionPlanStatus",
     "ExecutionResult",
     "ExecutionTiming",
@@ -85,6 +96,7 @@ __all__ = [
     "InputTriggerType",
     "IntentEvidenceSource",
     "IntentResult",
+    "KnowledgeRequirement",
     "MemoryUpdate",
     "PlanApprovalStatus",
     "PlanningGoal",
@@ -95,6 +107,8 @@ __all__ = [
     "ResponseRequirement",
     "ResponseType",
     "ResponseValidationStatus",
+    "RetrievalMode",
+    "RetrievalPlan",
     "RuntimeContext",
     "RuntimeControlState",
     "RuntimeInput",
@@ -103,6 +117,7 @@ __all__ = [
     "SafetyPhase",
     "SafetyResult",
     "SafetyRiskLevel",
+    "SCHEMA_VERSION",
     "SessionContext",
     "StateUpdate",
     "TransitionStatus",

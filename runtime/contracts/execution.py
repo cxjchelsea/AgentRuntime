@@ -9,6 +9,9 @@ from runtime.contracts.common import CanonicalModel, VersionedContract
 from runtime.contracts.enums import ExecutionPlanStatus, RuntimeControlState
 
 
+EXECUTION_RESULT_SCHEMA_VERSION = "1.1.0"
+
+
 class ExecutionTiming(CanonicalModel):
     """执行时间窗。Canonical 仅要求存在 timing 对象。"""
 
@@ -38,6 +41,7 @@ class StepExecutionResult(CanonicalModel):
 class ExecutionResult(VersionedContract):
     """主链执行输出。使用 plan_status 与分层 results。"""
 
+    schema_version: str = EXECUTION_RESULT_SCHEMA_VERSION
     execution_id: str
     plan_id: str
     request_id: str
@@ -47,6 +51,7 @@ class ExecutionResult(VersionedContract):
     timing: ExecutionTiming
     skill_results: list[dict[str, Any]] | None = None
     workflow_result: dict[str, Any] | None = None
+    workflow_results: list[dict[str, Any]] | None = None
     tool_results: list[dict[str, Any]] | None = None
     business_outputs: list[dict[str, Any]] | None = None
     execution_events: list[dict[str, Any]] | None = None

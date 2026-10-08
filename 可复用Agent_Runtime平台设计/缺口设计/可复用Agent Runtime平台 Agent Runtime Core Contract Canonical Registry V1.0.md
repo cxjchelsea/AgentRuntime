@@ -4,7 +4,8 @@
 > **Phase 0 Fix 正式冻结文件**  
 > 本文是首批 Core Contract 的**唯一正式来源**。  
 > 自本文冻结起，任何阶段文档、Schema Registry 旧表、Frozen 子设计中与本文冲突的名称、字段、枚举、Owner 定义**立即失效**，不得再作为实现依据。  
-> 本文不重新设计 Runtime 架构，不修改 10 节点主链，不修改 Truth Boundary，不修改 M0–M8 职责边界。
+> 本文不重新设计 Runtime 架构，不修改 10 节点主链，不修改 Truth Boundary，不修改 M0–M8 职责边界。  
+> **M4-CA1 向后兼容修订**：ActionPlanDraft / ApprovedActionPlan 的 Planning Contract surface 从 `1.0.0` 扩展到 `1.1.0`，仅新增 Knowledge Planning optional fields；旧 `1.0.0` payload 仍必须可解析。
 
 > **文档优先级（本轮已执行对齐）**  
 > Runtime Invariants > 本文（首批 Contract 唯一来源）> Core Schema Registry（其余对象）> Frozen 子设计 > 阶段详细实现方案。
@@ -476,6 +477,19 @@ WAIT
 END
 ```
 
+## 4.22 RetrievalMode（M4-CA1）
+
+```text
+VECTOR
+KEYWORD
+HYBRID
+STRUCTURED_LOOKUP
+EXTERNAL_API
+NONE
+```
+
+该枚举只描述跨 Domain 的 Knowledge Infrastructure 检索控制模式，不冻结任何业务 KnowledgeDomain / KnowledgeType / SourcePolicy。
+
 ---
 
 # 5. Domain Registered Values
@@ -588,7 +602,7 @@ M8 主链终点 **只能**是 `UpdateResult`。
 - producer: Input Normalizer
 - consumer: M2 Early Safety Guard, M3 Understanding, Trace
 - lifecycle: Turn
-- schema_version: `1.0.0`
+- schema_version: `1.1.0`（兼容读取 `1.0.0`）
 - 主链对象: 是
 - 内部中间对象: 否
 
@@ -904,7 +918,7 @@ forbidden_skills       保留为 optional，与 allowed_skills 成对
 - producer: Planner
 - consumer: Plan Validator, M2 Policy Re-check
 - lifecycle: Turn
-- schema_version: `1.0.0`
+- schema_version: `1.1.0`（兼容读取 `1.0.0`）
 - 主链对象: 否
 - 内部中间对象: 是
 
@@ -925,6 +939,9 @@ quality
 
 ```text
 strategy
+knowledge_requirement
+retrieval_plan
+evidence_requirement
 memory_usage
 capability_plan
 tool_plan
@@ -981,6 +998,48 @@ Planner 发明未注册 Action / Skill / Workflow / Tool
 
 `steps[].action` 只能是 Core Control Action 或 Domain 已注册 Action。
 
+## 13.4 M4-CA1 Knowledge Planning optional subcontracts
+
+```text
+KnowledgeRequirement
+RetrievalPlan
+EvidenceRequirement
+```
+
+三者 Owner 均为 M4，作为 Planning Semantics 随 Draft / Approved Plan 跨阶段传递。
+
+```text
+KnowledgeRequirement.required = false
+→ retrieval_plan / evidence_requirement 可为空
+
+KnowledgeRequirement.required = true
+→ 后续 M4 Planner / PlanValidator 必须要求
+  RetrievalPlan + EvidenceRequirement
+```
+
+注意：上面的条件必填属于 Runtime validation invariant，不通过把 optional 字段改成 schema required 来实现。
+
+正式边界：
+
+```text
+RetrievalPlan != Retrieval Execution
+EvidenceRequirement != EvidenceItem / EvidencePack
+EvidencePack != VerifiedFact
+```
+
+RetrievalMode 为跨 Domain infrastructure control enum：
+
+```text
+VECTOR
+KEYWORD
+HYBRID
+STRUCTURED_LOOKUP
+EXTERNAL_API
+NONE
+```
+
+KnowledgeDomain / KnowledgeType / SourcePolicy / Population / Scenario / SafetyLevel 继续使用 Domain 注入字符串，不进入 Core frozen business enum。
+
 ---
 
 # 14. ExecutionResult
@@ -990,7 +1049,7 @@ Planner 发明未注册 Action / Skill / Workflow / Tool
 - producer: Execution Framework
 - consumer: M6
 - lifecycle: Execution / Trace
-- schema_version: `1.0.0`
+- schema_version: `1.1.0`（CA-M5-IU10-03 additive amendment；兼容读取 `1.0.0`）
 - 主链对象: 是
 - 内部中间对象: 否
 
@@ -1011,7 +1070,8 @@ timing
 
 ```text
 skill_results[]
-workflow_result
+workflow_result                 legacy single-Workflow compatibility field
+workflow_results[]              canonical multi-Workflow lossless field
 tool_results[]
 business_outputs[]
 execution_events[]
@@ -1021,6 +1081,16 @@ cancellation
 quality
 ```
 
+Workflow cardinality：
+
+```text
+0 Workflow  -> workflow_result=None, workflow_results=[]
+1 Workflow  -> workflow_result=exact sole item, workflow_results=[same item]
+>1 Workflow -> workflow_result=None, workflow_results=[all items in ApprovedPlan order]
+```
+
+禁止 first-wins / last-wins。
+
 ## 14.3 层次
 
 ```text
@@ -1028,17 +1098,19 @@ ExecutionResult.plan_status
         ↓
 step_results[]
         ↓
-skill_results[] / workflow_result
+skill_results[] / workflow_results[]
         ↓
 tool_results[]
 ```
+
+`workflow_result` 仅保留为单 Workflow 兼容视图，不是多 Workflow authority。
 
 ## 14.4 失效字段
 
 ```text
 status                  改 plan_status
 executed_skill          改 skill_results[]
-executed_workflow       改 workflow_result
+executed_workflow       改 workflow_results[]（单项兼容 workflow_result）
 business_result         改 business_outputs[]
 elder_id                改 identity_scope
 ```
@@ -1353,8 +1425,8 @@ optional: `device_id`, `current_state`, `step_state`, `tool_context`, `deadline`
 3. 不得定义名为 elder_id 的 Core 字段。
 4. 不得把 Domain Example 写成 Core Enum class。
 5. M0 允许 Stub，但 Stub 也必须使用本文字段名。
-6. 每个对象必须带 schema_version = 1.0.0。
-7. Breaking Change 必须提升 Major Version，并先改本文。
+6. 每个对象必须带 schema_version；默认版本以各 Contract 明确冻结的 version constant 为准。
+7. Additive compatible amendment 提升 Minor Version；Breaking Change 必须提升 Major Version，并先改本文。
 ```
 
 ---

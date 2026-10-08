@@ -32,6 +32,7 @@ class AdmissionReason(StrEnum):
     INVALID_POLICY_SNAPSHOT = "INVALID_POLICY_SNAPSHOT"
     TOOL_OWNER_MISMATCH = "TOOL_OWNER_MISMATCH"
     DUPLICATE_GOAL = "DUPLICATE_GOAL"
+    DUPLICATE_TOOL_RESULT = "DUPLICATE_TOOL_RESULT"
     NONCANONICAL_SOURCE = "NONCANONICAL_SOURCE"
 
 
@@ -136,6 +137,7 @@ def admit_validation_input(
             if not call_id or call_id in observed_calls:
                 reject(AdmissionReason.DUPLICATE_TOOL_CALL)
             observed_calls.add(call_id)
+    seen_result_ids: set[str] = set()
     for result in execution.tool_results or ():
         if not isinstance(result, dict):
             reject(AdmissionReason.NONCANONICAL_SOURCE)
@@ -144,6 +146,10 @@ def admit_validation_input(
         step_id = result.get("step_id")
         if not isinstance(call_id, str) or call_id not in observed_calls:
             reject(AdmissionReason.TOOL_OWNER_MISMATCH)
+        if isinstance(call_id, str) and call_id in seen_result_ids:
+            reject(AdmissionReason.DUPLICATE_TOOL_RESULT)
+        elif isinstance(call_id, str):
+            seen_result_ids.add(call_id)
         if step_id is not None:
             owners = {step.step_id for step in execution.step_results
                       if call_id in (step.tool_call_ids or ())}

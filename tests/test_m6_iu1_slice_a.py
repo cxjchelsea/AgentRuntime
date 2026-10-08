@@ -18,7 +18,7 @@ def _inputs():
 def test_healthy_admission_deterministic_and_no_success_promotion():
     execution, context, approved = _inputs()
     first = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
-    second = admit_validation_input(execution, context, approved)
+    second = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
     assert first == second
     assert first.status is AdmissionStatus.ADMITTED
     assert first.reasons == ()
@@ -32,7 +32,7 @@ def test_plan_request_and_scope_mismatch_fail_closed():
     execution.plan_id = "other"
     execution.request_id = "other"
     execution.identity_scope = "wrong"
-    result = admit_validation_input(execution, context, approved)
+    result = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
     assert result.status is AdmissionStatus.REJECTED
     assert result.envelope is None
     assert set(result.reasons) == {
@@ -44,7 +44,7 @@ def test_plan_request_and_scope_mismatch_fail_closed():
 
 def test_trusted_session_expectation_is_never_guessed():
     execution, context, approved = _inputs()
-    result = admit_validation_input(execution, context, approved, expected_session_id="another")
+    result = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="another")
     assert result.status is AdmissionStatus.REJECTED
     assert AdmissionReason.SESSION_MISMATCH in result.reasons
 
@@ -55,7 +55,7 @@ def test_unknown_and_duplicate_steps_fail_closed():
         StepExecutionResult(step_id="unknown", tool_call_ids=["call-1"]),
         StepExecutionResult(step_id="unknown", tool_call_ids=["call-1"]),
     ]
-    result = admit_validation_input(execution, context, approved)
+    result = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
     assert result.envelope is None
     assert AdmissionReason.UNKNOWN_EXECUTION_STEP in result.reasons
     assert AdmissionReason.DUPLICATE_EXECUTION_STEP in result.reasons
@@ -68,7 +68,7 @@ def test_step_reference_keeps_unobserved_time_absent_and_inputs_unchanged():
         StepExecutionResult(step_id="step-001", tool_call_ids=["call-1"])
     ]
     before = execution.model_dump(mode="json")
-    result = admit_validation_input(execution, context, approved)
+    result = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
     assert result.envelope is not None
     assert [x.source_path for x in result.envelope.evidence_refs] == [
         "step_results[0]", "step_results[0].tool_call_ids[0]"
@@ -80,7 +80,7 @@ def test_step_reference_keeps_unobserved_time_absent_and_inputs_unchanged():
 def test_duplicate_approved_step_ids_rejected():
     execution, context, approved = _inputs()
     approved.steps.append(approved.steps[0].model_copy(deep=True))
-    result = admit_validation_input(execution, context, approved)
+    result = admit_validation_input(execution, context, approved, expected_request_id="request-001", expected_session_id="session-001")
     assert result.status is AdmissionStatus.REJECTED
     assert AdmissionReason.DUPLICATE_PLAN_STEP in result.reasons
 

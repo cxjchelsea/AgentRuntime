@@ -54,8 +54,10 @@ def _case() -> dict[str, object]:
 
 
 def _reject(
-    reason: NoGrantProjectionReason, args: dict[str, object],
-    *, controller: NoGrantProjectionController | None = None,
+    reason: NoGrantProjectionReason,
+    args: dict[str, object],
+    *,
+    controller: NoGrantProjectionController | None = None,
 ) -> None:
     with pytest.raises(NoGrantProjectionError) as error:
         (controller or NoGrantProjectionController()).project(**args)  # type: ignore[arg-type]
@@ -91,27 +93,35 @@ def test_rejected_admission_precedes_allocator() -> None:
         return "never"
 
     _reject(
-        NoGrantProjectionReason.ADMISSION_REJECTED, args,
+        NoGrantProjectionReason.ADMISSION_REJECTED,
+        args,
         controller=NoGrantProjectionController(id_allocator=allocator),
     )
     assert invoked == 0
 
 
-@pytest.mark.parametrize("field,reason", [
-    ("admission", NoGrantProjectionReason.INVALID_INPUT),
-    ("execution", NoGrantProjectionReason.INVALID_INPUT),
-    ("approved", NoGrantProjectionReason.INVALID_INPUT),
-    ("context", NoGrantProjectionReason.INVALID_INPUT),
-    ("origin", NoGrantProjectionReason.ORIGIN_INVALID),
-    ("no_grant", NoGrantProjectionReason.NO_GRANT_INVALID),
-])
-def test_bad_input_types_fail_typed(field: str, reason: NoGrantProjectionReason) -> None:
+@pytest.mark.parametrize(
+    "field,reason",
+    [
+        ("admission", NoGrantProjectionReason.INVALID_INPUT),
+        ("execution", NoGrantProjectionReason.INVALID_INPUT),
+        ("approved", NoGrantProjectionReason.INVALID_INPUT),
+        ("context", NoGrantProjectionReason.INVALID_INPUT),
+        ("origin", NoGrantProjectionReason.ORIGIN_INVALID),
+        ("no_grant", NoGrantProjectionReason.NO_GRANT_INVALID),
+    ],
+)
+def test_bad_input_types_fail_typed(
+    field: str, reason: NoGrantProjectionReason
+) -> None:
     args = _case()
     args[field] = None
     _reject(reason, args)
 
 
-@pytest.mark.parametrize("field", ["expected_request_id", "expected_session_id", "expected_identity_scope"])
+@pytest.mark.parametrize(
+    "field", ["expected_request_id", "expected_session_id", "expected_identity_scope"]
+)
 def test_mismatching_origins_fail_before_allocation(field: str) -> None:
     args = _case()
     values = {
@@ -120,7 +130,11 @@ def test_mismatching_origins_fail_before_allocation(field: str) -> None:
         "expected_identity_scope": "scope-001",
     }
     values[field] = "other"
-    args["origin"] = ValidationOriginBinding(**values)
+    args["origin"] = ValidationOriginBinding(
+        expected_request_id=values["expected_request_id"],
+        expected_session_id=values["expected_session_id"],
+        expected_identity_scope=values["expected_identity_scope"],
+    )
     _reject(NoGrantProjectionReason.IDENTITY_MISMATCH, args)
 
 
@@ -137,8 +151,11 @@ def test_resolved_binding_cannot_claim_authority() -> None:
 
     args = _case()
     admission = args["admission"]
+    assert isinstance(admission, ValidationAdmissionDecision)
+    assert admission.envelope is not None
     args["admission"] = replace(
-        admission, envelope=replace(admission.envelope, rule_binding_status="RESOLVED")  # type: ignore[union-attr]
+        admission,
+        envelope=replace(admission.envelope, rule_binding_status="RESOLVED"),
     )
     _reject(NoGrantProjectionReason.ADMISSION_INVALID, args)
 
@@ -148,7 +165,9 @@ def test_directly_constructed_no_grant_remains_nonaffirmative() -> None:
     args["no_grant"] = NoGrant(NoGrantReason.UNTRUSTED_RECEIPT)
     result = NoGrantProjectionController().project(**args)  # type: ignore[arg-type]
     assert result.business_status is BusinessStatus.UNKNOWN
-    assert result.validation_errors == [{"code": "GRANT_MISSING", "reason": "UNTRUSTED_RECEIPT"}]
+    assert result.validation_errors == [
+        {"code": "GRANT_MISSING", "reason": "UNTRUSTED_RECEIPT"}
+    ]
 
 
 def test_b0_slot_is_not_considered_authority_certificate() -> None:
@@ -177,15 +196,19 @@ def test_distinct_invocations_get_distinct_ids() -> None:
 
 @pytest.mark.parametrize("value", ["", " ", 17])
 def test_bad_allocator_value_is_typed(value: object) -> None:
-    ctl = NoGrantProjectionController(id_allocator=lambda: value)  # type: ignore[arg-type]
+    ctl = NoGrantProjectionController(
+        id_allocator=lambda: value  # type: ignore[arg-type,return-value]
+    )
     _reject(NoGrantProjectionReason.VALIDATION_ID_INVALID, _case(), controller=ctl)
 
 
 def test_allocator_error_is_typed() -> None:
     def fail() -> str:
         raise RuntimeError("allocation unavailable")
+
     _reject(
-        NoGrantProjectionReason.VALIDATION_ID_INVALID, _case(),
+        NoGrantProjectionReason.VALIDATION_ID_INVALID,
+        _case(),
         controller=NoGrantProjectionController(id_allocator=fail),
     )
 
@@ -198,5 +221,12 @@ def test_invalid_origin_rejected_on_construction() -> None:
 
 def test_no_external_effects_or_positive_issuance_api() -> None:
     ctl = NoGrantProjectionController()
-    for name in ("issue_grant", "execute", "persist", "update", "run", "resolve_profile"):
+    for name in (
+        "issue_grant",
+        "execute",
+        "persist",
+        "update",
+        "run",
+        "resolve_profile",
+    ):
         assert not hasattr(ctl, name)

@@ -85,7 +85,9 @@ class NoGrantProjectionController:
     def __init__(self, *, id_allocator: ValidationIdAllocator | None = None) -> None:
         if id_allocator is not None and not callable(id_allocator):
             raise NoGrantProjectionError(NoGrantProjectionReason.VALIDATION_ID_INVALID)
-        self._allocator = id_allocator if id_allocator is not None else lambda: uuid.uuid4().hex
+        self._allocator = (
+            id_allocator if id_allocator is not None else lambda: uuid.uuid4().hex
+        )
         self._used_ids: set[str] = set()
 
     def project(
@@ -109,10 +111,7 @@ class NoGrantProjectionController:
             raise NoGrantProjectionError(NoGrantProjectionReason.ORIGIN_INVALID)
         if not isinstance(no_grant, NoGrant):
             raise NoGrantProjectionError(NoGrantProjectionReason.NO_GRANT_INVALID)
-        if (
-            admission.status is AdmissionStatus.REJECTED
-            and admission.envelope is None
-        ):
+        if admission.status is AdmissionStatus.REJECTED and admission.envelope is None:
             raise NoGrantProjectionError(NoGrantProjectionReason.ADMISSION_REJECTED)
         if (
             admission.status is not AdmissionStatus.ADMITTED
@@ -145,7 +144,9 @@ class NoGrantProjectionController:
                 expected_session_id=origin.expected_session_id,
             )
         except (TypeError, ValueError, AttributeError) as exc:
-            raise NoGrantProjectionError(NoGrantProjectionReason.RECHECK_REJECTED) from exc
+            raise NoGrantProjectionError(
+                NoGrantProjectionReason.RECHECK_REJECTED
+            ) from exc
         if (
             rechecked.status is not AdmissionStatus.ADMITTED
             or rechecked.envelope is None
@@ -158,11 +159,15 @@ class NoGrantProjectionController:
         try:
             validation_id = self._allocator()
         except Exception as exc:
-            raise NoGrantProjectionError(NoGrantProjectionReason.VALIDATION_ID_INVALID) from exc
+            raise NoGrantProjectionError(
+                NoGrantProjectionReason.VALIDATION_ID_INVALID
+            ) from exc
         if not _valid_identifier(validation_id):
             raise NoGrantProjectionError(NoGrantProjectionReason.VALIDATION_ID_INVALID)
         if validation_id in self._used_ids:
-            raise NoGrantProjectionError(NoGrantProjectionReason.VALIDATION_ID_COLLISION)
+            raise NoGrantProjectionError(
+                NoGrantProjectionReason.VALIDATION_ID_COLLISION
+            )
         self._used_ids.add(validation_id)
         try:
             return ValidatedResult(
@@ -192,4 +197,6 @@ class NoGrantProjectionController:
                 quality=None,
             )
         except Exception as exc:
-            raise NoGrantProjectionError(NoGrantProjectionReason.PROJECTION_FAILED) from exc
+            raise NoGrantProjectionError(
+                NoGrantProjectionReason.PROJECTION_FAILED
+            ) from exc

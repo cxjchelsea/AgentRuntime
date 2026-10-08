@@ -25,10 +25,6 @@ from runtime.execution.control import (
     LatchedExecutionControl,
     ObservedExecutionControl,
 )
-from runtime.execution.control_application import (
-    ExecutionControlApplication,
-    ExecutionControlDisposition,
-)
 from runtime.execution.control_applicability import (
     AggregationControlAuthoritySnapshot,
     ControlApplicabilityEvidenceStatus,
@@ -39,6 +35,10 @@ from runtime.execution.control_applicability import (
     DurableControlApplicabilityRecorder,
     DurableControlApplicabilityStore,
     InMemoryDurableControlApplicabilityStore,
+)
+from runtime.execution.control_application import (
+    ExecutionControlApplication,
+    ExecutionControlDisposition,
 )
 from runtime.execution.control_runtime import ExecutionControlCoordinator
 from runtime.execution.recovery import (
@@ -56,6 +56,8 @@ from runtime.execution.recovery_evidence import (
 from runtime.execution.step_completion import RunningStepCompletionCoordinator
 from tests.test_m5_iu10_ca02_aggregation_evidence import (
     NOW as CA02_NOW,
+)
+from tests.test_m5_iu10_ca02_aggregation_evidence import (
     _partial_reliability_result,
     _running,
     _skill_plan,
@@ -160,9 +162,7 @@ async def _latched_fixture(
         owner="worker-a",
         expected_epoch=0,
     )
-    control_store = InMemoryDurableRecoveryEvidenceStore(
-        claim_authority=claims
-    )
+    control_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
     latch = DurableExecutionControlLatch(
         store=control_store,
         recovery_claim=claim,
@@ -185,9 +185,7 @@ def test_none_requires_durable_control_none_and_no_orphan_evidence() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        control_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        control_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         applicability_store = InMemoryDurableControlApplicabilityStore(
             claim_authority=claims
         )
@@ -200,8 +198,7 @@ def test_none_requires_durable_control_none_and_no_orphan_evidence() -> None:
 
         assert snapshot.control.status is DurableControlReadStatus.NONE
         assert (
-            snapshot.applicability.status
-            is AggregationControlApplicabilityStatus.NONE
+            snapshot.applicability.status is AggregationControlApplicabilityStatus.NONE
         )
         assert snapshot.applicability.latched_control is None
 
@@ -225,9 +222,7 @@ def test_applicability_read_failure_never_collapses_to_none() -> None:
             owner="worker-a",
             expected_epoch=0,
         )
-        control_store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        control_store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         authority = DurableAggregationControlAuthority(
             control_store=control_store,
             applicability_store=cast(
@@ -358,9 +353,7 @@ def test_late_noop_evidence_survives_authority_recreation() -> None:
 def test_exact_applicability_replay_is_idempotent() -> None:
     async def scenario() -> None:
         claims, claim, _, latched = await _latched_fixture()
-        store = InMemoryDurableControlApplicabilityStore(
-            claim_authority=claims
-        )
+        store = InMemoryDurableControlApplicabilityStore(claim_authority=claims)
         recorder = DurableControlApplicabilityRecorder(
             store=store,
             recovery_claim=claim,
@@ -401,9 +394,7 @@ def test_exact_applicability_replay_is_idempotent() -> None:
 def test_applies_cannot_be_overwritten_by_later_already_terminal_replay() -> None:
     async def scenario() -> None:
         claims, claim, control_store, latched = await _latched_fixture()
-        store = InMemoryDurableControlApplicabilityStore(
-            claim_authority=claims
-        )
+        store = InMemoryDurableControlApplicabilityStore(claim_authority=claims)
         recorder = DurableControlApplicabilityRecorder(
             store=store,
             recovery_claim=claim,
@@ -428,9 +419,7 @@ def test_applies_cannot_be_overwritten_by_later_already_terminal_replay() -> Non
 
         assert first.status is ControlApplicabilityWriteStatus.RECORDED
         assert conflict.status is ControlApplicabilityWriteStatus.CONFLICT
-        assert conflict.reason_codes == (
-            "CONTROL_APPLICABILITY_IMMUTABLE_CONFLICT",
-        )
+        assert conflict.reason_codes == ("CONTROL_APPLICABILITY_IMMUTABLE_CONFLICT",)
 
         authority = DurableAggregationControlAuthority(
             control_store=control_store,
@@ -448,9 +437,7 @@ def test_applies_cannot_be_overwritten_by_later_already_terminal_replay() -> Non
 def test_stale_recovery_epoch_cannot_write_applicability() -> None:
     async def scenario() -> None:
         claims, first_claim, _, latched = await _latched_fixture()
-        store = InMemoryDurableControlApplicabilityStore(
-            claim_authority=claims
-        )
+        store = InMemoryDurableControlApplicabilityStore(claim_authority=claims)
         stale_recorder = DurableControlApplicabilityRecorder(
             store=store,
             recovery_claim=first_claim,
@@ -474,9 +461,7 @@ def test_stale_recovery_epoch_cannot_write_applicability() -> None:
         )
 
         assert decision.status is ControlApplicabilityWriteStatus.CONFLICT
-        assert decision.reason_codes == (
-            "CONTROL_APPLICABILITY_STALE_RECOVERY_EPOCH",
-        )
+        assert decision.reason_codes == ("CONTROL_APPLICABILITY_STALE_RECOVERY_EPOCH",)
 
     asyncio.run(scenario())
 
@@ -484,9 +469,7 @@ def test_stale_recovery_epoch_cannot_write_applicability() -> None:
 def test_nonfinal_control_application_cannot_become_applicability_truth() -> None:
     async def scenario() -> None:
         claims, claim, _, latched = await _latched_fixture()
-        store = InMemoryDurableControlApplicabilityStore(
-            claim_authority=claims
-        )
+        store = InMemoryDurableControlApplicabilityStore(claim_authority=claims)
         recorder = DurableControlApplicabilityRecorder(
             store=store,
             recovery_claim=claim,
@@ -503,9 +486,7 @@ def test_nonfinal_control_application_cannot_become_applicability_truth() -> Non
         )
 
         assert decision.status is ControlApplicabilityWriteStatus.UNKNOWN
-        assert decision.reason_codes == (
-            "CONTROL_APPLICABILITY_SOURCE_NOT_FINAL",
-        )
+        assert decision.reason_codes == ("CONTROL_APPLICABILITY_SOURCE_NOT_FINAL",)
         read = await store.read("execution-ca04")
         assert read.status is ControlApplicabilityReadStatus.NONE
 
@@ -554,9 +535,7 @@ def test_orphan_applicability_without_durable_latch_is_unknown() -> None:
 
 def test_applicability_must_bind_exact_durable_latch() -> None:
     async def scenario() -> None:
-        claims, claim, _, latched_a = await _latched_fixture(
-            signal_id="signal-ca04-a"
-        )
+        claims, claim, _, latched_a = await _latched_fixture(signal_id="signal-ca04-a")
         applicability_store = InMemoryDurableControlApplicabilityStore(
             claim_authority=claims
         )
@@ -573,9 +552,7 @@ def test_applicability_must_bind_exact_durable_latch() -> None:
             recorded_at=NOW + timedelta(seconds=4),
         )
 
-        control_store_b = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        control_store_b = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         latch_b = DurableExecutionControlLatch(
             store=control_store_b,
             recovery_claim=claim,
@@ -633,9 +610,7 @@ def test_natural_commit_re_resolves_control_authority_before_replay() -> None:
             at=CA02_NOW + timedelta(seconds=1),
         )
         step_done = (
-            await RunningStepCompletionCoordinator(
-                lifecycle_service=service
-            ).complete(
+            await RunningStepCompletionCoordinator(lifecycle_service=service).complete(
                 prepared=running,
                 reliability_result=_partial_reliability_result(
                     step_execution_id=running.steps[0].step_execution_id
@@ -679,9 +654,7 @@ def test_natural_commit_re_resolves_control_authority_before_replay() -> None:
                 latched_control=late_latch,
             ),
         )
-        control_authority = SequenceAggregationControlAuthority(
-            (no_control, late_noop)
-        )
+        control_authority = SequenceAggregationControlAuthority((no_control, late_noop))
         aggregator = ExecutionAggregator(
             authority=ExecutionAggregationAuthority(),
             lifecycle_service=service,

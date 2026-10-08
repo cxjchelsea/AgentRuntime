@@ -113,9 +113,7 @@ class DurableControlApplicabilityRecord:
             self.source_preserve_running_step_result
             and self.source_running_step_id is None
         ):
-            raise ValueError(
-                "preserved running result requires source running Step"
-            )
+            raise ValueError("preserved running result requires source running Step")
         if (
             self.status is ControlApplicabilityEvidenceStatus.APPLIES
             and not self.source_affected_step_ids
@@ -151,9 +149,7 @@ class ControlApplicabilityWriteDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.status, ControlApplicabilityWriteStatus):
             raise TypeError("status must be ControlApplicabilityWriteStatus")
-        if not self.reason_codes or any(
-            not item.strip() for item in self.reason_codes
-        ):
+        if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
             raise ValueError("reason_codes must contain non-blank values")
         if self.status in {
             ControlApplicabilityWriteStatus.RECORDED,
@@ -180,9 +176,7 @@ class ControlApplicabilityReadDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.status, ControlApplicabilityReadStatus):
             raise TypeError("status must be ControlApplicabilityReadStatus")
-        if not self.reason_codes or any(
-            not item.strip() for item in self.reason_codes
-        ):
+        if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
             raise ValueError("reason_codes must contain non-blank values")
         if self.status is ControlApplicabilityReadStatus.RECORDED:
             if self.record is None:
@@ -482,10 +476,7 @@ class DurableAggregationControlAuthority:
             )
 
         record = evidence.record
-        if (
-            record.execution_id != execution_id
-            or record.latched_control != latched
-        ):
+        if record.execution_id != execution_id or record.latched_control != latched:
             return self._snapshot(
                 control,
                 AggregationControlApplicabilityStatus.UNKNOWN,

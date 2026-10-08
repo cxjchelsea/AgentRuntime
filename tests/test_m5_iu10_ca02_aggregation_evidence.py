@@ -71,8 +71,14 @@ from tests.orchestration_stubs import (
 )
 from tests.test_m5_iu7_ca03_control_lifecycle import (
     TERMINALIZED as CONTROL_TERMINALIZED_AT,
+)
+from tests.test_m5_iu7_ca03_control_lifecycle import (
     _application as control_application,
+)
+from tests.test_m5_iu7_ca03_control_lifecycle import (
     _latched as control_latched,
+)
+from tests.test_m5_iu7_ca03_control_lifecycle import (
     _prepared as control_prepared,
 )
 
@@ -258,7 +264,9 @@ def _workflow_observation(
         workflow_instance_id="workflow-instance-001",
         workflow_id="workflow-001",
         status=status,
-        completed_steps=("node-001",) if status is WorkflowExecutionStatus.COMPLETED else (),
+        completed_steps=("node-001",)
+        if status is WorkflowExecutionStatus.COMPLETED
+        else (),
         important_outputs={"answer": "done"},
     )
     attempt_status = {
@@ -366,7 +374,9 @@ def test_attempt_finalization_persists_rich_evidence_atomically() -> None:
         assert stored is not None
         assert stored.step_results[0]["aggregation_evidence"] == evidence.to_payload()
 
-        readiness, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=decision.prepared)
+        readiness, skips = project_ca01_evidence_inputs(
+            approved_plan=plan, prepared=decision.prepared
+        )
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
         assert skips == {}
         raw_assessment, _ = StepAggregationEvidenceAuthority().assess(
@@ -418,7 +428,9 @@ def test_attempt_evidence_survives_recovery_snapshot_roundtrip() -> None:
             restored.steps[0].aggregation_evidence
             == completed.prepared.steps[0].aggregation_evidence
         )
-        readiness, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=restored)
+        readiness, skips = project_ca01_evidence_inputs(
+            approved_plan=plan, prepared=restored
+        )
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
         assert skips == {}
 
@@ -473,7 +485,9 @@ def test_scheduler_skip_persists_explicit_skip_semantics(
         assert stored is not None
         assert stored.step_results[0]["aggregation_evidence"] == evidence.to_payload()
 
-        readiness, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=decision.prepared)
+        readiness, skips = project_ca01_evidence_inputs(
+            approved_plan=plan, prepared=decision.prepared
+        )
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
         assert skips["step-001"].disposition is expected
         assert skips["step-001"].step_execution_id == step.step_execution_id
@@ -505,11 +519,12 @@ def test_required_previous_failure_blocked_terminalization_is_unsatisfied() -> N
         evidence = decision.prepared.steps[0].aggregation_evidence
         assert evidence is not None
         assert evidence.scheduler_skip_disposition == "UNSATISFIED"
-        readiness, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=decision.prepared)
+        readiness, skips = project_ca01_evidence_inputs(
+            approved_plan=plan, prepared=decision.prepared
+        )
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
         assert (
-            skips["step-001"].disposition
-            is StepSkipAggregationDisposition.UNSATISFIED
+            skips["step-001"].disposition is StepSkipAggregationDisposition.UNSATISFIED
         )
 
     asyncio.run(scenario())
@@ -532,12 +547,12 @@ def test_terminal_step_without_aggregation_evidence_is_missing_not_invented() ->
             terminal_reason_codes=("LEGACY_DIRECT_FINISH",),
         )
 
-        readiness, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=legacy_terminal)
+        readiness, skips = project_ca01_evidence_inputs(
+            approved_plan=plan, prepared=legacy_terminal
+        )
 
         assert readiness.status is AggregationEvidenceReadinessStatus.MISSING
-        assert readiness.reason_codes == (
-            "AGGREGATION_EVIDENCE_TERMINAL_STEP_MISSING",
-        )
+        assert readiness.reason_codes == ("AGGREGATION_EVIDENCE_TERMINAL_STEP_MISSING",)
         assert skips == {}
 
     asyncio.run(scenario())
@@ -575,7 +590,9 @@ def test_persisted_evidence_drift_is_unknown_not_ready() -> None:
             ),
         )
 
-        assessment, skips = project_ca01_evidence_inputs(approved_plan=plan, prepared=drifted)
+        assessment, skips = project_ca01_evidence_inputs(
+            approved_plan=plan, prepared=drifted
+        )
 
         assert assessment.status is AggregationEvidenceReadinessStatus.UNKNOWN
         assert assessment.reason_codes == (
@@ -602,8 +619,9 @@ def test_legacy_terminal_payload_without_evidence_remains_recovery_readable() ->
             at=NOW + timedelta(seconds=2),
             terminal_reason_codes=("LEGACY_DIRECT_FINISH",),
         )
-        assert "aggregation_evidence" not in (
-            legacy_terminal.execution_record.step_results[0]
+        assert (
+            "aggregation_evidence"
+            not in (legacy_terminal.execution_record.step_results[0])
         )
         claim = ExecutionRecoveryClaim(
             claim_id="claim-ca02-legacy",
@@ -624,7 +642,9 @@ def test_legacy_terminal_payload_without_evidence_remains_recovery_readable() ->
         restored = snapshot.restore_prepared_execution()
 
         assert restored.steps[0].aggregation_evidence is None
-        readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=restored)
+        readiness, _ = project_ca01_evidence_inputs(
+            approved_plan=plan, prepared=restored
+        )
         assert readiness.status is AggregationEvidenceReadinessStatus.MISSING
 
     asyncio.run(scenario())
@@ -648,9 +668,7 @@ def test_control_terminalization_attaches_minimal_step_evidence() -> None:
             is StepAggregationTerminalizationKind.CONTROL_TERMINALIZED
         )
         assert evidence.terminal_step_status is StepExecutionStatus.CANCELLED
-        assert evidence.terminal_reason_codes == (
-            "CONTROL_SAFE_BOUNDARY_CONFIRMED",
-        )
+        assert evidence.terminal_reason_codes == ("CONTROL_SAFE_BOUNDARY_CONFIRMED",)
         assert evidence.execution_owner is None
         assert evidence.skill_result is None
         assert evidence.workflow_result is None
@@ -684,13 +702,10 @@ def test_live_runtime_object_cannot_enter_crash_safe_evidence() -> None:
             execution_id="execution-iu10-ca02",
             observation=observation,
             terminal_step_status=StepExecutionStatus.SUCCESS,
-            terminal_reason_codes=(
-                "STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",
-            ),
+            terminal_reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
             degraded=True,
             terminalized_at=NOW + timedelta(seconds=3),
         )
-
 
 
 def test_workflow_completed_terminal_evidence_is_ready() -> None:
@@ -732,7 +747,9 @@ def test_workflow_completed_terminal_evidence_is_ready() -> None:
         assert evidence.workflow_result is not None
         assert evidence.workflow_result["status"] == "COMPLETED"
         assert evidence.business_outputs == ({"answer": "done"},)
-        readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=completed.prepared)
+        readiness, _ = project_ca01_evidence_inputs(
+            approved_plan=plan, prepared=completed.prepared
+        )
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
 
     asyncio.run(scenario())
@@ -869,9 +886,7 @@ def test_unknown_tool_truth_blocks_terminal_evidence_readiness() -> None:
         readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=forged)
 
         assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
-        assert readiness.reason_codes == (
-            "AGGREGATION_EVIDENCE_TOOL_TRUTH_UNKNOWN",
-        )
+        assert readiness.reason_codes == ("AGGREGATION_EVIDENCE_TOOL_TRUTH_UNKNOWN",)
 
     asyncio.run(scenario())
 
@@ -915,11 +930,12 @@ def test_recovered_attempt_number_survives_terminal_evidence() -> None:
         assert step.retry_count == 1
         assert step.aggregation_evidence is not None
         assert step.aggregation_evidence.final_attempt_number == 2
-        readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=completed.prepared)
+        readiness, _ = project_ca01_evidence_inputs(
+            approved_plan=plan, prepared=completed.prepared
+        )
         assert readiness.status is AggregationEvidenceReadinessStatus.READY
 
     asyncio.run(scenario())
-
 
 
 def test_serialized_evidence_rejects_extra_or_coerced_fields() -> None:
@@ -1002,15 +1018,14 @@ def test_ambiguous_skill_and_workflow_owner_is_unknown() -> None:
             at=NOW + timedelta(seconds=3),
         )
 
-        readiness, _ = project_ca01_evidence_inputs(approved_plan=plan, prepared=completed.prepared)
-
-        assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
-        assert readiness.reason_codes == (
-            "AGGREGATION_EVIDENCE_STEP_OWNER_AMBIGUOUS",
+        readiness, _ = project_ca01_evidence_inputs(
+            approved_plan=plan, prepared=completed.prepared
         )
 
-    asyncio.run(scenario())
+        assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
+        assert readiness.reason_codes == ("AGGREGATION_EVIDENCE_STEP_OWNER_AMBIGUOUS",)
 
+    asyncio.run(scenario())
 
 
 def test_owner_version_drift_from_approved_plan_is_unknown() -> None:
@@ -1057,9 +1072,7 @@ def test_owner_version_drift_from_approved_plan_is_unknown() -> None:
         )
 
         assert readiness.status is AggregationEvidenceReadinessStatus.UNKNOWN
-        assert readiness.reason_codes == (
-            "AGGREGATION_EVIDENCE_SKILL_OWNER_MISMATCH",
-        )
+        assert readiness.reason_codes == ("AGGREGATION_EVIDENCE_SKILL_OWNER_MISMATCH",)
 
     asyncio.run(scenario())
 
@@ -1115,7 +1128,6 @@ def test_tool_version_drift_from_approved_plan_is_unknown() -> None:
         )
 
     asyncio.run(scenario())
-
 
 
 def test_skill_tool_results_must_match_core_journal() -> None:
@@ -1207,7 +1219,6 @@ def test_frozen_physical_attempt_sequence_is_revalidated() -> None:
             evidence,
             tool_journal=(journal_entry,),
         )
-
 
 
 def test_scheduler_skip_evidence_survives_recovery_snapshot() -> None:

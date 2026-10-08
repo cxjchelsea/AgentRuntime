@@ -673,16 +673,12 @@ class ExecutionLifecycleManager:
         at: datetime,
     ) -> None:
         if evidence.execution_id != prepared.execution_record.execution_id:
-            raise ExecutionLifecycleError(
-                "aggregation evidence execution_id mismatch"
-            )
+            raise ExecutionLifecycleError("aggregation evidence execution_id mismatch")
         if (
             evidence.step_execution_id != target.step_execution_id
             or evidence.step_id != target.step_id
         ):
-            raise ExecutionLifecycleError(
-                "aggregation evidence Step identity mismatch"
-            )
+            raise ExecutionLifecycleError("aggregation evidence Step identity mismatch")
         if evidence.terminal_step_status is not status:
             raise ExecutionLifecycleError(
                 "aggregation evidence terminal status mismatch"
@@ -692,17 +688,11 @@ class ExecutionLifecycleManager:
                 "aggregation evidence terminal reasons mismatch"
             )
         if evidence.degraded is not degraded:
-            raise ExecutionLifecycleError(
-                "aggregation evidence degraded fact mismatch"
-            )
+            raise ExecutionLifecycleError("aggregation evidence degraded fact mismatch")
         if evidence.tool_call_ids != tool_call_ids:
-            raise ExecutionLifecycleError(
-                "aggregation evidence Tool identity mismatch"
-            )
+            raise ExecutionLifecycleError("aggregation evidence Tool identity mismatch")
         if evidence.terminalized_at != at:
-            raise ExecutionLifecycleError(
-                "aggregation evidence terminal time mismatch"
-            )
+            raise ExecutionLifecycleError("aggregation evidence terminal time mismatch")
 
     @staticmethod
     def _step(

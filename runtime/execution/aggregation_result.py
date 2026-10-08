@@ -151,8 +151,7 @@ class CanonicalExecutionResultProjector:
     def __init__(
         self,
         *,
-        control_tool_evidence_reader: ControlTerminalToolEvidenceReader
-        | None = None,
+        control_tool_evidence_reader: ControlTerminalToolEvidenceReader | None = None,
     ) -> None:
         self._control_tool_evidence_reader = control_tool_evidence_reader
 
@@ -204,19 +203,15 @@ class CanonicalExecutionResultProjector:
             approved_plan=approved_plan,
             prepared=prepared,
         )
-        if (
-            evidence_readiness.status
-            is not AggregationEvidenceReadinessStatus.READY
-        ):
+        if evidence_readiness.status is not AggregationEvidenceReadinessStatus.READY:
             raise ExecutionAggregationProjectionError(
                 "EXECUTION_RESULT_EVIDENCE_NOT_READY"
             )
 
         prepared_step_ids = tuple(step.step_id for step in prepared.steps)
         approved_step_ids = tuple(step.step_id for step in approved_plan.steps)
-        if (
-            prepared_step_ids != approved_step_ids
-            or len(set(prepared_step_ids)) != len(prepared_step_ids)
+        if prepared_step_ids != approved_step_ids or len(set(prepared_step_ids)) != len(
+            prepared_step_ids
         ):
             raise ExecutionAggregationProjectionError(
                 "EXECUTION_RESULT_STEP_ORDER_MISMATCH"
@@ -273,16 +268,12 @@ class CanonicalExecutionResultProjector:
                         {
                             "source": "WORKFLOW",
                             "step_id": step.step_id,
-                            "workflow_id": evidence.workflow_result.get(
-                                "workflow_id"
-                            ),
+                            "workflow_id": evidence.workflow_result.get("workflow_id"),
                             "message": workflow_error,
                         }
                     )
 
-            journal_entries: tuple[
-                Mapping[str, Any] | ToolInvocationJournalEntry, ...
-            ]
+            journal_entries: tuple[Mapping[str, Any] | ToolInvocationJournalEntry, ...]
             if (
                 evidence.terminalization_kind
                 is StepAggregationTerminalizationKind.CONTROL_TERMINALIZED
@@ -361,9 +352,8 @@ class CanonicalExecutionResultProjector:
         legacy_workflow_result = (
             deepcopy(workflow_results[0]) if len(workflow_results) == 1 else None
         )
-        degraded = (
-            decision.plan_status is ExecutionPlanStatus.PARTIAL_SUCCESS
-            or any(step.degraded for step in prepared.steps)
+        degraded = decision.plan_status is ExecutionPlanStatus.PARTIAL_SUCCESS or any(
+            step.degraded for step in prepared.steps
         )
 
         timing = ExecutionTiming.model_validate(
@@ -502,10 +492,7 @@ class ExecutionAggregator:
             )
 
         current = prepared
-        if (
-            eligibility.status
-            is ExecutionAggregationEligibilityStatus.READY_NATURAL
-        ):
+        if eligibility.status is ExecutionAggregationEligibilityStatus.READY_NATURAL:
             decision = eligibility.aggregation_decision
             if decision is None:
                 raise ExecutionAggregationProjectionError(
@@ -553,6 +540,7 @@ class ExecutionAggregator:
             eligibility=eligibility,
             execution_result=execution_result,
         )
+
 
 def _project_step_result(step: StepLifecycleSnapshot) -> StepExecutionResult:
     return StepExecutionResult(
@@ -684,17 +672,12 @@ def _freeze_projection_value(value: Any) -> Any:
             raise ExecutionAggregationProjectionError(
                 "EXECUTION_RESULT_TOOL_JOURNAL_INVALID"
             )
-        return {
-            key: _freeze_projection_value(item)
-            for key, item in value.items()
-        }
+        return {key: _freeze_projection_value(item) for key, item in value.items()}
     if isinstance(value, (tuple, list)):
         return [_freeze_projection_value(item) for item in value]
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
-    raise ExecutionAggregationProjectionError(
-        "EXECUTION_RESULT_TOOL_JOURNAL_INVALID"
-    )
+    raise ExecutionAggregationProjectionError("EXECUTION_RESULT_TOOL_JOURNAL_INVALID")
 
 
 def _control_payload(latched: LatchedExecutionControl) -> dict[str, Any]:

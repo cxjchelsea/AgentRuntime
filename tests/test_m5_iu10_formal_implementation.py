@@ -61,6 +61,7 @@ from runtime.execution.models import (
     WorkflowExecutionStatus,
 )
 from runtime.execution.recovery import (
+    ExecutionRecoveryClaim,
     InMemoryRecoveryClaimAuthority,
     RecoveryClaimRequest,
     RecoveryClaimStatus,
@@ -104,21 +105,6 @@ from runtime.execution.scheduler import (
     StepConditionDecision,
     StepConditionStatus,
 )
-from tests.test_m5_iu10_ca02_aggregation_evidence import (
-    NOW,
-    _partial_reliability_result,
-    _plain_plan,
-    _running,
-    _skill_observation,
-    _skill_plan,
-    _workflow_observation,
-    _workflow_plan,
-)
-from tests.test_m5_iu10_ca03_canonical_result_projection import (
-    _control_terminal,
-    _multi_workflow_plan,
-    _multi_workflow_terminal,
-)
 from tests.test_m5_iu4_capability_execution import (
     CountingIdentifierFactory,
     RecordingTool,
@@ -133,7 +119,11 @@ from tests.test_m5_iu4_capability_execution import (
 from tests.test_m5_iu7_formal_implementation import (
     StaticInterruptController,
     StaticWatcher,
+)
+from tests.test_m5_iu7_formal_implementation import (
     _observed as iu7_observed,
+)
+from tests.test_m5_iu7_formal_implementation import (
     _prepared as iu7_prepared,
 )
 from tests.test_m5_iu9_formal_implementation import (
@@ -142,11 +132,29 @@ from tests.test_m5_iu9_formal_implementation import (
     RecoveryWorkflow,
     SimpleStepFinalizationEvaluator,
     SimpleStepReliabilityEvaluator,
-    StaticClock,
     UnusedReplayEvaluator,
     UnusedRetryEvaluator,
+)
+from tests.test_m5_iu9_formal_implementation import (
     _context as recovery_context,
+)
+from tests.test_m5_iu9_formal_implementation import (
     _executor as recovery_executor,
+)
+from tests.test_m5_iu10_ca02_aggregation_evidence import (
+    NOW,
+    _partial_reliability_result,
+    _plain_plan,
+    _running,
+    _skill_observation,
+    _skill_plan,
+    _workflow_observation,
+    _workflow_plan,
+)
+from tests.test_m5_iu10_ca03_canonical_result_projection import (
+    _control_terminal,
+    _multi_workflow_plan,
+    _multi_workflow_terminal,
 )
 
 
@@ -236,6 +244,13 @@ class RecordingTerminalObserver:
         self.execution_ids.append(prepared.execution_record.execution_id)
 
 
+class FormalRecoveryClock:
+    """与本文件导入的 CA-02 NOW 对齐，避免 IU9 StaticClock 时间倒退。"""
+
+    def now(self):
+        return NOW + timedelta(seconds=10)
+
+
 class FalseConditionEvaluator:
     async def evaluate(self, *, step, prepared) -> StepConditionDecision:
         del step, prepared
@@ -247,12 +262,8 @@ class FalseConditionEvaluator:
 
 def _stores():
     claims = InMemoryRecoveryClaimAuthority()
-    reliability = InMemoryDurableRecoveryEvidenceStore(
-        claim_authority=claims
-    )
-    applicability = InMemoryDurableControlApplicabilityStore(
-        claim_authority=claims
-    )
+    reliability = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
+    applicability = InMemoryDurableControlApplicabilityStore(claim_authority=claims)
     return claims, reliability, applicability
 
 
@@ -277,7 +288,7 @@ async def _claim(
     *,
     execution_id: str,
     claim_id: str,
-):
+) -> ExecutionRecoveryClaim:
     decision = await authority.claim(
         RecoveryClaimRequest(
             claim_id=claim_id,
@@ -293,7 +304,9 @@ async def _claim(
     return decision.claim
 
 
-def test_formal_runtime_completes_partial_success_and_publishes_canonical_result() -> None:
+def test_formal_runtime_completes_partial_success_and_publishes_canonical_result() -> (
+    None
+):
     async def scenario() -> None:
         plan = _skill_plan()
         prepared, service, _ = await _running(plan)
@@ -391,7 +404,9 @@ def test_formal_runtime_aggregates_natural_workflow_terminal_statuses(
     asyncio.run(scenario())
 
 
-def test_formal_runtime_closes_required_failure_remainder_before_failed_aggregation() -> None:
+def test_formal_runtime_closes_required_failure_remainder_before_failed_aggregation() -> (
+    None
+):
     async def scenario() -> None:
         plan = _multi_workflow_plan()
         prepared, service, _ = await _running(plan)
@@ -464,9 +479,10 @@ def test_formal_runtime_terminalizes_scheduler_skip_before_aggregation() -> None
         assert outcome.prepared.steps[0].status is StepExecutionStatus.SKIPPED
         assert outcome.prepared.steps[0].aggregation_evidence is not None
         assert outcome.aggregation_result is not None
+        # 条件不满足是合法跳过（NOT_APPLICABLE），不是 required UNSATISFIED。
         assert (
             outcome.aggregation_result.execution_result.plan_status
-            is ExecutionPlanStatus.FAILED
+            is ExecutionPlanStatus.SUCCESS
         )
 
     asyncio.run(scenario())
@@ -526,15 +542,16 @@ def test_formal_runtime_existing_terminal_replay_is_identical() -> None:
         assert replay.status is M5ExecutionAggregationRuntimeStatus.AGGREGATED
         assert replay.aggregation_result is not None
         assert replay.prepared == first.prepared
-        assert (
-            replay.aggregation_result.execution_result.model_dump(mode="python")
-            == first.aggregation_result.execution_result.model_dump(mode="python")
-        )
+        assert replay.aggregation_result.execution_result.model_dump(
+            mode="python"
+        ) == first.aggregation_result.execution_result.model_dump(mode="python")
 
     asyncio.run(scenario())
 
 
-def test_formal_runtime_preserves_multiple_workflows_on_existing_terminal_replay() -> None:
+def test_formal_runtime_preserves_multiple_workflows_on_existing_terminal_replay() -> (
+    None
+):
     async def scenario() -> None:
         plan, prepared = await _multi_workflow_terminal()
         store = InMemoryExecutionStateStore()
@@ -612,9 +629,7 @@ def test_formal_runtime_uses_durable_control_applicability_for_terminal_result(
             reason_codes=("CONTROL_AFFECTS_PENDING_WORK",),
             nonterminal_step_ids_at_latch=(step_id,),
             affected_step_ids=(step_id,),
-            handoff_required=(
-                signal_type is ExecutionControlSignalType.PREEMPT
-            ),
+            handoff_required=(signal_type is ExecutionControlSignalType.PREEMPT),
         )
         write = await applicability.record(
             latched_control=latch_decision.latched_control,
@@ -759,22 +774,18 @@ def test_durable_recovery_control_factory_binds_latch_and_applicability_to_same_
             observed=observed,
         )
 
-        assert result.application.disposition is ExecutionControlDisposition.READY_TO_TERMINALIZE
+        assert (
+            result.application.disposition
+            is ExecutionControlDisposition.READY_TO_TERMINALIZE
+        )
         assert result.prepared.execution_record.status == "CANCELLED"
 
-        control = await reliability.read_latched(
-            prepared.execution_record.execution_id
-        )
-        evidence = await applicability.read(
-            prepared.execution_record.execution_id
-        )
+        control = await reliability.read_latched(prepared.execution_record.execution_id)
+        evidence = await applicability.read(prepared.execution_record.execution_id)
         assert control.status.value == "LATCHED"
         assert evidence.status is ControlApplicabilityReadStatus.RECORDED
         assert evidence.record is not None
-        assert (
-            evidence.record.status
-            is ControlApplicabilityEvidenceStatus.APPLIES
-        )
+        assert evidence.record.status is ControlApplicabilityEvidenceStatus.APPLIES
         assert evidence.record.writer_recovery_epoch == claim.recovery_epoch
 
     asyncio.run(scenario())
@@ -788,9 +799,7 @@ def test_durable_recovery_bindings_factory_injects_exact_claim_bound_journal() -
             execution_id="execution-iu4",
             claim_id="formal-bindings-journal",
         )
-        store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         builder = RecordingRecoveryBindingsBuilder()
         factory = DurableRecoveryExecutionBindingsFactory(
             builder=builder,
@@ -824,9 +833,7 @@ def test_core_tool_invoker_persists_logical_result_before_returning() -> None:
             execution_id="execution-iu4",
             claim_id="formal-tool-journal",
         )
-        store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         journal = DurableToolJournalEvidence(
             store=store,
             execution_id="execution-iu4",
@@ -880,17 +887,15 @@ def test_durable_tool_journal_rejects_attempt_cursor_mismatch() -> None:
             execution_id="execution-iu4",
             claim_id="formal-tool-journal-mismatch",
         )
-        store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         journal = DurableToolJournalEvidence(
             store=store,
             execution_id="execution-iu4",
             recovery_claim=claim,
         )
-        entry = _skill_observation(
-            step_execution_id="step-execution-001"
-        ).tool_journal[0]
+        entry = _skill_observation(step_execution_id="step-execution-001").tool_journal[
+            0
+        ]
 
         with pytest.raises(
             RuntimeError,
@@ -942,27 +947,25 @@ def test_tool_journal_persistence_failure_is_fail_closed() -> None:
     asyncio.run(scenario())
 
 
-def test_workflow_resume_keeps_current_attempt_prefix_separate_from_retry_history() -> None:
+def test_workflow_resume_keeps_current_attempt_prefix_separate_from_retry_history() -> (
+    None
+):
     source = inspect.getsource(StepCapabilityExecutor.resume_workflow_from_checkpoint)
 
     assert "recovered_current_attempt_journal" in source
     assert "prior_attempt_journal=prior_attempt_journal" in source
-    assert (
-        "recovered_current_attempt_journal=("
-        in source
-    )
+    assert "recovered_current_attempt_journal=(" in source
 
     recovery_source = inspect.getsource(M5RecoveryRuntime.recover)
     assert (
-        "recovered_current_attempt_journal=current_attempt_journal"
-        in recovery_source
+        "recovered_current_attempt_journal=current_attempt_journal" in recovery_source
     )
 
 
-def test_workflow_resume_journal_merge_preserves_prior_order_and_fails_on_conflict() -> None:
-    first = _skill_observation(
-        step_execution_id="step-execution-001"
-    ).tool_journal[0]
+def test_workflow_resume_journal_merge_preserves_prior_order_and_fails_on_conflict() -> (
+    None
+):
+    first = _skill_observation(step_execution_id="step-execution-001").tool_journal[0]
     second_result = replace(
         first.result,
         tool_call_id="tool-call-002",
@@ -1005,7 +1008,9 @@ def test_recovery_runtime_requires_workflow_finalization_authority() -> None:
     assert "reliability_result=workflow_reliability" in source
 
 
-def test_recovered_workflow_resume_reuses_current_attempt_and_enters_iu10_completion() -> None:
+def test_recovered_workflow_resume_reuses_current_attempt_and_enters_iu10_completion() -> (
+    None
+):
     async def scenario() -> None:
         plan, step = _approved_step(owner=CapabilityExecutionOwner.WORKFLOW)
         plan = plan.model_copy(update={"tool_plan": {"tool_calls": []}})
@@ -1041,7 +1046,7 @@ def test_recovered_workflow_resume_reuses_current_attempt_and_enters_iu10_comple
             result_collector=StepResultCollector(),
             runtime=StepReliabilityRuntime(
                 policy_resolver=WorkflowPolicyResolver(),
-                clock=StaticClock(),
+                clock=FormalRecoveryClock(),
                 timeout_runner=NoopTimeoutRunner(),
                 retry_decision_evaluator=UnusedRetryEvaluator(),
                 retry_sleeper=NoopSleeper(),
@@ -1146,14 +1151,14 @@ def test_formal_runtime_natural_terminal_preserves_terminal_observer_boundary() 
 
         assert outcome.status is M5ExecutionAggregationRuntimeStatus.AGGREGATED
         assert observer.calls == 1
-        assert observer.execution_ids == [
-            prepared.execution_record.execution_id
-        ]
+        assert observer.execution_ids == [prepared.execution_record.execution_id]
 
     asyncio.run(scenario())
 
 
-def test_formal_control_projection_reads_durable_current_attempt_not_retry_count() -> None:
+def test_formal_control_projection_reads_durable_current_attempt_not_retry_count() -> (
+    None
+):
     async def scenario() -> None:
         plan, prepared, control, _ = await _control_terminal(
             ExecutionControlSignalType.CANCEL,
@@ -1254,7 +1259,9 @@ def test_formal_runtime_does_not_use_skeleton_projector_or_hand_built_control() 
     assert "DurableControlTerminalToolEvidenceReader(" in source
 
 
-def test_recovered_current_attempt_tool_call_id_collision_blocks_before_physical_invoke() -> None:
+def test_recovered_current_attempt_tool_call_id_collision_blocks_before_physical_invoke() -> (
+    None
+):
     class ReusedIdentifierFactory:
         def new_tool_call_id(
             self,
@@ -1324,9 +1331,7 @@ def test_durable_live_bindings_factory_requires_exact_claim_bound_journal() -> N
             execution_id="execution-iu4",
             claim_id="formal-live-bindings",
         )
-        store = InMemoryDurableRecoveryEvidenceStore(
-            claim_authority=claims
-        )
+        store = InMemoryDurableRecoveryEvidenceStore(claim_authority=claims)
         builder = RecordingLiveBindingsBuilder()
         factory = DurableLiveExecutionBindingsFactory(
             builder=builder,
@@ -1409,9 +1414,7 @@ def test_durable_m5_bindings_use_one_exact_claim_for_live_tool_and_control() -> 
         )
         assert result.prepared.execution_record.status == "CANCELLED"
 
-        evidence = await applicability.read(
-            prepared.execution_record.execution_id
-        )
+        evidence = await applicability.read(prepared.execution_record.execution_id)
         assert evidence.record is not None
         assert evidence.record.writer_recovery_epoch == claim.recovery_epoch
 

@@ -40,7 +40,6 @@ from tests import test_m5_iu9_formal_implementation as iu9
 from tests import test_m5_iu10_formal_implementation as iu10
 from tests.test_m5_iu10_ca02_aggregation_evidence import NOW, _running
 
-
 M5_GATE_IDS = tuple(f"M5-{index:02d}" for index in range(1, 26))
 
 M5_GATE_EVIDENCE: dict[str, tuple[str, ...]] = {
@@ -122,9 +121,7 @@ M5_GATE_EVIDENCE: dict[str, tuple[str, ...]] = {
             "test_core_tool_invoker_persists_logical_result_before_returning"
         ),
     ),
-    "M5-10": (
-        "CORE_MECHANISM: M5-09 idempotency + domain help_event_id key",
-    ),
+    "M5-10": ("CORE_MECHANISM: M5-09 idempotency + domain help_event_id key",),
     "M5-11": (
         (
             "tests/test_m5_iu7_formal_implementation.py::"

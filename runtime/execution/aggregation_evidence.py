@@ -7,11 +7,12 @@ implementations, or mutable registries.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, fields, is_dataclass
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any
 
 from runtime.execution.models import StepExecutionStatus, ToolExecutionStatus
 
@@ -110,13 +111,11 @@ class StepAggregationEvidence:
             self.terminalization_kind,
             StepAggregationTerminalizationKind,
         ):
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004
                 "terminalization_kind must be StepAggregationTerminalizationKind"
-            )  # noqa: TRY004
+            )
         if not isinstance(self.terminal_step_status, StepExecutionStatus):
-            raise ValueError(
-                "terminal_step_status must be StepExecutionStatus"
-            )  # noqa: TRY004
+            raise ValueError("terminal_step_status must be StepExecutionStatus")  # noqa: TRY004
         if self.terminal_step_status in {
             StepExecutionStatus.PENDING,
             StepExecutionStatus.RUNNING,
@@ -132,12 +131,13 @@ class StepAggregationEvidence:
         _require_aware(self.terminalized_at, "terminalized_at")
         if self.terminalized_at < self.observed_at:
             raise ValueError("terminalized_at cannot precede observed_at")
-        if self.degraded and self.terminal_step_status is not StepExecutionStatus.SUCCESS:
+        if (
+            self.degraded
+            and self.terminal_step_status is not StepExecutionStatus.SUCCESS
+        ):
             raise ValueError("degraded terminal evidence requires SUCCESS Step status")
         if any(not reason.strip() for reason in self.final_attempt_reason_codes):
-            raise ValueError(
-                "final_attempt_reason_codes must not contain blank values"
-            )
+            raise ValueError("final_attempt_reason_codes must not contain blank values")
         if (self.owner_capability_id is None) != (
             self.owner_capability_version is None
         ):
@@ -210,10 +210,7 @@ class StepAggregationEvidence:
                     or raw_result.get("tool_id") != tool_id
                 ):
                     raise ValueError("tool_journal raw_result identity mismatch")
-                if (
-                    raw_result.get("status") == "SUCCESS"
-                    and result_status == "UNKNOWN"
-                ):
+                if raw_result.get("status") == "SUCCESS" and result_status == "UNKNOWN":
                     derived_untrusted_success = True
         if self.has_non_success_tool_observation is not derived_non_success:
             raise ValueError("non-success Tool evidence flag is inconsistent")
@@ -249,9 +246,7 @@ class StepAggregationEvidence:
         if self.final_attempt_status is None or not self.final_attempt_status.strip():
             raise ValueError("ATTEMPT_FINALIZED requires final_attempt_status")
         if not self.final_attempt_reason_codes:
-            raise ValueError(
-                "ATTEMPT_FINALIZED requires final_attempt_reason_codes"
-            )
+            raise ValueError("ATTEMPT_FINALIZED requires final_attempt_reason_codes")
         expected_attempt_status = {
             (StepExecutionStatus.SUCCESS, False): "SUCCESS",
             (StepExecutionStatus.SUCCESS, True): "PARTIAL_SUCCESS",
@@ -302,9 +297,7 @@ class StepAggregationEvidence:
             "NOT_APPLICABLE",
             "UNSATISFIED",
         }:
-            raise ValueError(
-                "SCHEDULER_SKIPPED requires explicit skip disposition"
-            )
+            raise ValueError("SCHEDULER_SKIPPED requires explicit skip disposition")
 
     def _validate_control_terminalized(self) -> None:
         if self.terminal_step_status not in {
@@ -317,7 +310,9 @@ class StepAggregationEvidence:
         if self.final_attempt_number is not None:
             raise ValueError("CONTROL_TERMINALIZED cannot invent final attempt")
         if self.final_attempt_status is not None or self.final_attempt_reason_codes:
-            raise ValueError("CONTROL_TERMINALIZED cannot invent final attempt evidence")
+            raise ValueError(
+                "CONTROL_TERMINALIZED cannot invent final attempt evidence"
+            )
         if self.execution_owner is not None:
             raise ValueError("CONTROL_TERMINALIZED cannot invent execution owner")
         if self.owner_capability_id is not None:
@@ -335,9 +330,7 @@ class StepAggregationEvidence:
         ):
             raise ValueError("CONTROL_TERMINALIZED cannot invent Tool truth flags")
         if self.business_outputs or self.capability_events:
-            raise ValueError(
-                "CONTROL_TERMINALIZED cannot invent capability payloads"
-            )
+            raise ValueError("CONTROL_TERMINALIZED cannot invent capability payloads")
         if self.scheduler_skip_disposition is not None:
             raise ValueError(
                 "CONTROL_TERMINALIZED cannot carry scheduler skip disposition"
@@ -376,7 +369,7 @@ class StepAggregationEvidence:
         }
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, Any]) -> "StepAggregationEvidence":
+    def from_payload(cls, payload: Mapping[str, Any]) -> StepAggregationEvidence:
         if set(payload) != _AGGREGATION_EVIDENCE_PAYLOAD_KEYS:
             raise ValueError("invalid StepAggregationEvidence payload keys")
         normalized = _freeze_value(payload)
@@ -417,20 +410,14 @@ class StepAggregationEvidence:
                 degraded=_required_bool(payload["degraded"], "degraded"),
                 observed_at=payload["observed_at"],
                 terminalized_at=payload["terminalized_at"],
-                final_attempt_number=_optional_int(
-                    payload.get("final_attempt_number")
-                ),
-                final_attempt_status=_optional_str(
-                    payload.get("final_attempt_status")
-                ),
+                final_attempt_number=_optional_int(payload.get("final_attempt_number")),
+                final_attempt_status=_optional_str(payload.get("final_attempt_status")),
                 final_attempt_reason_codes=_tuple_of_strings(
                     payload["final_attempt_reason_codes"],
                     "final_attempt_reason_codes",
                 ),
                 execution_owner=_optional_str(payload.get("execution_owner")),
-                owner_capability_id=_optional_str(
-                    payload.get("owner_capability_id")
-                ),
+                owner_capability_id=_optional_str(payload.get("owner_capability_id")),
                 owner_capability_version=_optional_str(
                     payload.get("owner_capability_version")
                 ),
@@ -467,20 +454,18 @@ class StepAggregationEvidence:
         cls,
         *,
         execution_id: str,
-        observation: "StepAttemptObservation",
+        observation: StepAttemptObservation,
         terminal_step_status: StepExecutionStatus,
         terminal_reason_codes: tuple[str, ...],
         degraded: bool,
         terminalized_at: datetime,
-    ) -> "StepAggregationEvidence":
+    ) -> StepAggregationEvidence:
         return cls(
             schema_version=AGGREGATION_EVIDENCE_SCHEMA_VERSION,
             execution_id=execution_id,
             step_execution_id=observation.step_execution_id,
             step_id=observation.step_id,
-            terminalization_kind=(
-                StepAggregationTerminalizationKind.ATTEMPT_FINALIZED
-            ),
+            terminalization_kind=(StepAggregationTerminalizationKind.ATTEMPT_FINALIZED),
             terminal_step_status=terminal_step_status,
             terminal_reason_codes=terminal_reason_codes,
             degraded=degraded,
@@ -493,21 +478,15 @@ class StepAggregationEvidence:
             owner_capability_id=observation.owner_capability_id,
             owner_capability_version=observation.owner_capability_version,
             skill_result=_freeze_optional_dataclass(observation.skill_result),
-            workflow_result=_freeze_optional_dataclass(
-                observation.workflow_result
-            ),
+            workflow_result=_freeze_optional_dataclass(observation.workflow_result),
             tool_call_ids=tuple(
                 entry.tool_call_id for entry in observation.tool_journal
             ),
             tool_journal=tuple(
                 _freeze_dataclass(entry) for entry in observation.tool_journal
             ),
-            business_outputs=_freeze_mapping_tuple(
-                observation.business_outputs
-            ),
-            capability_events=_freeze_mapping_tuple(
-                observation.capability_events
-            ),
+            business_outputs=_freeze_mapping_tuple(observation.business_outputs),
+            capability_events=_freeze_mapping_tuple(observation.capability_events),
             has_non_success_tool_observation=(
                 observation.has_non_success_tool_observation
             ),
@@ -527,15 +506,13 @@ class StepAggregationEvidence:
         terminal_reason_codes: tuple[str, ...],
         scheduler_skip_disposition: str,
         terminalized_at: datetime,
-    ) -> "StepAggregationEvidence":
+    ) -> StepAggregationEvidence:
         return cls(
             schema_version=AGGREGATION_EVIDENCE_SCHEMA_VERSION,
             execution_id=execution_id,
             step_execution_id=step_execution_id,
             step_id=step_id,
-            terminalization_kind=(
-                StepAggregationTerminalizationKind.SCHEDULER_SKIPPED
-            ),
+            terminalization_kind=(StepAggregationTerminalizationKind.SCHEDULER_SKIPPED),
             terminal_step_status=StepExecutionStatus.SKIPPED,
             terminal_reason_codes=terminal_reason_codes,
             degraded=False,
@@ -549,11 +526,11 @@ class StepAggregationEvidence:
         cls,
         *,
         execution_id: str,
-        step: "StepLifecycleSnapshot",
+        step: StepLifecycleSnapshot,
         terminal_step_status: StepExecutionStatus,
         terminal_reason_codes: tuple[str, ...],
         terminalized_at: datetime,
-    ) -> "StepAggregationEvidence":
+    ) -> StepAggregationEvidence:
         return cls(
             schema_version=AGGREGATION_EVIDENCE_SCHEMA_VERSION,
             execution_id=execution_id,
@@ -578,9 +555,7 @@ class StepAggregationEvidenceAssessment:
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, StepAggregationEvidenceReadStatus):
-            raise ValueError(
-                "status must be StepAggregationEvidenceReadStatus"
-            )  # noqa: TRY004
+            raise ValueError("status must be StepAggregationEvidenceReadStatus")  # noqa: TRY004
         if not self.reason_codes or any(
             not reason.strip() for reason in self.reason_codes
         ):
@@ -593,17 +568,16 @@ class StepAggregationEvidenceAuthority:
     def assess(
         self,
         *,
-        approved_plan: "ApprovedActionPlan",
-        prepared: "PreparedExecution",
+        approved_plan: ApprovedActionPlan,
+        prepared: PreparedExecution,
     ) -> tuple[
         StepAggregationEvidenceAssessment,
-        dict[str, "StepSkipAggregationDecision"],
+        dict[str, StepSkipAggregationDecision],
     ]:
         from runtime.execution.aggregation_authority import (
             StepSkipAggregationDecision,
             StepSkipAggregationDisposition,
         )
-
         from runtime.execution.capability_resolution import (
             ApprovedCapabilityProjectionError,
             ApprovedStepCapabilityProjector,
@@ -620,9 +594,7 @@ class StepAggregationEvidenceAuthority:
             return (
                 StepAggregationEvidenceAssessment(
                     status=StepAggregationEvidenceReadStatus.UNKNOWN,
-                    reason_codes=(
-                        "AGGREGATION_EVIDENCE_APPROVED_PLAN_MISMATCH",
-                    ),
+                    reason_codes=("AGGREGATION_EVIDENCE_APPROVED_PLAN_MISMATCH",),
                 ),
                 {},
             )
@@ -645,9 +617,7 @@ class StepAggregationEvidenceAuthority:
                 return (
                     StepAggregationEvidenceAssessment(
                         status=StepAggregationEvidenceReadStatus.UNKNOWN,
-                        reason_codes=(
-                            "AGGREGATION_EVIDENCE_PERSISTED_STEP_DUPLICATE",
-                        ),
+                        reason_codes=("AGGREGATION_EVIDENCE_PERSISTED_STEP_DUPLICATE",),
                     ),
                     {},
                 )
@@ -657,7 +627,9 @@ class StepAggregationEvidenceAuthority:
             return (
                 StepAggregationEvidenceAssessment(
                     status=StepAggregationEvidenceReadStatus.UNKNOWN,
-                    reason_codes=("AGGREGATION_EVIDENCE_PERSISTED_STEP_COUNT_MISMATCH",),
+                    reason_codes=(
+                        "AGGREGATION_EVIDENCE_PERSISTED_STEP_COUNT_MISMATCH",
+                    ),
                 ),
                 {},
             )
@@ -681,9 +653,7 @@ class StepAggregationEvidenceAuthority:
                 return (
                     StepAggregationEvidenceAssessment(
                         status=StepAggregationEvidenceReadStatus.UNKNOWN,
-                        reason_codes=(
-                            "AGGREGATION_EVIDENCE_PERSISTED_STEP_MISSING",
-                        ),
+                        reason_codes=("AGGREGATION_EVIDENCE_PERSISTED_STEP_MISSING",),
                     ),
                     {},
                 )
@@ -723,9 +693,7 @@ class StepAggregationEvidenceAuthority:
                 return (
                     StepAggregationEvidenceAssessment(
                         status=StepAggregationEvidenceReadStatus.UNKNOWN,
-                        reason_codes=(
-                            "AGGREGATION_EVIDENCE_APPROVED_STEP_MISSING",
-                        ),
+                        reason_codes=("AGGREGATION_EVIDENCE_APPROVED_STEP_MISSING",),
                     ),
                     {},
                 )
@@ -738,9 +706,7 @@ class StepAggregationEvidenceAuthority:
                     return (
                         StepAggregationEvidenceAssessment(
                             status=StepAggregationEvidenceReadStatus.UNKNOWN,
-                            reason_codes=(
-                                "AGGREGATION_EVIDENCE_STEP_OWNER_AMBIGUOUS",
-                            ),
+                            reason_codes=("AGGREGATION_EVIDENCE_STEP_OWNER_AMBIGUOUS",),
                         ),
                         {},
                     )
@@ -802,7 +768,7 @@ class StepAggregationEvidenceAuthority:
     def _validate_step_evidence(
         *,
         execution_id: str,
-        step: "StepLifecycleSnapshot",
+        step: StepLifecycleSnapshot,
         evidence: StepAggregationEvidence,
         approved_capabilities: object | None,
     ) -> str | None:
@@ -858,8 +824,7 @@ class StepAggregationEvidenceAuthority:
             if evidence.execution_owner != expected_owner:
                 return "AGGREGATION_EVIDENCE_APPROVED_OWNER_MISMATCH"
             approved_tool_versions = {
-                item.capability_id: item.version
-                for item in approved_capabilities.tools
+                item.capability_id: item.version for item in approved_capabilities.tools
             }
             for entry in evidence.tool_journal:
                 tool_id = entry.get("tool_id")
@@ -980,11 +945,11 @@ class StepAggregationEvidenceAuthority:
 
 def project_ca01_evidence_inputs(
     *,
-    approved_plan: "ApprovedActionPlan",
-    prepared: "PreparedExecution",
+    approved_plan: ApprovedActionPlan,
+    prepared: PreparedExecution,
 ) -> tuple[
-    "AggregationEvidenceReadinessDecision",
-    dict[str, "StepSkipAggregationDecision"],
+    AggregationEvidenceReadinessDecision,
+    dict[str, StepSkipAggregationDecision],
 ]:
     """Project exact CA-01 inputs without letting callers hand-construct READY."""
 
@@ -1025,7 +990,7 @@ def _freeze_optional_dataclass(value: object | None) -> dict[str, Any] | None:
 def _freeze_dataclass(value: object) -> dict[str, Any]:
     frozen = _freeze_value(value)
     if not isinstance(frozen, dict):
-        raise ValueError("aggregation evidence dataclass projection must be mapping")
+        raise ValueError("aggregation evidence dataclass projection must be mapping")  # noqa: TRY004
     return frozen
 
 
@@ -1042,13 +1007,8 @@ def _freeze_value(value: Any) -> Any:
         }
     if isinstance(value, Mapping):
         if any(not isinstance(key, str) for key in value):
-            raise ValueError(
-                "aggregation evidence mappings require string keys"
-            )
-        return {
-            key: _freeze_value(item)
-            for key, item in value.items()
-        }
+            raise ValueError("aggregation evidence mappings require string keys")
+        return {key: _freeze_value(item) for key, item in value.items()}
     if isinstance(value, (tuple, list)):
         return [_freeze_value(item) for item in value]
     if isinstance(value, (str, int, float, bool)) or value is None:
@@ -1075,17 +1035,15 @@ def _validate_frozen_tool_attempts(
         (operation_fingerprint, "operation_fingerprint"),
         (idempotency_key, "idempotency_key"),
     ):
-        if value is not None and (
-            not isinstance(value, str) or not value.strip()
-        ):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
             raise ValueError(f"tool_journal {field_name} is invalid")
 
     attempts = entry.get("attempts", [])
     if not isinstance(attempts, list):
-        raise ValueError("tool_journal attempts must be list")
+        raise ValueError("tool_journal attempts must be list")  # noqa: TRY004
     for expected, attempt in enumerate(attempts, start=1):
         if not isinstance(attempt, Mapping):
-            raise ValueError("tool_journal attempt must be mapping")
+            raise ValueError("tool_journal attempt must be mapping")  # noqa: TRY004
         if attempt.get("physical_attempt") != expected:
             raise ValueError("tool_journal physical attempts must be contiguous")
         if (
@@ -1099,7 +1057,7 @@ def _validate_frozen_tool_attempts(
             raise ValueError("tool_journal attempt identity drift")
         result = attempt.get("result")
         if not isinstance(result, Mapping):
-            raise ValueError("tool_journal attempt result must be mapping")
+            raise ValueError("tool_journal attempt result must be mapping")  # noqa: TRY004
         if (
             result.get("tool_call_id") != tool_call_id
             or result.get("tool_id") != tool_id
@@ -1134,18 +1092,18 @@ def _freeze_mapping_tuple(
     for value in values:
         item = _freeze_value(value)
         if not isinstance(item, dict):
-            raise ValueError("aggregation evidence payload must freeze to mapping")
+            raise ValueError("aggregation evidence payload must freeze to mapping")  # noqa: TRY004
         frozen.append(item)
     return tuple(frozen)
 
 
 def _tuple_of_dicts(value: object) -> tuple[dict[str, Any], ...]:
     if not isinstance(value, (tuple, list)):
-        raise ValueError("expected sequence of mappings")
+        raise ValueError("expected sequence of mappings")  # noqa: TRY004
     result: list[dict[str, Any]] = []
     for item in value:
         if not isinstance(item, Mapping):
-            raise ValueError("expected sequence of mappings")
+            raise ValueError("expected sequence of mappings")  # noqa: TRY004
         result.append(deepcopy(dict(item)))
     return tuple(result)
 
@@ -1161,20 +1119,18 @@ def _tuple_of_strings(
     field_name: str,
 ) -> tuple[str, ...]:
     if not isinstance(value, (tuple, list)):
-        raise ValueError(f"{field_name} must be sequence")
+        raise ValueError(f"{field_name} must be sequence")  # noqa: TRY004
     result: list[str] = []
     for item in value:
         if not isinstance(item, str) or not item.strip():
-            raise ValueError(
-                f"{field_name} must contain non-blank strings"
-            )
+            raise ValueError(f"{field_name} must contain non-blank strings")
         result.append(item)
     return tuple(result)
 
 
 def _required_bool(value: object, field_name: str) -> bool:
     if not isinstance(value, bool):
-        raise ValueError(f"{field_name} must be bool")
+        raise ValueError(f"{field_name} must be bool")  # noqa: TRY004
     return value
 
 
@@ -1182,7 +1138,7 @@ def _optional_int(value: object | None) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError("expected optional int")
+        raise ValueError("expected optional int")  # noqa: TRY004
     return value
 
 
@@ -1190,7 +1146,7 @@ def _optional_str(value: object | None) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
-        raise ValueError("expected optional str")
+        raise ValueError("expected optional str")  # noqa: TRY004
     return value
 
 
@@ -1198,12 +1154,12 @@ def _optional_dict(value: object | None) -> dict[str, Any] | None:
     if value is None:
         return None
     if not isinstance(value, Mapping):
-        raise ValueError("expected optional mapping")
+        raise ValueError("expected optional mapping")  # noqa: TRY004
     return deepcopy(dict(value))
 
 
 def _require_aware(value: datetime, field_name: str) -> None:
     if not isinstance(value, datetime):
-        raise ValueError(f"{field_name} must be datetime")
+        raise ValueError(f"{field_name} must be datetime")  # noqa: TRY004
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{field_name} must be timezone-aware")

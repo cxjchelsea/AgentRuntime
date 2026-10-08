@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Protocol
 
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.planning import ApprovedActionPlan
@@ -44,6 +44,7 @@ from runtime.execution.foundation import (
     ExecutionTerminalObserver,
     PreparedExecution,
 )
+from runtime.execution.invocation import ToolInvocationJournalPersistence
 from runtime.execution.recovery import ExecutionRecoveryClaim
 from runtime.execution.recovery_evidence import (
     DurableExecutionControlLatch,
@@ -51,7 +52,6 @@ from runtime.execution.recovery_evidence import (
     DurableTerminalControlStore,
     DurableToolJournalEvidence,
 )
-from runtime.execution.invocation import ToolInvocationJournalPersistence
 from runtime.execution.reliability_coordinator import (
     RecoveredStepReliabilityRunResult,
     RecoveredWorkflowReliabilityRunResult,
@@ -263,14 +263,13 @@ class M5ExecutionAggregationOutcome:
         elif self.aggregation_result is not None:
             raise ValueError("only AGGREGATED outcome can carry aggregation_result")
 
-        if self.status is M5ExecutionAggregationRuntimeStatus.STEP_READY:
-            if (
-                self.schedule_decision is None
-                or self.schedule_decision.status is not StepScheduleStatus.READY
-            ):
-                raise ValueError(
-                    "STEP_READY outcome requires exact READY schedule decision"
-                )
+        if self.status is M5ExecutionAggregationRuntimeStatus.STEP_READY and (
+            self.schedule_decision is None
+            or self.schedule_decision.status is not StepScheduleStatus.READY
+        ):
+            raise ValueError(
+                "STEP_READY outcome requires exact READY schedule decision"
+            )
 
 
 class M5ExecutionAggregationRuntime:

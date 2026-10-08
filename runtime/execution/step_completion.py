@@ -356,9 +356,7 @@ class RunningStepCompletionCoordinator:
                 step_id=observation.step_id,
             )
 
-        tool_call_ids = tuple(
-            entry.tool_call_id for entry in observation.tool_journal
-        )
+        tool_call_ids = tuple(entry.tool_call_id for entry in observation.tool_journal)
         evidence = StepAggregationEvidence.from_attempt_finalization(
             execution_id=prepared.execution_record.execution_id,
             observation=observation,

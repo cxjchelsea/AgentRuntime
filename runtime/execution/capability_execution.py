@@ -2308,10 +2308,7 @@ class CoreApprovedToolInvoker(
                 "TOOL_CALL_ID_UNAVAILABLE",
                 "Tool call id factory returned invalid id",
             )
-        if (
-            value in self._issued_tool_call_ids
-            or value in self._reserved_tool_call_ids
-        ):
+        if value in self._issued_tool_call_ids or value in self._reserved_tool_call_ids:
             self._record_fault("TOOL_CALL_ID_COLLISION")
             raise ToolInvocationBoundaryError(
                 "TOOL_CALL_ID_COLLISION",
@@ -2799,9 +2796,7 @@ class StepCapabilityExecutor:
         resume_request: WorkflowResumeRequest,
         attempt_number: int = 1,
         prior_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
-        recovered_current_attempt_journal: tuple[
-            ToolInvocationJournalEntry, ...
-        ] = (),
+        recovered_current_attempt_journal: tuple[ToolInvocationJournalEntry, ...] = (),
         side_effect_admission_guard: RecoverySideEffectAdmissionGuard | None = None,
     ) -> StepCapabilityExecutionOutcome:
         """Resume the exact approved Workflow checkpoint through existing M5 gates."""
@@ -2932,8 +2927,7 @@ class StepCapabilityExecutor:
                 step_attempt_number=attempt_number,
                 prior_attempt_journal=prior_attempt_journal,
                 reserved_tool_call_ids=frozenset(
-                    entry.tool_call_id
-                    for entry in recovered_current_attempt_journal
+                    entry.tool_call_id for entry in recovered_current_attempt_journal
                 ),
                 journal_persistence=self._journal_persistence,
                 reliability_runtime=self._reliability_runtime,
@@ -3025,17 +3019,13 @@ class StepCapabilityExecutor:
                             step_snapshot=step_snapshot,
                             resolved=resolved,
                             status=CapabilityExecutionStatus.UNKNOWN,
-                            reason_codes=(
-                                "WORKFLOW_RECOVERY_TOOL_JOURNAL_CONFLICT",
-                            ),
+                            reason_codes=("WORKFLOW_RECOVERY_TOOL_JOURNAL_CONFLICT",),
                             workflow_result=result,
                             tool_results=journal_results,
                             tool_journal=tool_invoker.entries(),
                         )
                     else:
-                        merged_results = tuple(
-                            entry.result for entry in merged_journal
-                        )
+                        merged_results = tuple(entry.result for entry in merged_journal)
                         if (
                             result.tool_results
                             and tuple(result.tool_results) != merged_results
@@ -3045,9 +3035,7 @@ class StepCapabilityExecutor:
                                 step_snapshot=step_snapshot,
                                 resolved=resolved,
                                 status=CapabilityExecutionStatus.UNKNOWN,
-                                reason_codes=(
-                                    "CAPABILITY_RESULT_TOOL_TRACE_MISMATCH",
-                                ),
+                                reason_codes=("CAPABILITY_RESULT_TOOL_TRACE_MISMATCH",),
                                 workflow_result=result,
                                 tool_results=merged_results,
                                 tool_journal=merged_journal,
@@ -3059,8 +3047,7 @@ class StepCapabilityExecutor:
                             )
                             status = (
                                 CapabilityExecutionStatus.WAITING
-                                if normalized.status
-                                is WorkflowExecutionStatus.WAITING
+                                if normalized.status is WorkflowExecutionStatus.WAITING
                                 else CapabilityExecutionStatus.EXECUTED
                             )
                             outcome = self._outcome(
@@ -3070,8 +3057,7 @@ class StepCapabilityExecutor:
                                 status=status,
                                 reason_codes=(
                                     "WORKFLOW_RECOVERY_WAITING"
-                                    if status
-                                    is CapabilityExecutionStatus.WAITING
+                                    if status is CapabilityExecutionStatus.WAITING
                                     else "WORKFLOW_RESUMED",
                                 ),
                                 workflow_result=normalized,
@@ -3092,9 +3078,7 @@ class StepCapabilityExecutor:
     @staticmethod
     def _merge_resumed_attempt_journal(
         *,
-        recovered_current_attempt_journal: tuple[
-            ToolInvocationJournalEntry, ...
-        ],
+        recovered_current_attempt_journal: tuple[ToolInvocationJournalEntry, ...],
         resumed_journal: tuple[ToolInvocationJournalEntry, ...],
     ) -> tuple[ToolInvocationJournalEntry, ...] | None:
         """Preserve one exact Workflow attempt journal across checkpoint resume."""

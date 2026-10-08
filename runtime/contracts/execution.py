@@ -8,7 +8,6 @@ from pydantic import ConfigDict
 from runtime.contracts.common import CanonicalModel, VersionedContract
 from runtime.contracts.enums import ExecutionPlanStatus, RuntimeControlState
 
-
 EXECUTION_RESULT_SCHEMA_VERSION = "1.1.0"
 
 

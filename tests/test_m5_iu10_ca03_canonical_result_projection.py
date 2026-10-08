@@ -27,14 +27,14 @@ from runtime.execution.aggregation_result import (
     ExecutionAggregationProjectionError,
     ExecutionAggregator,
 )
-from runtime.execution.control_applicability import (
-    AggregationControlAuthoritySnapshot,
-)
 from runtime.execution.capability_resolution import CapabilityExecutionOwner
 from runtime.execution.control import (
     ExecutionControlSignal,
     ExecutionControlSignalType,
     LatchedExecutionControl,
+)
+from runtime.execution.control_applicability import (
+    AggregationControlAuthoritySnapshot,
 )
 from runtime.execution.foundation import (
     ApprovedPlanExecutionValidator,
@@ -81,10 +81,14 @@ from tests.test_m5_iu10_ca02_aggregation_evidence import (
     NOW,
     _partial_reliability_result,
     _running,
-    _skill_observation as ca02_skill_observation,
     _skill_plan,
-    _workflow_observation as ca02_workflow_observation,
     _workflow_plan,
+)
+from tests.test_m5_iu10_ca02_aggregation_evidence import (
+    _skill_observation as ca02_skill_observation,
+)
+from tests.test_m5_iu10_ca02_aggregation_evidence import (
+    _workflow_observation as ca02_workflow_observation,
 )
 
 
@@ -155,7 +159,9 @@ def _persisted_step_payload(step: StepLifecycleSnapshot) -> dict[str, object]:
     return payload
 
 
-async def _base_running(plan, *, execution_id: str) -> tuple[
+async def _base_running(
+    plan, *, execution_id: str
+) -> tuple[
     PreparedExecution,
     ExecutionLifecycleService,
 ]:
@@ -241,9 +247,7 @@ async def _two_skill_terminal(*, conflicting_duplicate: bool):
         )
         step = next(item for item in current.steps if item.step_id == step_id)
         observation = replace(
-            ca02_skill_observation(
-                step_execution_id=step.step_execution_id
-            ),
+            ca02_skill_observation(step_execution_id=step.step_execution_id),
             step_id=step_id,
             observed_at=NOW + timedelta(seconds=index * 2),
         )
@@ -252,9 +256,7 @@ async def _two_skill_terminal(*, conflicting_duplicate: bool):
                 execution_id=current.execution_record.execution_id,
                 observation=observation,
                 terminal_step_status=StepExecutionStatus.SUCCESS,
-                terminal_reason_codes=(
-                    "STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",
-                ),
+                terminal_reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
                 degraded=True,
                 terminalized_at=NOW + timedelta(seconds=index * 2),
             ).to_payload()
@@ -279,9 +281,7 @@ async def _two_skill_terminal(*, conflicting_duplicate: bool):
                 execution_id=current.execution_record.execution_id,
                 observation=observation,
                 terminal_step_status=StepExecutionStatus.SUCCESS,
-                terminal_reason_codes=(
-                    "STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",
-                ),
+                terminal_reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
                 degraded=True,
                 terminalized_at=NOW + timedelta(seconds=index * 2),
             )
@@ -292,9 +292,7 @@ async def _two_skill_terminal(*, conflicting_duplicate: bool):
             status=StepExecutionStatus.SUCCESS,
             at=NOW + timedelta(seconds=index * 2),
             tool_call_ids=("tool-call-001",),
-            terminal_reason_codes=(
-                "STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",
-            ),
+            terminal_reason_codes=("STEP_PARTIAL_SUCCESS_FINALIZATION_AUTHORIZED",),
             degraded=True,
             aggregation_evidence=evidence,
         )
@@ -443,9 +441,7 @@ async def _multi_workflow_terminal():
             ),
         )
         current = (
-            await RunningStepCompletionCoordinator(
-                lifecycle_service=service
-            ).complete(
+            await RunningStepCompletionCoordinator(lifecycle_service=service).complete(
                 prepared=current,
                 reliability_result=reliability,
                 at=NOW + timedelta(seconds=index * 2),
@@ -636,9 +632,7 @@ def test_natural_aggregation_commits_once_then_replays_identically() -> None:
             at=NOW + timedelta(seconds=1),
         )
         step_done = (
-            await RunningStepCompletionCoordinator(
-                lifecycle_service=service
-            ).complete(
+            await RunningStepCompletionCoordinator(lifecycle_service=service).complete(
                 prepared=running_step,
                 reliability_result=_partial_reliability_result(
                     step_execution_id=running_step.steps[0].step_execution_id
@@ -674,12 +668,8 @@ def test_natural_aggregation_commits_once_then_replays_identically() -> None:
         assert first.execution_result.workflow_results == []
         assert first.execution_result.tool_results is not None
         assert len(first.execution_result.tool_results) == 1
-        assert first.execution_result.business_outputs == [
-            {"kind": "partial-output"}
-        ]
-        assert first.execution_result.execution_events == [
-            {"event": "skill-partial"}
-        ]
+        assert first.execution_result.business_outputs == [{"kind": "partial-output"}]
+        assert first.execution_result.execution_events == [{"event": "skill-partial"}]
         assert first.execution_result.state_observations == []
         assert first.execution_result.quality is not None
         assert first.execution_result.quality["degraded"] is True
@@ -694,10 +684,9 @@ def test_natural_aggregation_commits_once_then_replays_identically() -> None:
             at=NOW + timedelta(seconds=10),
         )
         assert replay.prepared == first.prepared
-        assert (
-            replay.execution_result.model_dump(mode="python")
-            == first.execution_result.model_dump(mode="python")
-        )
+        assert replay.execution_result.model_dump(
+            mode="python"
+        ) == first.execution_result.model_dump(mode="python")
 
     asyncio.run(scenario())
 
@@ -769,9 +758,7 @@ def test_single_workflow_populates_both_legacy_and_plural_fields() -> None:
             ),
         )
         step_done = (
-            await RunningStepCompletionCoordinator(
-                lifecycle_service=service
-            ).complete(
+            await RunningStepCompletionCoordinator(lifecycle_service=service).complete(
                 prepared=running,
                 reliability_result=reliability,
                 at=NOW + timedelta(seconds=3),
@@ -1121,9 +1108,7 @@ def test_projector_rejects_non_ready_aggregation() -> None:
 
 def test_exact_duplicate_tool_call_replay_dedupes_to_one_logical_result() -> None:
     async def scenario() -> None:
-        plan, prepared = await _two_skill_terminal(
-            conflicting_duplicate=False
-        )
+        plan, prepared = await _two_skill_terminal(conflicting_duplicate=False)
         control = _no_control()
         applicability = _no_control_applicability()
         eligibility = _ready_eligibility(
@@ -1150,9 +1135,7 @@ def test_exact_duplicate_tool_call_replay_dedupes_to_one_logical_result() -> Non
 
 def test_conflicting_duplicate_tool_call_fails_closed() -> None:
     async def scenario() -> None:
-        plan, prepared = await _two_skill_terminal(
-            conflicting_duplicate=True
-        )
+        plan, prepared = await _two_skill_terminal(conflicting_duplicate=True)
         control = _no_control()
         applicability = _no_control_applicability()
         eligibility = _ready_eligibility(

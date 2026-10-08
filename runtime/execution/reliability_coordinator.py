@@ -134,10 +134,7 @@ class RecoveredWorkflowReliabilityRunResult:
             raise ValueError(
                 "recovered Workflow observation must retain the current attempt number"
             )
-        if (
-            self.observation.execution_owner
-            is not CapabilityExecutionOwner.WORKFLOW
-        ):
+        if self.observation.execution_owner is not CapabilityExecutionOwner.WORKFLOW:
             raise ValueError("recovered Workflow result requires WORKFLOW owner")
 
     @property

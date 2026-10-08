@@ -419,7 +419,7 @@ class ExecutionControlLifecycleService:
 
 
 def _snapshot_to_record_payload(snapshot: StepLifecycleSnapshot) -> dict[str, object]:
-    payload = {
+    payload: dict[str, object] = {
         "step_execution_id": snapshot.step_execution_id,
         "step_id": snapshot.step_id,
         "action": snapshot.action,

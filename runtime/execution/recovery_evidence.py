@@ -404,7 +404,6 @@ class DurableToolJournalEvidence(ToolInvocationJournalPersistence):
             step_attempt_number=step_attempt_number,
         )
 
-
     async def persist(
         self,
         *,

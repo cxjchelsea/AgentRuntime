@@ -97,30 +97,22 @@ class M5RecoveryRuntimeOutcome:
     schedule_decision: StepScheduleDecision | None = None
     control_result: ExecutionControlRuntimeResult | None = None
     reliability_result: (
-        RecoveredStepReliabilityRunResult
-        | RecoveredWorkflowReliabilityRunResult
-        | None
+        RecoveredStepReliabilityRunResult | RecoveredWorkflowReliabilityRunResult | None
     ) = None
 
     def __post_init__(self) -> None:
         if not self.reason_codes or any(not item.strip() for item in self.reason_codes):
             raise ValueError("reason_codes must contain non-blank values")
-        if (
-            self.status is M5RecoveryRuntimeStatus.WORKFLOW_RESUMED
-            and not isinstance(
-                self.reliability_result,
-                RecoveredWorkflowReliabilityRunResult,
-            )
+        if self.status is M5RecoveryRuntimeStatus.WORKFLOW_RESUMED and not isinstance(
+            self.reliability_result,
+            RecoveredWorkflowReliabilityRunResult,
         ):
             raise ValueError(
                 "WORKFLOW_RESUMED requires recovered Workflow finalization authority"
             )
-        if (
-            self.status is M5RecoveryRuntimeStatus.SKILL_RETRIED
-            and not isinstance(
-                self.reliability_result,
-                RecoveredStepReliabilityRunResult,
-            )
+        if self.status is M5RecoveryRuntimeStatus.SKILL_RETRIED and not isinstance(
+            self.reliability_result,
+            RecoveredStepReliabilityRunResult,
         ):
             raise ValueError(
                 "SKILL_RETRIED requires recovered Skill reliability authority"
@@ -182,7 +174,9 @@ class DurableRecoveryExecutionBindingsFactory:
             tool_journal_persistence=journal,
         )
         if not isinstance(bindings, RecoveryExecutionBindings):
-            raise TypeError("recovery execution bindings builder returned invalid result")
+            raise TypeError(
+                "recovery execution bindings builder returned invalid result"
+            )
         if bindings.step_executor.tool_journal_persistence is not journal:
             raise ValueError(
                 "recovery StepCapabilityExecutor must use exact durable Tool journal"
@@ -515,14 +509,11 @@ class M5RecoveryRuntime:
                     prepared=prepared,
                 )
             try:
-                workflow_reliability = (
-                    bindings.skill_reliability_coordinator
-                    .finalize_recovered_workflow_outcome(
-                        step_snapshot=step_snapshot,
-                        outcome=outcome,
-                        current_attempt_number=current_attempt,
-                        resolved=resolution.resolved,
-                    )
+                workflow_reliability = bindings.skill_reliability_coordinator.finalize_recovered_workflow_outcome(
+                    step_snapshot=step_snapshot,
+                    outcome=outcome,
+                    current_attempt_number=current_attempt,
+                    resolved=resolution.resolved,
                 )
             except StepReliabilityCoordinationError as exc:
                 return M5RecoveryRuntimeOutcome(

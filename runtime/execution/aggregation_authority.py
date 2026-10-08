@@ -8,9 +8,10 @@ invoke capabilities, or enter M6.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import ClassVar, Mapping
+from typing import ClassVar
 
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.planning import ApprovedActionPlan
@@ -42,9 +43,7 @@ class AggregationEvidenceReadinessDecision:
         if not self.execution_id.strip():
             raise ValueError("execution_id must not be blank")
         if not isinstance(self.status, AggregationEvidenceReadinessStatus):
-            raise ValueError(
-                "status must be AggregationEvidenceReadinessStatus"
-            )  # noqa: TRY004
+            raise ValueError("status must be AggregationEvidenceReadinessStatus")  # noqa: TRY004
         if not self.reason_codes or any(
             not reason.strip() for reason in self.reason_codes
         ):
@@ -66,9 +65,7 @@ class AggregationControlApplicabilityDecision:
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, AggregationControlApplicabilityStatus):
-            raise ValueError(
-                "status must be AggregationControlApplicabilityStatus"
-            )  # noqa: TRY004
+            raise ValueError("status must be AggregationControlApplicabilityStatus")  # noqa: TRY004
         if not self.reason_codes or any(
             not reason.strip() for reason in self.reason_codes
         ):
@@ -78,9 +75,7 @@ class AggregationControlApplicabilityDecision:
             AggregationControlApplicabilityStatus.LATE_NOOP,
         }:
             if self.latched_control is None:
-                raise ValueError(
-                    "APPLIES/LATE_NOOP requires exact latched_control"
-                )
+                raise ValueError("APPLIES/LATE_NOOP requires exact latched_control")
         elif self.latched_control is not None:
             raise ValueError(
                 "NONE/UNKNOWN control applicability cannot carry latched_control"
@@ -112,9 +107,7 @@ class StepSkipAggregationDecision:
         ):
             raise ValueError("skip aggregation identifiers must not be blank")
         if not isinstance(self.disposition, StepSkipAggregationDisposition):
-            raise ValueError(
-                "disposition must be StepSkipAggregationDisposition"
-            )  # noqa: TRY004
+            raise ValueError("disposition must be StepSkipAggregationDisposition")  # noqa: TRY004
         if not self.reason_codes or any(
             not reason.strip() for reason in self.reason_codes
         ):
@@ -163,9 +156,7 @@ class ExecutionAggregationEligibilityDecision:
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, ExecutionAggregationEligibilityStatus):
-            raise ValueError(
-                "status must be ExecutionAggregationEligibilityStatus"
-            )  # noqa: TRY004
+            raise ValueError("status must be ExecutionAggregationEligibilityStatus")  # noqa: TRY004
         if not self.reason_codes or any(
             not reason.strip() for reason in self.reason_codes
         ):
@@ -181,10 +172,7 @@ class ExecutionAggregationEligibilityDecision:
                 "WAITING/BLOCKED aggregation cannot carry aggregation_decision"
             )
 
-        if (
-            self.status
-            is ExecutionAggregationEligibilityStatus.READY_EXISTING_TERMINAL
-        ):
+        if self.status is ExecutionAggregationEligibilityStatus.READY_EXISTING_TERMINAL:
             if self.existing_plan_status is None:
                 raise ValueError(
                     "READY_EXISTING_TERMINAL requires existing_plan_status"
@@ -223,10 +211,7 @@ class ExecutionAggregationAuthority:
         if control.status is DurableControlReadStatus.UNKNOWN:
             return self._blocked("AGGREGATION_CONTROL_STATE_UNKNOWN")
 
-        if (
-            evidence_readiness.execution_id
-            != prepared.execution_record.execution_id
-        ):
+        if evidence_readiness.execution_id != prepared.execution_record.execution_id:
             return self._blocked("AGGREGATION_EVIDENCE_EXECUTION_MISMATCH")
 
         if (
@@ -240,17 +225,13 @@ class ExecutionAggregationAuthority:
                 control_applicability.status
                 is not AggregationControlApplicabilityStatus.NONE
             ):
-                return self._blocked(
-                    "AGGREGATION_CONTROL_APPLICABILITY_MISMATCH"
-                )
+                return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_MISMATCH")
         else:
             if (
                 control_applicability.status
                 is AggregationControlApplicabilityStatus.NONE
             ):
-                return self._blocked(
-                    "AGGREGATION_CONTROL_APPLICABILITY_MISMATCH"
-                )
+                return self._blocked("AGGREGATION_CONTROL_APPLICABILITY_MISMATCH")
             if (
                 control.latched_control is None
                 or control_applicability.latched_control != control.latched_control
@@ -305,7 +286,8 @@ class ExecutionAggregationAuthority:
         nonterminal = tuple(
             step
             for step in prepared.steps
-            if step.status in {
+            if step.status
+            in {
                 StepExecutionStatus.PENDING,
                 StepExecutionStatus.RUNNING,
             }
@@ -392,24 +374,21 @@ class ExecutionAggregationAuthority:
             return self._blocked("AGGREGATION_CONTROL_TERMINAL_STATUS_MISMATCH")
 
         if any(
-            step.status in {
+            step.status
+            in {
                 StepExecutionStatus.PENDING,
                 StepExecutionStatus.RUNNING,
             }
             for step in prepared.steps
         ):
-            return self._blocked(
-                "AGGREGATION_CONTROL_TERMINAL_HAS_NONTERMINAL_STEP"
-            )
+            return self._blocked("AGGREGATION_CONTROL_TERMINAL_HAS_NONTERMINAL_STEP")
 
         opposite_step_status = {
             ExecutionPlanStatus.CANCELLED: StepExecutionStatus.PREEMPTED,
             ExecutionPlanStatus.PREEMPTED: StepExecutionStatus.CANCELLED,
         }[expected]
         if any(step.status is opposite_step_status for step in prepared.steps):
-            return self._blocked(
-                "AGGREGATION_CONTROL_STEP_TERMINAL_STATUS_MISMATCH"
-            )
+            return self._blocked("AGGREGATION_CONTROL_STEP_TERMINAL_STATUS_MISMATCH")
 
         evidence_error = self._evidence_error(evidence_readiness)
         if evidence_error is not None:
@@ -577,7 +556,8 @@ class ExecutionAggregationAuthority:
         existing: ExecutionPlanStatus | None,
     ) -> str | None:
         if any(
-            step.status in {
+            step.status
+            in {
                 StepExecutionStatus.PENDING,
                 StepExecutionStatus.RUNNING,
             }
@@ -597,10 +577,7 @@ class ExecutionAggregationAuthority:
     ) -> str | None:
         if evidence_readiness.status is AggregationEvidenceReadinessStatus.READY:
             return None
-        if (
-            evidence_readiness.status
-            is AggregationEvidenceReadinessStatus.MISSING
-        ):
+        if evidence_readiness.status is AggregationEvidenceReadinessStatus.MISSING:
             return "AGGREGATION_EVIDENCE_MISSING"
         return "AGGREGATION_EVIDENCE_UNKNOWN"
 
@@ -634,8 +611,7 @@ class ExecutionAggregationAuthority:
                 if skip_decision is None:
                     return None
                 if (
-                    skip_decision.execution_id
-                    != prepared.execution_record.execution_id
+                    skip_decision.execution_id != prepared.execution_record.execution_id
                     or skip_decision.step_execution_id != step.step_execution_id
                     or skip_decision.step_id != step.step_id
                 ):

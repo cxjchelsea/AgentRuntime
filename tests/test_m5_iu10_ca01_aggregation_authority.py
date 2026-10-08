@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any, Mapping
+from typing import Any
 
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.planning import ApprovedActionPlan
@@ -148,9 +149,7 @@ def _with_steps(
         for step in steps
     )
     running_ids = [
-        step.step_id
-        for step in steps
-        if step.status is StepExecutionStatus.RUNNING
+        step.step_id for step in steps if step.status is StepExecutionStatus.RUNNING
     ]
     current_step = running_ids[0] if len(running_ids) == 1 else None
     return replace(
@@ -369,9 +368,7 @@ def test_cancelled_execution_without_control_provenance_is_blocked() -> None:
         )
         decision = await _evaluate(plan, prepared)
         assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
-        assert decision.reason_codes == (
-            "AGGREGATION_CONTROL_PROVENANCE_MISSING",
-        )
+        assert decision.reason_codes == ("AGGREGATION_CONTROL_PROVENANCE_MISSING",)
 
     asyncio.run(scenario())
 
@@ -586,7 +583,10 @@ def test_all_optional_without_progress_resolves_failed_or_timeout() -> None:
             skips={"step-002": StepSkipAggregationDisposition.NOT_APPLICABLE},
         )
         assert failed_decision.aggregation_decision is not None
-        assert failed_decision.aggregation_decision.plan_status is ExecutionPlanStatus.FAILED
+        assert (
+            failed_decision.aggregation_decision.plan_status
+            is ExecutionPlanStatus.FAILED
+        )
 
         timeout_plan = _plan(optional=(True,))
         timed_out = _with_steps(
@@ -595,7 +595,10 @@ def test_all_optional_without_progress_resolves_failed_or_timeout() -> None:
         )
         timeout_decision = await _evaluate(timeout_plan, timed_out)
         assert timeout_decision.aggregation_decision is not None
-        assert timeout_decision.aggregation_decision.plan_status is ExecutionPlanStatus.TIMEOUT
+        assert (
+            timeout_decision.aggregation_decision.plan_status
+            is ExecutionPlanStatus.TIMEOUT
+        )
 
     asyncio.run(scenario())
 
@@ -622,7 +625,6 @@ def test_all_not_applicable_steps_is_execution_success() -> None:
     asyncio.run(scenario())
 
 
-
 def test_control_terminal_replay_rejects_opposite_step_terminal_status() -> None:
     async def scenario() -> None:
         plan = _plan(optional=(False,))
@@ -644,8 +646,9 @@ def test_control_terminal_replay_rejects_opposite_step_terminal_status() -> None
     asyncio.run(scenario())
 
 
-
-def test_late_noop_control_allows_natural_aggregation_after_all_steps_terminal() -> None:
+def test_late_noop_control_allows_natural_aggregation_after_all_steps_terminal() -> (
+    None
+):
     async def scenario() -> None:
         plan = _plan(optional=(False,))
         prepared = _with_steps(
@@ -713,9 +716,7 @@ def test_control_applicability_mismatch_is_blocked_unknown() -> None:
         )
 
         assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
-        assert decision.reason_codes == (
-            "AGGREGATION_CONTROL_APPLICABILITY_MISMATCH",
-        )
+        assert decision.reason_codes == ("AGGREGATION_CONTROL_APPLICABILITY_MISMATCH",)
 
     asyncio.run(scenario())
 
@@ -759,7 +760,6 @@ def test_current_step_pointer_drift_is_blocked() -> None:
     asyncio.run(scenario())
 
 
-
 def test_evidence_readiness_from_other_execution_is_rejected() -> None:
     async def scenario() -> None:
         plan = _plan(optional=(False,))
@@ -776,9 +776,7 @@ def test_evidence_readiness_from_other_execution_is_rejected() -> None:
         decision = await _evaluate(plan, prepared, evidence=foreign)
 
         assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
-        assert decision.reason_codes == (
-            "AGGREGATION_EVIDENCE_EXECUTION_MISMATCH",
-        )
+        assert decision.reason_codes == ("AGGREGATION_EVIDENCE_EXECUTION_MISMATCH",)
 
     asyncio.run(scenario())
 
@@ -877,7 +875,6 @@ def test_aggregation_decision_is_bound_to_exact_execution_and_plan() -> None:
     asyncio.run(scenario())
 
 
-
 def test_terminal_step_missing_finished_at_is_blocked() -> None:
     async def scenario() -> None:
         plan = _plan(optional=(False,))
@@ -904,9 +901,7 @@ def test_terminal_step_missing_finished_at_is_blocked() -> None:
         decision = await _evaluate(plan, broken)
 
         assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
-        assert decision.reason_codes == (
-            "AGGREGATION_TERMINAL_STEP_FINISH_MISSING",
-        )
+        assert decision.reason_codes == ("AGGREGATION_TERMINAL_STEP_FINISH_MISSING",)
 
     asyncio.run(scenario())
 
@@ -929,7 +924,6 @@ def test_existing_terminal_execution_requires_finished_at() -> None:
         )
 
     asyncio.run(scenario())
-
 
 
 def test_executed_terminal_step_requires_started_at() -> None:
@@ -958,9 +952,7 @@ def test_executed_terminal_step_requires_started_at() -> None:
         decision = await _evaluate(plan, broken)
 
         assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
-        assert decision.reason_codes == (
-            "AGGREGATION_EXECUTED_STEP_START_MISSING",
-        )
+        assert decision.reason_codes == ("AGGREGATION_EXECUTED_STEP_START_MISSING",)
 
     asyncio.run(scenario())
 
@@ -972,9 +964,7 @@ def test_persisted_step_status_drift_is_blocked() -> None:
             await _prepared(plan),
             (StepExecutionStatus.SUCCESS, False, ("DONE",)),
         )
-        persisted: dict[str, Any] = dict(
-            prepared.execution_record.step_results[0]
-        )
+        persisted: dict[str, Any] = dict(prepared.execution_record.step_results[0])
         persisted["status"] = "FAILED"
         drifted = replace(
             prepared,
@@ -987,12 +977,9 @@ def test_persisted_step_status_drift_is_blocked() -> None:
         decision = await _evaluate(plan, drifted)
 
         assert decision.status is ExecutionAggregationEligibilityStatus.BLOCKED_UNKNOWN
-        assert decision.reason_codes == (
-            "AGGREGATION_PERSISTED_STEP_FACT_MISMATCH",
-        )
+        assert decision.reason_codes == ("AGGREGATION_PERSISTED_STEP_FACT_MISMATCH",)
 
     asyncio.run(scenario())
-
 
 
 def test_created_execution_with_terminal_step_is_blocked_not_waiting() -> None:

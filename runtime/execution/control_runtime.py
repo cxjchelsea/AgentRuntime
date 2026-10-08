@@ -323,9 +323,7 @@ class ExecutionControlCoordinator:
                 ControlApplicabilityWriteStatus.RECORDED,
                 ControlApplicabilityWriteStatus.ALREADY_CURRENT,
             }:
-                raise ExecutionControlRuntimeError(
-                    applicability.reason_codes[0]
-                )
+                raise ExecutionControlRuntimeError(applicability.reason_codes[0])
 
         terminalized = await self._lifecycle_service.terminalize(
             current_prepared,

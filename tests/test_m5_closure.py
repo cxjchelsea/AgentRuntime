@@ -230,8 +230,8 @@ def test_m5_closure_c01_capability_collection_and_canonical_aggregation() -> Non
         assert final.aggregation_result is not None
         result = final.aggregation_result.execution_result
         assert result.plan_status is ExecutionPlanStatus.SUCCESS
-        assert result.metadata["plan_id"] == plan.plan_id
-        assert result.metadata["request_id"] == plan.request_id
+        assert result.plan_id == plan.plan_id
+        assert result.request_id == plan.request_id
         assert result.tool_results is not None
         assert len(result.tool_results) == 1
         assert result.tool_results[0]["tool_id"] == "DOMAIN_TOOL"

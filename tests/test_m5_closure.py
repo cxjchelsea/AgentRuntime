@@ -174,6 +174,27 @@ def test_m5_closure_gate_manifest_covers_exactly_m5_01_through_m5_25() -> None:
 def test_m5_closure_c01_capability_collection_and_canonical_aggregation() -> None:
     async def scenario() -> None:
         plan, step = iu4._approved_step(owner=CapabilityExecutionOwner.SKILL)
+        plan = plan.model_copy(
+            update={
+                "tool_plan": {
+                    "tool_calls": [
+                        {
+                            "tool_id": "DOMAIN_TOOL",
+                            "tool_version": "1.0.0",
+                            "required": True,
+                            "required_by_skills": ["DOMAIN_SKILL"],
+                            "required_by_workflows": [],
+                            "timeout_policy": None,
+                            "retry_policy": None,
+                            "idempotency_mode": None,
+                            "side_effect_level": None,
+                        }
+                    ],
+                    "parallelizable": False,
+                    "required_success": True,
+                }
+            }
+        )
         tool_impl = iu4.RecordingTool()
         skill_impl = iu4.RecordingSkill(tool_ids=("DOMAIN_TOOL",))
         resolved = iu4._skill_resolved(skill_impl, tools=(iu4._tool(tool_impl),))

@@ -1079,3 +1079,160 @@ M5 = IN PROGRESS
 M5-IU10 的实现单元到此关闭。
 
 本 Closure Evaluation **不等于 PR Merge Authorization**，也不自动关闭整个 M5。后续 merge / integration 仍应按独立治理步骤处理。
+
+
+# 27. M5-IU10 Merge Authorization Decision
+
+本步骤仅判断 PR #79 是否获得 merge authorization，不执行实际 merge。
+
+Authorization target：
+
+~~~text
+PR = #79
+
+base branch = m5-iu10-ca04-durable-control-applicability
+base SHA = d283027eceb81130d2b165e8184585d299c045fc
+
+head branch = m5-iu10-formal-implementation
+head SHA = 8f28f2bcde1bed204251708d60ae92379f22e131
+~~~
+
+## 27.1 Closure prerequisite
+
+当前 HEAD 与 M5-IU10 Closure Evaluation 绑定 HEAD 完全一致：
+
+~~~text
+Closure Evaluation HEAD
+= 8f28f2bcde1bed204251708d60ae92379f22e131
+
+Current PR HEAD
+= 8f28f2bcde1bed204251708d60ae92379f22e131
+
+delta = 0 commits
+~~~
+
+因此 Closure Evaluation 后没有新的代码或文档变更。
+
+已关闭状态：
+
+~~~text
+M5-IU10 CLOSURE EVALUATION = PASSED
+M5-IU10 = PASSED
+
+CA-M5-IU10-00..04 = PASSED
+B-M5-IU10-001..009 = CLOSED
+F-M5-IU10-FI-001..003 = CLOSED
+~~~
+
+## 27.2 Base stability
+
+当前目标 base branch 仍精确指向：
+
+~~~text
+d283027eceb81130d2b165e8184585d299c045fc
+~~~
+
+与 PR #79 的 frozen base SHA 完全一致：
+
+~~~text
+base drift = NONE
+ahead = 0
+behind = 0
+~~~
+
+因此不存在 Closure / Authorization 期间的 base branch 漂移。
+
+## 27.3 Mergeability
+
+GitHub 当前状态：
+
+~~~text
+PR state = OPEN
+draft = false
+merged = false
+mergeable = true
+~~~
+
+没有发现结构性 merge conflict。
+
+Current head 相对 frozen base：
+
+~~~text
+ahead_by = 50
+behind_by = 0
+~~~
+
+因此当前 PR 是冻结 base 的纯后继，不需要先解决 base divergence。
+
+## 27.4 Verification evidence
+
+当前授权继续使用已经在 Formal Implementation Verification Closure 中绑定的 exact semantic verification evidence：
+
+~~~text
+python -m pytest tests -q
+-> 980 passed
+
+python -m mypy runtime tests
+-> Success: no issues found in 219 source files
+
+python -m ruff check runtime tests
+-> All checks passed
+
+python -m ruff format --check runtime tests
+-> 219 files already formatted
+~~~
+
+GitHub 当前没有额外 configured commit status / pull-request workflow run 需要等待。
+
+这不替代本地四门禁证据；只是确认没有额外远端 gate 处于 pending / failed 状态。
+
+## 27.5 Authorization invariant
+
+本次授权仅对以下 exact pair 生效：
+
+~~~text
+base = d283027eceb81130d2b165e8184585d299c045fc
+head = 8f28f2bcde1bed204251708d60ae92379f22e131
+~~~
+
+如果在实际 merge 前发生任一情况：
+
+~~~text
+head changes
+base changes
+mergeable becomes false
+new blocker is opened
+verification evidence is invalidated
+~~~
+
+则本次授权自动失效，必须重新执行 Merge Authorization Decision。
+
+## 27.6 Merge Authorization Decision
+
+当前证据满足：
+
+~~~text
+M5-IU10 = PASSED
+CLOSURE EVALUATION = PASSED
+
+OPEN BLOCKER = NONE
+BASE DRIFT = NONE
+HEAD DRIFT AFTER CLOSURE = NONE
+MERGE CONFLICT = NONE
+REMOTE PENDING/FAILED GATE = NONE FOUND
+~~~
+
+最终决定：
+
+~~~text
+M5-IU10 MERGE AUTHORIZATION = AUTHORIZE
+
+AUTHORIZED PR = #79
+AUTHORIZED BASE = d283027eceb81130d2b165e8184585d299c045fc
+AUTHORIZED HEAD = 8f28f2bcde1bed204251708d60ae92379f22e131
+
+M5-IU10 = PASSED
+M5 = IN PROGRESS
+~~~
+
+本步骤只授予 merge authority，**未执行实际 merge**。

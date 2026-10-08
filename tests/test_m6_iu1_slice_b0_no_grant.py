@@ -74,9 +74,8 @@ def test_context_manager_closes_on_success_and_error() -> None:
         slot.take_once()
 
     failure_slot = NoGrantTurnSlot()
-    with pytest.raises(RuntimeError, match="stop"):
-        with failure_slot:
-            raise RuntimeError("stop")
+    with pytest.raises(RuntimeError, match="stop"), failure_slot:
+        raise RuntimeError("stop")
     with pytest.raises(TurnClosedError):
         failure_slot.take_once()
 
@@ -85,9 +84,8 @@ def test_closed_context_manager_reentry_rejected() -> None:
     slot = NoGrantTurnSlot()
     with slot:
         pass
-    with pytest.raises(TurnClosedError):
-        with slot:
-            pass
+    with pytest.raises(TurnClosedError), slot:
+        pass
 
 
 def test_separate_concurrent_turns_are_isolated() -> None:

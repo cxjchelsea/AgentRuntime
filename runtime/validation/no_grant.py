@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Self
 
 
 class NoGrantReason(StrEnum):
@@ -26,7 +27,7 @@ class NoGrant:
 
     def __post_init__(self) -> None:
         if not isinstance(self.reason, NoGrantReason):
-            raise ValueError("NoGrant requires a typed NoGrantReason")
+            raise ValueError("NoGrant requires a typed NoGrantReason")  # noqa: TRY004
 
 
 class TurnClosedError(RuntimeError):
@@ -44,14 +45,14 @@ class NoGrantTurnSlot:
     Even a caller-supplied pseudo-receipt cannot become authorization here.
     """
 
-    __slots__ = ("_reason", "_consumed", "_closed")
+    __slots__ = ("_closed", "_consumed", "_reason")
 
     def __init__(
         self,
         reason: NoGrantReason = NoGrantReason.NO_AUTHORIZED_POLICY_EVIDENCE,
     ) -> None:
         if not isinstance(reason, NoGrantReason):
-            raise ValueError("slot requires a typed NoGrantReason")
+            raise ValueError("slot requires a typed NoGrantReason")  # noqa: TRY004
         self._reason = reason
         self._consumed = False
         self._closed = False
@@ -68,7 +69,7 @@ class NoGrantTurnSlot:
         """Invalidate the slot; closing twice is harmless."""
         self._closed = True
 
-    def __enter__(self) -> NoGrantTurnSlot:
+    def __enter__(self) -> Self:
         if self._closed:
             raise TurnClosedError("grant slot is closed")
         return self

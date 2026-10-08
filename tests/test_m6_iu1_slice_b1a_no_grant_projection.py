@@ -3,7 +3,6 @@
 import pytest
 
 import runtime.validation.no_grant_projection as projection_module
-
 from runtime.contracts import BusinessStatus, ExecutionResult, ValidationStatus
 from runtime.contracts.validation import ValidatedResult
 from runtime.validation.no_grant import NoGrant, NoGrantReason, NoGrantTurnSlot
@@ -262,10 +261,10 @@ def test_actual_projection_paths_have_no_external_owner_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise both paths while trapping known external owner entrypoints."""
-    from runtime.orchestration.runtime import RuntimeOrchestrator
-    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
     from runtime.interfaces.response import ResponseGenerator, ResponsePlanner
     from runtime.interfaces.update import StateMemoryUpdater
+    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+    from runtime.orchestration.runtime import RuntimeOrchestrator
 
     visited: list[str] = []
 

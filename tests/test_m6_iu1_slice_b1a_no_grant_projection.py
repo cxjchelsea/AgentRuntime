@@ -2,6 +2,8 @@
 
 import pytest
 
+import runtime.validation.no_grant_projection as projection_module
+
 from runtime.contracts import BusinessStatus, ExecutionResult, ValidationStatus
 from runtime.contracts.validation import ValidatedResult
 from runtime.validation.no_grant import NoGrant, NoGrantReason, NoGrantTurnSlot
@@ -230,3 +232,61 @@ def test_no_external_effects_or_positive_issuance_api() -> None:
         "resolve_profile",
     ):
         assert not hasattr(ctl, name)
+
+
+def test_failed_canonical_construction_spends_allocated_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed projection must not release an already reserved correlation ID."""
+    controller = NoGrantProjectionController(id_allocator=lambda: "spent-id")
+    original = projection_module.ValidatedResult
+
+    def fail_construction(**_kwargs: object) -> ValidatedResult:
+        raise RuntimeError("canonical construction unavailable")
+
+    monkeypatch.setattr(projection_module, "ValidatedResult", fail_construction)
+    _reject(
+        NoGrantProjectionReason.PROJECTION_FAILED,
+        _case(),
+        controller=controller,
+    )
+    monkeypatch.setattr(projection_module, "ValidatedResult", original)
+    _reject(
+        NoGrantProjectionReason.VALIDATION_ID_COLLISION,
+        _case(),
+        controller=controller,
+    )
+
+
+def test_actual_projection_paths_have_no_external_owner_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise both paths while trapping known external owner entrypoints."""
+    from runtime.orchestration.runtime import RuntimeOrchestrator
+    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+    from runtime.interfaces.response import ResponseGenerator, ResponsePlanner
+    from runtime.interfaces.update import StateMemoryUpdater
+
+    visited: list[str] = []
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        visited.append("external-owner")
+        raise AssertionError("B1a must not invoke production owners")
+
+    # Guard orchestration and response/update operations even if called
+    # through unexpected bound methods during projection.
+    for owner, method in (
+        (RuntimeOrchestrator, "run"),
+        (M2RuntimeOrchestrator, "run"),
+        (ResponsePlanner, "plan"),
+        (ResponseGenerator, "generate"),
+        (StateMemoryUpdater, "update"),
+    ):
+        monkeypatch.setattr(owner, method, forbidden)
+
+    successful = NoGrantProjectionController().project(**_case())  # type: ignore[arg-type]
+    assert successful.validation_status is ValidationStatus.UNKNOWN
+    bad = _case()
+    bad["no_grant"] = {"authorized": True}
+    _reject(NoGrantProjectionReason.NO_GRANT_INVALID, bad)
+    assert visited == []

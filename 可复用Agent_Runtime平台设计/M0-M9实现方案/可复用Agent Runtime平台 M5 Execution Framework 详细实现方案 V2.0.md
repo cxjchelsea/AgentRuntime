@@ -1782,25 +1782,45 @@ UNKNOWN
 
 # Step 5：Capability Resolution
 
-根据 ActionStep 找：
+Capability Resolution 只能解析已经进入 ApprovedActionPlan 的 capability authority，不允许从当前 Registry 重新发现或选择新的 Skill / Workflow / Tool。
+
+批准来源包括：
 
 ```text
-Skill
-
-Workflow
-
-Tool
+ActionStep.skill_id
+ActionStep.workflow_id
+ApprovedActionPlan.capability_plan
+ApprovedActionPlan.tool_plan
+policy_snapshot.forced_workflow（如存在）
 ```
 
-通过：
+其中 `ActionStep.tool_requirement` 只是在单 required-tool 场景下的投影，不是完整 Tool authority。多个 required tools 时完整批准集合必须读取 `ApprovedActionPlan.tool_plan.tool_calls[]`。
+
+Registry 只用于 exact resolution / current eligibility check：
 
 ```text
 SkillRegistry
-
 WorkflowRegistry
-
 ToolRegistry
 ```
+
+禁止：
+
+```text
+Registry Discovery -> new Capability Selection
+missing capability -> substitute another capability
+disabled approved version -> choose newest version
+```
+
+Capability version 必须在 planning/approval 时固定，并通过现有 opaque subplan 保存：
+
+```text
+capability_plan.bindings[].skill_version
+capability_plan.bindings[].workflow_version
+tool_plan.tool_calls[].tool_version
+```
+
+M5 按 `id + approved_version` exact lookup；不得仅按 ID 重新选择执行时唯一 enabled version。
 
 ---
 

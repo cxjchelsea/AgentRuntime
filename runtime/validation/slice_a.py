@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from runtime.contracts import ApprovedActionPlan, ExecutionResult, RuntimeContext
+from pydantic import ValidationError
+
+from runtime.contracts import ApprovedActionPlan, ExecutionResult, PolicyDecision, RuntimeContext
 
 
 class AdmissionStatus(StrEnum):
@@ -123,15 +125,11 @@ def admit_validation_input(
         reject(AdmissionReason.SESSION_MISMATCH)
 
     policy = approved.policy_snapshot
-    if (
-        not isinstance(policy, dict)
-        or not all(
-            k in policy
-            for k in ("policy_decision_id", "allowed", "blocked", "validation_mode")
-        )
-        or policy.get("allowed") is not True
-        or policy.get("blocked") is not False
-    ):
+    try:
+        normalized_policy = PolicyDecision.model_validate(policy).model_dump(mode="json")
+        if normalized_policy != policy:
+            reject(AdmissionReason.INVALID_POLICY_SNAPSHOT)
+    except (ValidationError, TypeError, ValueError):
         reject(AdmissionReason.INVALID_POLICY_SNAPSHOT)
     goal_ids = [goal.goal_id for goal in approved.goals]
     if len(goal_ids) != len(set(goal_ids)):
@@ -160,9 +158,9 @@ def admit_validation_input(
         if not isinstance(result, dict):
             reject(AdmissionReason.NONCANONICAL_SOURCE)
             continue
-        call_id = result.get("tool_call_id", result.get("call_id"))
+        call_id = result.get("tool_call_id")
         step_id = result.get("step_id")
-        if not isinstance(call_id, str) or call_id not in observed_calls:
+        if not isinstance(call_id, str) or not call_id or call_id not in observed_calls:
             reject(AdmissionReason.TOOL_OWNER_MISMATCH)
         if isinstance(call_id, str) and call_id in seen_result_ids:
             reject(AdmissionReason.DUPLICATE_TOOL_RESULT)

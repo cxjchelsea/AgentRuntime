@@ -27,6 +27,9 @@ from runtime.execution.aggregation_result import (
     ExecutionAggregationProjectionError,
     ExecutionAggregator,
 )
+from runtime.execution.control_applicability import (
+    AggregationControlAuthoritySnapshot,
+)
 from runtime.execution.capability_resolution import CapabilityExecutionOwner
 from runtime.execution.control import (
     ExecutionControlSignal,
@@ -553,6 +556,27 @@ def _ready_eligibility(
     )
 
 
+class StaticAggregationControlAuthority:
+    def __init__(
+        self,
+        *,
+        control: DurableControlReadDecision,
+        applicability: AggregationControlApplicabilityDecision,
+    ) -> None:
+        self._snapshot = AggregationControlAuthoritySnapshot(
+            control=control,
+            applicability=applicability,
+        )
+
+    async def resolve(
+        self,
+        *,
+        execution_id: str,
+    ) -> AggregationControlAuthoritySnapshot:
+        del execution_id
+        return self._snapshot
+
+
 class StaticControlToolJournalStore:
     def __init__(
         self,
@@ -627,12 +651,14 @@ def test_natural_aggregation_commits_once_then_replays_identically() -> None:
             authority=ExecutionAggregationAuthority(),
             lifecycle_service=service,
             projector=CanonicalExecutionResultProjector(),
+            control_authority=StaticAggregationControlAuthority(
+                control=_no_control(),
+                applicability=_no_control_applicability(),
+            ),
         )
         first = await aggregator.aggregate(
             approved_plan=plan,
             prepared=step_done,
-            control=_no_control(),
-            control_applicability=_no_control_applicability(),
             at=NOW + timedelta(seconds=4),
         )
 
@@ -665,8 +691,6 @@ def test_natural_aggregation_commits_once_then_replays_identically() -> None:
         replay = await aggregator.aggregate(
             approved_plan=plan,
             prepared=first.prepared,
-            control=_no_control(),
-            control_applicability=_no_control_applicability(),
             at=NOW + timedelta(seconds=10),
         )
         assert replay.prepared == first.prepared
@@ -854,6 +878,10 @@ def test_control_aggregator_requires_durable_tool_absence_proof() -> None:
                 execution_store=InMemoryExecutionStateStore(),
             ),
             projector=CanonicalExecutionResultProjector(),
+            control_authority=StaticAggregationControlAuthority(
+                control=control,
+                applicability=applicability,
+            ),
         )
 
         with pytest.raises(
@@ -863,8 +891,6 @@ def test_control_aggregator_requires_durable_tool_absence_proof() -> None:
             await aggregator.aggregate(
                 approved_plan=plan,
                 prepared=prepared,
-                control=control,
-                control_applicability=applicability,
                 at=NOW + timedelta(seconds=20),
             )
 
@@ -911,12 +937,14 @@ def test_control_tool_join_uses_durable_current_attempt_not_retry_count() -> Non
             projector=CanonicalExecutionResultProjector(
                 control_tool_evidence_reader=reader
             ),
+            control_authority=StaticAggregationControlAuthority(
+                control=control,
+                applicability=applicability,
+            ),
         )
         result = await aggregator.aggregate(
             approved_plan=plan,
             prepared=prepared,
-            control=control,
-            control_applicability=applicability,
             at=NOW + timedelta(seconds=20),
         )
 
@@ -1004,6 +1032,10 @@ def test_control_tool_join_missing_durable_attempt_fails_closed() -> None:
             projector=CanonicalExecutionResultProjector(
                 control_tool_evidence_reader=reader
             ),
+            control_authority=StaticAggregationControlAuthority(
+                control=control,
+                applicability=applicability,
+            ),
         )
 
         with pytest.raises(
@@ -1013,8 +1045,6 @@ def test_control_tool_join_missing_durable_attempt_fails_closed() -> None:
             await aggregator.aggregate(
                 approved_plan=plan,
                 prepared=prepared,
-                control=control,
-                control_applicability=applicability,
                 at=NOW + timedelta(seconds=20),
             )
 

@@ -26,6 +26,7 @@ from runtime.execution.reliability_boundary import (
 )
 from runtime.execution.reliability_coordinator import (
     RecoveredStepReliabilityRunResult,
+    RecoveredWorkflowReliabilityRunResult,
     StepReliabilityRunResult,
 )
 from runtime.execution.result_collection import StepAttemptStatus
@@ -261,7 +262,9 @@ class RunningStepCompletionCoordinator:
         *,
         prepared: PreparedExecution,
         reliability_result: (
-            StepReliabilityRunResult | RecoveredStepReliabilityRunResult
+            StepReliabilityRunResult
+            | RecoveredStepReliabilityRunResult
+            | RecoveredWorkflowReliabilityRunResult
         ),
         at: datetime,
     ) -> RunningStepCompletionDecision:

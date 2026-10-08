@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.execution.concurrency_runtime import ToolConcurrencyRuntime
 from runtime.execution.control import (
     ExecutionControlLatch,
@@ -20,6 +21,10 @@ from runtime.execution.control import (
     ExecutionControlWatcher,
     LatchedExecutionControl,
     ObservedExecutionControl,
+)
+from runtime.execution.control_applicability import (
+    ControlApplicabilityRecorder,
+    ControlApplicabilityWriteStatus,
 )
 from runtime.execution.control_application import (
     ExecutionControlApplication,
@@ -65,6 +70,7 @@ class ExecutionControlCoordinator:
         clock: Callable[[], datetime] | None = None,
         tool_concurrency_runtime: ToolConcurrencyRuntime | None = None,
         terminal_observer: ExecutionTerminalObserver | None = None,
+        control_applicability_recorder: ControlApplicabilityRecorder | None = None,
     ) -> None:
         self._watcher = watcher
         self._latch = latch
@@ -74,6 +80,7 @@ class ExecutionControlCoordinator:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._tool_concurrency_runtime = tool_concurrency_runtime
         self._terminal_observer = terminal_observer
+        self._control_applicability_recorder = control_applicability_recorder
 
     async def watch_and_apply(
         self,
@@ -290,6 +297,36 @@ class ExecutionControlCoordinator:
             )
 
         terminal_at = self._now()
+        control_terminal_replay = (
+            application.disposition is ExecutionControlDisposition.ALREADY_TERMINAL
+            and current_prepared.execution_record.status
+            in {
+                ExecutionPlanStatus.CANCELLED.value,
+                ExecutionPlanStatus.PREEMPTED.value,
+            }
+        )
+        if (
+            self._control_applicability_recorder is not None
+            and not control_terminal_replay
+        ):
+            try:
+                applicability = await self._control_applicability_recorder.record(
+                    latched_control=latched_control,
+                    application=application,
+                    recorded_at=terminal_at,
+                )
+            except Exception as exc:
+                raise ExecutionControlRuntimeError(
+                    "control applicability persistence failed"
+                ) from exc
+            if applicability.status not in {
+                ControlApplicabilityWriteStatus.RECORDED,
+                ControlApplicabilityWriteStatus.ALREADY_CURRENT,
+            }:
+                raise ExecutionControlRuntimeError(
+                    applicability.reason_codes[0]
+                )
+
         terminalized = await self._lifecycle_service.terminalize(
             current_prepared,
             latched_control=latched_control,

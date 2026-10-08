@@ -45,54 +45,114 @@ M5_GATE_IDS = tuple(f"M5-{index:02d}" for index in range(1, 26))
 
 M5_GATE_EVIDENCE: dict[str, tuple[str, ...]] = {
     "M5-01": (
-        ("tests/test_m5_iu1_execution_foundation.py::"\n        "test_execution_foundation_initializes_and_persists_without_executing_capability"),
-        ("tests/test_m5_iu1_execution_foundation.py::"\n        "test_approved_plan_execution_validator_rejects_unsupported_schema"),
+        (
+            "tests/test_m5_iu1_execution_foundation.py::"
+            "test_execution_foundation_initializes_and_persists_without_executing_capability"
+        ),
+        (
+            "tests/test_m5_iu1_execution_foundation.py::"
+            "test_approved_plan_execution_validator_rejects_unsupported_schema"
+        ),
     ),
     "M5-02": (
-        ("tests/test_m5_iu10_formal_implementation.py::"\n        "test_formal_runtime_completes_partial_success_and_publishes_canonical_result"),
+        (
+            "tests/test_m5_iu10_formal_implementation.py::"
+            "test_formal_runtime_completes_partial_success_and_publishes_canonical_result"
+        ),
     ),
     "M5-03": (
-        ("tests/test_m5_iu1_execution_foundation.py::"\n        "test_step_lifecycle_is_independent_and_deterministic"),
+        (
+            "tests/test_m5_iu1_execution_foundation.py::"
+            "test_step_lifecycle_is_independent_and_deterministic"
+        ),
     ),
     "M5-04": (
-        ("tests/test_m5_iu4_capability_execution.py::"\n        "test_skill_owner_executes_exact_skill_and_approved_tool_once"),
-        ("tests/test_m5_iu4_capability_execution.py::"\n        "test_workflow_owner_starts_fresh_workflow_and_never_resumes"),
+        (
+            "tests/test_m5_iu4_capability_execution.py::"
+            "test_skill_owner_executes_exact_skill_and_approved_tool_once"
+        ),
+        (
+            "tests/test_m5_iu4_capability_execution.py::"
+            "test_workflow_owner_starts_fresh_workflow_and_never_resumes"
+        ),
     ),
     "M5-05": (
-        ("tests/test_m5_iu4_capability_execution.py::"\n        "test_input_invalid_prevents_permission_and_tool_invocation"),
-        ("tests/test_m5_iu4_capability_execution.py::"\n        "test_output_invalid_preserves_raw_success_but_final_truth_is_unknown"),
+        (
+            "tests/test_m5_iu4_capability_execution.py::"
+            "test_input_invalid_prevents_permission_and_tool_invocation"
+        ),
+        (
+            "tests/test_m5_iu4_capability_execution.py::"
+            "test_output_invalid_preserves_raw_success_but_final_truth_is_unknown"
+        ),
     ),
     "M5-06": (
-        ("tests/test_m5_iu6_formal_implementation.py::"\n        "test_finalization_only_maps_authorized_terminal_statuses"),
-        ("tests/test_m5_iu8_formal_implementation.py::"\n        "test_reliability_timeout_keeps_exact_tool_handle_and_resource_lease"),
+        (
+            "tests/test_m5_iu6_formal_implementation.py::"
+            "test_finalization_only_maps_authorized_terminal_statuses"
+        ),
+        (
+            "tests/test_m5_iu8_formal_implementation.py::"
+            "test_reliability_timeout_keeps_exact_tool_handle_and_resource_lease"
+        ),
     ),
     "M5-07": (
-        ("tests/test_m5_iu4_capability_execution.py::"\n        "test_non_success_tool_result_is_not_output_validated_or_upgraded"),
-        ("tests/test_m5_iu5_result_collection.py::"\n        "test_tool_unknown_is_second_latch_against_executed_owner_success"),
+        (
+            "tests/test_m5_iu4_capability_execution.py::"
+            "test_non_success_tool_result_is_not_output_validated_or_upgraded"
+        ),
+        (
+            "tests/test_m5_iu5_result_collection.py::"
+            "test_tool_unknown_is_second_latch_against_executed_owner_success"
+        ),
     ),
     "M5-08": (
-        ("tests/test_m5_iu6_formal_implementation.py::"\n        "test_retry_evaluator_requires_safe_replay_and_budget"),
+        (
+            "tests/test_m5_iu6_formal_implementation.py::"
+            "test_retry_evaluator_requires_safe_replay_and_budget"
+        ),
     ),
     "M5-09": (
-        ("tests/test_m5_iu6_formal_implementation.py::"\n        "test_inmemory_idempotency_completion_is_atomic_and_recoverable"),
-        ("tests/test_m5_iu10_formal_implementation.py::"\n        "test_core_tool_invoker_persists_logical_result_before_returning"),
+        (
+            "tests/test_m5_iu6_formal_implementation.py::"
+            "test_inmemory_idempotency_completion_is_atomic_and_recoverable"
+        ),
+        (
+            "tests/test_m5_iu10_formal_implementation.py::"
+            "test_core_tool_invoker_persists_logical_result_before_returning"
+        ),
     ),
     "M5-10": (
         "CORE_MECHANISM: M5-09 idempotency + domain help_event_id key",
     ),
     "M5-11": (
-        ("tests/test_m5_iu7_formal_implementation.py::"\n        "test_formal_cancel_path_interrupts_owner_and_terminalizes_execution"),
+        (
+            "tests/test_m5_iu7_formal_implementation.py::"
+            "test_formal_cancel_path_interrupts_owner_and_terminalizes_execution"
+        ),
     ),
     "M5-12": (
-        ("tests/test_m5_iu7_formal_implementation.py::"\n        "test_preempt_pending_only_sets_handoff_without_starting_runtime_cycle"),
+        (
+            "tests/test_m5_iu7_formal_implementation.py::"
+            "test_preempt_pending_only_sets_handoff_without_starting_runtime_cycle"
+        ),
     ),
     "M5-13": (
-        ("tests/test_m5_iu9_formal_implementation.py::"\n        "test_recovery_runtime_reenters_existing_scheduler_without_selecting_capability"),
+        (
+            "tests/test_m5_iu9_formal_implementation.py::"
+            "test_recovery_runtime_reenters_existing_scheduler_without_selecting_capability"
+        ),
         "tests/test_m5_closure.py::test_m5_closure_c10_preserves_stage_boundaries",
     ),
     "M5-14": (
-        ("tests/test_m5_iu3_capability_resolution.py::"\n        "test_other_enabled_version_is_never_substituted_for_approved_version"),
-        ("tests/test_m5_iu3_capability_resolution.py::"\n        "test_mutated_step_cannot_gain_capability_authority"),
+        (
+            "tests/test_m5_iu3_capability_resolution.py::"
+            "test_other_enabled_version_is_never_substituted_for_approved_version"
+        ),
+        (
+            "tests/test_m5_iu3_capability_resolution.py::"
+            "test_mutated_step_cannot_gain_capability_authority"
+        ),
     ),
     "M5-15": (
         "tests/test_m5_closure.py::test_m5_closure_c10_preserves_stage_boundaries",
@@ -104,34 +164,70 @@ M5_GATE_EVIDENCE: dict[str, tuple[str, ...]] = {
         "tests/test_m5_closure.py::test_m5_closure_c10_preserves_stage_boundaries",
     ),
     "M5-18": (
-        ("tests/test_m5_iu9_formal_implementation.py::"\n        "test_workflow_resume_uses_exact_instance_version_and_current_epoch"),
+        (
+            "tests/test_m5_iu9_formal_implementation.py::"
+            "test_workflow_resume_uses_exact_instance_version_and_current_epoch"
+        ),
     ),
     "M5-19": (
-        ("tests/test_m5_iu6_formal_implementation.py::"\n        "test_key_based_step_replay_without_tool_evidence_is_unknown"),
-        ("tests/test_m5_iu9_formal_implementation.py::"\n        "test_stale_recovery_epoch_blocks_skill_before_owner_side_effect"),
-        ("tests/test_m5_iu10_formal_implementation.py::"\n        "test_recovered_current_attempt_tool_call_id_collision_blocks_before_physical_invoke"),
+        (
+            "tests/test_m5_iu6_formal_implementation.py::"
+            "test_key_based_step_replay_without_tool_evidence_is_unknown"
+        ),
+        (
+            "tests/test_m5_iu9_formal_implementation.py::"
+            "test_stale_recovery_epoch_blocks_skill_before_owner_side_effect"
+        ),
+        (
+            "tests/test_m5_iu10_formal_implementation.py::"
+            "test_recovered_current_attempt_tool_call_id_collision_blocks_before_physical_invoke"
+        ),
     ),
     "M5-20": (
-        ("tests/test_m5_closure.py::"\n        "test_m5_closure_c01_capability_collection_and_canonical_aggregation"),
+        (
+            "tests/test_m5_closure.py::"
+            "test_m5_closure_c01_capability_collection_and_canonical_aggregation"
+        ),
     ),
     "M5-21": (
-        ("tests/test_m5_iu8_formal_implementation.py::"\n        "test_session_busy_blocks_step_before_skill_side_effect"),
+        (
+            "tests/test_m5_iu8_formal_implementation.py::"
+            "test_session_busy_blocks_step_before_skill_side_effect"
+        ),
     ),
     "M5-22": (
-        ("tests/test_m5_iu8_formal_implementation.py::"\n        "test_baseline_tool_path_blocks_competing_resource_and_releases_on_completion"),
-        ("tests/test_m5_iu8_formal_implementation.py::"\n        "test_reliability_retry_reenters_exact_tool_lock_boundary_each_attempt"),
+        (
+            "tests/test_m5_iu8_formal_implementation.py::"
+            "test_baseline_tool_path_blocks_competing_resource_and_releases_on_completion"
+        ),
+        (
+            "tests/test_m5_iu8_formal_implementation.py::"
+            "test_reliability_retry_reenters_exact_tool_lock_boundary_each_attempt"
+        ),
     ),
     "M5-23": (
         "BOUNDARY_ONLY: Ongoing Activity is outside Execution lifecycle authority",
         "tests/test_m5_closure.py::test_m5_closure_c10_preserves_stage_boundaries",
     ),
     "M5-24": (
-        ("tests/test_m5_iu4_capability_execution.py::"\n        "test_permission_is_rechecked_for_each_real_tool_invocation"),
-        ("tests/test_m5_iu4_capability_execution.py::"\n        "test_permission_denied_prevents_tool_invocation"),
+        (
+            "tests/test_m5_iu4_capability_execution.py::"
+            "test_permission_is_rechecked_for_each_real_tool_invocation"
+        ),
+        (
+            "tests/test_m5_iu4_capability_execution.py::"
+            "test_permission_denied_prevents_tool_invocation"
+        ),
     ),
     "M5-25": (
-        ("tests/test_m5_iu4_capability_execution.py::"\n        "test_output_invalid_preserves_raw_success_but_final_truth_is_unknown"),
-        ("tests/test_m5_iu5_result_collection.py::"\n        "test_tool_unknown_is_second_latch_against_executed_owner_success"),
+        (
+            "tests/test_m5_iu4_capability_execution.py::"
+            "test_output_invalid_preserves_raw_success_but_final_truth_is_unknown"
+        ),
+        (
+            "tests/test_m5_iu5_result_collection.py::"
+            "test_tool_unknown_is_second_latch_against_executed_owner_success"
+        ),
     ),
 }
 

@@ -13,7 +13,12 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from runtime.contracts import ApprovedActionPlan, ExecutionResult, PolicyDecision, RuntimeContext
+from runtime.contracts import (
+    ApprovedActionPlan,
+    ExecutionResult,
+    PolicyDecision,
+    RuntimeContext,
+)
 
 
 class AdmissionStatus(StrEnum):
@@ -126,7 +131,9 @@ def admit_validation_input(
 
     policy = approved.policy_snapshot
     try:
-        normalized_policy = PolicyDecision.model_validate(policy).model_dump(mode="json")
+        normalized_policy = PolicyDecision.model_validate(policy).model_dump(
+            mode="json"
+        )
         if normalized_policy != policy:
             reject(AdmissionReason.INVALID_POLICY_SNAPSHOT)
     except (ValidationError, TypeError, ValueError):
@@ -158,19 +165,23 @@ def admit_validation_input(
         if not isinstance(result, dict):
             reject(AdmissionReason.NONCANONICAL_SOURCE)
             continue
-        call_id = result.get("tool_call_id")
+        result_call_id = result.get("tool_call_id")
         step_id = result.get("step_id")
-        if not isinstance(call_id, str) or not call_id or call_id not in observed_calls:
+        if (
+            not isinstance(result_call_id, str)
+            or not result_call_id
+            or result_call_id not in observed_calls
+        ):
             reject(AdmissionReason.TOOL_OWNER_MISMATCH)
-        if isinstance(call_id, str) and call_id in seen_result_ids:
+        if isinstance(result_call_id, str) and result_call_id in seen_result_ids:
             reject(AdmissionReason.DUPLICATE_TOOL_RESULT)
-        elif isinstance(call_id, str):
-            seen_result_ids.add(call_id)
+        elif isinstance(result_call_id, str):
+            seen_result_ids.add(result_call_id)
         if step_id is not None:
             owners = {
                 step.step_id
                 for step in execution.step_results
-                if call_id in (step.tool_call_ids or ())
+                if result_call_id in (step.tool_call_ids or ())
             }
             if not isinstance(step_id, str) or step_id not in owners:
                 reject(AdmissionReason.TOOL_OWNER_MISMATCH)
@@ -199,9 +210,9 @@ def admit_validation_input(
             for n, call_id in enumerate(step.tool_call_ids or ()):
                 refs.append(_ref(f"{path}.tool_call_ids[{n}]", call_id, None))
     for index, result in enumerate(execution.tool_results or ()):
-        call_id = result.get("tool_call_id", result.get("call_id"))
-        if isinstance(call_id, str):
-            refs.append(_ref(f"tool_results[{index}]", call_id, None))
+        result_call_id = result.get("tool_call_id")
+        if isinstance(result_call_id, str):
+            refs.append(_ref(f"tool_results[{index}]", result_call_id, None))
     return ValidationAdmissionDecision(
         AdmissionStatus.ADMITTED,
         (),

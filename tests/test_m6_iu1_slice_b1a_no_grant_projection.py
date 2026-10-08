@@ -1,10 +1,8 @@
 """Independent negative-contract tests for the B1a structural projector."""
 
-from collections.abc import Callable
-
 import pytest
 
-from runtime.contracts import BusinessStatus, ValidationStatus
+from runtime.contracts import BusinessStatus, ExecutionResult, ValidationStatus
 from runtime.contracts.validation import ValidatedResult
 from runtime.validation.no_grant import NoGrant, NoGrantReason, NoGrantTurnSlot
 from runtime.validation.no_grant_projection import (
@@ -14,6 +12,7 @@ from runtime.validation.no_grant_projection import (
     ValidationOriginBinding,
 )
 from runtime.validation.slice_a import (
+    AdmissionReason,
     AdmissionStatus,
     ValidationAdmissionDecision,
     admit_validation_input,
@@ -82,11 +81,7 @@ def test_valid_projection_never_promotes_execution_success() -> None:
 def test_rejected_admission_precedes_allocator() -> None:
     args = _case()
     args["admission"] = ValidationAdmissionDecision(
-        AdmissionStatus.REJECTED, (), None
-    ) if False else ValidationAdmissionDecision(
-        AdmissionStatus.REJECTED,
-        ( __import__("runtime.validation.slice_a", fromlist=["AdmissionReason"]).AdmissionReason.REQUEST_MISMATCH,),
-        None,
+        AdmissionStatus.REJECTED, (AdmissionReason.REQUEST_MISMATCH,), None
     )
     invoked = 0
 
@@ -132,7 +127,8 @@ def test_mismatching_origins_fail_before_allocation(field: str) -> None:
 def test_stale_source_fails_closed() -> None:
     args = _case()
     execution = args["execution"]
-    execution.execution_events = [{"unexpected": True}]  # type: ignore[union-attr]
+    assert isinstance(execution, ExecutionResult)
+    execution.execution_events = [{"unexpected": True}]
     _reject(NoGrantProjectionReason.SOURCE_CHANGED, args)
 
 

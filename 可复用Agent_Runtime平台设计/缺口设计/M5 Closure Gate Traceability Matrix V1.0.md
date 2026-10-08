@@ -84,3 +84,41 @@ M5_STAGE_GATE_TRACEABILITY_MISSING
 ~~~
 
 Final closure still requires exact-head four-gate verification.
+
+
+## 5. Verification Closure Update
+
+This section is the current status authority for the matrix; earlier `PENDING_GATES`
+wording above records the pre-verification state.
+
+Verified Evidence Pack test/code tree:
+
+~~~text
+365099ba6e6d1e5b6b19c7d81b659e5d3db6fe8a
+~~~
+
+Accepted gates:
+
+~~~text
+pytest = 992 passed
+mypy = no issues found in 220 source files
+ruff check = passed
+ruff format --check = 220 files already formatted
+~~~
+
+Decision:
+
+~~~text
+M5-01..M5-25 TRACEABILITY = VERIFIED
+
+B-M5-CL-001
+M5_STAGE_GATE_TRACEABILITY_MISSING
+= CLOSED
+~~~
+
+The special interpretations remain unchanged:
+
+~~~text
+M5-10 = CORE_MECHANISM
+M5-23 = BOUNDARY_EVIDENCED
+~~~

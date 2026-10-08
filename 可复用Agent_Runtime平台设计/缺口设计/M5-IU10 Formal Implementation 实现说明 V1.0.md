@@ -828,3 +828,254 @@ No cumulative regression
 ~~~text
 M5-IU10 = PASSED
 ~~~
+
+
+# 26. M5-IU10 Closure Evaluation
+
+本轮 Closure Evaluation 的评估目标为 Formal Implementation Verification Closure 后的累计 M5-IU10 单元，而不是只复核最后一次门禁。
+
+Evaluation target HEAD：
+
+~~~text
+f8bd5194f2be04f0f298bbbda6b2542158bb3471
+~~~
+
+## 26.1 Controlled Amendment cumulative closure
+
+逐项回溯 CA-M5-IU10-00..04 的 Independent Review、Verification Closure 与 blocker 影响，结果为：
+
+~~~text
+CA-M5-IU10-00 = PASSED
+-> B-M5-IU10-007 = CLOSED
+-> B-M5-IU10-008 = CLOSED
+
+CA-M5-IU10-01 = PASSED
+-> B-M5-IU10-001 = CLOSED
+
+CA-M5-IU10-02 = PASSED
+-> B-M5-IU10-002 = CLOSED
+
+CA-M5-IU10-03 = PASSED
+-> B-M5-IU10-003 = CLOSED
+-> B-M5-IU10-004 = CLOSED
+-> B-M5-IU10-005 = CLOSED
+-> B-M5-IU10-006 = CLOSED
+
+CA-M5-IU10-04 = PASSED
+-> B-M5-IU10-009 = CLOSED
+~~~
+
+因此：
+
+~~~text
+CA-M5-IU10-00..04 = PASSED
+B-M5-IU10-001..009 = CLOSED
+OPEN IU10 DESIGN/AUTHORITY BLOCKER = NONE
+~~~
+
+## 26.2 Formal Implementation requirement closure
+
+Final readiness 冻结的：
+
+~~~text
+FI-M5-IU10-REQ-001..009
+~~~
+
+均已进入正式 runtime：
+
+~~~text
+REQ-001
+Terminal Step completion
+-> TerminalStepCompletionCoordinator
+
+REQ-002
+Running Step finalization
+-> RunningStepCompletionCoordinator
+
+REQ-003
+durable control + applicability writer composition
+-> DurableControlRuntimeFactory
+-> DurableControlApplicabilityRecorder
+
+REQ-004
+Formal Aggregator control authority
+-> DurableAggregationControlAuthority
+
+REQ-005
+control-terminal Tool evidence
+-> DurableControlTerminalToolEvidenceReader
+
+REQ-006
+natural terminal commit
+-> ExecutionLifecycleService.finish_execution
+
+REQ-007
+publication gate
+-> READY_EXISTING_TERMINAL only
+
+REQ-008
+Canonical result projection
+-> CanonicalExecutionResultProjector
+-> no IU1 skeleton projector
+
+REQ-009
+end-to-end aggregation loop
+-> tests/test_m5_iu10_formal_implementation.py
+~~~
+
+Formal Implementation Independent Review 的三个实现 finding 也已全部关闭：
+
+~~~text
+F-M5-IU10-FI-001 = CLOSED
+F-M5-IU10-FI-002 = CLOSED
+F-M5-IU10-FI-003 = CLOSED
+~~~
+
+## 26.3 Authority consistency review
+
+累计 authority chain 没有发现相互矛盾或重复授权：
+
+~~~text
+Scheduler decision
+-> exact PENDING terminalization authority
+-> existing lifecycle mutation
+
+IU6 finalization decision
+-> exact running-Step completion authority
+-> existing lifecycle mutation
+
+terminal Step lifecycle
+-> CA-02 crash-safe aggregation evidence
+
+CA-02 evidence
++ CA-04 durable control applicability
+-> CA-01 aggregation eligibility / plan-status authority
+
+READY_NATURAL
+-> existing ExecutionLifecycleService.finish_execution
+-> re-resolve durable control authority
+-> re-project exact evidence
+-> re-evaluate
+
+READY_EXISTING_TERMINAL only
+-> CA-03 CanonicalExecutionResultProjector
+-> ExecutionResult
+~~~
+
+Control-terminal Tool evidence 继续以：
+
+~~~text
+ExecutionRecoveryClaim
++ StepAttemptCursorRecord.current_attempt
++ durable Tool journal
+~~~
+
+作为权威来源，不使用：
+
+~~~text
+retry_count + 1
+caller-provided Tool journal
+hand-built control applicability
+Registry latest substitution
+~~~
+
+Live Tool journal 与 control runtime 由同一个 exact ExecutionRecoveryClaim 组合，不存在 recovery epoch authority 分裂。
+
+## 26.4 Cumulative regression review
+
+Stacked branch ancestry 核对结果：
+
+~~~text
+CA-00 closure HEAD -> current HEAD: behind = 0
+CA-01 closure HEAD -> current HEAD: behind = 0
+CA-02 closure HEAD -> current HEAD: behind = 0
+CA-03 closure HEAD -> current HEAD: behind = 0
+CA-04 readiness HEAD -> current HEAD: behind = 0
+~~~
+
+因此 CA-00..04 均属于当前 Formal Implementation 的祖先链，没有出现重建分支导致的 amendment 丢失。
+
+Formal Implementation semantic review HEAD：
+
+~~~text
+a62a1711831fea2502dc9bc3a0b2dfde7ce076f0
+~~~
+
+到 Evaluation target HEAD：
+
+~~~text
+f8bd5194f2be04f0f298bbbda6b2542158bb3471
+~~~
+
+仅存在 Formal Implementation / Verification Closure 文档记录变化，不存在 post-review semantic code delta。
+
+最终四项门禁：
+
+~~~text
+python -m pytest tests -q
+-> 980 passed
+
+python -m mypy runtime tests
+-> Success: no issues found in 219 source files
+
+python -m ruff check runtime tests
+-> All checks passed
+
+python -m ruff format --check runtime tests
+-> 219 files already formatted
+~~~
+
+未发现累计 regression evidence。
+
+## 26.5 Boundary review
+
+Closure Evaluation 没有发现 IU10 越界进入：
+
+~~~text
+M2 policy recomputation
+new scheduler semantics
+new retry / replay policy
+new recovery disposition
+ResourceLock redesign
+Registry latest lookup
+capability substitution
+M6 validation truth
+M7 response authority
+M8 state/memory mutation authority
+business / medical truth inference
+~~~
+
+IU8 terminal observer 与 IU9 recovery / fencing 边界保持不变。
+
+## 26.6 Closure Evaluation decision
+
+累计条件全部满足：
+
+~~~text
+CA-M5-IU10-00..04 = PASSED
+B-M5-IU10-001..009 = CLOSED
+
+M5-IU10 IMPLEMENTATION READINESS = READY
+M5-IU10 FORMAL IMPLEMENTATION = PASSED
+M5-IU10 INDEPENDENT IMPLEMENTATION REVIEW = PASSED
+M5-IU10 VERIFICATION = PASSED
+
+F-M5-IU10-FI-001..003 = CLOSED
+
+OPEN BLOCKER = NONE
+AUTHORITY CONTRADICTION = NONE FOUND
+CUMULATIVE REGRESSION = NONE FOUND
+~~~
+
+最终决定：
+
+~~~text
+M5-IU10 CLOSURE EVALUATION = PASSED
+M5-IU10 = PASSED
+
+M5 = IN PROGRESS
+~~~
+
+M5-IU10 的实现单元到此关闭。
+
+本 Closure Evaluation **不等于 PR Merge Authorization**，也不自动关闭整个 M5。后续 merge / integration 仍应按独立治理步骤处理。

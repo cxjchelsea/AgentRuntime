@@ -1083,156 +1083,109 @@ M5-IU10 的实现单元到此关闭。
 
 # 27. M5-IU10 Merge Authorization Decision
 
-本步骤仅判断 PR #79 是否获得 merge authorization，不执行实际 merge。
+本步骤只判断 PR #79 是否满足 merge authorization 条件，不执行实际 merge。
 
-Authorization target：
+## 27.1 Evaluation baseline
 
-~~~text
-PR = #79
-
-base branch = m5-iu10-ca04-durable-control-applicability
-base SHA = d283027eceb81130d2b165e8184585d299c045fc
-
-head branch = m5-iu10-formal-implementation
-head SHA = 8f28f2bcde1bed204251708d60ae92379f22e131
-~~~
-
-## 27.1 Closure prerequisite
-
-当前 HEAD 与 M5-IU10 Closure Evaluation 绑定 HEAD 完全一致：
+Closure Evaluation 已绑定：
 
 ~~~text
 Closure Evaluation HEAD
 = 8f28f2bcde1bed204251708d60ae92379f22e131
 
-Current PR HEAD
-= 8f28f2bcde1bed204251708d60ae92379f22e131
-
-delta = 0 commits
-~~~
-
-因此 Closure Evaluation 后没有新的代码或文档变更。
-
-已关闭状态：
-
-~~~text
 M5-IU10 CLOSURE EVALUATION = PASSED
 M5-IU10 = PASSED
+~~~
 
+累计前置状态：
+
+~~~text
 CA-M5-IU10-00..04 = PASSED
 B-M5-IU10-001..009 = CLOSED
 F-M5-IU10-FI-001..003 = CLOSED
+
+OPEN BLOCKER = NONE
+AUTHORITY CONTRADICTION = NONE FOUND
+CUMULATIVE REGRESSION = NONE FOUND
 ~~~
 
-## 27.2 Base stability
+## 27.2 Merge authorization conditions
 
-当前目标 base branch 仍精确指向：
-
-~~~text
-d283027eceb81130d2b165e8184585d299c045fc
-~~~
-
-与 PR #79 的 frozen base SHA 完全一致：
-
-~~~text
-base drift = NONE
-ahead = 0
-behind = 0
-~~~
-
-因此不存在 Closure / Authorization 期间的 base branch 漂移。
-
-## 27.3 Mergeability
-
-GitHub 当前状态：
+授权前必须同时满足：
 
 ~~~text
 PR state = OPEN
 draft = false
 merged = false
 mergeable = true
+
+base branch unchanged
+no semantic delta after Closure Evaluation
+no newly opened blocker
+verification evidence still valid
+no pending/failed repository-required remote gate
 ~~~
 
-没有发现结构性 merge conflict。
-
-Current head 相对 frozen base：
+已确认 base branch：
 
 ~~~text
-ahead_by = 50
-behind_by = 0
+m5-iu10-ca04-durable-control-applicability
+= d283027eceb81130d2b165e8184585d299c045fc
 ~~~
 
-因此当前 PR 是冻结 base 的纯后继，不需要先解决 base divergence。
+无 base drift。
 
-## 27.4 Verification evidence
-
-当前授权继续使用已经在 Formal Implementation Verification Closure 中绑定的 exact semantic verification evidence：
+Formal Implementation 的有效四门禁证据仍为：
 
 ~~~text
-python -m pytest tests -q
--> 980 passed
-
-python -m mypy runtime tests
--> Success: no issues found in 219 source files
-
-python -m ruff check runtime tests
--> All checks passed
-
-python -m ruff format --check runtime tests
--> 219 files already formatted
+pytest = 980 passed
+mypy = 219 source files, no issues
+ruff check = passed
+ruff format --check = 219 files formatted
 ~~~
 
-GitHub 当前没有额外 configured commit status / pull-request workflow run 需要等待。
+仓库当前没有额外 configured commit status / pull-request workflow run 需要等待。
 
-这不替代本地四门禁证据；只是确认没有额外远端 gate 处于 pending / failed 状态。
+## 27.3 Self-recording governance rule
 
-## 27.5 Authorization invariant
+Merge Authorization 本身需要留下治理记录，而把该记录提交到 PR branch 会产生 documentation-only HEAD 前移。
 
-本次授权仅对以下 exact pair 生效：
+因此本项目对这一类 self-recording commit 使用以下规则：
 
 ~~~text
-base = d283027eceb81130d2b165e8184585d299c045fc
-head = 8f28f2bcde1bed204251708d60ae92379f22e131
+Closure Evaluation HEAD
+-> authorization governance-document commit(s)
+-> no runtime/test/contract semantic change
+-> allowed to rebind authorization once to resulting actual PR HEAD
 ~~~
 
-如果在实际 merge 前发生任一情况：
+最终 **effective authorized HEAD 不写死在本文件中**。
+
+原因是把 exact resulting commit SHA 再写回本文件会再次制造一个新 HEAD，形成无限自引用。
+
+因此：
 
 ~~~text
-head changes
-base changes
-mergeable becomes false
-new blocker is opened
-verification evidence is invalidated
+PR #79 body
++
+latest Merge Authorization PR comment
 ~~~
 
-则本次授权自动失效，必须重新执行 Merge Authorization Decision。
+是最终 exact base/head authorization binding 的权威记录。
 
-## 27.6 Merge Authorization Decision
+任何在最终 rebind 后发生的进一步 base/head 改变，都会使 authorization 失效并要求重新评估。
 
-当前证据满足：
+## 27.4 Decision
 
-~~~text
-M5-IU10 = PASSED
-CLOSURE EVALUATION = PASSED
-
-OPEN BLOCKER = NONE
-BASE DRIFT = NONE
-HEAD DRIFT AFTER CLOSURE = NONE
-MERGE CONFLICT = NONE
-REMOTE PENDING/FAILED GATE = NONE FOUND
-~~~
-
-最终决定：
+在上述约束下，Merge Authorization 条件满足：
 
 ~~~text
 M5-IU10 MERGE AUTHORIZATION = AUTHORIZE
-
-AUTHORIZED PR = #79
-AUTHORIZED BASE = d283027eceb81130d2b165e8184585d299c045fc
-AUTHORIZED HEAD = 8f28f2bcde1bed204251708d60ae92379f22e131
 
 M5-IU10 = PASSED
 M5 = IN PROGRESS
 ~~~
 
-本步骤只授予 merge authority，**未执行实际 merge**。
+本步骤只授予 merge authority，未执行实际 merge。
+
+最终 exact authorized base/head 以 PR #79 的 Merge Authorization metadata/comment 为准。

@@ -213,3 +213,33 @@ python -m ruff format --check runtime tests
 ~~~
 
 Only after all four are green may B-M5-CL-001/002 be closed and M5 final Closure readiness be re-evaluated.
+
+
+## 8. Post-Review Verification Closure
+
+The Independent Evidence Pack Review above was intentionally made before gate
+execution. Its `VERIFICATION = PENDING` statement is a historical snapshot.
+
+Subsequent verification target:
+
+~~~text
+365099ba6e6d1e5b6b19c7d81b659e5d3db6fe8a
+~~~
+
+passed all four local gates:
+
+~~~text
+pytest = 992 passed
+mypy = 220 source files / no issues
+ruff check = passed
+ruff format --check = passed
+~~~
+
+Therefore the current status is:
+
+~~~text
+M5 CLOSURE EVIDENCE PACK VERIFICATION = PASSED
+B-M5-CL-001 = CLOSED
+B-M5-CL-002 = CLOSED
+M5 FINAL CLOSURE READINESS = READY
+~~~

@@ -551,6 +551,14 @@ async def test_g1_stage_end_log_failure_has_no_success_marker() -> None:
     from runtime.orchestration.trace import StageEventStatus, TraceStatus
 
     orchestrator, _bundle = _g1_orchestrator()
+    captured: list[Any] = []
+    original_fail = orchestrator._fail_stage
+
+    def capture_failure(turn: Any, *args: Any) -> None:
+        captured.append(turn)
+        original_fail(turn, *args)
+
+    orchestrator._fail_stage = capture_failure
     orchestrator.log_hook = _G1FailingLog("STAGE_END")
     with pytest.raises(StageExecutionError):
         await orchestrator.run(build_runtime_input())
@@ -558,9 +566,8 @@ async def test_g1_stage_end_log_failure_has_no_success_marker() -> None:
     assert trace is not None
     assert trace.status is TraceStatus.ERROR
     assert trace.stage_events[0].status is StageEventStatus.ERROR
-    # Stage marker is not committed until its STAGE_END log succeeds.
-    # Capture the current turn through the failing stage's attached trace instead
-    # of treating last_trace as a concurrent truth source.
+    assert len(captured) == 1
+    assert "INPUT" not in captured[0].stage_results
 
 
 @pytest.mark.asyncio
@@ -639,3 +646,156 @@ async def test_g1_rejects_forged_positive_decision(
         await orchestrator.run(build_runtime_input())
     assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
     assert "UPDATE" not in bundle.call_recorder.entries
+
+
+
+@pytest.mark.asyncio
+async def test_g1_cleanup_failure_does_not_mask_denial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.validation.m6_no_grant_facade import M6NoGrantTurnHandle
+
+    attempts: list[str] = []
+    original_close = M6NoGrantTurnHandle.close
+
+    def failing_close(self: M6NoGrantTurnHandle) -> None:
+        attempts.append("close")
+        original_close(self)
+        raise OSError("injected close failure")
+
+    monkeypatch.setattr(M6NoGrantTurnHandle, "close", failing_close)
+    orchestrator, bundle = _g1_orchestrator()
+    with pytest.raises(M6DownstreamBlocked):
+        await orchestrator.run(build_runtime_input())
+    assert attempts == ["close"]
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_stage_error_and_terminal_log_fault_keep_primary() -> None:
+    from runtime.orchestration.errors import StageExecutionError
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    seen: list[str] = []
+
+    class DoubleFaultLog:
+        def emit(self, record: dict[str, object]) -> None:
+            event = str(record["event"])
+            seen.append(event)
+            if event in ("TURN_END", "STAGE_ERROR"):
+                raise OSError("injected combined logger failure")
+
+    orchestrator.log_hook = DoubleFaultLog()
+
+    async def failing_input(_raw: object) -> None:
+        raise RuntimeError("original input error")
+
+    orchestrator.input_processor.process = failing_input  # type: ignore[method-assign]
+    with pytest.raises(StageExecutionError) as caught:
+        await orchestrator.run(build_runtime_input())
+    assert isinstance(caught.value.cause, RuntimeError)
+    assert str(caught.value.cause) == "original input error"
+    assert seen.count("TURN_END") == 1
+    assert seen.count("STAGE_ERROR") == 1
+    assert orchestrator.last_trace is not None
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_b0_replay_fails_and_never_reaches_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration import runtime as runtime_module
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+
+    original = runtime_module._gated_validate
+    replay_rejected: list[bool] = []
+
+    async def checked_validation(
+        handle: Any,
+        execution: Any,
+        context: Any,
+        approved: Any,
+        decisions: Any,
+    ) -> Any:
+        result = await original(handle, execution, context, approved, decisions)
+        with pytest.raises(M6FoundationError) as replay:
+            await handle.validate(execution, context, approved)
+        replay_rejected.append(
+            replay.value.code is M6FoundationErrorCode.ALREADY_VALIDATED
+        )
+        return result
+
+    monkeypatch.setattr(runtime_module, "_gated_validate", checked_validation)
+    orchestrator, bundle = _g1_orchestrator()
+    with pytest.raises(M6DownstreamBlocked):
+        await orchestrator.run(build_runtime_input())
+    assert replay_rejected == [True]
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_stage_prefix_and_legacy_regression() -> None:
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+
+    orchestrator, bundle = _g1_orchestrator()
+    with pytest.raises(M6DownstreamBlocked):
+        await orchestrator.run(build_runtime_input())
+    expected_prefix = [
+        "INPUT", "SAFETY_EARLY", "CONTEXT", "UNDERSTANDING",
+        "SAFETY_DEEP", "POLICY", "PLAN", "PLAN_VALIDATE",
+        "POLICY_RECHECK", "EXECUTE", "RESULT_VALIDATE",
+    ]
+    trace = orchestrator.last_trace
+    assert trace is not None
+    assert [stage.stage_name for stage in trace.stage_events] == expected_prefix
+    assert bundle.call_recorder.entries == expected_prefix[:-1]
+
+    from tests.test_runtime_orchestrator import _build_orchestrator, _StubBundle
+    from runtime.orchestration.trace import TraceStatus
+
+    legacy = _build_orchestrator(_StubBundle())
+    outcome = await legacy.run(build_runtime_input())
+    assert outcome.trace.status is TraceStatus.SUCCESS
+    assert len(outcome.trace.stage_events) == 15
+
+
+@pytest.mark.asyncio
+async def test_g1_concurrent_turn_contexts_remain_distinct(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from runtime.orchestration.runtime import M6DownstreamBlocked, RuntimeOrchestrator
+    from runtime.orchestration.trace import TraceStatus
+
+    contexts: list[Any] = []
+    original_open = RuntimeOrchestrator._open_turn
+
+    def capturing_open(self: RuntimeOrchestrator, raw: Any) -> Any:
+        context = original_open(self, raw)
+        contexts.append(context)
+        return context
+
+    monkeypatch.setattr(RuntimeOrchestrator, "_open_turn", capturing_open)
+    orchestrator, _bundle = _g1_orchestrator()
+    a = build_runtime_input()
+    b = build_runtime_input()
+    b.trace_id = "independent-turn-b"
+    results = await asyncio.gather(
+        orchestrator.run(a), orchestrator.run(b), return_exceptions=True
+    )
+    assert all(isinstance(result, M6DownstreamBlocked) for result in results)
+    assert len(contexts) == 2
+    assert contexts[0] is not contexts[1]
+    assert contexts[0].trace is not contexts[1].trace
+    assert {context.trace.trace_id for context in contexts} == {
+        a.trace_id, b.trace_id
+    }
+    assert all(context.trace.status is TraceStatus.ERROR for context in contexts)
+    assert all(context.trace.finished_at is not None for context in contexts)

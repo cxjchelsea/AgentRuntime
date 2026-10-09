@@ -1011,3 +1011,86 @@ async def test_g2_preserves_m2_policy_authority(scenario: str) -> None:
     assert "EXECUTE" not in recorder.entries
     assert "RESPONSE_PLAN" not in recorder.entries
     assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_cancelled_input_ends_turn_without_downstream() -> None:
+    import asyncio
+
+    from runtime.orchestration.trace import TraceStatus
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input()
+    recorder = CallRecorder()
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(
+            current=None, incoming=_incoming()
+        ),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    entered = asyncio.Event()
+
+    async def suspended(_raw: Any) -> Any:
+        entered.set()
+        await asyncio.Future()
+
+    protected.input_processor.process = suspended  # type: ignore[method-assign]
+    running = asyncio.create_task(protected.run(raw))
+    await entered.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert protected.last_trace is not None
+    assert protected.last_trace.status is TraceStatus.ERROR
+    assert protected.last_trace.error == "TURN_CANCELLED"
+    assert "EXECUTE" not in recorder.entries
+    assert "RESPONSE_PLAN" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_combined_logging_faults_preserve_policy_failure() -> None:
+    from runtime.orchestration.m2_control import RuntimeControlBlockedError
+    from runtime.policy_management import DefaultPolicyEngine
+    from runtime.orchestration.trace import TraceStatus
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        DenyPolicyRule,
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input()
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=CallRecorder(),
+        resolver=StaticPrioritySubjectResolver(
+            current=None, incoming=_incoming()
+        ),
+        policy_engine=DefaultPolicyEngine(rules=[DenyPolicyRule()]),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    attempts: list[str] = []
+
+    class FaultyLog:
+        def emit(self, record: dict[str, object]) -> None:
+            event = str(record["event"])
+            attempts.append(event)
+            if event in ("STAGE_ERROR", "TURN_END"):
+                raise OSError("G2 combined log fault")
+
+    protected.log_hook = FaultyLog()
+    with pytest.raises(RuntimeControlBlockedError) as blocked:
+        await protected.run(raw)
+    assert blocked.value.reason_code == "POLICY_BLOCKED"
+    assert attempts.count("TURN_END") == 1
+    assert attempts.count("STAGE_ERROR") == 1
+    assert protected.last_trace is not None
+    assert protected.last_trace.status is TraceStatus.ERROR

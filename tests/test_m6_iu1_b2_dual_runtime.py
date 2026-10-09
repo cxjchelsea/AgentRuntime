@@ -543,3 +543,92 @@ async def test_g1_input_identity_mutation_prevents_execution() -> None:
     assert orchestrator.last_trace.status is TraceStatus.ERROR
     assert "EXECUTE" not in bundle.call_recorder.entries
     assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_stage_end_log_failure_has_no_success_marker() -> None:
+    from runtime.orchestration.errors import StageExecutionError
+    from runtime.orchestration.trace import StageEventStatus, TraceStatus
+
+    orchestrator, _bundle = _g1_orchestrator()
+    orchestrator.log_hook = _G1FailingLog("STAGE_END")
+    with pytest.raises(StageExecutionError):
+        await orchestrator.run(build_runtime_input())
+    trace = orchestrator.last_trace
+    assert trace is not None
+    assert trace.status is TraceStatus.ERROR
+    assert trace.stage_events[0].status is StageEventStatus.ERROR
+    # Stage marker is not committed until its STAGE_END log succeeds.
+    # Capture the current turn through the failing stage's attached trace instead
+    # of treating last_trace as a concurrent truth source.
+
+
+@pytest.mark.asyncio
+async def test_g1_cancelled_awaited_input_keeps_original_cancellation() -> None:
+    import asyncio
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    started = asyncio.Event()
+
+    async def cancellable_input(_raw: object) -> None:
+        started.set()
+        await asyncio.Future()
+
+    orchestrator.input_processor.process = cancellable_input  # type: ignore[method-assign]
+    task = asyncio.create_task(orchestrator.run(build_runtime_input()))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert orchestrator.last_trace is not None
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+    assert orchestrator.last_trace.error == "TURN_CANCELLED"
+    assert "EXECUTE" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_parallel_turns_are_denied_without_downstream() -> None:
+    import asyncio
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    a = build_runtime_input()
+    b = build_runtime_input()
+    b.trace_id = "trace-parallel-b"
+    results = await asyncio.gather(
+        orchestrator.run(a), orchestrator.run(b), return_exceptions=True
+    )
+    assert all(isinstance(result, M6DownstreamBlocked) for result in results)
+    assert orchestrator.last_trace is not None
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_rejects_forged_positive_decision(monkeypatch: pytest.MonkeyPatch) -> None:
+    from runtime.orchestration import runtime as runtime_module
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.validation.no_grant_downstream_policy import NoGrantDownstreamDecision
+
+    original = runtime_module._gated_validate
+
+    async def forged_validate(
+        handle: object, execution: object, context: object,
+        approved: object, decisions: list[NoGrantDownstreamDecision],
+    ) -> object:
+        result = await original(handle, execution, context, approved, decisions)  # type: ignore[arg-type]
+        # The decision is immutable, but a caller-local box must still reject
+        # deliberately corrupted correlation before downstream entry.
+        object.__setattr__(decisions[0], "validation_id", "forged-validation")
+        return result
+
+    monkeypatch.setattr(runtime_module, "_gated_validate", forged_validate)
+    orchestrator, bundle = _g1_orchestrator()
+    with pytest.raises(M6DownstreamBlocked):
+        await orchestrator.run(build_runtime_input())
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries

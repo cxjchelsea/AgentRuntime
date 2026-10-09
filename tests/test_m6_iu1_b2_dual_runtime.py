@@ -648,7 +648,6 @@ async def test_g1_rejects_forged_positive_decision(
     assert "UPDATE" not in bundle.call_recorder.entries
 
 
-
 @pytest.mark.asyncio
 async def test_g1_cleanup_failure_does_not_mask_denial(
     monkeypatch: pytest.MonkeyPatch,
@@ -747,17 +746,25 @@ async def test_g1_stage_prefix_and_legacy_regression() -> None:
     with pytest.raises(M6DownstreamBlocked):
         await orchestrator.run(build_runtime_input())
     expected_prefix = [
-        "INPUT", "SAFETY_EARLY", "CONTEXT", "UNDERSTANDING",
-        "SAFETY_DEEP", "POLICY", "PLAN", "PLAN_VALIDATE",
-        "POLICY_RECHECK", "EXECUTE", "RESULT_VALIDATE",
+        "INPUT",
+        "SAFETY_EARLY",
+        "CONTEXT",
+        "UNDERSTANDING",
+        "SAFETY_DEEP",
+        "POLICY",
+        "PLAN",
+        "PLAN_VALIDATE",
+        "POLICY_RECHECK",
+        "EXECUTE",
+        "RESULT_VALIDATE",
     ]
     trace = orchestrator.last_trace
     assert trace is not None
     assert [stage.stage_name for stage in trace.stage_events] == expected_prefix
     assert bundle.call_recorder.entries == expected_prefix[:-1]
 
-    from tests.test_runtime_orchestrator import _build_orchestrator, _StubBundle
     from runtime.orchestration.trace import TraceStatus
+    from tests.test_runtime_orchestrator import _build_orchestrator, _StubBundle
 
     legacy = _build_orchestrator(_StubBundle())
     outcome = await legacy.run(build_runtime_input())
@@ -794,8 +801,6 @@ async def test_g1_concurrent_turn_contexts_remain_distinct(
     assert len(contexts) == 2
     assert contexts[0] is not contexts[1]
     assert contexts[0].trace is not contexts[1].trace
-    assert {context.trace.trace_id for context in contexts} == {
-        a.trace_id, b.trace_id
-    }
+    assert {context.trace.trace_id for context in contexts} == {a.trace_id, b.trace_id}
     assert all(context.trace.status is TraceStatus.ERROR for context in contexts)
     assert all(context.trace.finished_at is not None for context in contexts)

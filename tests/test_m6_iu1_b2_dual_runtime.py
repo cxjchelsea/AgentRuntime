@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -407,19 +408,22 @@ def test_f02_duplicate_terminal_calls_do_not_reemit() -> None:
 
 # G1: concrete RuntimeOrchestrator only. G2 remains deliberately unauthorized.
 
-def _g1_orchestrator() -> tuple[object, object]:
+def _g1_orchestrator() -> tuple[Any, Any]:
     from runtime.orchestration.runtime import M6IntegrationMode, RuntimeOrchestrator
+    from runtime.contracts import ActionPlanDraft, PolicyDecision, ApprovedActionPlan
+    from tests.orchestration_stubs import StubPolicyRechecker
     from tests.test_runtime_orchestrator import _StubBundle
 
+    class CanonicalPolicyRechecker(StubPolicyRechecker):
+        async def recheck(
+            self, draft: ActionPlanDraft, policy: PolicyDecision
+        ) -> ApprovedActionPlan:
+            approved = await super().recheck(draft, policy)
+            approved.policy_snapshot = build_policy_decision().model_dump(mode="json")
+            return approved
+
     bundle = _StubBundle()
-    original = bundle.policy_rechecker.recheck
-
-    async def recheck_with_canonical_policy(draft: object, policy: object) -> object:
-        approved = await original(draft, policy)  # type: ignore[arg-type]
-        approved.policy_snapshot = build_policy_decision().model_dump(mode="json")
-        return approved
-
-    bundle.policy_rechecker.recheck = recheck_with_canonical_policy  # type: ignore[method-assign]
+    bundle.policy_rechecker = CanonicalPolicyRechecker(bundle.call_recorder)
     orchestrator = RuntimeOrchestrator(
         input_processor=bundle.input_processor,
         safety_guard=bundle.safety_guard,
@@ -455,7 +459,7 @@ async def test_g1_denies_before_any_response_or_update() -> None:
     assert "RESPONSE_VALIDATE" not in bundle.call_recorder.entries
     assert "UPDATE" not in bundle.call_recorder.entries
     assert "RESULT_VALIDATE" not in bundle.call_recorder.entries
-    assert orchestrator.last_trace.status is TraceStatus.RUNNING or orchestrator.last_trace.status is TraceStatus.ERROR
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
 
 
 @pytest.mark.asyncio

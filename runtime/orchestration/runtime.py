@@ -491,12 +491,24 @@ class RuntimeOrchestrator:
             input_contract_type=input_contract_type,
         )
         turn_context.trace.stage_events.append(stage_event)
-        self._emit_log(
-            turn_context,
-            event="STAGE_START",
-            stage_name=stage_name,
-            status="STARTED",
-        )
+        try:
+            self._emit_log(
+                turn_context,
+                event="STAGE_START",
+                stage_name=stage_name,
+                status="STARTED",
+            )
+        except Exception as start_error:
+            if self._m6_mode is M6IntegrationMode.DENY_ONLY_GATED:
+                close = getattr(awaitable, "close", None)
+                if callable(close):
+                    close()
+                orchestration_error = StageExecutionError(stage_name, start_error)
+                self._fail_stage(
+                    turn_context, stage_event, started_perf, orchestration_error
+                )
+                raise orchestration_error from start_error
+            raise
 
         try:
             stage_result = await awaitable
@@ -531,14 +543,23 @@ class RuntimeOrchestrator:
         stage_event.output_contract_type = type(stage_result).__name__
         # 生命周期只记类型名，避免把完整 payload 留在可观察面
         turn_context.stage_results[stage_name] = type(stage_result).__name__
-        self._emit_log(
-            turn_context,
-            event="STAGE_END",
-            stage_name=stage_name,
-            status="SUCCESS",
-            duration_ms=duration_ms,
-            output_contract_type=type(stage_result).__name__,
-        )
+        try:
+            self._emit_log(
+                turn_context,
+                event="STAGE_END",
+                stage_name=stage_name,
+                status="SUCCESS",
+                duration_ms=duration_ms,
+                output_contract_type=type(stage_result).__name__,
+            )
+        except Exception as end_error:
+            if self._m6_mode is M6IntegrationMode.DENY_ONLY_GATED:
+                orchestration_error = StageExecutionError(stage_name, end_error)
+                self._fail_stage(
+                    turn_context, stage_event, started_perf, orchestration_error
+                )
+                raise orchestration_error from end_error
+            raise
         return stage_result
 
     def _fail_stage(

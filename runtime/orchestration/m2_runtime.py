@@ -46,7 +46,10 @@ from runtime.orchestration.runtime import (
     _assert_denied,
     _gated_validate,
 )
-from runtime.validation.m6_no_grant_facade import M6NoGrantTurnHandle, TurnOriginSnapshot
+from runtime.validation.m6_no_grant_facade import (
+    M6NoGrantTurnHandle,
+    TurnOriginSnapshot,
+)
 from runtime.validation.no_grant_downstream_policy import NoGrantDownstreamDecision
 from runtime.orchestration.trace import TraceStatus
 from runtime.priority_management import IncomingDisposition
@@ -253,7 +256,11 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
         decisions: list[NoGrantDownstreamDecision] = []
         validation = (
             _gated_validate(
-                handle, execution_result, runtime_context, approved_action_plan, decisions
+                handle,
+                execution_result,
+                runtime_context,
+                approved_action_plan,
+                decisions,
             )
             if handle is not None
             else self.result_validator.validate(
@@ -269,7 +276,11 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
         )
         if origin is not None:
             _assert_denied(
-                decisions, validated_result, execution_result, runtime_context, origin
+                decisions,
+                validated_result,
+                execution_result,
+                runtime_context,
+                origin,
             )
             raise M6DownstreamBlocked()
 

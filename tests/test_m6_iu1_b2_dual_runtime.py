@@ -480,3 +480,55 @@ async def test_g1_constructor_rejects_missing_facade() -> None:
             state_memory_updater=bundle.state_memory_updater,
             m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
         )
+
+
+class _G1FailingLog:
+    def __init__(self, event: str) -> None:
+        self.event = event
+        self.attempts: list[str] = []
+
+    def emit(self, record: dict[str, object]) -> None:
+        event = str(record["event"])
+        self.attempts.append(event)
+        if event == self.event:
+            raise OSError("injected log failure")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event", ["TURN_START", "STAGE_START", "STAGE_END", "TURN_END"])
+async def test_g1_log_failure_never_returns_success(event: str) -> None:
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    hook = _G1FailingLog(event)
+    orchestrator.log_hook = hook
+    with pytest.raises(BaseException):
+        await orchestrator.run(build_runtime_input())
+    assert orchestrator.last_trace is not None
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+    assert orchestrator.last_trace.finished_at is not None
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+    assert hook.attempts.count("TURN_END") <= 1
+
+
+@pytest.mark.asyncio
+async def test_g1_input_identity_mutation_prevents_execution() -> None:
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    original = orchestrator.input_processor.process
+
+    async def changed_identity(raw: object) -> object:
+        processed = await original(raw)  # type: ignore[arg-type]
+        processed.session_id = "forged-session"
+        return processed
+
+    orchestrator.input_processor.process = changed_identity  # type: ignore[method-assign]
+    with pytest.raises(M6FoundationError) as rejection:
+        await orchestrator.run(build_runtime_input())
+    assert rejection.value.code is M6FoundationErrorCode.ORIGIN_CHANGED
+    assert orchestrator.last_trace is not None
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+    assert "EXECUTE" not in bundle.call_recorder.entries
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries

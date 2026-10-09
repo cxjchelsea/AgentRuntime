@@ -7,6 +7,7 @@ introduced.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from runtime.constraint_management import RuntimeConstraint, RuntimeConstraintEvaluator
@@ -25,15 +26,28 @@ from runtime.contracts import (
     UpdateResult,
     ValidatedResult,
 )
-from runtime.orchestration.context import RuntimeTurnOutcome
-from runtime.orchestration.errors import OrchestrationInvariantError
+from runtime.orchestration.context import RuntimeTurnOutcome, TurnExecutionContext
+from runtime.orchestration.errors import (
+    OrchestrationInvariantError,
+    RuntimeOrchestrationError,
+    StageExecutionError,
+)
 from runtime.orchestration.m2_control import (
     AlternatePathRequiredError,
     PreemptionEffectRequiredError,
     PrioritySubjectResolver,
     RuntimeControlBlockedError,
 )
-from runtime.orchestration.runtime import RuntimeOrchestrator
+from runtime.orchestration.m6_terminalization import finish_turn_once
+from runtime.orchestration.runtime import (
+    M6DownstreamBlocked,
+    M6IntegrationMode,
+    RuntimeOrchestrator,
+    _assert_denied,
+    _gated_validate,
+)
+from runtime.validation.m6_no_grant_facade import M6NoGrantTurnHandle, TurnOriginSnapshot
+from runtime.validation.no_grant_downstream_policy import NoGrantDownstreamDecision
 from runtime.orchestration.trace import TraceStatus
 from runtime.priority_management import IncomingDisposition
 
@@ -58,8 +72,61 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
         self.priority_subject_resolver = priority_subject_resolver
 
     async def run(self, runtime_input: RuntimeInput) -> RuntimeTurnOutcome:
-        """Execute one turn with M2 control evaluated inside the POLICY call point."""
+        """Execute M2 POLICY with optional per-turn deny-only protection."""
+        if self._m6_mode is M6IntegrationMode.LEGACY_TEST_COMPAT:
+            return await self._run_m2_pipeline(runtime_input, None, None, None)
+
+        origin = TurnOriginSnapshot.from_runtime_input(runtime_input)
+        if self._m6_factory is None:
+            raise RuntimeError("G2 facade factory is missing")
+        handle = self._m6_factory.open_turn(origin)
+        owned_turns: list[TurnExecutionContext] = []
+        primary: BaseException | None = None
+        try:
+            await self._run_m2_pipeline(runtime_input, origin, handle, owned_turns)
+            raise M6DownstreamBlocked()
+        except BaseException as error:
+            primary = error
+            if owned_turns:
+                turn = owned_turns[0]
+                reason = (
+                    "TURN_CANCELLED"
+                    if isinstance(error, asyncio.CancelledError)
+                    else error.error_code
+                    if isinstance(error, RuntimeOrchestrationError)
+                    else "G2_TURN_FAILURE"
+                )
+                try:
+                    finish_turn_once(
+                        turn.trace,
+                        TraceStatus.ERROR,
+                        reason,
+                        primary_exception=error,
+                        emit_turn_end=lambda trace: self._emit_log(
+                            turn, event="TURN_END", status=trace.status.value
+                        ),
+                    )
+                except Exception:  # noqa: BLE001,S110
+                    pass
+            raise
+        finally:
+            try:
+                handle.close()
+            except Exception as cleanup:
+                if primary is None:
+                    raise StageExecutionError("M6_CLEANUP", cleanup) from cleanup
+
+    async def _run_m2_pipeline(
+        self,
+        runtime_input: RuntimeInput,
+        origin: TurnOriginSnapshot | None,
+        handle: M6NoGrantTurnHandle | None,
+        owned_turns: list[TurnExecutionContext] | None,
+    ) -> RuntimeTurnOutcome:
+        """Preserve M2's 15 stages with two bounded G2 checkpoints."""
         turn_context = self._open_turn(runtime_input)
+        if owned_turns is not None:
+            owned_turns.append(turn_context)
 
         processed_input = await self._run_stage(
             turn_context,
@@ -68,6 +135,9 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
             RuntimeInput,
             input_contract_type="RuntimeInput",
         )
+
+        if origin is not None:
+            origin.assert_processed_identity(processed_input)
 
         early_safety = await self._run_stage(
             turn_context,
@@ -180,15 +250,28 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
             input_contract_type="ApprovedActionPlan",
         )
 
+        decisions: list[NoGrantDownstreamDecision] = []
+        validation = (
+            _gated_validate(
+                handle, execution_result, runtime_context, approved_action_plan, decisions
+            )
+            if handle is not None
+            else self.result_validator.validate(
+                execution_result, runtime_context, approved_action_plan
+            )
+        )
         validated_result = await self._run_stage(
             turn_context,
             "RESULT_VALIDATE",
-            self.result_validator.validate(
-                execution_result, runtime_context, approved_action_plan
-            ),
+            validation,
             ValidatedResult,
             input_contract_type="ExecutionResult",
         )
+        if origin is not None:
+            _assert_denied(
+                decisions, validated_result, execution_result, runtime_context, origin
+            )
+            raise M6DownstreamBlocked()
 
         response_plan = await self._run_stage(
             turn_context,

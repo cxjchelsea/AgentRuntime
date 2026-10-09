@@ -207,8 +207,10 @@ class RuntimeOrchestrator:
         if type(m6_integration_mode) is not M6IntegrationMode:
             raise ValueError("Invalid G1 integration mode")
         if m6_integration_mode is M6IntegrationMode.DENY_ONLY_GATED:
-            if type(self) is not RuntimeOrchestrator:
-                raise ValueError("G1 mode is not authorized for subclasses")
+            from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+
+            if type(self) not in (RuntimeOrchestrator, M2RuntimeOrchestrator):
+                raise ValueError("Gated mode is not authorized for subclasses")
             if type(m6_no_grant_factory) is not M6NoGrantFacadeFactory:
                 raise ValueError("Gated mode requires an exact M6 facade factory")
         elif m6_no_grant_factory is not None:

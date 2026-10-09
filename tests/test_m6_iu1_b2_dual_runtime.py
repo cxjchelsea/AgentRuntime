@@ -804,3 +804,741 @@ async def test_g1_concurrent_turn_contexts_remain_distinct(
     assert {context.trace.trace_id for context in contexts} == {a.trace_id, b.trace_id}
     assert all(context.trace.status is TraceStatus.ERROR for context in contexts)
     assert all(context.trace.finished_at is not None for context in contexts)
+
+
+def _g2_protected_from_legacy(legacy: Any) -> Any:
+    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+    from runtime.orchestration.runtime import M6IntegrationMode
+
+    return M2RuntimeOrchestrator(
+        runtime_constraint_evaluator=legacy.runtime_constraint_evaluator,
+        priority_subject_resolver=legacy.priority_subject_resolver,
+        input_processor=legacy.input_processor,
+        safety_guard=legacy.safety_guard,
+        context_builder=legacy.context_builder,
+        understanding_engine=legacy.understanding_engine,
+        policy_engine=legacy.policy_engine,
+        planner=legacy.planner,
+        plan_validator=legacy.plan_validator,
+        policy_rechecker=legacy.policy_rechecker,
+        execution_engine=legacy.execution_engine,
+        result_validator=legacy.result_validator,
+        response_planner=legacy.response_planner,
+        response_generator=legacy.response_generator,
+        response_validator=legacy.response_validator,
+        state_memory_updater=legacy.state_memory_updater,
+        m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
+        m6_no_grant_factory=M6NoGrantFacadeFactory(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_g2_allowed_m2_policy_deny_only_never_calls_response() -> None:
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.orchestration.trace import TraceStatus
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input(text="g2 deny-only turn")
+    recorder = CallRecorder()
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    with pytest.raises(M6DownstreamBlocked):
+        await protected.run(raw)
+    assert protected.last_trace is not None
+    assert protected.last_trace.status is TraceStatus.ERROR
+    assert [event.stage_name for event in protected.last_trace.stage_events] == [
+        "INPUT",
+        "SAFETY_EARLY",
+        "CONTEXT",
+        "UNDERSTANDING",
+        "SAFETY_DEEP",
+        "POLICY",
+        "PLAN",
+        "PLAN_VALIDATE",
+        "POLICY_RECHECK",
+        "EXECUTE",
+        "RESULT_VALIDATE",
+    ]
+    assert "RESPONSE_PLAN" not in recorder.entries
+    assert "RESPONSE_GENERATE" not in recorder.entries
+    assert "RESPONSE_VALIDATE" not in recorder.entries
+    assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_protected_mode_rejects_m2_subclasses() -> None:
+    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+    from runtime.orchestration.runtime import M6IntegrationMode
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    class UntrustedM2(M2RuntimeOrchestrator):
+        pass
+
+    raw = build_runtime_input(text="g2 deny-only turn")
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=CallRecorder(),
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    with pytest.raises(ValueError, match="not authorized"):
+        UntrustedM2(
+            runtime_constraint_evaluator=legacy.runtime_constraint_evaluator,
+            priority_subject_resolver=legacy.priority_subject_resolver,
+            input_processor=legacy.input_processor,
+            safety_guard=legacy.safety_guard,
+            context_builder=legacy.context_builder,
+            understanding_engine=legacy.understanding_engine,
+            policy_engine=legacy.policy_engine,
+            planner=legacy.planner,
+            plan_validator=legacy.plan_validator,
+            policy_rechecker=legacy.policy_rechecker,
+            execution_engine=legacy.execution_engine,
+            result_validator=legacy.result_validator,
+            response_planner=legacy.response_planner,
+            response_generator=legacy.response_generator,
+            response_validator=legacy.response_validator,
+            state_memory_updater=legacy.state_memory_updater,
+            m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
+            m6_no_grant_factory=M6NoGrantFacadeFactory(),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["forced", "blocked", "deferred", "preempt"])
+async def test_g2_preserves_m2_policy_authority(scenario: str) -> None:
+    from runtime.orchestration.m2_control import (
+        AlternatePathRequiredError,
+        PreemptionEffectRequiredError,
+        RuntimeControlBlockedError,
+    )
+    from runtime.orchestration.trace import TraceStatus
+    from runtime.policy_management import DefaultPolicyEngine
+    from runtime.priority_management import (
+        IncomingDisposition,
+        PreemptionEngine,
+        PreemptionRule,
+        PriorityRelation,
+    )
+    from runtime.safety import DefaultSafetyGuard
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        DenyPolicyRule,
+        HighSafetyRule,
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _current,
+        _incoming,
+    )
+
+    raw = build_runtime_input(text="g2 deny-only turn")
+    recorder = CallRecorder()
+    kwargs: dict[str, Any] = {}
+    current = None
+    incoming = _incoming(priority=100)
+    if scenario == "forced":
+        kwargs["safety_guard"] = DefaultSafetyGuard(rules=[HighSafetyRule()])
+    elif scenario == "blocked":
+        kwargs["policy_engine"] = DefaultPolicyEngine(rules=[DenyPolicyRule()])
+    elif scenario == "deferred":
+        current = _current(priority=100)
+        incoming = _incoming(priority=10)
+        kwargs["preemption_engine"] = PreemptionEngine(
+            rules=[
+                PreemptionRule(
+                    current_kind="TEST_CURRENT",
+                    incoming_kind="TEST_INCOMING",
+                    relation=PriorityRelation.LOWER,
+                    interrupt=False,
+                    disposition=IncomingDisposition.DEFER,
+                )
+            ]
+        )
+    else:
+        current = _current(priority=10)
+        kwargs["preemption_engine"] = PreemptionEngine(
+            rules=[
+                PreemptionRule(
+                    current_kind="TEST_CURRENT",
+                    incoming_kind="TEST_INCOMING",
+                    relation=PriorityRelation.HIGHER,
+                    interrupt=True,
+                    disposition=IncomingDisposition.PROCESS_NOW,
+                    when_not_interruptible=IncomingDisposition.DEFER,
+                )
+            ]
+        )
+
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=current, incoming=incoming),
+        **kwargs,
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    expected = {
+        "forced": AlternatePathRequiredError,
+        "blocked": RuntimeControlBlockedError,
+        "deferred": RuntimeControlBlockedError,
+        "preempt": PreemptionEffectRequiredError,
+    }[scenario]
+    with pytest.raises(expected) as captured:
+        await protected.run(raw)
+    error = captured.value
+    if scenario == "forced":
+        assert isinstance(error, AlternatePathRequiredError)
+        assert error.forced_workflow == "TEST_SAFETY_WORKFLOW"
+    elif scenario == "blocked":
+        assert isinstance(error, RuntimeControlBlockedError)
+        assert error.reason_code == "POLICY_BLOCKED"
+    elif scenario == "deferred":
+        assert isinstance(error, RuntimeControlBlockedError)
+        assert error.disposition is IncomingDisposition.DEFER
+    assert protected.last_trace is not None
+    assert protected.last_trace.status is TraceStatus.ERROR
+    assert [e.stage_name for e in protected.last_trace.stage_events] == [
+        "INPUT",
+        "SAFETY_EARLY",
+        "CONTEXT",
+        "UNDERSTANDING",
+        "SAFETY_DEEP",
+        "POLICY",
+    ]
+    assert "PLAN" not in recorder.entries
+    assert "EXECUTE" not in recorder.entries
+    assert "RESPONSE_PLAN" not in recorder.entries
+    assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_cancelled_input_ends_turn_without_downstream() -> None:
+    import asyncio
+
+    from runtime.orchestration.trace import TraceStatus
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input(text="g2 deny-only turn")
+    recorder = CallRecorder()
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    entered = asyncio.Event()
+
+    async def suspended(_raw: Any) -> Any:
+        entered.set()
+        await asyncio.Future()
+
+    protected.input_processor.process = suspended  # type: ignore[method-assign]
+    running = asyncio.create_task(protected.run(raw))
+    await entered.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert protected.last_trace is not None
+    assert protected.last_trace.status is TraceStatus.ERROR
+    assert protected.last_trace.error == "TURN_CANCELLED"
+    assert "EXECUTE" not in recorder.entries
+    assert "RESPONSE_PLAN" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_combined_logging_faults_preserve_policy_failure() -> None:
+    from runtime.orchestration.m2_control import RuntimeControlBlockedError
+    from runtime.orchestration.trace import TraceStatus
+    from runtime.policy_management import DefaultPolicyEngine
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        DenyPolicyRule,
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input(text="g2 deny-only turn")
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=CallRecorder(),
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+        policy_engine=DefaultPolicyEngine(rules=[DenyPolicyRule()]),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    attempts: list[str] = []
+
+    class FaultyLog:
+        def emit(self, record: dict[str, object]) -> None:
+            event = str(record["event"])
+            attempts.append(event)
+            if event in ("STAGE_ERROR", "TURN_END"):
+                raise OSError("G2 combined log fault")
+
+    protected.log_hook = FaultyLog()
+    with pytest.raises(RuntimeControlBlockedError) as blocked:
+        await protected.run(raw)
+    assert blocked.value.reason_code == "POLICY_BLOCKED"
+    assert attempts.count("TURN_END") == 1
+    assert attempts.count("STAGE_ERROR") == 1
+    assert protected.last_trace is not None
+    assert protected.last_trace.status is TraceStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_g2_cleanup_fault_preserves_primary_denial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.validation.m6_no_grant_facade import M6NoGrantTurnHandle
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input(text="g2 deny-only turn")
+    recorder = CallRecorder()
+    legacy, _ = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    original_close = M6NoGrantTurnHandle.close
+    closes: list[bool] = []
+
+    def injected_close(handle: M6NoGrantTurnHandle) -> None:
+        closes.append(True)
+        original_close(handle)
+        raise OSError("injected G2 close fault")
+
+    monkeypatch.setattr(M6NoGrantTurnHandle, "close", injected_close)
+    with pytest.raises(M6DownstreamBlocked):
+        await protected.run(raw)
+    assert closes == [True]
+    assert "RESPONSE_PLAN" not in recorder.entries
+    assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_post_input_origin_mutation_fails_closed() -> None:
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input(text="g2 deny-only turn")
+    recorder = CallRecorder()
+    legacy, _ = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    previous = protected.input_processor.process
+
+    async def altered_input(inp: Any) -> Any:
+        processed = await previous(inp)
+        processed.session_id = "forged-session"
+        return processed
+
+    protected.input_processor.process = altered_input  # type: ignore[method-assign]
+    with pytest.raises(M6FoundationError) as err:
+        await protected.run(raw)
+    assert err.value.code is M6FoundationErrorCode.ORIGIN_CHANGED
+    assert "EXECUTE" not in recorder.entries
+    assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_concurrent_handles_and_traces_stay_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+    from runtime.orchestration.runtime import M6DownstreamBlocked, RuntimeOrchestrator
+    from runtime.orchestration.trace import TraceStatus
+    from runtime.validation.m6_no_grant_facade import M6NoGrantFacadeFactory
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    contexts: list[Any] = []
+    handles: list[Any] = []
+    original_open = RuntimeOrchestrator._open_turn
+    original_factory_open = M6NoGrantFacadeFactory.open_turn
+
+    def capturing_open(self: RuntimeOrchestrator, raw: Any) -> Any:
+        context = original_open(self, raw)
+        contexts.append(context)
+        return context
+
+    def capturing_handle(self: M6NoGrantFacadeFactory, origin: Any) -> Any:
+        handle = original_factory_open(self, origin)
+        handles.append(handle)
+        return handle
+
+    monkeypatch.setattr(RuntimeOrchestrator, "_open_turn", capturing_open)
+    monkeypatch.setattr(M6NoGrantFacadeFactory, "open_turn", capturing_handle)
+    raw = build_runtime_input(text="g2 concurrent a")
+    other = build_runtime_input(text="g2 concurrent b")
+    other.trace_id = "trace-g2-b"
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=CallRecorder(),
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    assert type(protected) is M2RuntimeOrchestrator
+    results = await asyncio.gather(
+        protected.run(raw),
+        protected.run(other),
+        return_exceptions=True,
+    )
+    assert all(isinstance(result, M6DownstreamBlocked) for result in results)
+    assert len(contexts) == 2
+    assert contexts[0] is not contexts[1]
+    assert contexts[0].trace is not contexts[1].trace
+    assert {context.trace.trace_id for context in contexts} == {
+        raw.trace_id,
+        other.trace_id,
+    }
+    assert all(context.trace.status is TraceStatus.ERROR for context in contexts)
+    assert all(context.trace.finished_at is not None for context in contexts)
+    assert len(handles) == 2
+    assert handles[0] is not handles[1]
+    assert handles[0].origin is not handles[1].origin
+    assert {handle.origin.trace_id for handle in handles} == {
+        raw.trace_id,
+        other.trace_id,
+    }
+    assert {handle.origin.request_id for handle in handles} == {raw.request_id}
+
+
+@pytest.mark.asyncio
+async def test_g2_b0_replay_never_reaches_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration import m2_runtime as m2_module
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    original = m2_module._gated_validate
+    replay_rejected: list[bool] = []
+
+    async def checked_validation(
+        handle: Any,
+        execution: Any,
+        context: Any,
+        approved: Any,
+        decisions: Any,
+    ) -> Any:
+        result = await original(handle, execution, context, approved, decisions)
+        with pytest.raises(M6FoundationError) as replay:
+            await handle.validate(execution, context, approved)
+        replay_rejected.append(
+            replay.value.code is M6FoundationErrorCode.ALREADY_VALIDATED
+        )
+        return result
+
+    monkeypatch.setattr(m2_module, "_gated_validate", checked_validation)
+    raw = build_runtime_input(text="g2 deny-only turn")
+    recorder = CallRecorder()
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    with pytest.raises(M6DownstreamBlocked):
+        await protected.run(raw)
+    assert replay_rejected == [True]
+    assert "RESPONSE_PLAN" not in recorder.entries
+    assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_forged_positive_decision_stays_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration import m2_runtime as m2_module
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.validation.no_grant_downstream_policy import NoGrantDownstreamDecision
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    original = m2_module._gated_validate
+
+    async def forged_validate(
+        handle: object,
+        execution: object,
+        context: object,
+        approved: object,
+        decisions: list[NoGrantDownstreamDecision],
+    ) -> object:
+        result = await original(handle, execution, context, approved, decisions)  # type: ignore[arg-type]
+        object.__setattr__(decisions[0], "validation_id", "forged-validation")
+        return result
+
+    monkeypatch.setattr(m2_module, "_gated_validate", forged_validate)
+    raw = build_runtime_input(text="g2 deny-only turn")
+    recorder = CallRecorder()
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    with pytest.raises(M6DownstreamBlocked):
+        await protected.run(raw)
+    assert "RESPONSE_PLAN" not in recorder.entries
+    assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_cross_request_concurrency_with_request_aware_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from runtime.orchestration.runtime import M6DownstreamBlocked, RuntimeOrchestrator
+    from runtime.orchestration.trace import TraceStatus
+    from runtime.validation.m6_no_grant_facade import M6NoGrantFacadeFactory
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    a = build_runtime_input(text="different request a")
+    b = build_runtime_input(text="different request b")
+    b.request_id = "request-002"
+    b.trace_id = "trace-request-002"
+    contexts: list[Any] = []
+    handles: list[Any] = []
+    previous_open = RuntimeOrchestrator._open_turn
+    previous_handle = M6NoGrantFacadeFactory.open_turn
+
+    def capture_turn(self: RuntimeOrchestrator, raw: Any) -> Any:
+        context = previous_open(self, raw)
+        contexts.append(context)
+        return context
+
+    def capture_handle(self: M6NoGrantFacadeFactory, origin: Any) -> Any:
+        handle = previous_handle(self, origin)
+        handles.append(handle)
+        return handle
+
+    monkeypatch.setattr(RuntimeOrchestrator, "_open_turn", capture_turn)
+    monkeypatch.setattr(M6NoGrantFacadeFactory, "open_turn", capture_handle)
+    legacy, _ = await _build_orchestrator(
+        a,
+        recorder=CallRecorder(),
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    original_execute = protected.execution_engine.execute
+
+    async def request_aware_execute(approved: Any, context: Any) -> Any:
+        result = await original_execute(approved, context)
+        return result.model_copy(update={"request_id": approved.request_id})
+
+    protected.execution_engine.execute = request_aware_execute  # type: ignore[method-assign]
+    results = await asyncio.gather(
+        protected.run(a), protected.run(b), return_exceptions=True
+    )
+    assert all(isinstance(item, M6DownstreamBlocked) for item in results)
+    assert {ctx.trace.request_id for ctx in contexts} == {a.request_id, b.request_id}
+    assert all(ctx.trace.status is TraceStatus.ERROR for ctx in contexts)
+    assert len(handles) == 2 and handles[0] is not handles[1]
+    assert {handle.origin.request_id for handle in handles} == {
+        a.request_id,
+        b.request_id,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed_event", ["TURN_START", "STAGE_START", "STAGE_END"])
+async def test_g2_logger_failure_is_terminal_and_no_response(
+    failed_event: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration.errors import StageExecutionError
+    from runtime.orchestration.runtime import RuntimeOrchestrator
+    from runtime.orchestration.trace import StageEventStatus, TraceStatus
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    recorder = CallRecorder()
+    raw = build_runtime_input(text="g2 logger fault")
+    legacy, _ = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    seen: list[str] = []
+    contexts: list[Any] = []
+    original_open = RuntimeOrchestrator._open_turn
+
+    def capture_turn(self: RuntimeOrchestrator, raw_input: Any) -> Any:
+        context = original_open(self, raw_input)
+        contexts.append(context)
+        return context
+
+    monkeypatch.setattr(RuntimeOrchestrator, "_open_turn", capture_turn)
+
+    class FaultLogger:
+        def emit(self, record: dict[str, object]) -> None:
+            event = str(record["event"])
+            seen.append(event)
+            if event == failed_event:
+                raise OSError("injected G2 logger failure")
+
+    protected.log_hook = FaultLogger()
+    expected_error: type[BaseException] = (
+        OSError if failed_event == "TURN_START" else StageExecutionError
+    )
+    with pytest.raises(expected_error):
+        await protected.run(raw)
+    assert protected.last_trace is not None
+    assert protected.last_trace.status is TraceStatus.ERROR
+    assert seen.count("TURN_END") <= 1
+    assert "RESPONSE_PLAN" not in recorder.entries
+    assert "UPDATE" not in recorder.entries
+    if failed_event == "STAGE_END":
+        assert len(contexts) == 1
+        assert contexts[0].stage_results == {}
+        assert all(
+            event.status is not StageEventStatus.SUCCESS
+            for event in contexts[0].trace.stage_events
+        )
+
+
+@pytest.mark.asyncio
+async def test_g2_rejects_positive_decision_permission_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration import m2_runtime as m2_module
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    original = m2_module._gated_validate
+
+    async def forged(
+        handle: Any,
+        execution: Any,
+        context: Any,
+        approved: Any,
+        decisions: Any,
+    ) -> Any:
+        validated = await original(handle, execution, context, approved, decisions)
+        object.__setattr__(decisions[0], "may_emit_positive_claim", True)
+        return validated
+
+    monkeypatch.setattr(m2_module, "_gated_validate", forged)
+    raw = build_runtime_input(text="g2 forged permission")
+    recorder = CallRecorder()
+    legacy, _ = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    with pytest.raises(M6DownstreamBlocked):
+        await protected.run(raw)
+    assert "RESPONSE_PLAN" not in recorder.entries
+    assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_constructor_rejects_missing_bad_factory_and_invalid_mode() -> None:
+    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+    from runtime.orchestration.runtime import M6IntegrationMode
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input(text="g2 constructor")
+    legacy, _ = await _build_orchestrator(
+        raw,
+        recorder=CallRecorder(),
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    dependencies: dict[str, Any] = {
+        "runtime_constraint_evaluator": legacy.runtime_constraint_evaluator,
+        "priority_subject_resolver": legacy.priority_subject_resolver,
+        "input_processor": legacy.input_processor,
+        "safety_guard": legacy.safety_guard,
+        "context_builder": legacy.context_builder,
+        "understanding_engine": legacy.understanding_engine,
+        "policy_engine": legacy.policy_engine,
+        "planner": legacy.planner,
+        "plan_validator": legacy.plan_validator,
+        "policy_rechecker": legacy.policy_rechecker,
+        "execution_engine": legacy.execution_engine,
+        "result_validator": legacy.result_validator,
+        "response_planner": legacy.response_planner,
+        "response_generator": legacy.response_generator,
+        "response_validator": legacy.response_validator,
+        "state_memory_updater": legacy.state_memory_updater,
+    }
+    with pytest.raises(ValueError, match="factory"):
+        M2RuntimeOrchestrator(
+            **dependencies, m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED
+        )
+    with pytest.raises(ValueError, match="factory"):
+        M2RuntimeOrchestrator(
+            **dependencies,
+            m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
+            m6_no_grant_factory=object(),
+        )
+    with pytest.raises(ValueError, match="mode"):
+        M2RuntimeOrchestrator(**dependencies, m6_integration_mode="DENY_ONLY_GATED")

@@ -7,6 +7,7 @@ introduced.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from runtime.constraint_management import RuntimeConstraint, RuntimeConstraintEvaluator
@@ -25,17 +26,33 @@ from runtime.contracts import (
     UpdateResult,
     ValidatedResult,
 )
-from runtime.orchestration.context import RuntimeTurnOutcome
-from runtime.orchestration.errors import OrchestrationInvariantError
+from runtime.orchestration.context import RuntimeTurnOutcome, TurnExecutionContext
+from runtime.orchestration.errors import (
+    OrchestrationInvariantError,
+    RuntimeOrchestrationError,
+    StageExecutionError,
+)
 from runtime.orchestration.m2_control import (
     AlternatePathRequiredError,
     PreemptionEffectRequiredError,
     PrioritySubjectResolver,
     RuntimeControlBlockedError,
 )
-from runtime.orchestration.runtime import RuntimeOrchestrator
+from runtime.orchestration.m6_terminalization import finish_turn_once
+from runtime.orchestration.runtime import (
+    M6DownstreamBlocked,
+    M6IntegrationMode,
+    RuntimeOrchestrator,
+    _assert_denied,
+    _gated_validate,
+)
 from runtime.orchestration.trace import TraceStatus
 from runtime.priority_management import IncomingDisposition
+from runtime.validation.m6_no_grant_facade import (
+    M6NoGrantTurnHandle,
+    TurnOriginSnapshot,
+)
+from runtime.validation.no_grant_downstream_policy import NoGrantDownstreamDecision
 
 
 class M2RuntimeOrchestrator(RuntimeOrchestrator):
@@ -58,188 +75,262 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
         self.priority_subject_resolver = priority_subject_resolver
 
     async def run(self, runtime_input: RuntimeInput) -> RuntimeTurnOutcome:
-        """Execute one turn with M2 control evaluated inside the POLICY call point."""
-        turn_context = self._open_turn(runtime_input)
+        """Execute M2 POLICY with optional per-turn deny-only protection."""
+        origin: TurnOriginSnapshot | None = None
+        handle: M6NoGrantTurnHandle | None = None
+        owned_turns: list[TurnExecutionContext] | None = None
+        if self._m6_mode is not M6IntegrationMode.LEGACY_TEST_COMPAT:
+            origin = TurnOriginSnapshot.from_runtime_input(runtime_input)
+            if self._m6_factory is None:
+                raise RuntimeError("G2 facade factory is missing")
+            handle = self._m6_factory.open_turn(origin)
+            owned_turns = []
 
-        processed_input = await self._run_stage(
-            turn_context,
-            "INPUT",
-            self.input_processor.process(runtime_input),
-            RuntimeInput,
-            input_contract_type="RuntimeInput",
-        )
+        primary: BaseException | None = None
+        try:
+            turn_context = self._open_turn(runtime_input)
+            if owned_turns is not None:
+                owned_turns.append(turn_context)
 
-        early_safety = await self._run_stage(
-            turn_context,
-            "SAFETY_EARLY",
-            self.safety_guard.evaluate_early(processed_input),
-            SafetyResult,
-            input_contract_type="RuntimeInput",
-            invariant_check=lambda safety_result: self._assert_safety_phase(
-                safety_result, SafetyPhase.EARLY, "SAFETY_EARLY"
-            ),
-        )
+            processed_input = await self._run_stage(
+                turn_context,
+                "INPUT",
+                self.input_processor.process(runtime_input),
+                RuntimeInput,
+                input_contract_type="RuntimeInput",
+            )
 
-        runtime_context = await self._run_stage(
-            turn_context,
-            "CONTEXT",
-            self.context_builder.build(processed_input, early_safety),
-            RuntimeContext,
-            input_contract_type="RuntimeInput",
-        )
+            if origin is not None:
+                origin.assert_processed_identity(processed_input)
 
-        understanding_state = await self._run_stage(
-            turn_context,
-            "UNDERSTANDING",
-            self.understanding_engine.understand(processed_input, runtime_context),
-            UnderstandingState,
-            input_contract_type="RuntimeInput",
-        )
+            early_safety = await self._run_stage(
+                turn_context,
+                "SAFETY_EARLY",
+                self.safety_guard.evaluate_early(processed_input),
+                SafetyResult,
+                input_contract_type="RuntimeInput",
+                invariant_check=lambda safety_result: self._assert_safety_phase(
+                    safety_result, SafetyPhase.EARLY, "SAFETY_EARLY"
+                ),
+            )
 
-        deep_safety = await self._run_stage(
-            turn_context,
-            "SAFETY_DEEP",
-            self.safety_guard.evaluate_deep(
-                processed_input,
-                runtime_context,
-                understanding_state,
-                early_safety,
-            ),
-            SafetyResult,
-            input_contract_type="UnderstandingState",
-            invariant_check=lambda safety_result: self._assert_safety_phase(
-                safety_result, SafetyPhase.DEEP, "SAFETY_DEEP"
-            ),
-        )
+            runtime_context = await self._run_stage(
+                turn_context,
+                "CONTEXT",
+                self.context_builder.build(processed_input, early_safety),
+                RuntimeContext,
+                input_contract_type="RuntimeInput",
+            )
 
-        constraint_box: list[RuntimeConstraint] = []
-        policy_decision = await self._run_stage(
-            turn_context,
-            "POLICY",
-            self._evaluate_integrated_policy(
-                processed_input,
-                runtime_context,
-                understanding_state,
-                deep_safety,
-                constraint_box,
-            ),
-            PolicyDecision,
-            input_contract_type="SafetyResult",
-            invariant_check=lambda decision: (
-                self._assert_runtime_constraint_allows_flow(
+            understanding_state = await self._run_stage(
+                turn_context,
+                "UNDERSTANDING",
+                self.understanding_engine.understand(processed_input, runtime_context),
+                UnderstandingState,
+                input_contract_type="RuntimeInput",
+            )
+
+            deep_safety = await self._run_stage(
+                turn_context,
+                "SAFETY_DEEP",
+                self.safety_guard.evaluate_deep(
+                    processed_input,
+                    runtime_context,
+                    understanding_state,
+                    early_safety,
+                ),
+                SafetyResult,
+                input_contract_type="UnderstandingState",
+                invariant_check=lambda safety_result: self._assert_safety_phase(
+                    safety_result, SafetyPhase.DEEP, "SAFETY_DEEP"
+                ),
+            )
+
+            constraint_box: list[RuntimeConstraint] = []
+            policy_decision = await self._run_stage(
+                turn_context,
+                "POLICY",
+                self._evaluate_integrated_policy(
+                    processed_input,
+                    runtime_context,
+                    understanding_state,
+                    deep_safety,
                     constraint_box,
-                    processed_input.request_id,
-                    decision,
-                )
-            ),
-        )
+                ),
+                PolicyDecision,
+                input_contract_type="SafetyResult",
+                invariant_check=lambda decision: (
+                    self._assert_runtime_constraint_allows_flow(
+                        constraint_box,
+                        processed_input.request_id,
+                        decision,
+                    )
+                ),
+            )
 
-        action_plan_draft = await self._run_stage(
-            turn_context,
-            "PLAN",
-            self.planner.plan(runtime_context, understanding_state, policy_decision),
-            ActionPlanDraft,
-            input_contract_type="PolicyDecision",
-            invariant_check=lambda draft: self._assert_plan_request_id(
-                draft.request_id,
-                processed_input.request_id,
+            action_plan_draft = await self._run_stage(
+                turn_context,
                 "PLAN",
-            ),
-        )
+                self.planner.plan(
+                    runtime_context, understanding_state, policy_decision
+                ),
+                ActionPlanDraft,
+                input_contract_type="PolicyDecision",
+                invariant_check=lambda draft: self._assert_plan_request_id(
+                    draft.request_id,
+                    processed_input.request_id,
+                    "PLAN",
+                ),
+            )
 
-        validated_draft = await self._run_stage(
-            turn_context,
-            "PLAN_VALIDATE",
-            self.plan_validator.validate(action_plan_draft),
-            ActionPlanDraft,
-            input_contract_type="ActionPlanDraft",
-            invariant_check=lambda draft: self._assert_plan_request_id(
-                draft.request_id,
-                processed_input.request_id,
+            validated_draft = await self._run_stage(
+                turn_context,
                 "PLAN_VALIDATE",
-            ),
-        )
+                self.plan_validator.validate(action_plan_draft),
+                ActionPlanDraft,
+                input_contract_type="ActionPlanDraft",
+                invariant_check=lambda draft: self._assert_plan_request_id(
+                    draft.request_id,
+                    processed_input.request_id,
+                    "PLAN_VALIDATE",
+                ),
+            )
 
-        approved_action_plan = await self._run_stage(
-            turn_context,
-            "POLICY_RECHECK",
-            self.policy_rechecker.recheck(validated_draft, policy_decision),
-            ApprovedActionPlan,
-            input_contract_type="ActionPlanDraft",
-            invariant_check=lambda plan: self._assert_approved_for_turn(
-                plan,
-                processed_input.request_id,
-            ),
-        )
+            approved_action_plan = await self._run_stage(
+                turn_context,
+                "POLICY_RECHECK",
+                self.policy_rechecker.recheck(validated_draft, policy_decision),
+                ApprovedActionPlan,
+                input_contract_type="ActionPlanDraft",
+                invariant_check=lambda plan: self._assert_approved_for_turn(
+                    plan,
+                    processed_input.request_id,
+                ),
+            )
 
-        execution_result = await self._run_stage(
-            turn_context,
-            "EXECUTE",
-            self.execution_engine.execute(approved_action_plan, runtime_context),
-            ExecutionResult,
-            input_contract_type="ApprovedActionPlan",
-        )
+            execution_result = await self._run_stage(
+                turn_context,
+                "EXECUTE",
+                self.execution_engine.execute(approved_action_plan, runtime_context),
+                ExecutionResult,
+                input_contract_type="ApprovedActionPlan",
+            )
 
-        validated_result = await self._run_stage(
-            turn_context,
-            "RESULT_VALIDATE",
-            self.result_validator.validate(
-                execution_result, runtime_context, approved_action_plan
-            ),
-            ValidatedResult,
-            input_contract_type="ExecutionResult",
-        )
+            decisions: list[NoGrantDownstreamDecision] = []
+            validation = (
+                _gated_validate(
+                    handle,
+                    execution_result,
+                    runtime_context,
+                    approved_action_plan,
+                    decisions,
+                )
+                if handle is not None
+                else self.result_validator.validate(
+                    execution_result, runtime_context, approved_action_plan
+                )
+            )
+            validated_result = await self._run_stage(
+                turn_context,
+                "RESULT_VALIDATE",
+                validation,
+                ValidatedResult,
+                input_contract_type="ExecutionResult",
+            )
+            if origin is not None:
+                _assert_denied(
+                    decisions,
+                    validated_result,
+                    execution_result,
+                    runtime_context,
+                    origin,
+                )
+                raise M6DownstreamBlocked()
 
-        response_plan = await self._run_stage(
-            turn_context,
-            "RESPONSE_PLAN",
-            self.response_planner.plan(
-                validated_result,
-                runtime_context,
-                understanding_state,
-                approved_action_plan,
-            ),
-            ResponsePlan,
-            input_contract_type="ValidatedResult",
-        )
+            response_plan = await self._run_stage(
+                turn_context,
+                "RESPONSE_PLAN",
+                self.response_planner.plan(
+                    validated_result,
+                    runtime_context,
+                    understanding_state,
+                    approved_action_plan,
+                ),
+                ResponsePlan,
+                input_contract_type="ValidatedResult",
+            )
 
-        generated_response = await self._run_stage(
-            turn_context,
-            "RESPONSE_GENERATE",
-            self.response_generator.generate(response_plan),
-            RuntimeResponse,
-            input_contract_type="ResponsePlan",
-        )
+            generated_response = await self._run_stage(
+                turn_context,
+                "RESPONSE_GENERATE",
+                self.response_generator.generate(response_plan),
+                RuntimeResponse,
+                input_contract_type="ResponsePlan",
+            )
 
-        runtime_response = await self._run_stage(
-            turn_context,
-            "RESPONSE_VALIDATE",
-            self.response_validator.validate(generated_response, validated_result),
-            RuntimeResponse,
-            input_contract_type="RuntimeResponse",
-        )
+            runtime_response = await self._run_stage(
+                turn_context,
+                "RESPONSE_VALIDATE",
+                self.response_validator.validate(generated_response, validated_result),
+                RuntimeResponse,
+                input_contract_type="RuntimeResponse",
+            )
 
-        update_result = await self._run_stage(
-            turn_context,
-            "UPDATE",
-            self.state_memory_updater.update(
-                processed_input,
-                runtime_context,
-                understanding_state,
-                approved_action_plan,
-                validated_result,
-                runtime_response,
-            ),
-            UpdateResult,
-            input_contract_type="RuntimeResponse",
-        )
+            update_result = await self._run_stage(
+                turn_context,
+                "UPDATE",
+                self.state_memory_updater.update(
+                    processed_input,
+                    runtime_context,
+                    understanding_state,
+                    approved_action_plan,
+                    validated_result,
+                    runtime_response,
+                ),
+                UpdateResult,
+                input_contract_type="RuntimeResponse",
+            )
 
-        self._close_turn(turn_context, TraceStatus.SUCCESS)
-        return RuntimeTurnOutcome(
-            runtime_response=runtime_response,
-            update_result=update_result,
-            turn_context=turn_context,
-        )
+            self._close_turn(turn_context, TraceStatus.SUCCESS)
+            outcome = RuntimeTurnOutcome(
+                runtime_response=runtime_response,
+                update_result=update_result,
+                turn_context=turn_context,
+            )
+            if handle is not None:
+                raise M6DownstreamBlocked()
+            return outcome
+        except BaseException as error:
+            primary = error
+            if owned_turns:
+                turn = owned_turns[0]
+                reason = (
+                    "TURN_CANCELLED"
+                    if isinstance(error, asyncio.CancelledError)
+                    else error.error_code
+                    if isinstance(error, RuntimeOrchestrationError)
+                    else "G2_TURN_FAILURE"
+                )
+                try:
+                    finish_turn_once(
+                        turn.trace,
+                        TraceStatus.ERROR,
+                        reason,
+                        primary_exception=error,
+                        emit_turn_end=lambda trace: self._emit_log(
+                            turn, event="TURN_END", status=trace.status.value
+                        ),
+                    )
+                except Exception:  # noqa: BLE001,S110
+                    pass
+            raise
+        finally:
+            if handle is not None:
+                try:
+                    handle.close()
+                except Exception as cleanup:
+                    if primary is None:
+                        raise StageExecutionError("M6_CLEANUP", cleanup) from cleanup
 
     async def _evaluate_integrated_policy(
         self,

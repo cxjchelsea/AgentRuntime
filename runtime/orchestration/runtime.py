@@ -261,6 +261,9 @@ class RuntimeOrchestrator:
             input_contract_type="RuntimeInput",
         )
 
+        if origin is not None:
+            origin.assert_processed_identity(processed_input)
+
         early_safety = await self._run_stage(
             turn_context,
             "SAFETY_EARLY",
@@ -347,15 +350,24 @@ class RuntimeOrchestrator:
             input_contract_type="ApprovedActionPlan",
         )
 
+        decisions: list[NoGrantDownstreamDecision] = []
+        validation_call = (
+            _gated_validate(handle, execution_result, runtime_context, approved_action_plan, decisions)
+            if handle is not None
+            else self.result_validator.validate(
+                execution_result, runtime_context, approved_action_plan
+            )
+        )
         validated_result = await self._run_stage(
             turn_context,
             "RESULT_VALIDATE",
-            self.result_validator.validate(
-                execution_result, runtime_context, approved_action_plan
-            ),
+            validation_call,
             ValidatedResult,
             input_contract_type="ExecutionResult",
         )
+        if origin is not None:
+            _assert_denied(decisions, validated_result, execution_result, runtime_context, origin)
+            raise M6DownstreamBlocked()
 
         response_plan = await self._run_stage(
             turn_context,

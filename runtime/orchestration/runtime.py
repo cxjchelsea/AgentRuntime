@@ -142,6 +142,8 @@ class RuntimeOrchestrator:
         state_memory_updater: StateMemoryUpdater,
         skill_registry: SkillRegistry | None = None,
         log_hook: RuntimeLogHook | None = None,
+        m6_integration_mode: M6IntegrationMode = M6IntegrationMode.LEGACY_TEST_COMPAT,
+        m6_no_grant_factory: M6NoGrantFacadeFactory | None = None,
     ) -> None:
         required_dependencies: dict[str, object | None] = {
             "input_processor": input_processor,
@@ -186,11 +188,70 @@ class RuntimeOrchestrator:
         self.log_hook: RuntimeLogHook = (
             log_hook if log_hook is not None else StdlibStructuredLogHook()
         )
+        if type(m6_integration_mode) is not M6IntegrationMode:
+            raise ValueError("Invalid G1 integration mode")
+        if m6_integration_mode is M6IntegrationMode.DENY_ONLY_GATED:
+            if type(self) is not RuntimeOrchestrator:
+                raise ValueError("G1 mode is not authorized for subclasses")
+            if type(m6_no_grant_factory) is not M6NoGrantFacadeFactory:
+                raise ValueError("Gated mode requires an exact M6 facade factory")
+        elif m6_no_grant_factory is not None:
+            raise ValueError("Legacy mode cannot accept a gated facade")
+        self._m6_mode = m6_integration_mode
+        self._m6_factory = m6_no_grant_factory
         self.last_trace: TraceContext | None = None
 
     async def run(self, runtime_input: RuntimeInput) -> RuntimeTurnOutcome:
-        """按冻结主链执行一轮。成功才返回 Response + UpdateResult。"""
+        """Explicit G1 protection; inherited M2 run remains separately controlled."""
+        if self._m6_mode is M6IntegrationMode.LEGACY_TEST_COMPAT:
+            return await self._run_pipeline(runtime_input, None, None, None)
+        origin = TurnOriginSnapshot.from_runtime_input(runtime_input)
+        if self._m6_factory is None:
+            raise RuntimeError("G1 factory is missing")
+        handle = self._m6_factory.open_turn(origin)
+        owned_turns: list[TurnExecutionContext] = []
+        primary: BaseException | None = None
+        try:
+            await self._run_pipeline(runtime_input, origin, handle, owned_turns)
+            raise M6DownstreamBlocked()
+        except BaseException as error:
+            primary = error
+            if owned_turns:
+                turn = owned_turns[0]
+                reason = (
+                    "TURN_CANCELLED" if isinstance(error, asyncio.CancelledError)
+                    else error.error_code if isinstance(error, RuntimeOrchestrationError)
+                    else "G1_TURN_FAILURE"
+                )
+                try:
+                    finish_turn_once(
+                        turn.trace, TraceStatus.ERROR, reason,
+                        primary_exception=error,
+                        emit_turn_end=lambda trace: self._emit_log(
+                            turn, event="TURN_END", status=trace.status.value
+                        ),
+                    )
+                except Exception:
+                    pass
+            raise
+        finally:
+            try:
+                handle.close()
+            except Exception as cleanup:
+                if primary is None:
+                    raise StageExecutionError("M6_CLEANUP", cleanup) from cleanup
+
+    async def _run_pipeline(
+        self,
+        runtime_input: RuntimeInput,
+        origin: TurnOriginSnapshot | None,
+        handle: M6NoGrantTurnHandle | None,
+        owned_turns: list[TurnExecutionContext] | None,
+    ) -> RuntimeTurnOutcome:
+        """Existing stage sequence, with a single gated RESULT_VALIDATE alternative."""
         turn_context = self._open_turn(runtime_input)
+        if owned_turns is not None:
+            owned_turns.append(turn_context)
 
         processed_input = await self._run_stage(
             turn_context,

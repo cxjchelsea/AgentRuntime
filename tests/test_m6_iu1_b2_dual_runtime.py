@@ -1367,7 +1367,8 @@ async def test_g2_cross_request_concurrency_with_request_aware_execution(
     monkeypatch.setattr(RuntimeOrchestrator, "_open_turn", capture_turn)
     monkeypatch.setattr(M6NoGrantFacadeFactory, "open_turn", capture_handle)
     legacy, _ = await _build_orchestrator(
-        a, recorder=CallRecorder(),
+        a,
+        recorder=CallRecorder(),
         resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
     )
     protected = _g2_protected_from_legacy(legacy)
@@ -1382,13 +1383,12 @@ async def test_g2_cross_request_concurrency_with_request_aware_execution(
         protected.run(a), protected.run(b), return_exceptions=True
     )
     assert all(isinstance(item, M6DownstreamBlocked) for item in results)
-    assert {ctx.trace.request_id for ctx in contexts} == {
-        a.request_id, b.request_id
-    }
+    assert {ctx.trace.request_id for ctx in contexts} == {a.request_id, b.request_id}
     assert all(ctx.trace.status is TraceStatus.ERROR for ctx in contexts)
     assert len(handles) == 2 and handles[0] is not handles[1]
     assert {handle.origin.request_id for handle in handles} == {
-        a.request_id, b.request_id
+        a.request_id,
+        b.request_id,
     }
 
 
@@ -1396,8 +1396,11 @@ async def test_g2_cross_request_concurrency_with_request_aware_execution(
 @pytest.mark.parametrize("failed_event", ["TURN_START", "STAGE_START", "STAGE_END"])
 async def test_g2_logger_failure_is_terminal_and_no_response(
     failed_event: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from runtime.orchestration.trace import TraceStatus
+    from runtime.orchestration.errors import StageExecutionError
+    from runtime.orchestration.runtime import RuntimeOrchestrator
+    from runtime.orchestration.trace import StageEventStatus, TraceStatus
     from tests.orchestration_stubs import CallRecorder
     from tests.test_m2_runtime_integration_gate import (
         StaticPrioritySubjectResolver,
@@ -1408,11 +1411,21 @@ async def test_g2_logger_failure_is_terminal_and_no_response(
     recorder = CallRecorder()
     raw = build_runtime_input(text="g2 logger fault")
     legacy, _ = await _build_orchestrator(
-        raw, recorder=recorder,
+        raw,
+        recorder=recorder,
         resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
     )
     protected = _g2_protected_from_legacy(legacy)
     seen: list[str] = []
+    contexts: list[Any] = []
+    original_open = RuntimeOrchestrator._open_turn
+
+    def capture_turn(self: RuntimeOrchestrator, raw_input: Any) -> Any:
+        context = original_open(self, raw_input)
+        contexts.append(context)
+        return context
+
+    monkeypatch.setattr(RuntimeOrchestrator, "_open_turn", capture_turn)
 
     class FaultLogger:
         def emit(self, record: dict[str, object]) -> None:
@@ -1422,13 +1435,23 @@ async def test_g2_logger_failure_is_terminal_and_no_response(
                 raise OSError("injected G2 logger failure")
 
     protected.log_hook = FaultLogger()
-    with pytest.raises(Exception):
+    expected_error: type[BaseException] = (
+        OSError if failed_event == "TURN_START" else StageExecutionError
+    )
+    with pytest.raises(expected_error):
         await protected.run(raw)
     assert protected.last_trace is not None
     assert protected.last_trace.status is TraceStatus.ERROR
     assert seen.count("TURN_END") <= 1
     assert "RESPONSE_PLAN" not in recorder.entries
     assert "UPDATE" not in recorder.entries
+    if failed_event == "STAGE_END":
+        assert len(contexts) == 1
+        assert contexts[0].stage_results == {}
+        assert all(
+            event.status is not StageEventStatus.SUCCESS
+            for event in contexts[0].trace.stage_events
+        )
 
 
 @pytest.mark.asyncio
@@ -1447,7 +1470,10 @@ async def test_g2_rejects_positive_decision_permission_flags(
     original = m2_module._gated_validate
 
     async def forged(
-        handle: Any, execution: Any, context: Any, approved: Any,
+        handle: Any,
+        execution: Any,
+        context: Any,
+        approved: Any,
         decisions: Any,
     ) -> Any:
         validated = await original(handle, execution, context, approved, decisions)
@@ -1458,7 +1484,8 @@ async def test_g2_rejects_positive_decision_permission_flags(
     raw = build_runtime_input(text="g2 forged permission")
     recorder = CallRecorder()
     legacy, _ = await _build_orchestrator(
-        raw, recorder=recorder,
+        raw,
+        recorder=recorder,
         resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
     )
     protected = _g2_protected_from_legacy(legacy)
@@ -1481,7 +1508,8 @@ async def test_g2_constructor_rejects_missing_bad_factory_and_invalid_mode() -> 
 
     raw = build_runtime_input(text="g2 constructor")
     legacy, _ = await _build_orchestrator(
-        raw, recorder=CallRecorder(),
+        raw,
+        recorder=CallRecorder(),
         resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
     )
     dependencies: dict[str, Any] = {
@@ -1513,6 +1541,4 @@ async def test_g2_constructor_rejects_missing_bad_factory_and_invalid_mode() -> 
             m6_no_grant_factory=object(),
         )
     with pytest.raises(ValueError, match="mode"):
-        M2RuntimeOrchestrator(
-            **dependencies, m6_integration_mode="DENY_ONLY_GATED"
-        )
+        M2RuntimeOrchestrator(**dependencies, m6_integration_mode="DENY_ONLY_GATED")

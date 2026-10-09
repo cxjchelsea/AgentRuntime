@@ -98,7 +98,12 @@ class M6NoGrantTurnHandle:
     def __init__(self, origin: TurnOriginSnapshot) -> None:
         if type(origin) is not TurnOriginSnapshot or not all(
             _valid_id(v)
-            for v in (origin.request_id, origin.session_id, origin.identity_scope, origin.trace_id)
+            for v in (
+                origin.request_id,
+                origin.session_id,
+                origin.identity_scope,
+                origin.trace_id,
+            )
         ):
             raise M6FoundationError(M6FoundationErrorCode.INVALID_ORIGIN)
         self.origin = origin

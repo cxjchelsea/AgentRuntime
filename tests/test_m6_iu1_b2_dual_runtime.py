@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -403,3 +404,403 @@ def test_f02_duplicate_terminal_calls_do_not_reemit() -> None:
     assert attempts == ["end"]
     assert trace.error == "FIRST"
     assert trace.finished_at == original_time
+
+
+# G1: concrete RuntimeOrchestrator only. G2 remains deliberately unauthorized.
+
+
+def _g1_orchestrator() -> tuple[Any, Any]:
+    from runtime.contracts import ActionPlanDraft, ApprovedActionPlan, PolicyDecision
+    from runtime.orchestration.runtime import M6IntegrationMode, RuntimeOrchestrator
+    from tests.orchestration_stubs import StubPolicyRechecker
+    from tests.test_runtime_orchestrator import _StubBundle
+
+    class CanonicalPolicyRechecker(StubPolicyRechecker):
+        async def recheck(
+            self, draft: ActionPlanDraft, policy: PolicyDecision
+        ) -> ApprovedActionPlan:
+            approved = await super().recheck(draft, policy)
+            approved.policy_snapshot = build_policy_decision().model_dump(mode="json")
+            return approved
+
+    bundle = _StubBundle()
+    bundle.policy_rechecker = CanonicalPolicyRechecker(bundle.call_recorder)
+    orchestrator = RuntimeOrchestrator(
+        input_processor=bundle.input_processor,
+        safety_guard=bundle.safety_guard,
+        context_builder=bundle.context_builder,
+        understanding_engine=bundle.understanding_engine,
+        policy_engine=bundle.policy_engine,
+        planner=bundle.planner,
+        plan_validator=bundle.plan_validator,
+        policy_rechecker=bundle.policy_rechecker,
+        execution_engine=bundle.execution_engine,
+        result_validator=bundle.result_validator,
+        response_planner=bundle.response_planner,
+        response_generator=bundle.response_generator,
+        response_validator=bundle.response_validator,
+        state_memory_updater=bundle.state_memory_updater,
+        m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
+        m6_no_grant_factory=M6NoGrantFacadeFactory(),
+    )
+    return orchestrator, bundle
+
+
+@pytest.mark.asyncio
+async def test_g1_denies_before_any_response_or_update() -> None:
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    with pytest.raises(M6DownstreamBlocked) as blocked:
+        await orchestrator.run(build_runtime_input())
+    assert blocked.value.error_code == "NO_GRANT_DOWNSTREAM_BLOCKED"
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "RESPONSE_GENERATE" not in bundle.call_recorder.entries
+    assert "RESPONSE_VALIDATE" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+    assert "RESULT_VALIDATE" not in bundle.call_recorder.entries
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_g1_constructor_rejects_missing_facade() -> None:
+    from runtime.orchestration.runtime import M6IntegrationMode, RuntimeOrchestrator
+    from tests.test_runtime_orchestrator import _StubBundle
+
+    bundle = _StubBundle()
+    with pytest.raises(ValueError, match="factory"):
+        RuntimeOrchestrator(
+            input_processor=bundle.input_processor,
+            safety_guard=bundle.safety_guard,
+            context_builder=bundle.context_builder,
+            understanding_engine=bundle.understanding_engine,
+            policy_engine=bundle.policy_engine,
+            planner=bundle.planner,
+            plan_validator=bundle.plan_validator,
+            policy_rechecker=bundle.policy_rechecker,
+            execution_engine=bundle.execution_engine,
+            result_validator=bundle.result_validator,
+            response_planner=bundle.response_planner,
+            response_generator=bundle.response_generator,
+            response_validator=bundle.response_validator,
+            state_memory_updater=bundle.state_memory_updater,
+            m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
+        )
+
+
+class _G1FailingLog:
+    def __init__(self, event: str) -> None:
+        self.event = event
+        self.attempts: list[str] = []
+
+    def emit(self, record: dict[str, object]) -> None:
+        event = str(record["event"])
+        self.attempts.append(event)
+        if event == self.event:
+            raise OSError("injected log failure")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "event", ["TURN_START", "STAGE_START", "STAGE_END", "TURN_END"]
+)
+async def test_g1_log_failure_never_returns_success(event: str) -> None:
+    from runtime.orchestration.errors import StageExecutionError
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    hook = _G1FailingLog(event)
+    orchestrator.log_hook = hook
+    with pytest.raises((OSError, StageExecutionError, M6DownstreamBlocked)):
+        await orchestrator.run(build_runtime_input())
+    assert orchestrator.last_trace is not None
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+    assert orchestrator.last_trace.finished_at is not None
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+    assert hook.attempts.count("TURN_END") <= 1
+
+
+@pytest.mark.asyncio
+async def test_g1_input_identity_mutation_prevents_execution() -> None:
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    original = orchestrator.input_processor.process
+
+    async def changed_identity(raw: object) -> object:
+        processed = await original(raw)  # type: ignore[arg-type]
+        processed.session_id = "forged-session"
+        return processed
+
+    orchestrator.input_processor.process = changed_identity  # type: ignore[method-assign]
+    with pytest.raises(M6FoundationError) as rejection:
+        await orchestrator.run(build_runtime_input())
+    assert rejection.value.code is M6FoundationErrorCode.ORIGIN_CHANGED
+    assert orchestrator.last_trace is not None
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+    assert "EXECUTE" not in bundle.call_recorder.entries
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_stage_end_log_failure_has_no_success_marker() -> None:
+    from runtime.orchestration.errors import StageExecutionError
+    from runtime.orchestration.trace import StageEventStatus, TraceStatus
+
+    orchestrator, _bundle = _g1_orchestrator()
+    captured: list[Any] = []
+    original_fail = orchestrator._fail_stage
+
+    def capture_failure(turn: Any, *args: Any) -> None:
+        captured.append(turn)
+        original_fail(turn, *args)
+
+    orchestrator._fail_stage = capture_failure
+    orchestrator.log_hook = _G1FailingLog("STAGE_END")
+    with pytest.raises(StageExecutionError):
+        await orchestrator.run(build_runtime_input())
+    trace = orchestrator.last_trace
+    assert trace is not None
+    assert trace.status is TraceStatus.ERROR
+    assert trace.stage_events[0].status is StageEventStatus.ERROR
+    assert len(captured) == 1
+    assert "INPUT" not in captured[0].stage_results
+
+
+@pytest.mark.asyncio
+async def test_g1_cancelled_awaited_input_keeps_original_cancellation() -> None:
+    import asyncio
+
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    started = asyncio.Event()
+
+    async def cancellable_input(_raw: object) -> None:
+        started.set()
+        await asyncio.Future()
+
+    orchestrator.input_processor.process = cancellable_input  # type: ignore[method-assign]
+    task = asyncio.create_task(orchestrator.run(build_runtime_input()))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert orchestrator.last_trace is not None
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+    assert orchestrator.last_trace.error == "TURN_CANCELLED"
+    assert "EXECUTE" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_parallel_turns_are_denied_without_downstream() -> None:
+    import asyncio
+
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    a = build_runtime_input()
+    b = build_runtime_input()
+    b.trace_id = "trace-parallel-b"
+    results = await asyncio.gather(
+        orchestrator.run(a), orchestrator.run(b), return_exceptions=True
+    )
+    assert all(isinstance(result, M6DownstreamBlocked) for result in results)
+    assert orchestrator.last_trace is not None
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_rejects_forged_positive_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration import runtime as runtime_module
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.validation.no_grant_downstream_policy import NoGrantDownstreamDecision
+
+    original = runtime_module._gated_validate
+
+    async def forged_validate(
+        handle: object,
+        execution: object,
+        context: object,
+        approved: object,
+        decisions: list[NoGrantDownstreamDecision],
+    ) -> object:
+        result = await original(handle, execution, context, approved, decisions)  # type: ignore[arg-type]
+        # The decision is immutable, but a caller-local box must still reject
+        # deliberately corrupted correlation before downstream entry.
+        object.__setattr__(decisions[0], "validation_id", "forged-validation")
+        return result
+
+    monkeypatch.setattr(runtime_module, "_gated_validate", forged_validate)
+    orchestrator, bundle = _g1_orchestrator()
+    with pytest.raises(M6DownstreamBlocked):
+        await orchestrator.run(build_runtime_input())
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_cleanup_failure_does_not_mask_denial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.validation.m6_no_grant_facade import M6NoGrantTurnHandle
+
+    attempts: list[str] = []
+    original_close = M6NoGrantTurnHandle.close
+
+    def failing_close(self: M6NoGrantTurnHandle) -> None:
+        attempts.append("close")
+        original_close(self)
+        raise OSError("injected close failure")
+
+    monkeypatch.setattr(M6NoGrantTurnHandle, "close", failing_close)
+    orchestrator, bundle = _g1_orchestrator()
+    with pytest.raises(M6DownstreamBlocked):
+        await orchestrator.run(build_runtime_input())
+    assert attempts == ["close"]
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_stage_error_and_terminal_log_fault_keep_primary() -> None:
+    from runtime.orchestration.errors import StageExecutionError
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    seen: list[str] = []
+
+    class DoubleFaultLog:
+        def emit(self, record: dict[str, object]) -> None:
+            event = str(record["event"])
+            seen.append(event)
+            if event in ("TURN_END", "STAGE_ERROR"):
+                raise OSError("injected combined logger failure")
+
+    orchestrator.log_hook = DoubleFaultLog()
+
+    async def failing_input(_raw: object) -> None:
+        raise RuntimeError("original input error")
+
+    orchestrator.input_processor.process = failing_input  # type: ignore[method-assign]
+    with pytest.raises(StageExecutionError) as caught:
+        await orchestrator.run(build_runtime_input())
+    assert isinstance(caught.value.cause, RuntimeError)
+    assert str(caught.value.cause) == "original input error"
+    assert seen.count("TURN_END") == 1
+    assert seen.count("STAGE_ERROR") == 1
+    assert orchestrator.last_trace is not None
+    assert orchestrator.last_trace.status is TraceStatus.ERROR
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_b0_replay_fails_and_never_reaches_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration import runtime as runtime_module
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+
+    original = runtime_module._gated_validate
+    replay_rejected: list[bool] = []
+
+    async def checked_validation(
+        handle: Any,
+        execution: Any,
+        context: Any,
+        approved: Any,
+        decisions: Any,
+    ) -> Any:
+        result = await original(handle, execution, context, approved, decisions)
+        with pytest.raises(M6FoundationError) as replay:
+            await handle.validate(execution, context, approved)
+        replay_rejected.append(
+            replay.value.code is M6FoundationErrorCode.ALREADY_VALIDATED
+        )
+        return result
+
+    monkeypatch.setattr(runtime_module, "_gated_validate", checked_validation)
+    orchestrator, bundle = _g1_orchestrator()
+    with pytest.raises(M6DownstreamBlocked):
+        await orchestrator.run(build_runtime_input())
+    assert replay_rejected == [True]
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g1_stage_prefix_and_legacy_regression() -> None:
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+
+    orchestrator, bundle = _g1_orchestrator()
+    with pytest.raises(M6DownstreamBlocked):
+        await orchestrator.run(build_runtime_input())
+    expected_prefix = [
+        "INPUT",
+        "SAFETY_EARLY",
+        "CONTEXT",
+        "UNDERSTANDING",
+        "SAFETY_DEEP",
+        "POLICY",
+        "PLAN",
+        "PLAN_VALIDATE",
+        "POLICY_RECHECK",
+        "EXECUTE",
+        "RESULT_VALIDATE",
+    ]
+    trace = orchestrator.last_trace
+    assert trace is not None
+    assert [stage.stage_name for stage in trace.stage_events] == expected_prefix
+    assert bundle.call_recorder.entries == expected_prefix[:-1]
+
+    from runtime.orchestration.trace import TraceStatus
+    from tests.test_runtime_orchestrator import _build_orchestrator, _StubBundle
+
+    legacy = _build_orchestrator(_StubBundle())
+    outcome = await legacy.run(build_runtime_input())
+    assert outcome.trace.status is TraceStatus.SUCCESS
+    assert len(outcome.trace.stage_events) == 15
+
+
+@pytest.mark.asyncio
+async def test_g1_concurrent_turn_contexts_remain_distinct(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from runtime.orchestration.runtime import M6DownstreamBlocked, RuntimeOrchestrator
+    from runtime.orchestration.trace import TraceStatus
+
+    contexts: list[Any] = []
+    original_open = RuntimeOrchestrator._open_turn
+
+    def capturing_open(self: RuntimeOrchestrator, raw: Any) -> Any:
+        context = original_open(self, raw)
+        contexts.append(context)
+        return context
+
+    monkeypatch.setattr(RuntimeOrchestrator, "_open_turn", capturing_open)
+    orchestrator, _bundle = _g1_orchestrator()
+    a = build_runtime_input()
+    b = build_runtime_input()
+    b.trace_id = "independent-turn-b"
+    results = await asyncio.gather(
+        orchestrator.run(a), orchestrator.run(b), return_exceptions=True
+    )
+    assert all(isinstance(result, M6DownstreamBlocked) for result in results)
+    assert len(contexts) == 2
+    assert contexts[0] is not contexts[1]
+    assert contexts[0].trace is not contexts[1].trace
+    assert {context.trace.trace_id for context in contexts} == {a.trace_id, b.trace_id}
+    assert all(context.trace.status is TraceStatus.ERROR for context in contexts)
+    assert all(context.trace.finished_at is not None for context in contexts)

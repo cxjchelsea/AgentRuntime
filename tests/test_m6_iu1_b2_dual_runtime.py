@@ -224,8 +224,9 @@ async def test_f01_execution_identity_forgery_denied(field: str, value: str) -> 
     execution = build_execution_result()
     setattr(execution, field, value)
     try:
-        with pytest.raises(Exception):
+        with pytest.raises(M6FoundationError) as rejection:
             await handle.validate(execution, build_runtime_context(), approved)
+        assert rejection.value.code is M6FoundationErrorCode.ADMISSION_REJECTED
         with pytest.raises(M6FoundationError) as repeat:
             await handle.validate(build_execution_result(), build_runtime_context(), approved)
         assert repeat.value.code is M6FoundationErrorCode.ALREADY_VALIDATED
@@ -284,10 +285,9 @@ async def test_f01_interleaved_turn_handles_have_distinct_resources() -> None:
 def test_f01_low_level_corrupted_origin_rejected_on_factory_constructor() -> None:
     origin = _origin()
     object.__setattr__(origin, "request_id", " different ")
-    # Current foundation only validates exact DTO type at factory construction.
-    # This negative oracle exposes that a frozen dataclass is not a provenance certificate:
-    # no additional runtime identity attestation is claimed here.
-    assert origin.request_id != "request-001"
+    with pytest.raises(M6FoundationError) as rejected:
+        M6NoGrantFacadeFactory().open_turn(origin)
+    assert rejected.value.code is M6FoundationErrorCode.INVALID_ORIGIN
 
 
 # F-B2-F-02: direct helper-level fault ordering only; G1/G2 lifecycle deferred.

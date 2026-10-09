@@ -911,3 +911,103 @@ async def test_g2_protected_mode_rejects_m2_subclasses() -> None:
             m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
             m6_no_grant_factory=M6NoGrantFacadeFactory(),
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["forced", "blocked", "deferred", "preempt"])
+async def test_g2_preserves_m2_policy_authority(scenario: str) -> None:
+    from runtime.orchestration.m2_control import (
+        AlternatePathRequiredError,
+        PreemptionEffectRequiredError,
+        RuntimeControlBlockedError,
+    )
+    from runtime.orchestration.trace import TraceStatus
+    from runtime.policy_management import DefaultPolicyEngine
+    from runtime.priority_management import (
+        IncomingDisposition,
+        PreemptionEngine,
+        PreemptionRule,
+        PriorityRelation,
+    )
+    from runtime.safety import DefaultSafetyGuard
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        DenyPolicyRule,
+        HighSafetyRule,
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _current,
+        _incoming,
+    )
+
+    raw = build_runtime_input()
+    recorder = CallRecorder()
+    kwargs: dict[str, Any] = {}
+    current = None
+    incoming = _incoming(priority=100)
+    if scenario == "forced":
+        kwargs["safety_guard"] = DefaultSafetyGuard(rules=[HighSafetyRule()])
+    elif scenario == "blocked":
+        kwargs["policy_engine"] = DefaultPolicyEngine(rules=[DenyPolicyRule()])
+    elif scenario == "deferred":
+        current = _current(priority=100)
+        incoming = _incoming(priority=10)
+        kwargs["preemption_engine"] = PreemptionEngine(
+            rules=[
+                PreemptionRule(
+                    current_kind="TEST_CURRENT",
+                    incoming_kind="TEST_INCOMING",
+                    relation=PriorityRelation.LOWER,
+                    interrupt=False,
+                    disposition=IncomingDisposition.DEFER,
+                )
+            ]
+        )
+    else:
+        current = _current(priority=10)
+        kwargs["preemption_engine"] = PreemptionEngine(
+            rules=[
+                PreemptionRule(
+                    current_kind="TEST_CURRENT",
+                    incoming_kind="TEST_INCOMING",
+                    relation=PriorityRelation.HIGHER,
+                    interrupt=True,
+                    disposition=IncomingDisposition.PROCESS_NOW,
+                    when_not_interruptible=IncomingDisposition.DEFER,
+                )
+            ]
+        )
+
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(
+            current=current, incoming=incoming
+        ),
+        **kwargs,
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    expected = {
+        "forced": AlternatePathRequiredError,
+        "blocked": RuntimeControlBlockedError,
+        "deferred": RuntimeControlBlockedError,
+        "preempt": PreemptionEffectRequiredError,
+    }[scenario]
+    with pytest.raises(expected) as captured:
+        await protected.run(raw)
+    if scenario == "forced":
+        assert captured.value.forced_workflow == "TEST_SAFETY_WORKFLOW"
+    elif scenario == "blocked":
+        assert captured.value.reason_code == "POLICY_BLOCKED"
+    elif scenario == "deferred":
+        assert captured.value.disposition is IncomingDisposition.DEFER
+    assert protected.last_trace is not None
+    assert protected.last_trace.status is TraceStatus.ERROR
+    assert [e.stage_name for e in protected.last_trace.stage_events] == [
+        "INPUT", "SAFETY_EARLY", "CONTEXT", "UNDERSTANDING",
+        "SAFETY_DEEP", "POLICY",
+    ]
+    assert "PLAN" not in recorder.entries
+    assert "EXECUTE" not in recorder.entries
+    assert "RESPONSE_PLAN" not in recorder.entries
+    assert "UPDATE" not in recorder.entries

@@ -804,3 +804,114 @@ async def test_g1_concurrent_turn_contexts_remain_distinct(
     assert {context.trace.trace_id for context in contexts} == {a.trace_id, b.trace_id}
     assert all(context.trace.status is TraceStatus.ERROR for context in contexts)
     assert all(context.trace.finished_at is not None for context in contexts)
+
+
+def _g2_protected_from_legacy(legacy: Any) -> Any:
+    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+    from runtime.orchestration.runtime import M6IntegrationMode
+
+    return M2RuntimeOrchestrator(
+        runtime_constraint_evaluator=legacy.runtime_constraint_evaluator,
+        priority_subject_resolver=legacy.priority_subject_resolver,
+        input_processor=legacy.input_processor,
+        safety_guard=legacy.safety_guard,
+        context_builder=legacy.context_builder,
+        understanding_engine=legacy.understanding_engine,
+        policy_engine=legacy.policy_engine,
+        planner=legacy.planner,
+        plan_validator=legacy.plan_validator,
+        policy_rechecker=legacy.policy_rechecker,
+        execution_engine=legacy.execution_engine,
+        result_validator=legacy.result_validator,
+        response_planner=legacy.response_planner,
+        response_generator=legacy.response_generator,
+        response_validator=legacy.response_validator,
+        state_memory_updater=legacy.state_memory_updater,
+        m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
+        m6_no_grant_factory=M6NoGrantFacadeFactory(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_g2_allowed_m2_policy_deny_only_never_calls_response() -> None:
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.orchestration.trace import TraceStatus
+    from tests.test_m2_runtime_integration_gate import (
+        _build_orchestrator,
+        _incoming,
+        StaticPrioritySubjectResolver,
+    )
+    from tests.orchestration_stubs import CallRecorder
+
+    raw = build_runtime_input(
+        request_id="request-g2",
+        session_id="session-g2",
+        trace_id="trace-g2",
+    )
+    recorder = CallRecorder()
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(
+            current=None, incoming=_incoming()
+        ),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    with pytest.raises(M6DownstreamBlocked):
+        await protected.run(raw)
+    assert protected.last_trace is not None
+    assert protected.last_trace.status is TraceStatus.ERROR
+    assert [event.stage_name for event in protected.last_trace.stage_events] == [
+        "INPUT", "SAFETY_EARLY", "CONTEXT", "UNDERSTANDING",
+        "SAFETY_DEEP", "POLICY", "PLAN", "PLAN_VALIDATE",
+        "POLICY_RECHECK", "EXECUTE", "RESULT_VALIDATE",
+    ]
+    assert "RESPONSE_PLAN" not in recorder.entries
+    assert "RESPONSE_GENERATE" not in recorder.entries
+    assert "RESPONSE_VALIDATE" not in recorder.entries
+    assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_protected_mode_rejects_m2_subclasses() -> None:
+    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+    from runtime.orchestration.runtime import M6IntegrationMode
+    from tests.test_m2_runtime_integration_gate import (
+        _build_orchestrator,
+        _incoming,
+        StaticPrioritySubjectResolver,
+    )
+    from tests.orchestration_stubs import CallRecorder
+
+    class UntrustedM2(M2RuntimeOrchestrator):
+        pass
+
+    raw = build_runtime_input()
+    legacy, _state_engine = await _build_orchestrator(
+        raw,
+        recorder=CallRecorder(),
+        resolver=StaticPrioritySubjectResolver(
+            current=None, incoming=_incoming()
+        ),
+    )
+    with pytest.raises(ValueError, match="not authorized"):
+        UntrustedM2(
+            runtime_constraint_evaluator=legacy.runtime_constraint_evaluator,
+            priority_subject_resolver=legacy.priority_subject_resolver,
+            input_processor=legacy.input_processor,
+            safety_guard=legacy.safety_guard,
+            context_builder=legacy.context_builder,
+            understanding_engine=legacy.understanding_engine,
+            policy_engine=legacy.policy_engine,
+            planner=legacy.planner,
+            plan_validator=legacy.plan_validator,
+            policy_rechecker=legacy.policy_rechecker,
+            execution_engine=legacy.execution_engine,
+            result_validator=legacy.result_validator,
+            response_planner=legacy.response_planner,
+            response_generator=legacy.response_generator,
+            response_validator=legacy.response_validator,
+            state_memory_updater=legacy.state_memory_updater,
+            m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
+            m6_no_grant_factory=M6NoGrantFacadeFactory(),
+        )

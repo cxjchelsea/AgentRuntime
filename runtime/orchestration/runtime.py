@@ -5,10 +5,12 @@ Trace / Logging 作为横向能力附着，不增加业务阶段。
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import TypeVar
 
 from pydantic import ValidationError
@@ -51,6 +53,9 @@ from runtime.orchestration.errors import (
     StageExecutionError,
 )
 from runtime.orchestration.logging import RuntimeLogHook, StdlibStructuredLogHook
+from runtime.orchestration.m6_terminalization import finish_turn_once
+from runtime.validation.m6_no_grant_facade import M6NoGrantFacadeFactory, M6NoGrantTurnHandle, TurnOriginSnapshot
+from runtime.validation.no_grant_downstream_policy import NoGrantDownstreamDecision, NoGrantDownstreamDisposition
 from runtime.orchestration.trace import (
     StageEventStatus,
     StageTraceEvent,
@@ -60,6 +65,59 @@ from runtime.orchestration.trace import (
 from runtime.registries import SkillRegistry
 
 StageResultType = TypeVar("StageResultType")
+
+class M6IntegrationMode(StrEnum):
+    LEGACY_TEST_COMPAT = "LEGACY_TEST_COMPAT"
+    DENY_ONLY_GATED = "DENY_ONLY_GATED"
+
+class M6DownstreamBlocked(RuntimeOrchestrationError):
+    def __init__(self) -> None:
+        super().__init__("M6 downstream blocked", error_code="NO_GRANT_DOWNSTREAM_BLOCKED", stage_name="RESULT_VALIDATE")
+
+async def _gated_validate(
+    handle: M6NoGrantTurnHandle,
+    execution: ExecutionResult,
+    context: RuntimeContext,
+    approved: ApprovedActionPlan,
+    decisions: list[NoGrantDownstreamDecision],
+) -> ValidatedResult:
+    bundle = await handle.validate(execution, context, approved)
+    if decisions:
+        raise M6DownstreamBlocked()
+    decisions.append(bundle.decision)
+    return bundle.validated
+
+def _assert_denied(
+    decisions: list[NoGrantDownstreamDecision],
+    validated: ValidatedResult,
+    execution: ExecutionResult,
+    context: RuntimeContext,
+    origin: TurnOriginSnapshot,
+) -> None:
+    if len(decisions) != 1 or type(decisions[0]) is not NoGrantDownstreamDecision:
+        raise M6DownstreamBlocked()
+    decision = decisions[0]
+    if (
+        decision.disposition is not NoGrantDownstreamDisposition.BLOCK_BEFORE_M7_M8
+        or any((
+            decision.may_call_response_planner,
+            decision.may_call_response_generator,
+            decision.may_call_response_validator,
+            decision.may_call_state_memory_updater,
+            decision.may_emit_positive_claim,
+            decision.may_commit_business_or_memory,
+        ))
+        or decision.allowed_user_response != "NONE"
+        or decision.request_id != origin.request_id
+        or decision.execution_id != execution.execution_id
+        or decision.validation_id != validated.validation_id
+        or validated.request_id != origin.request_id
+        or validated.execution_id != execution.execution_id
+        or context.identity_context.identity_scope != origin.identity_scope
+        or context.session_context.session_id != origin.session_id
+    ):
+        raise M6DownstreamBlocked()
+
 
 
 class RuntimeOrchestrator:

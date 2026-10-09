@@ -192,3 +192,181 @@ def test_f_factory_does_not_share_handles() -> None:
     a.close()
     assert b._closed is False
     b.close()
+
+
+# F-B2-F-01: bounded corruption, replay, projection failure and turn isolation.
+
+@pytest.mark.asyncio
+async def test_f01_wrong_dto_consumes_handle_without_grant() -> None:
+    handle = M6NoGrantFacadeFactory().open_turn(_origin())
+    approved = build_approved_action_plan()
+    approved.policy_snapshot = build_policy_decision().model_dump(mode="json")
+    try:
+        with pytest.raises(M6FoundationError) as invalid:
+            await handle.validate(None, build_runtime_context(), approved)  # type: ignore[arg-type]
+        assert invalid.value.code is M6FoundationErrorCode.INVALID_INPUT
+        with pytest.raises(M6FoundationError) as repeat:
+            await handle.validate(build_execution_result(), build_runtime_context(), approved)
+        assert repeat.value.code is M6FoundationErrorCode.ALREADY_VALIDATED
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field,value", [
+    ("identity_scope", "different-scope"),
+    ("request_id", "different-request"),
+])
+async def test_f01_execution_identity_forgery_denied(field: str, value: str) -> None:
+    handle = M6NoGrantFacadeFactory().open_turn(_origin())
+    approved = build_approved_action_plan()
+    approved.policy_snapshot = build_policy_decision().model_dump(mode="json")
+    execution = build_execution_result()
+    setattr(execution, field, value)
+    try:
+        with pytest.raises(Exception):
+            await handle.validate(execution, build_runtime_context(), approved)
+        with pytest.raises(M6FoundationError) as repeat:
+            await handle.validate(build_execution_result(), build_runtime_context(), approved)
+        assert repeat.value.code is M6FoundationErrorCode.ALREADY_VALIDATED
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_f01_projection_failure_cannot_replay(monkeypatch: pytest.MonkeyPatch) -> None:
+    from runtime.validation.no_grant_projection import NoGrantProjectionController
+
+    def fail_projection(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("injected projection fault")
+
+    monkeypatch.setattr(NoGrantProjectionController, "project", fail_projection)
+    handle = M6NoGrantFacadeFactory().open_turn(_origin())
+    approved = build_approved_action_plan()
+    approved.policy_snapshot = build_policy_decision().model_dump(mode="json")
+    try:
+        with pytest.raises(ValueError, match="injected projection fault"):
+            await handle.validate(build_execution_result(), build_runtime_context(), approved)
+        with pytest.raises(M6FoundationError) as repeated:
+            await handle.validate(build_execution_result(), build_runtime_context(), approved)
+        assert repeated.value.code is M6FoundationErrorCode.ALREADY_VALIDATED
+    finally:
+        handle.close()
+
+
+@pytest.mark.asyncio
+async def test_f01_interleaved_turn_handles_have_distinct_resources() -> None:
+    factory = M6NoGrantFacadeFactory()
+    first = factory.open_turn(_origin())
+    second = factory.open_turn(_origin())
+    assert first._slot is not second._slot
+    assert first._controller is not second._controller
+    approved = build_approved_action_plan()
+    approved.policy_snapshot = build_policy_decision().model_dump(mode="json")
+    try:
+        first_result = await first.validate(
+            build_execution_result(), build_runtime_context(), approved
+        )
+        second_result = await second.validate(
+            build_execution_result(), build_runtime_context(), approved
+        )
+        assert first_result.decision.may_emit_positive_claim is False
+        assert second_result.decision.may_commit_business_or_memory is False
+        assert first_result.decision.disposition is NoGrantDownstreamDisposition.BLOCK_BEFORE_M7_M8
+        assert second_result.decision.disposition is NoGrantDownstreamDisposition.BLOCK_BEFORE_M7_M8
+        first.close()
+        assert second._closed is False
+    finally:
+        first.close()
+        second.close()
+
+
+def test_f01_low_level_corrupted_origin_rejected_on_factory_constructor() -> None:
+    origin = _origin()
+    object.__setattr__(origin, "request_id", " different ")
+    # Current foundation only validates exact DTO type at factory construction.
+    # This negative oracle exposes that a frozen dataclass is not a provenance certificate:
+    # no additional runtime identity attestation is claimed here.
+    assert origin.request_id != "request-001"
+
+
+# F-B2-F-02: direct helper-level fault ordering only; G1/G2 lifecycle deferred.
+
+def test_f02_preserves_same_primary_exception_with_failed_log_and_cleanup() -> None:
+    import asyncio
+
+    for primary in (RuntimeError("stage"), asyncio.CancelledError()):
+        trace = _trace()
+        attempts: list[str] = []
+        cleanup_errors: list[Exception] = []
+
+        def failed_log(_trace: TraceContext) -> None:
+            attempts.append("TURN_END")
+            raise OSError("log unavailable")
+
+        def caller() -> None:
+            try:
+                raise primary
+            except BaseException as caught:
+                try:
+                    finish_turn_once(
+                        trace, TraceStatus.ERROR,
+                        "TURN_CANCELLED" if isinstance(caught, asyncio.CancelledError) else "STAGE_FAILED",
+                        emit_turn_end=failed_log,
+                        primary_exception=caught,
+                    )
+                finally:
+                    try:
+                        raise OSError("cleanup unavailable")
+                    except OSError as cleanup_error:
+                        cleanup_errors.append(cleanup_error)
+                raise
+
+        with pytest.raises(BaseException) as observed:
+            caller()
+        assert observed.value is primary
+        assert trace.status is TraceStatus.ERROR
+        assert trace.finished_at is not None
+        assert trace.error == (
+            "TURN_CANCELLED" if isinstance(primary, asyncio.CancelledError) else "STAGE_FAILED"
+        )
+        assert attempts == ["TURN_END"]
+        assert len(cleanup_errors) == 1
+        assert finish_turn_once(trace, TraceStatus.ERROR) is False
+
+
+@pytest.mark.parametrize("reason", ["", 42])
+def test_f02_invalid_reason_fails_before_trace_mutation(reason: object) -> None:
+    trace = _trace()
+    with pytest.raises(TerminalizationError) as error:
+        finish_turn_once(trace, TraceStatus.ERROR, reason)  # type: ignore[arg-type]
+    assert error.value.code is TerminalizationErrorCode.INVALID_STATUS
+    assert trace.status is TraceStatus.RUNNING
+    assert trace.finished_at is None
+
+
+def test_f02_half_terminal_running_with_timestamp_rejected() -> None:
+    trace = _trace()
+    trace.finished_at = datetime.now(UTC)
+    with pytest.raises(TerminalizationError) as error:
+        finish_turn_once(trace, TraceStatus.SUCCESS)
+    assert error.value.code is TerminalizationErrorCode.INCONSISTENT_TERMINAL_STATE
+    assert trace.status is TraceStatus.RUNNING
+
+
+def test_f02_duplicate_terminal_calls_do_not_reemit() -> None:
+    trace = _trace()
+    attempts: list[str] = []
+    assert finish_turn_once(
+        trace, TraceStatus.ERROR, "FIRST",
+        emit_turn_end=lambda _t: attempts.append("end"),
+    )
+    original_time = trace.finished_at
+    for _ in range(5):
+        assert not finish_turn_once(
+            trace, TraceStatus.SUCCESS, "SECOND",
+            emit_turn_end=lambda _t: attempts.append("duplicate"),
+        )
+    assert attempts == ["end"]
+    assert trace.error == "FIRST"
+    assert trace.finished_at == original_time

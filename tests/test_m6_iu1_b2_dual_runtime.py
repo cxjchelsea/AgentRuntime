@@ -1338,7 +1338,7 @@ async def test_g2_cross_request_concurrency_with_request_aware_execution(
     from runtime.orchestration.runtime import M6DownstreamBlocked, RuntimeOrchestrator
     from runtime.orchestration.trace import TraceStatus
     from runtime.validation.m6_no_grant_facade import M6NoGrantFacadeFactory
-    from tests.orchestration_stubs import CallRecorder, build_execution_result
+    from tests.orchestration_stubs import CallRecorder
     from tests.test_m2_runtime_integration_gate import (
         StaticPrioritySubjectResolver,
         _build_orchestrator,
@@ -1466,3 +1466,53 @@ async def test_g2_rejects_positive_decision_permission_flags(
         await protected.run(raw)
     assert "RESPONSE_PLAN" not in recorder.entries
     assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_constructor_rejects_missing_bad_factory_and_invalid_mode() -> None:
+    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+    from runtime.orchestration.runtime import M6IntegrationMode
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input(text="g2 constructor")
+    legacy, _ = await _build_orchestrator(
+        raw, recorder=CallRecorder(),
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    dependencies: dict[str, Any] = {
+        "runtime_constraint_evaluator": legacy.runtime_constraint_evaluator,
+        "priority_subject_resolver": legacy.priority_subject_resolver,
+        "input_processor": legacy.input_processor,
+        "safety_guard": legacy.safety_guard,
+        "context_builder": legacy.context_builder,
+        "understanding_engine": legacy.understanding_engine,
+        "policy_engine": legacy.policy_engine,
+        "planner": legacy.planner,
+        "plan_validator": legacy.plan_validator,
+        "policy_rechecker": legacy.policy_rechecker,
+        "execution_engine": legacy.execution_engine,
+        "result_validator": legacy.result_validator,
+        "response_planner": legacy.response_planner,
+        "response_generator": legacy.response_generator,
+        "response_validator": legacy.response_validator,
+        "state_memory_updater": legacy.state_memory_updater,
+    }
+    with pytest.raises(ValueError, match="factory"):
+        M2RuntimeOrchestrator(
+            **dependencies, m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED
+        )
+    with pytest.raises(ValueError, match="factory"):
+        M2RuntimeOrchestrator(
+            **dependencies,
+            m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
+            m6_no_grant_factory=object(),
+        )
+    with pytest.raises(ValueError, match="mode"):
+        M2RuntimeOrchestrator(
+            **dependencies, m6_integration_mode="DENY_ONLY_GATED"
+        )

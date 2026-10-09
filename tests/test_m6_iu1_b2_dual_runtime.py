@@ -566,6 +566,7 @@ async def test_g1_stage_end_log_failure_has_no_success_marker() -> None:
 @pytest.mark.asyncio
 async def test_g1_cancelled_awaited_input_keeps_original_cancellation() -> None:
     import asyncio
+
     from runtime.orchestration.trace import TraceStatus
 
     orchestrator, bundle = _g1_orchestrator()
@@ -591,6 +592,7 @@ async def test_g1_cancelled_awaited_input_keeps_original_cancellation() -> None:
 @pytest.mark.asyncio
 async def test_g1_parallel_turns_are_denied_without_downstream() -> None:
     import asyncio
+
     from runtime.orchestration.runtime import M6DownstreamBlocked
     from runtime.orchestration.trace import TraceStatus
 
@@ -609,7 +611,9 @@ async def test_g1_parallel_turns_are_denied_without_downstream() -> None:
 
 
 @pytest.mark.asyncio
-async def test_g1_rejects_forged_positive_decision(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_g1_rejects_forged_positive_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from runtime.orchestration import runtime as runtime_module
     from runtime.orchestration.runtime import M6DownstreamBlocked
     from runtime.validation.no_grant_downstream_policy import NoGrantDownstreamDecision
@@ -617,8 +621,11 @@ async def test_g1_rejects_forged_positive_decision(monkeypatch: pytest.MonkeyPat
     original = runtime_module._gated_validate
 
     async def forged_validate(
-        handle: object, execution: object, context: object,
-        approved: object, decisions: list[NoGrantDownstreamDecision],
+        handle: object,
+        execution: object,
+        context: object,
+        approved: object,
+        decisions: list[NoGrantDownstreamDecision],
     ) -> object:
         result = await original(handle, execution, context, approved, decisions)  # type: ignore[arg-type]
         # The decision is immutable, but a caller-local box must still reject

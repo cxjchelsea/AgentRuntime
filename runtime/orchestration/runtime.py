@@ -573,7 +573,6 @@ class RuntimeOrchestrator:
         stage_event.status = StageEventStatus.SUCCESS
         stage_event.output_contract_type = type(stage_result).__name__
         # 生命周期只记类型名，避免把完整 payload 留在可观察面
-        turn_context.stage_results[stage_name] = type(stage_result).__name__
         try:
             self._emit_log(
                 turn_context,
@@ -591,6 +590,7 @@ class RuntimeOrchestrator:
                 )
                 raise end_stage_error from end_error
             raise
+        turn_context.stage_results[stage_name] = type(stage_result).__name__
         return stage_result
 
     def _fail_stage(
@@ -607,6 +607,7 @@ class RuntimeOrchestrator:
         stage_event.status = StageEventStatus.ERROR
         stage_event.error_type = type(orchestration_error).__name__
         stage_event.error_message = orchestration_error.error_code
+        turn_context.stage_results.pop(stage_event.stage_name, None)
         turn_context.trace.error = orchestration_error.error_code
         orchestration_error.trace_context = turn_context.trace
         if self._m6_mode is M6IntegrationMode.DENY_ONLY_GATED:

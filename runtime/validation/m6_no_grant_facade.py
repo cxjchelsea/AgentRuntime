@@ -96,7 +96,10 @@ class M6NoGrantTurnHandle:
     __slots__ = ("_closed", "_controller", "_slot", "_used", "origin")
 
     def __init__(self, origin: TurnOriginSnapshot) -> None:
-        if type(origin) is not TurnOriginSnapshot:
+        if type(origin) is not TurnOriginSnapshot or not all(
+            _valid_id(v)
+            for v in (origin.request_id, origin.session_id, origin.identity_scope, origin.trace_id)
+        ):
             raise M6FoundationError(M6FoundationErrorCode.INVALID_ORIGIN)
         self.origin = origin
         self._slot = NoGrantTurnSlot(NoGrantReason.NO_AUTHORIZED_POLICY_EVIDENCE)
@@ -119,6 +122,16 @@ class M6NoGrantTurnHandle:
         if self._used:
             raise M6FoundationError(M6FoundationErrorCode.ALREADY_VALIDATED)
         self._used = True  # burn before input admission; no second attempt after errors
+        if not all(
+            _valid_id(v)
+            for v in (
+                self.origin.request_id,
+                self.origin.session_id,
+                self.origin.identity_scope,
+                self.origin.trace_id,
+            )
+        ):
+            raise M6FoundationError(M6FoundationErrorCode.INVALID_ORIGIN)
         if (
             type(execution) is not ExecutionResult
             or type(context) is not RuntimeContext

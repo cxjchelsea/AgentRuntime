@@ -51,7 +51,9 @@ def test_p01_structural_no_grant_is_only_block() -> None:
     assert d.disposition is NoGrantDownstreamDisposition.BLOCK_BEFORE_M7_M8
     assert d.reason is NoGrantDownstreamReason.NO_AUTHORIZED_VALIDATION_GRANT
     assert (d.request_id, d.execution_id, d.validation_id) == (
-        "request-001", "execution-001", "validation-001"
+        "request-001",
+        "execution-001",
+        "validation-001",
     )
     assert not any(
         (
@@ -75,36 +77,51 @@ def test_p02_forged_claims_are_blocked(field: str) -> None:
     assert d.disposition is NoGrantDownstreamDisposition.BLOCK_BEFORE_M7_M8
 
 
-@pytest.mark.parametrize("field", ["verified_facts", "goal_validation", "state_recommendation"])
+@pytest.mark.parametrize(
+    "field", ["verified_facts", "goal_validation", "state_recommendation"]
+)
 def test_p02_forged_verification_is_blocked(field: str) -> None:
     validated = _unknown()
-    setattr(validated, field, [{"success": True}] if field == "verified_facts" else {"success": True})
+    setattr(
+        validated,
+        field,
+        [{"success": True}] if field == "verified_facts" else {"success": True},
+    )
     assert _decision(validated).reason is NoGrantDownstreamReason.CANONICAL_MISMATCH
 
 
 def test_p02_forged_error_tag_does_not_authorize() -> None:
     validated = _unknown()
     validated.validation_errors = [{"code": "AUTHORIZED", "reason": "GRANTED"}]
-    assert _decision(validated).reason is NoGrantDownstreamReason.NO_AUTHORIZED_VALIDATION_GRANT
+    assert (
+        _decision(validated).reason
+        is NoGrantDownstreamReason.NO_AUTHORIZED_VALIDATION_GRANT
+    )
 
 
-@pytest.mark.parametrize("field", [
-    "expected_request_id", "expected_execution_id", "expected_validation_id",
-    "expected_identity_scope", "expected_session_id",
-])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "expected_request_id",
+        "expected_execution_id",
+        "expected_validation_id",
+        "expected_identity_scope",
+        "expected_session_id",
+    ],
+)
 @pytest.mark.parametrize("value", ["", " ", " value ", 42])
 def test_p03_context_rejects_invalid_identifier(field: str, value: object) -> None:
-    values = dict(
-        expected_request_id="request-001",
-        expected_execution_id="execution-001",
-        expected_validation_id="validation-001",
-        expected_identity_scope="scope-001",
-        expected_session_id="session-001",
-        provenance_kind=NoGrantOriginClassification.NO_GRANT_INTERNAL,
-    )
-    values[field] = value
+    payload: dict[str, object] = {
+        "expected_request_id": "request-001",
+        "expected_execution_id": "execution-001",
+        "expected_validation_id": "validation-001",
+        "expected_identity_scope": "scope-001",
+        "expected_session_id": "session-001",
+        "provenance_kind": NoGrantOriginClassification.NO_GRANT_INTERNAL,
+    }
+    payload[field] = value
     with pytest.raises(NoGrantDownstreamError) as err:
-        NoGrantDownstreamContext(**values)  # type: ignore[arg-type]
+        NoGrantDownstreamContext(**payload)  # type: ignore[arg-type]
     assert err.value.code is NoGrantDownstreamErrorCode.INVALID_CONTEXT_FIELD
 
 
@@ -120,11 +137,34 @@ def test_p03_validated_type_rejected() -> None:
     assert err.value.code is NoGrantDownstreamErrorCode.INVALID_VALIDATED_RESULT
 
 
-@pytest.mark.parametrize("field", [
-    "expected_request_id", "expected_execution_id", "expected_validation_id",
-])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "expected_request_id",
+        "expected_execution_id",
+        "expected_validation_id",
+    ],
+)
 def test_p03_correlation_mismatch_suppresses_diagnostic_ids(field: str) -> None:
-    context = replace(_context(), **{field: "different"})
+    baseline = _context()
+    context = replace(
+        baseline,
+        expected_request_id=(
+            "different"
+            if field == "expected_request_id"
+            else baseline.expected_request_id
+        ),
+        expected_execution_id=(
+            "different"
+            if field == "expected_execution_id"
+            else baseline.expected_execution_id
+        ),
+        expected_validation_id=(
+            "different"
+            if field == "expected_validation_id"
+            else baseline.expected_validation_id
+        ),
+    )
     d = _decision(context=context)
     assert d.reason is NoGrantDownstreamReason.CORRELATION_MISMATCH
     assert (d.request_id, d.execution_id, d.validation_id) == (None, None, None)
@@ -182,14 +222,22 @@ def test_p07_corrupted_claim_policy_is_safe_block() -> None:
 def test_p07_invalid_origin_enum_and_flag_rejected() -> None:
     with pytest.raises(NoGrantDownstreamError) as origin_error:
         NoGrantDownstreamContext(
-            "request-001", "execution-001", "validation-001", "scope-001",
-            "session-001", "NO_GRANT_INTERNAL"  # type: ignore[arg-type]
+            "request-001",
+            "execution-001",
+            "validation-001",
+            "scope-001",
+            "session-001",
+            "NO_GRANT_INTERNAL",  # type: ignore[arg-type]
         )
     assert origin_error.value.code is NoGrantDownstreamErrorCode.INVALID_CONTEXT_FIELD
     with pytest.raises(NoGrantDownstreamError) as flag_error:
         NoGrantDownstreamContext(
-            "request-001", "execution-001", "validation-001", "scope-001",
-            "session-001", NoGrantOriginClassification.NO_GRANT_INTERNAL,
+            "request-001",
+            "execution-001",
+            "validation-001",
+            "scope-001",
+            "session-001",
+            NoGrantOriginClassification.NO_GRANT_INTERNAL,
             structural_only=1,  # type: ignore[arg-type]
         )
     assert flag_error.value.code is NoGrantDownstreamErrorCode.INVALID_CONTEXT_FIELD

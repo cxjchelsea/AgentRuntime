@@ -138,7 +138,9 @@ def evaluate_no_grant_downstream(
     if type(context) is not NoGrantDownstreamContext:
         raise NoGrantDownstreamError(NoGrantDownstreamErrorCode.INVALID_CONTEXT)
     if type(validated) is not ValidatedResult:
-        raise NoGrantDownstreamError(NoGrantDownstreamErrorCode.INVALID_VALIDATED_RESULT)
+        raise NoGrantDownstreamError(
+            NoGrantDownstreamErrorCode.INVALID_VALIDATED_RESULT
+        )
     if not _valid_context_fields(context):
         raise NoGrantDownstreamError(NoGrantDownstreamErrorCode.INVALID_CONTEXT_FIELD)
 

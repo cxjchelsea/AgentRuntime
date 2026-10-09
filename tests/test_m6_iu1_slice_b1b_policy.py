@@ -1,6 +1,8 @@
 """B1b-P P01-P08: no origin attestation, no allow and no downstream effects."""
 
+import ast
 from dataclasses import FrozenInstanceError, replace
+from pathlib import Path
 
 import pytest
 
@@ -241,3 +243,110 @@ def test_p07_invalid_origin_enum_and_flag_rejected() -> None:
             structural_only=1,  # type: ignore[arg-type]
         )
     assert flag_error.value.code is NoGrantDownstreamErrorCode.INVALID_CONTEXT_FIELD
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("provenance_kind", "NO_GRANT_INTERNAL"),
+        ("provenance_kind", None),
+        ("expected_request_id", " tampered "),
+        ("expected_session_id", 7),
+        ("expected_identity_scope", ""),
+        ("structural_only", 1),
+    ],
+)
+def test_f_b1b_p_01_corrupted_context_is_typed_before_mismatch(
+    field: str, value: object
+) -> None:
+    context = _context()
+    object.__setattr__(context, field, value)
+    result = build_validated_result()  # ALSO canonical mismatch
+    result.request_id = "mismatched-request"  # ALSO correlation mismatch
+    with pytest.raises(NoGrantDownstreamError) as err:
+        evaluate_no_grant_downstream(validated=result, context=context)
+    assert err.value.code is NoGrantDownstreamErrorCode.INVALID_CONTEXT_FIELD
+
+
+def test_f_b1b_p_01_corrupted_canonical_fields_fail_closed() -> None:
+    result = _unknown()
+    object.__setattr__(result, "validation_status", "UNKNOWN")
+    d = _decision(result)
+    assert d.reason is NoGrantDownstreamReason.CANONICAL_MISMATCH
+    assert d.disposition is NoGrantDownstreamDisposition.BLOCK_BEFORE_M7_M8
+    result = _unknown()
+    object.__setattr__(result, "claim_policy", {"allowed_claims": ["success"]})
+    d = _decision(result)
+    assert d.reason is NoGrantDownstreamReason.CANONICAL_MISMATCH
+    assert not d.may_emit_positive_claim
+
+
+def test_f_b1b_p_01_invalid_canonical_id_precedes_status() -> None:
+    result = build_validated_result()
+    object.__setattr__(result, "validation_id", " invalid ")
+    d = _decision(result)
+    assert d.reason is NoGrantDownstreamReason.CORRELATION_MISMATCH
+    assert (d.request_id, d.execution_id, d.validation_id) == (None, None, None)
+
+
+def test_f_b1b_p_02_pure_module_import_boundary() -> None:
+    source_path = (
+        Path(__file__).resolve().parents[1]
+        / "runtime"
+        / "validation"
+        / "no_grant_downstream_policy.py"
+    )
+    syntax = ast.parse(source_path.read_text(encoding="utf-8"))
+    import_roots: set[str] = set()
+    for node in ast.walk(syntax):
+        if isinstance(node, ast.Import):
+            import_roots.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            import_roots.add(node.module)
+    assert import_roots <= {
+        "__future__",
+        "dataclasses",
+        "enum",
+        "typing",
+        "runtime.contracts.enums",
+        "runtime.contracts.validation",
+    }
+
+
+def test_f_b1b_p_02_actual_policy_paths_do_not_call_external_owners(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.interfaces.response import (
+        ResponseGenerator,
+        ResponsePlanner,
+        ResponseValidator,
+    )
+    from runtime.interfaces.update import StateMemoryUpdater
+    from runtime.orchestration.m2_runtime import M2RuntimeOrchestrator
+    from runtime.orchestration.runtime import RuntimeOrchestrator
+
+    visited: list[str] = []
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        visited.append("external-owner")
+        raise AssertionError("B1b-P invoked an external owner")
+
+    for owner, method in (
+        (RuntimeOrchestrator, "run"),
+        (M2RuntimeOrchestrator, "run"),
+        (ResponsePlanner, "plan"),
+        (ResponseGenerator, "generate"),
+        (ResponseValidator, "validate"),
+        (StateMemoryUpdater, "update"),
+    ):
+        monkeypatch.setattr(owner, method, forbidden)
+
+    good = _decision()
+    assert good.disposition is NoGrantDownstreamDisposition.BLOCK_BEFORE_M7_M8
+    bad_result = build_validated_result()
+    bad = _decision(bad_result)
+    assert bad.reason is NoGrantDownstreamReason.CANONICAL_MISMATCH
+    bad_context = replace(_context(), expected_request_id="different")
+    mismatch = _decision(context=bad_context)
+    assert mismatch.reason is NoGrantDownstreamReason.CORRELATION_MISMATCH
+    assert visited == []

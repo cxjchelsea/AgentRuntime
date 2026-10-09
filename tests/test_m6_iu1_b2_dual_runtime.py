@@ -1094,3 +1094,70 @@ async def test_g2_combined_logging_faults_preserve_policy_failure() -> None:
     assert attempts.count("STAGE_ERROR") == 1
     assert protected.last_trace is not None
     assert protected.last_trace.status is TraceStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_g2_cleanup_fault_preserves_primary_denial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.validation.m6_no_grant_facade import M6NoGrantTurnHandle
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input()
+    recorder = CallRecorder()
+    legacy, _ = await _build_orchestrator(
+        raw, recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    original_close = M6NoGrantTurnHandle.close
+    closes: list[bool] = []
+
+    def injected_close(handle: M6NoGrantTurnHandle) -> None:
+        closes.append(True)
+        original_close(handle)
+        raise OSError("injected G2 close fault")
+
+    monkeypatch.setattr(M6NoGrantTurnHandle, "close", injected_close)
+    with pytest.raises(M6DownstreamBlocked):
+        await protected.run(raw)
+    assert closes == [True]
+    assert "RESPONSE_PLAN" not in recorder.entries
+    assert "UPDATE" not in recorder.entries
+
+
+@pytest.mark.asyncio
+async def test_g2_post_input_origin_mutation_fails_closed() -> None:
+    from tests.orchestration_stubs import CallRecorder
+    from tests.test_m2_runtime_integration_gate import (
+        StaticPrioritySubjectResolver,
+        _build_orchestrator,
+        _incoming,
+    )
+
+    raw = build_runtime_input()
+    recorder = CallRecorder()
+    legacy, _ = await _build_orchestrator(
+        raw, recorder=recorder,
+        resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
+    )
+    protected = _g2_protected_from_legacy(legacy)
+    previous = protected.input_processor.process
+
+    async def altered_input(inp: Any) -> Any:
+        processed = await previous(inp)
+        processed.session_id = "forged-session"
+        return processed
+
+    protected.input_processor.process = altered_input  # type: ignore[method-assign]
+    with pytest.raises(M6FoundationError) as err:
+        await protected.run(raw)
+    assert err.value.code is M6FoundationErrorCode.ORIGIN_CHANGED
+    assert "EXECUTE" not in recorder.entries
+    assert "UPDATE" not in recorder.entries

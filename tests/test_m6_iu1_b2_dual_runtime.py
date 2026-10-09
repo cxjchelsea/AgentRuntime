@@ -843,11 +843,7 @@ async def test_g2_allowed_m2_policy_deny_only_never_calls_response() -> None:
     )
     from tests.orchestration_stubs import CallRecorder
 
-    raw = build_runtime_input(
-        request_id="request-g2",
-        session_id="session-g2",
-        trace_id="trace-g2",
-    )
+    raw = build_runtime_input()
     recorder = CallRecorder()
     legacy, _state_engine = await _build_orchestrator(
         raw,

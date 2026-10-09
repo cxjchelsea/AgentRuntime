@@ -431,13 +431,33 @@ class RuntimeOrchestrator:
         )
         turn_context = TurnExecutionContext(trace=trace_context)
         self.last_trace = trace_context
-        self._emit_log(turn_context, event="TURN_START", status="RUNNING")
+        try:
+            self._emit_log(turn_context, event="TURN_START", status="RUNNING")
+        except Exception as start_error:
+            if self._m6_mode is M6IntegrationMode.DENY_ONLY_GATED:
+                finish_turn_once(
+                    trace_context, TraceStatus.ERROR, "TURN_START_LOG_FAILURE",
+                    primary_exception=start_error,
+                    emit_turn_end=lambda trace: self._emit_log(
+                        turn_context, event="TURN_END", status=trace.status.value
+                    ),
+                )
+            raise
         return turn_context
 
     def _close_turn(
         self, turn_context: TurnExecutionContext, status: TraceStatus
     ) -> None:
         """结束本轮 Trace，不改写 session_id。"""
+        if self._m6_mode is M6IntegrationMode.DENY_ONLY_GATED:
+            finish_turn_once(
+                turn_context.trace, status,
+                turn_context.trace.error if status is TraceStatus.ERROR else None,
+                emit_turn_end=lambda trace: self._emit_log(
+                    turn_context, event="TURN_END", status=trace.status.value
+                ),
+            )
+            return
         turn_context.trace.status = status
         turn_context.trace.finished_at = datetime.now(UTC)
         self.last_trace = turn_context.trace
@@ -536,16 +556,36 @@ class RuntimeOrchestrator:
         stage_event.error_type = type(orchestration_error).__name__
         stage_event.error_message = orchestration_error.error_code
         turn_context.trace.error = orchestration_error.error_code
-        self._close_turn(turn_context, TraceStatus.ERROR)
         orchestration_error.trace_context = turn_context.trace
-        self._emit_log(
-            turn_context,
-            event="STAGE_ERROR",
-            stage_name=stage_event.stage_name,
-            status="ERROR",
-            duration_ms=duration_ms,
-            error_type=type(orchestration_error).__name__,
-        )
+        if self._m6_mode is M6IntegrationMode.DENY_ONLY_GATED:
+            try:
+                finish_turn_once(
+                    turn_context.trace, TraceStatus.ERROR,
+                    orchestration_error.error_code,
+                    primary_exception=orchestration_error,
+                    emit_turn_end=lambda trace: self._emit_log(
+                        turn_context, event="TURN_END", status=trace.status.value
+                    ),
+                )
+            except Exception:
+                pass
+            try:
+                self._emit_log(
+                    turn_context, event="STAGE_ERROR",
+                    stage_name=stage_event.stage_name, status="ERROR",
+                    duration_ms=duration_ms,
+                    error_type=type(orchestration_error).__name__,
+                )
+            except Exception:
+                pass
+        else:
+            self._close_turn(turn_context, TraceStatus.ERROR)
+            self._emit_log(
+                turn_context, event="STAGE_ERROR",
+                stage_name=stage_event.stage_name, status="ERROR",
+                duration_ms=duration_ms,
+                error_type=type(orchestration_error).__name__,
+            )
 
     def _emit_log(
         self,

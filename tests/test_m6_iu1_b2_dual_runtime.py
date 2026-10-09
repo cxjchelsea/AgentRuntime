@@ -403,3 +403,76 @@ def test_f02_duplicate_terminal_calls_do_not_reemit() -> None:
     assert attempts == ["end"]
     assert trace.error == "FIRST"
     assert trace.finished_at == original_time
+
+
+# G1: concrete RuntimeOrchestrator only. G2 remains deliberately unauthorized.
+
+def _g1_orchestrator() -> tuple[object, object]:
+    from runtime.orchestration.runtime import M6IntegrationMode, RuntimeOrchestrator
+    from tests.test_runtime_orchestrator import _StubBundle
+
+    bundle = _StubBundle()
+    original = bundle.policy_rechecker.recheck
+
+    async def recheck_with_canonical_policy(draft: object, policy: object) -> object:
+        approved = await original(draft, policy)  # type: ignore[arg-type]
+        approved.policy_snapshot = build_policy_decision().model_dump(mode="json")
+        return approved
+
+    bundle.policy_rechecker.recheck = recheck_with_canonical_policy  # type: ignore[method-assign]
+    orchestrator = RuntimeOrchestrator(
+        input_processor=bundle.input_processor,
+        safety_guard=bundle.safety_guard,
+        context_builder=bundle.context_builder,
+        understanding_engine=bundle.understanding_engine,
+        policy_engine=bundle.policy_engine,
+        planner=bundle.planner,
+        plan_validator=bundle.plan_validator,
+        policy_rechecker=bundle.policy_rechecker,
+        execution_engine=bundle.execution_engine,
+        result_validator=bundle.result_validator,
+        response_planner=bundle.response_planner,
+        response_generator=bundle.response_generator,
+        response_validator=bundle.response_validator,
+        state_memory_updater=bundle.state_memory_updater,
+        m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
+        m6_no_grant_factory=M6NoGrantFacadeFactory(),
+    )
+    return orchestrator, bundle
+
+
+@pytest.mark.asyncio
+async def test_g1_denies_before_any_response_or_update() -> None:
+    from runtime.orchestration.runtime import M6DownstreamBlocked
+    from runtime.orchestration.trace import TraceStatus
+
+    orchestrator, bundle = _g1_orchestrator()
+    with pytest.raises(M6DownstreamBlocked) as blocked:
+        await orchestrator.run(build_runtime_input())
+    assert blocked.value.error_code == "NO_GRANT_DOWNSTREAM_BLOCKED"
+    assert "RESPONSE_PLAN" not in bundle.call_recorder.entries
+    assert "RESPONSE_GENERATE" not in bundle.call_recorder.entries
+    assert "RESPONSE_VALIDATE" not in bundle.call_recorder.entries
+    assert "UPDATE" not in bundle.call_recorder.entries
+    assert "RESULT_VALIDATE" not in bundle.call_recorder.entries
+    assert orchestrator.last_trace.status is TraceStatus.RUNNING or orchestrator.last_trace.status is TraceStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_g1_constructor_rejects_missing_facade() -> None:
+    from runtime.orchestration.runtime import M6IntegrationMode, RuntimeOrchestrator
+    from tests.test_runtime_orchestrator import _StubBundle
+
+    bundle = _StubBundle()
+    with pytest.raises(ValueError, match="factory"):
+        RuntimeOrchestrator(
+            input_processor=bundle.input_processor, safety_guard=bundle.safety_guard,
+            context_builder=bundle.context_builder, understanding_engine=bundle.understanding_engine,
+            policy_engine=bundle.policy_engine, planner=bundle.planner,
+            plan_validator=bundle.plan_validator, policy_rechecker=bundle.policy_rechecker,
+            execution_engine=bundle.execution_engine, result_validator=bundle.result_validator,
+            response_planner=bundle.response_planner, response_generator=bundle.response_generator,
+            response_validator=bundle.response_validator,
+            state_memory_updater=bundle.state_memory_updater,
+            m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
+        )

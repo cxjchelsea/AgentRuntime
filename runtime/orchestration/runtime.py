@@ -54,8 +54,6 @@ from runtime.orchestration.errors import (
 )
 from runtime.orchestration.logging import RuntimeLogHook, StdlibStructuredLogHook
 from runtime.orchestration.m6_terminalization import finish_turn_once
-from runtime.validation.m6_no_grant_facade import M6NoGrantFacadeFactory, M6NoGrantTurnHandle, TurnOriginSnapshot
-from runtime.validation.no_grant_downstream_policy import NoGrantDownstreamDecision, NoGrantDownstreamDisposition
 from runtime.orchestration.trace import (
     StageEventStatus,
     StageTraceEvent,
@@ -63,16 +61,32 @@ from runtime.orchestration.trace import (
     TraceStatus,
 )
 from runtime.registries import SkillRegistry
+from runtime.validation.m6_no_grant_facade import (
+    M6NoGrantFacadeFactory,
+    M6NoGrantTurnHandle,
+    TurnOriginSnapshot,
+)
+from runtime.validation.no_grant_downstream_policy import (
+    NoGrantDownstreamDecision,
+    NoGrantDownstreamDisposition,
+)
 
 StageResultType = TypeVar("StageResultType")
+
 
 class M6IntegrationMode(StrEnum):
     LEGACY_TEST_COMPAT = "LEGACY_TEST_COMPAT"
     DENY_ONLY_GATED = "DENY_ONLY_GATED"
 
+
 class M6DownstreamBlocked(RuntimeOrchestrationError):
     def __init__(self) -> None:
-        super().__init__("M6 downstream blocked", error_code="NO_GRANT_DOWNSTREAM_BLOCKED", stage_name="RESULT_VALIDATE")
+        super().__init__(
+            "M6 downstream blocked",
+            error_code="NO_GRANT_DOWNSTREAM_BLOCKED",
+            stage_name="RESULT_VALIDATE",
+        )
+
 
 async def _gated_validate(
     handle: M6NoGrantTurnHandle,
@@ -87,6 +101,7 @@ async def _gated_validate(
     decisions.append(bundle.decision)
     return bundle.validated
 
+
 def _assert_denied(
     decisions: list[NoGrantDownstreamDecision],
     validated: ValidatedResult,
@@ -99,14 +114,16 @@ def _assert_denied(
     decision = decisions[0]
     if (
         decision.disposition is not NoGrantDownstreamDisposition.BLOCK_BEFORE_M7_M8
-        or any((
-            decision.may_call_response_planner,
-            decision.may_call_response_generator,
-            decision.may_call_response_validator,
-            decision.may_call_state_memory_updater,
-            decision.may_emit_positive_claim,
-            decision.may_commit_business_or_memory,
-        ))
+        or any(
+            (
+                decision.may_call_response_planner,
+                decision.may_call_response_generator,
+                decision.may_call_response_validator,
+                decision.may_call_state_memory_updater,
+                decision.may_emit_positive_claim,
+                decision.may_commit_business_or_memory,
+            )
+        )
         or decision.allowed_user_response != "NONE"
         or decision.request_id != origin.request_id
         or decision.execution_id != execution.execution_id
@@ -117,7 +134,6 @@ def _assert_denied(
         or context.session_context.session_id != origin.session_id
     ):
         raise M6DownstreamBlocked()
-
 
 
 class RuntimeOrchestrator:
@@ -219,19 +235,23 @@ class RuntimeOrchestrator:
             if owned_turns:
                 turn = owned_turns[0]
                 reason = (
-                    "TURN_CANCELLED" if isinstance(error, asyncio.CancelledError)
-                    else error.error_code if isinstance(error, RuntimeOrchestrationError)
+                    "TURN_CANCELLED"
+                    if isinstance(error, asyncio.CancelledError)
+                    else error.error_code
+                    if isinstance(error, RuntimeOrchestrationError)
                     else "G1_TURN_FAILURE"
                 )
                 try:
                     finish_turn_once(
-                        turn.trace, TraceStatus.ERROR, reason,
+                        turn.trace,
+                        TraceStatus.ERROR,
+                        reason,
                         primary_exception=error,
                         emit_turn_end=lambda trace: self._emit_log(
                             turn, event="TURN_END", status=trace.status.value
                         ),
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001,S110
                     pass
             raise
         finally:
@@ -352,7 +372,13 @@ class RuntimeOrchestrator:
 
         decisions: list[NoGrantDownstreamDecision] = []
         validation_call = (
-            _gated_validate(handle, execution_result, runtime_context, approved_action_plan, decisions)
+            _gated_validate(
+                handle,
+                execution_result,
+                runtime_context,
+                approved_action_plan,
+                decisions,
+            )
             if handle is not None
             else self.result_validator.validate(
                 execution_result, runtime_context, approved_action_plan
@@ -366,7 +392,9 @@ class RuntimeOrchestrator:
             input_contract_type="ExecutionResult",
         )
         if origin is not None:
-            _assert_denied(decisions, validated_result, execution_result, runtime_context, origin)
+            _assert_denied(
+                decisions, validated_result, execution_result, runtime_context, origin
+            )
             raise M6DownstreamBlocked()
 
         response_plan = await self._run_stage(
@@ -436,7 +464,9 @@ class RuntimeOrchestrator:
         except Exception as start_error:
             if self._m6_mode is M6IntegrationMode.DENY_ONLY_GATED:
                 finish_turn_once(
-                    trace_context, TraceStatus.ERROR, "TURN_START_LOG_FAILURE",
+                    trace_context,
+                    TraceStatus.ERROR,
+                    "TURN_START_LOG_FAILURE",
                     primary_exception=start_error,
                     emit_turn_end=lambda trace: self._emit_log(
                         turn_context, event="TURN_END", status=trace.status.value
@@ -451,7 +481,8 @@ class RuntimeOrchestrator:
         """结束本轮 Trace，不改写 session_id。"""
         if self._m6_mode is M6IntegrationMode.DENY_ONLY_GATED:
             finish_turn_once(
-                turn_context.trace, status,
+                turn_context.trace,
+                status,
                 turn_context.trace.error if status is TraceStatus.ERROR else None,
                 emit_turn_end=lambda trace: self._emit_log(
                     turn_context, event="TURN_END", status=trace.status.value
@@ -554,11 +585,11 @@ class RuntimeOrchestrator:
             )
         except Exception as end_error:
             if self._m6_mode is M6IntegrationMode.DENY_ONLY_GATED:
-                orchestration_error = StageExecutionError(stage_name, end_error)
+                end_stage_error = StageExecutionError(stage_name, end_error)
                 self._fail_stage(
-                    turn_context, stage_event, started_perf, orchestration_error
+                    turn_context, stage_event, started_perf, end_stage_error
                 )
-                raise orchestration_error from end_error
+                raise end_stage_error from end_error
             raise
         return stage_result
 
@@ -581,29 +612,34 @@ class RuntimeOrchestrator:
         if self._m6_mode is M6IntegrationMode.DENY_ONLY_GATED:
             try:
                 finish_turn_once(
-                    turn_context.trace, TraceStatus.ERROR,
+                    turn_context.trace,
+                    TraceStatus.ERROR,
                     orchestration_error.error_code,
                     primary_exception=orchestration_error,
                     emit_turn_end=lambda trace: self._emit_log(
                         turn_context, event="TURN_END", status=trace.status.value
                     ),
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001,S110
                 pass
             try:
                 self._emit_log(
-                    turn_context, event="STAGE_ERROR",
-                    stage_name=stage_event.stage_name, status="ERROR",
+                    turn_context,
+                    event="STAGE_ERROR",
+                    stage_name=stage_event.stage_name,
+                    status="ERROR",
                     duration_ms=duration_ms,
                     error_type=type(orchestration_error).__name__,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001,S110
                 pass
         else:
             self._close_turn(turn_context, TraceStatus.ERROR)
             self._emit_log(
-                turn_context, event="STAGE_ERROR",
-                stage_name=stage_event.stage_name, status="ERROR",
+                turn_context,
+                event="STAGE_ERROR",
+                stage_name=stage_event.stage_name,
+                status="ERROR",
                 duration_ms=duration_ms,
                 error_type=type(orchestration_error).__name__,
             )

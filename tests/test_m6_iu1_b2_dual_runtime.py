@@ -408,9 +408,10 @@ def test_f02_duplicate_terminal_calls_do_not_reemit() -> None:
 
 # G1: concrete RuntimeOrchestrator only. G2 remains deliberately unauthorized.
 
+
 def _g1_orchestrator() -> tuple[Any, Any]:
+    from runtime.contracts import ActionPlanDraft, ApprovedActionPlan, PolicyDecision
     from runtime.orchestration.runtime import M6IntegrationMode, RuntimeOrchestrator
-    from runtime.contracts import ActionPlanDraft, PolicyDecision, ApprovedActionPlan
     from tests.orchestration_stubs import StubPolicyRechecker
     from tests.test_runtime_orchestrator import _StubBundle
 
@@ -470,12 +471,18 @@ async def test_g1_constructor_rejects_missing_facade() -> None:
     bundle = _StubBundle()
     with pytest.raises(ValueError, match="factory"):
         RuntimeOrchestrator(
-            input_processor=bundle.input_processor, safety_guard=bundle.safety_guard,
-            context_builder=bundle.context_builder, understanding_engine=bundle.understanding_engine,
-            policy_engine=bundle.policy_engine, planner=bundle.planner,
-            plan_validator=bundle.plan_validator, policy_rechecker=bundle.policy_rechecker,
-            execution_engine=bundle.execution_engine, result_validator=bundle.result_validator,
-            response_planner=bundle.response_planner, response_generator=bundle.response_generator,
+            input_processor=bundle.input_processor,
+            safety_guard=bundle.safety_guard,
+            context_builder=bundle.context_builder,
+            understanding_engine=bundle.understanding_engine,
+            policy_engine=bundle.policy_engine,
+            planner=bundle.planner,
+            plan_validator=bundle.plan_validator,
+            policy_rechecker=bundle.policy_rechecker,
+            execution_engine=bundle.execution_engine,
+            result_validator=bundle.result_validator,
+            response_planner=bundle.response_planner,
+            response_generator=bundle.response_generator,
             response_validator=bundle.response_validator,
             state_memory_updater=bundle.state_memory_updater,
             m6_integration_mode=M6IntegrationMode.DENY_ONLY_GATED,
@@ -495,14 +502,18 @@ class _G1FailingLog:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("event", ["TURN_START", "STAGE_START", "STAGE_END", "TURN_END"])
+@pytest.mark.parametrize(
+    "event", ["TURN_START", "STAGE_START", "STAGE_END", "TURN_END"]
+)
 async def test_g1_log_failure_never_returns_success(event: str) -> None:
+    from runtime.orchestration.errors import StageExecutionError
+    from runtime.orchestration.runtime import M6DownstreamBlocked
     from runtime.orchestration.trace import TraceStatus
 
     orchestrator, bundle = _g1_orchestrator()
     hook = _G1FailingLog(event)
     orchestrator.log_hook = hook
-    with pytest.raises(BaseException):
+    with pytest.raises((OSError, StageExecutionError, M6DownstreamBlocked)):
         await orchestrator.run(build_runtime_input())
     assert orchestrator.last_trace is not None
     assert orchestrator.last_trace.status is TraceStatus.ERROR

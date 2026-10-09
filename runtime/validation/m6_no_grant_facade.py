@@ -8,7 +8,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from runtime.contracts import ApprovedActionPlan, ExecutionResult, RuntimeContext, RuntimeInput
+from runtime.contracts import (
+    ApprovedActionPlan,
+    ExecutionResult,
+    RuntimeContext,
+    RuntimeInput,
+)
 from runtime.contracts.validation import ValidatedResult
 from runtime.validation.no_grant import NoGrantReason, NoGrantTurnSlot
 from runtime.validation.no_grant_downstream_policy import (
@@ -53,7 +58,12 @@ class TurnOriginSnapshot:
     def __post_init__(self) -> None:
         if not all(
             _valid_id(v)
-            for v in (self.request_id, self.session_id, self.identity_scope, self.trace_id)
+            for v in (
+                self.request_id,
+                self.session_id,
+                self.identity_scope,
+                self.trace_id,
+            )
         ):
             raise M6FoundationError(M6FoundationErrorCode.INVALID_ORIGIN)
 
@@ -83,7 +93,7 @@ class M6NoGrantValidation:
 class M6NoGrantTurnHandle:
     """Single-use turn owner. Failures cannot be retried using the same slot."""
 
-    __slots__ = ("origin", "_slot", "_controller", "_closed", "_used")
+    __slots__ = ("_closed", "_controller", "_slot", "_used", "origin")
 
     def __init__(self, origin: TurnOriginSnapshot) -> None:
         if type(origin) is not TurnOriginSnapshot:
@@ -116,7 +126,9 @@ class M6NoGrantTurnHandle:
         ):
             raise M6FoundationError(M6FoundationErrorCode.INVALID_INPUT)
         admission = admit_validation_input(
-            execution, context, approved,
+            execution,
+            context,
+            approved,
             expected_request_id=self.origin.request_id,
             expected_session_id=self.origin.session_id,
         )

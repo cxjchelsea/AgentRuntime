@@ -45,22 +45,25 @@ def _origin() -> TurnOriginSnapshot:
     return TurnOriginSnapshot.from_runtime_input(build_runtime_input())
 
 
-@pytest.mark.parametrize("field,value", [
-    ("request_id", ""),
-    ("session_id", " session "),
-    ("identity_scope", 7),
-    ("trace_id", " "),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("request_id", ""),
+        ("session_id", " session "),
+        ("identity_scope", 7),
+        ("trace_id", " "),
+    ],
+)
 def test_f_origin_rejects_invalid_fields(field: str, value: object) -> None:
-    baseline = dict(
-        request_id="request-001",
-        session_id="session-001",
-        identity_scope="scope-001",
-        trace_id="trace-001",
-    )
-    baseline[field] = value
+    payload: dict[str, object] = {
+        "request_id": "request-001",
+        "session_id": "session-001",
+        "identity_scope": "scope-001",
+        "trace_id": "trace-001",
+    }
+    payload[field] = value
     with pytest.raises(M6FoundationError) as err:
-        TurnOriginSnapshot(**baseline)  # type: ignore[arg-type]
+        TurnOriginSnapshot(**payload)  # type: ignore[arg-type]
     assert err.value.code is M6FoundationErrorCode.INVALID_ORIGIN
 
 
@@ -82,8 +85,14 @@ async def test_f_handle_returns_non_authoritative_no_grant() -> None:
     try:
         bundle = await handle.validate(execution, build_runtime_context(), approved)
         assert bundle.validated.request_id == origin.request_id
-        assert bundle.decision.disposition is NoGrantDownstreamDisposition.BLOCK_BEFORE_M7_M8
-        assert bundle.decision.reason is NoGrantDownstreamReason.NO_AUTHORIZED_VALIDATION_GRANT
+        assert (
+            bundle.decision.disposition
+            is NoGrantDownstreamDisposition.BLOCK_BEFORE_M7_M8
+        )
+        assert (
+            bundle.decision.reason
+            is NoGrantDownstreamReason.NO_AUTHORIZED_VALIDATION_GRANT
+        )
         assert bundle.decision.may_call_response_planner is False
         assert bundle.decision.may_call_state_memory_updater is False
         with pytest.raises(M6FoundationError) as err:
@@ -117,7 +126,9 @@ def test_f_terminalization_once_and_original_reason() -> None:
     trace = _trace()
     emitted: list[str] = []
     assert finish_turn_once(
-        trace, TraceStatus.ERROR, "TURN_CANCELLED",
+        trace,
+        TraceStatus.ERROR,
+        "TURN_CANCELLED",
         emit_turn_end=lambda t: emitted.append(t.status.value),
     )
     finished_at = trace.finished_at
@@ -151,8 +162,11 @@ def test_f_logging_failure_does_not_mask_primary_exception() -> None:
         raise RuntimeError("logging failed")
 
     assert finish_turn_once(
-        trace, TraceStatus.ERROR, "STAGE_FAILED",
-        emit_turn_end=broken, primary_exception=primary,
+        trace,
+        TraceStatus.ERROR,
+        "STAGE_FAILED",
+        emit_turn_end=broken,
+        primary_exception=primary,
     )
     assert trace.error == "STAGE_FAILED"
 

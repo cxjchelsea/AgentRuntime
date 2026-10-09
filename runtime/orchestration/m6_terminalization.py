@@ -42,9 +42,7 @@ def finish_turn_once(
     running = trace.status is TraceStatus.RUNNING
     unfinished = trace.finished_at is None
     if running != unfinished:
-        raise TerminalizationError(
-            TerminalizationErrorCode.INCONSISTENT_TERMINAL_STATE
-        )
+        raise TerminalizationError(TerminalizationErrorCode.INCONSISTENT_TERMINAL_STATE)
     if not running:
         return False
     if reason_code is not None and (type(reason_code) is not str or not reason_code):

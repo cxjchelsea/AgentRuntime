@@ -155,6 +155,7 @@ def parse_package_descriptor(
             object_pairs_hook=_pairs,
             parse_constant=_bad_number,
             parse_float=_bad_number,
+            parse_int=_bad_number,
         )
     except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise PackageDescriptorError("invalid descriptor JSON") from exc

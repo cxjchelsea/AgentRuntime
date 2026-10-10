@@ -156,7 +156,7 @@ There are three distinct sources, never interchangeable:
 - `package_schema_version: "1"`;
 - `domain_id` and `domain_version`: bounded nonblank ASCII identifiers (e.g. `inventory.reconcile`, `1.0.0`), documented exact-grammar and length limits, no case folding/implicit alias;
 - `runtime_compatibility`: **exact supported runtime contract/profile ID**, not a floating range or `latest`;
-- `asset_refs`: array of objects each with `kind, id, version, sha256, relative_path`; only enumerated kinds, explicit exact version and namespace, no duplicate normalized `(kind,id,version,namespace)`;
+- `asset_refs`: array of objects each with `kind, namespace, id, version, sha256, relative_path`; namespace is a required, explicit domain-scoped identifier (or reserved `CORE` solely for declared shared Core assets), and only enumerated kinds, explicit exact version and namespace, no duplicate normalized `(kind,id,version,namespace)`;
 - `manifest_digest`: lowercase hexadecimal SHA-256 digest of canonical descriptor **excluding `manifest_digest` itself**;
 - optional `feature_flags` only if enumerated by the D1 schema. Optional non-D1 fields are forbidden rather than silently accepted.
 

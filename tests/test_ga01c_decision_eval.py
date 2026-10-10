@@ -89,9 +89,7 @@ _CASES = (
 
 def _semantic_instruction(collect_action: str) -> str:
     verify_action = (
-        "DOMAIN_ACTION_B"
-        if collect_action == "DOMAIN_ACTION_A"
-        else "DOMAIN_ACTION_A"
+        "DOMAIN_ACTION_B" if collect_action == "DOMAIN_ACTION_A" else "DOMAIN_ACTION_A"
     )
     # No expected answers or conditional A/B mapping. Both actions always legal.
     return (
@@ -122,18 +120,12 @@ async def _select_case(case: EvaluationCase) -> str:
     model = StructuredStrategyTransportAdapter(transport)
     context = build_runtime_context().model_copy(
         update={
-            "interaction_context": InteractionContext(
-                last_agent_action=case.observed
-            )
+            "interaction_context": InteractionContext(last_agent_action=case.observed)
         }
     )
     original = _understanding()
     understanding = original.model_copy(
-        update={
-            "goal": GoalUnderstanding(
-                explicit_goal=case.goal, confidence=1.0
-            )
-        }
+        update={"goal": GoalUnderstanding(explicit_goal=case.goal, confidence=1.0)}
     )
     result = await HybridStrategySelector(
         strategy_registry=_strategy_registry(),
@@ -161,14 +153,17 @@ def test_eval_instruction_has_no_answer_or_branch_leak() -> None:
         assert instruction.count("DOMAIN_ACTION_A") >= 1
         assert instruction.count("DOMAIN_ACTION_B") >= 1
     assert {case.expected_action for case in _CASES} == {
-        "DOMAIN_ACTION_A", "DOMAIN_ACTION_B"
+        "DOMAIN_ACTION_A",
+        "DOMAIN_ACTION_B",
     }
 
 
 @pytest.mark.skipif(
-    not (os.environ.get("GA01C_EVAL_OPT_IN") == "1"
-         and os.environ.get("GA01C_LLM_URL")
-         and os.environ.get("GA01C_LLM_MODEL")),
+    not (
+        os.environ.get("GA01C_EVAL_OPT_IN") == "1"
+        and os.environ.get("GA01C_LLM_URL")
+        and os.environ.get("GA01C_LLM_MODEL")
+    ),
     reason="real local model evaluation is explicitly opt-in",
 )
 def test_real_qwen_semantic_decisions_no_answer_leak() -> None:
@@ -178,10 +173,8 @@ def test_real_qwen_semantic_decisions_no_answer_leak() -> None:
         for case in _CASES:
             try:
                 selected = await _select_case(case)
-            except Exception as error:
-                failures.append(
-                    f"{case.case_id}: blocked {type(error).__name__}"
-                )
+            except Exception as error:  # noqa: BLE001 - per-case evidence collection
+                failures.append(f"{case.case_id}: blocked {type(error).__name__}")
                 continue
             passed = selected == case.expected_action
             score += int(passed)

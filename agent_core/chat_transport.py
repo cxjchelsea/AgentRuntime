@@ -92,7 +92,9 @@ class ChatCompletionsStrategyTransport:
     ) -> None:
         self._config = config
         self._send_once = send_once
-        if system_instruction is not None and not (20 <= len(system_instruction) <= 4096):
+        if system_instruction is not None and not (
+            20 <= len(system_instruction) <= 4096
+        ):
             raise ValueError("system instruction length out of bounds")
         self._system_instruction = system_instruction
 

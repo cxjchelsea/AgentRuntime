@@ -15,3 +15,7 @@ test = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["runtime*", "agent_core*"]
+exclude = ["tests*", "docs*", "可复用Agent_Runtime平台设计*"]

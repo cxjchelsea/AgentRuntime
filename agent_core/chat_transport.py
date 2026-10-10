@@ -88,9 +88,15 @@ class ChatCompletionsStrategyTransport:
         config: ChatCompletionsConfig,
         *,
         send_once: Callable[[Request, float], bytes] = _send_once,
+        system_instruction: str | None = None,
     ) -> None:
         self._config = config
         self._send_once = send_once
+        if system_instruction is not None and not (
+            20 <= len(system_instruction) <= 4096
+        ):
+            raise ValueError("system instruction length out of bounds")
+        self._system_instruction = system_instruction
 
     async def __call__(self, payload: dict[str, Any]) -> Mapping[str, object]:
         # Only data from existing StrategyModelRequest allow-list is supplied.
@@ -117,7 +123,7 @@ class ChatCompletionsStrategyTransport:
         body = {
             "model": self._config.model,
             "messages": [
-                {"role": "system", "content": system},
+                {"role": "system", "content": self._system_instruction or system},
                 {
                     "role": "user",
                     "content": json.dumps(payload, ensure_ascii=True),

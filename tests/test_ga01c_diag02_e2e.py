@@ -15,10 +15,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from agent_core.iteration import AgentRunBinding
-from runtime.contracts import RuntimeInput
-from runtime.planning import StrategyEligibilityRule
 from agent_core.runner import AgentRunCoordinator, LoopBudget
-from runtime.contracts import RuntimeContext, UnderstandingState
+from runtime.contracts import RuntimeContext, RuntimeInput, UnderstandingState
+from runtime.planning import StrategyEligibilityRule
 from runtime.planning.candidates import PlanningActionCandidate
 from runtime.planning.goals import GoalResolutionResult
 from runtime.registries import StrategyDefinition

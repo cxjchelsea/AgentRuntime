@@ -161,26 +161,34 @@ def test_diag03_real_model_typed_multitask_e2e() -> None:
         completed = 0
         correct = 0
         total = 0
+        failures: list[str] = []
         for repeat in (1, 2):
             for case in TASKS:
                 step = _make_step(case)
-                result = await AgentRunCoordinator(
-                    step,
-                    LoopBudget(
-                        max_iterations=4,
-                        max_executions=3,
-                        max_no_progress=1,
-                        max_decision_seconds=55,
-                        max_execution_seconds=5,
-                    ),
-                ).run(step.initial, step.binding)
+                error_type = "NONE"
+                try:
+                    result = await AgentRunCoordinator(
+                        step,
+                        LoopBudget(
+                            max_iterations=4,
+                            max_executions=3,
+                            max_no_progress=1,
+                            max_decision_seconds=55,
+                            max_execution_seconds=5,
+                        ),
+                    ).run(step.initial, step.binding)
+                    finished = (
+                        result.kind is RunKind.FINISH
+                        and bool(result.observations)
+                        and result.observations[-1].facts == ("GOAL_SATISFIED",)
+                    )
+                except Exception as error:  # noqa: BLE001 - preserve bounded eval failures
+                    error_type = type(error).__name__
+                    finished = False
+                if error_type != "NONE":
+                    failures.append(f"{case.case_id}/{repeat}:{error_type}")
                 actions = tuple(step.selected_actions)
                 expected = case.expected_actions
-                finished = (
-                    result.kind is RunKind.FINISH
-                    and bool(result.observations)
-                    and result.observations[-1].facts == ("GOAL_SATISFIED",)
-                )
                 completed += int(finished)
                 count = max(len(actions), len(expected))
                 total += count
@@ -193,16 +201,19 @@ def test_diag03_real_model_typed_multitask_e2e() -> None:
                 print(
                     f"DIAG03 case={case.case_id} repeat={repeat} actions={actions} "
                     f"expected={expected} finished={finished} "
-                    f"typed_model_requests={len(step.model_payloads)}",
+                    f"typed_model_requests={len(step.model_payloads)} "
+                    f"error={error_type}",
                     flush=True,
                 )
         accuracy = correct / total if total else 0.0
         print(
             f"DIAG03_SUMMARY complete={completed}/12 "
-            f"correct={correct}/{total} accuracy={accuracy:.3f}",
+            f"correct={correct}/{total} accuracy={accuracy:.3f} "
+            f"model_or_runtime_errors={len(failures)}",
             flush=True,
         )
-        assert completed >= 10
-        assert accuracy >= 0.90
+        assert completed >= 10, f"typed completion failed: {failures}"
+        assert accuracy >= 0.90, f"typed action accuracy failed: {failures}"
+        assert not failures, f"typed evaluation errors: {failures}"
 
     asyncio.run(evaluate())

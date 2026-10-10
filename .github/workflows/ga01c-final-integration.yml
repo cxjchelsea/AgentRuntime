@@ -75,6 +75,7 @@ jobs:
         shell: bash
         env:
           GA01C_DIAG03_OPT_IN: "1"
+          GA01C_INVALID_CHOICE_RETRY_OPT_IN: "1"
           GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
           GA01C_LLM_MODEL: qwen2.5:3b
         run: |

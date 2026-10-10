@@ -39,3 +39,27 @@ python -m pytest tests/test_ga01c_live.py -q -rs
 - **C：Production Agent READY**：还需要 M6 Positive Grant、正式 Observation Truth Projection、Tool 权限、Domain Package 等，不属于 GA-01C。
 
 正式代码审查后如仅 A 通过，可以合并可选 Provider 适配器，但不能把 GA-01C 宣称已经实现了真实 LLM E2E 验证。
+
+## 本次实际验证记录（精确 HEAD）
+
+- **代码 HEAD**：`41defcedd33b5a094dcbec845f835681c6982315`
+- **CI**：[GitHub Actions #38015777629](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38015777629) — SUCCESS
+- **定向 pytest**：110 passed、1 skipped
+- **全量 pytest**：1196 passed、1 skipped、1 warning
+- **mypy**：Success，250 source files
+- **Ruff lint**：All checks passed
+- **Ruff format**：250 files already formatted
+- **本机 HTTP E2E**：`tests/test_ga01c_http_e2e.py` 真正绑定 loopback socket，执行 HTTP POST / Chat Completions JSON / M4 / 两轮 Mock Action / FINISH；**HTTP 服务端是确定性测试模拟器，不是真实 LLM**。
+- **真实公网/本地 LLM E2E**：`tests/test_ga01c_live.py::test_live_provider_drives_two_approved_mock_actions` 因 `GA01C_LLM_API_KEY`、`GA01C_LLM_URL`、`GA01C_LLM_MODEL` 未配置而 SKIPPED，**没有实际模型请求证据**。
+
+### 结果判定
+
+```text
+GA-01C PROVIDER ADAPTER = IMPLEMENTED
+GA-01C HTTP CONTRACT + LOOPBACK SANDBOX E2E = VERIFIED
+GA-01C LIVE EXTERNAL LLM = NOT_ATTESTED (SKIPPED)
+GA-01C PRODUCTION POSITIVE GRANT = NOT_AUTHORIZED
+PR #96 = OPEN / DRAFT / NOT MERGED
+```
+
+后续一旦绑定可信供应商的 Secret 与 Variables，再运行 Live E2E；如果外部模型不支持 `response_format=json_object` 等兼容项，应针对该 Provider 增加显式版本化 Adapter 变体，不通过放松 M4 output validator 或允许任意 Tool 来兼容。

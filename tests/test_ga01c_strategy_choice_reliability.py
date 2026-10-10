@@ -52,7 +52,7 @@ def test_persistent_invalid_action_fails_closed_after_one_retry() -> None:
     async def infer(_: dict[str, Any]) -> dict[str, object]:
         return _choice("DOMAIN_STRATEGY_A", "OUTSIDE_LEGAL_SPACE")
 
-    t = DiagnosticStrategyChoiceTransport(infer)
+    t = DiagnosticStrategyChoiceTransport(infer, max_invalid_retries=1)
     with pytest.raises(StrategyModelOutputError, match="legal candidate space"):
         asyncio.run(t(_request()))
     assert t.model_calls == 2

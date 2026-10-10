@@ -120,9 +120,7 @@ def test_model_transport_rejects_non_mapping() -> None:
         return {}  # Test invalid model choice shape through existing M4 validator
 
     with pytest.raises(StrategyModelOutputError):
-        asyncio.run(
-            _run_soft_selection(StructuredStrategyTransportAdapter(invalid))
-        )
+        asyncio.run(_run_soft_selection(StructuredStrategyTransportAdapter(invalid)))
 
 
 def test_adapter_itself_does_not_call_transport_for_non_model_path() -> None:

@@ -31,6 +31,7 @@ from agent_core.runner import (
 from runtime.contracts import RuntimeContext, RuntimeInput, UnderstandingState
 from runtime.contracts.context import InteractionContext
 from runtime.contracts.understanding import GoalUnderstanding
+from runtime.planning import StrategyEligibilityRule
 from tests.ga01.projector import SandboxObservationProjector
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga01_slice1 import SandboxTurn
@@ -197,7 +198,8 @@ class MultiTaskSandboxTurn(ModelDrivenSandboxTurn):
             return await http_transport(payload)
 
         planner = _build_model_planner(
-            StructuredStrategyTransportAdapter(observed_transport)
+            StructuredStrategyTransportAdapter(observed_transport),
+            eligibility_rules=self.planning_eligibility_rules(),
         )
         self._planner = planner.planner
         self._validator = planner.validator
@@ -219,6 +221,9 @@ class MultiTaskSandboxTurn(ModelDrivenSandboxTurn):
                 "GOAL_SATISFIED": "Evidence successfully checked in sandbox.",
             }
         )
+
+    def planning_eligibility_rules(self) -> tuple[StrategyEligibilityRule, ...]:
+        return ()
 
     def model_observation_projection(
         self, observations: tuple[ObservedFact, ...]

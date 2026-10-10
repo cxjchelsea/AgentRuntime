@@ -338,8 +338,7 @@ def test_qwen_real_multitask_loop_completion_and_reliability() -> None:
         completed = sum(item.finished_with_evidence for item in results)
         blocked = sum(item.safe_block for item in results)
         errors = sum(
-            not item.finished_with_evidence and not item.safe_block
-            for item in results
+            not item.finished_with_evidence and not item.safe_block for item in results
         )
         correct = sum(item.action_correct for item in results)
         total = sum(item.action_total for item in results)
@@ -362,14 +361,14 @@ def test_qwen_real_multitask_loop_completion_and_reliability() -> None:
     asyncio.run(evaluate())
 
 
-def test_eval02_wrong_tool_order_cannot_fake_success(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_eval02_wrong_tool_order_cannot_fake_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Deterministic negative integration: M4 approves a wrong but legal action.
 
     An early VERIFY never turns into GOAL_SATISFIED without collected evidence.
     """
-    monkeypatch.setenv(
-        "GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions"
-    )
+    monkeypatch.setenv("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions")
     monkeypatch.setenv("GA01C_LLM_MODEL", "test-only-not-contacted")
     case = TASKS[0]
 

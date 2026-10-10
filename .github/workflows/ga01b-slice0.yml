@@ -1,8 +1,9 @@
-name: GA-01B Slice 0 Verification
+name: Agent Runtime Test Gates
 
 on:
   push:
     branches:
+      - main
       - feature/ga-01b-slice0-20261010
   pull_request:
     paths:

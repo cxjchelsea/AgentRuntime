@@ -16,10 +16,39 @@ PROFILE = "GA02-D1-1"
 MAX_BYTES = 262144
 MAX_ASSETS = 256
 _ID = re.compile(r"[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*\Z", re.ASCII)
-_VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z", re.ASCII)
+_VERSION = re.compile(
+    r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z", re.ASCII
+)
 _SHA = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
-_KINDS = frozenset({"action", "strategy", "skill", "tool", "workflow", "capability", "prompt", "knowledge", "rule", "schema", "state", "eval"})
-_TOP = frozenset({"package_schema_version", "domain_id", "domain_version", "name", "enabled", "runtime_compatibility", "asset_refs", "manifest_digest", "feature_flags"})
+_KINDS = frozenset(
+    {
+        "action",
+        "strategy",
+        "skill",
+        "tool",
+        "workflow",
+        "capability",
+        "prompt",
+        "knowledge",
+        "rule",
+        "schema",
+        "state",
+        "eval",
+    }
+)
+_TOP = frozenset(
+    {
+        "package_schema_version",
+        "domain_id",
+        "domain_version",
+        "name",
+        "enabled",
+        "runtime_compatibility",
+        "asset_refs",
+        "manifest_digest",
+        "feature_flags",
+    }
+)
 _ASSET = frozenset({"kind", "namespace", "id", "version", "sha256", "relative_path"})
 
 
@@ -40,8 +69,14 @@ def _bad_number(_value: str) -> None:
     raise PackageDescriptorError("non-integer JSON number")
 
 
-def _object(value: object, required: frozenset[str], allowed: frozenset[str]) -> dict[str, Any]:
-    if type(value) is not dict or not required <= value.keys() or not value.keys() <= allowed:
+def _object(
+    value: object, required: frozenset[str], allowed: frozenset[str]
+) -> dict[str, Any]:
+    if (
+        type(value) is not dict
+        or not required <= value.keys()
+        or not value.keys() <= allowed
+    ):
         raise PackageDescriptorError("missing or unknown descriptor fields")
     return value
 
@@ -72,9 +107,14 @@ def _version(value: object, field: str) -> str:
 
 def _path(value: object) -> str:
     s = _string(value, "relative_path", 512)
-    if (s.startswith("/") or "\\" in s or "%" in s or ":" in s
+    if (
+        s.startswith("/")
+        or "\\" in s
+        or "%" in s
+        or ":" in s
         or any(p in {"", ".", ".."} for p in s.split("/"))
-        or str(PurePosixPath(s)) != s):
+        or str(PurePosixPath(s)) != s
+    ):
         raise PackageDescriptorError("unsafe asset path")
     return s
 
@@ -101,19 +141,28 @@ class PackageDescriptorV1:
     manifest_digest: str
 
 
-def parse_package_descriptor(raw: bytes, *, supported_profile: str = PROFILE) -> PackageDescriptorV1:
+def parse_package_descriptor(
+    raw: bytes, *, supported_profile: str = PROFILE
+) -> PackageDescriptorV1:
     """Parse exact versioned JSON bytes without touching packages or Registries."""
     if type(raw) is not bytes or not raw or len(raw) > MAX_BYTES:
         raise PackageDescriptorError("bad descriptor bytes or size")
     if raw.startswith(b"\xef\xbb\xbf"):
         raise PackageDescriptorError("UTF-8 BOM is forbidden")
     try:
-        data = json.loads(raw.decode("utf-8", "strict"), object_pairs_hook=_pairs,
-                          parse_constant=_bad_number, parse_float=_bad_number)
+        data = json.loads(
+            raw.decode("utf-8", "strict"),
+            object_pairs_hook=_pairs,
+            parse_constant=_bad_number,
+            parse_float=_bad_number,
+        )
     except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise PackageDescriptorError("invalid descriptor JSON") from exc
     top = _object(data, _TOP - {"feature_flags"}, _TOP)
-    if type(top["package_schema_version"]) is not str or top["package_schema_version"] != "1":
+    if (
+        type(top["package_schema_version"]) is not str
+        or top["package_schema_version"] != "1"
+    ):
         raise PackageDescriptorError("unsupported package schema")
     domain = _identifier(top["domain_id"], "domain_id")
     version = _version(top["domain_version"], "domain_version")
@@ -139,8 +188,11 @@ def parse_package_descriptor(raw: bytes, *, supported_profile: str = PROFILE) ->
         kind = _string(ref["kind"], "kind", 24)
         if kind not in _KINDS:
             raise PackageDescriptorError("unknown asset kind")
-        namespace = ("CORE" if ref["namespace"] == "CORE" and kind == "schema"
-                     else _identifier(ref["namespace"], "namespace"))
+        namespace = (
+            "CORE"
+            if ref["namespace"] == "CORE" and kind == "schema"
+            else _identifier(ref["namespace"], "namespace")
+        )
         if namespace not in {domain, "CORE"}:
             raise PackageDescriptorError("foreign namespace")
         item_id = _identifier(ref["id"], "asset_id")
@@ -156,27 +208,48 @@ def parse_package_descriptor(raw: bytes, *, supported_profile: str = PROFILE) ->
         refs.append(AssetReferenceV1(kind, namespace, item_id, item_version, sha, path))
     refs.sort(key=lambda r: (r.kind, r.namespace, r.id, r.version, r.relative_path))
     canonical: dict[str, Any] = {
-        "package_schema_version": "1", "domain_id": domain, "domain_version": version,
-        "name": name, "enabled": top["enabled"], "runtime_compatibility": profile,
+        "package_schema_version": "1",
+        "domain_id": domain,
+        "domain_version": version,
+        "name": name,
+        "enabled": top["enabled"],
+        "runtime_compatibility": profile,
         "asset_refs": [
-            {"kind": r.kind, "namespace": r.namespace, "id": r.id, "version": r.version,
-             "sha256": r.sha256, "relative_path": r.relative_path} for r in refs
+            {
+                "kind": r.kind,
+                "namespace": r.namespace,
+                "id": r.id,
+                "version": r.version,
+                "sha256": r.sha256,
+                "relative_path": r.relative_path,
+            }
+            for r in refs
         ],
     }
     if "feature_flags" in top:
         canonical["feature_flags"] = []
-    byte_value = json.dumps(canonical, sort_keys=True, separators=(",", ":"),
-                            ensure_ascii=False, allow_nan=False).encode("utf-8", "strict")
+    byte_value = json.dumps(
+        canonical,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8", "strict")
     if hashlib.sha256(byte_value).hexdigest() != digest:
         raise PackageDescriptorError("manifest digest mismatch")
-    return PackageDescriptorV1("1", domain, version, name, top["enabled"], profile,
-                               tuple(refs), digest)
+    return PackageDescriptorV1(
+        "1", domain, version, name, top["enabled"], profile, tuple(refs), digest
+    )
 
 
 def descriptor_to_domain_manifest(descriptor: PackageDescriptorV1) -> DomainManifest:
     """Pure metadata adapter: no Registry writes and no execution permission."""
     if type(descriptor) is not PackageDescriptorV1:
         raise PackageDescriptorError("not a validated descriptor")
-    return DomainManifest(domain_id=descriptor.domain_id, name=descriptor.name,
-                          version=descriptor.domain_version, enabled=descriptor.enabled,
-                          runtime_compatibility=descriptor.runtime_compatibility)
+    return DomainManifest(
+        domain_id=descriptor.domain_id,
+        name=descriptor.name,
+        version=descriptor.domain_version,
+        enabled=descriptor.enabled,
+        runtime_compatibility=descriptor.runtime_compatibility,
+    )

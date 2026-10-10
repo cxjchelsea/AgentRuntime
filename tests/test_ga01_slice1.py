@@ -20,13 +20,13 @@ from agent_core.runner import (
     RunKind,
 )
 from runtime.constraint_management import RuntimeConstraintEvaluator
+from runtime.context_building import DefaultContextBuilder
 from runtime.contracts import (
     ActionPlanDraft,
     ApprovedActionPlan,
     DomainExtensions,
     RuntimeInput,
 )
-from runtime.context_building import DefaultContextBuilder
 from runtime.contracts.context import ToolContext
 from runtime.input_processing import DefaultInputProcessor
 from runtime.orchestration.m2_admission import (
@@ -204,7 +204,7 @@ def test_slice1_goal_satisfied_after_single_action_and_second_decision() -> None
 
 def test_slice1_observation_changes_completion_behavior() -> None:
     async def scenario() -> None:
-        initial = build_runtime_input()
+        initial = build_runtime_input(text="find a safe fixture fact")
         step = SandboxTurn(initial, facts=("SEARCH_FOUND_BUT_NOT_DONE",))
         result = await AgentRunCoordinator(
             step, LoopBudget(max_iterations=2, max_executions=2)
@@ -219,7 +219,7 @@ def test_slice1_observation_changes_completion_behavior() -> None:
 
 def test_slice1_execution_budget_stops_before_second_side_effect() -> None:
     async def scenario() -> None:
-        initial = build_runtime_input()
+        initial = build_runtime_input(text="find a safe fixture fact")
         step = SandboxTurn(initial, facts=("INCOMPLETE",))
         result = await AgentRunCoordinator(
             step, LoopBudget(max_iterations=4, max_executions=1)
@@ -233,7 +233,7 @@ def test_slice1_execution_budget_stops_before_second_side_effect() -> None:
 
 def test_slice1_invalid_binding_fails_before_any_tool_attempt() -> None:
     async def scenario() -> None:
-        initial = build_runtime_input()
+        initial = build_runtime_input(text="find a safe fixture fact")
         step = SandboxTurn(initial)
         wrong = initial.model_copy(update={"subject_id": "attacker"})
         with pytest.raises((RunBoundaryError, ValueError)):

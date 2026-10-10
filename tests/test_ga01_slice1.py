@@ -42,8 +42,8 @@ from runtime.state_management import EngineRuntimeStateProvider
 from tests.ga01.sandbox import LocalMockExecutionEngine, verify_local_mock
 from tests.orchestration_stubs import (
     StubPlanValidator,
-    build_execution_result,
     build_action_plan_draft,
+    build_execution_result,
     build_runtime_context,
     build_runtime_input,
 )

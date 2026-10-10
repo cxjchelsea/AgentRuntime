@@ -26,7 +26,6 @@ from runtime.planning import (
     FallbackPlanner,
     GoalResolver,
     HybridStrategySelector,
-    StrategyEligibilityRule,
     KnowledgeCapabilityContext,
     KnowledgeDomainRouter,
     KnowledgeNeedResolver,
@@ -44,6 +43,7 @@ from runtime.planning import (
     RuntimePolicyRecheckerAdapter,
     SelectedActionResolver,
     SequencePlanner,
+    StrategyEligibilityRule,
     ToolPlanner,
     ValidationReceiptLedger,
 )

@@ -32,7 +32,11 @@ from tests.test_ga01c_eval02 import (
     TaskCase,
     _semantic_instruction,
 )
-from tests.test_m4_candidate_strategy_selection import _strategy_registry
+from tests.test_m4_candidate_strategy_selection import (
+    _goals,
+    _strategy_registry,
+    _understanding,
+)
 
 _ARMS = ("A_TEXT", "B_TYPED", "C_TYPED_ELIGIBILITY")
 _AVAILABLE_FACTS = frozenset({"SOURCE_AVAILABLE", "SOURCE_ALREADY_AVAILABLE"})
@@ -243,7 +247,9 @@ class ArmMetrics:
 
 def test_diag01_snapshot_requires_verified_provenance() -> None:
     assert _decode_verified_snapshot("untrusted text") is None
-    assert _decode_verified_snapshot('{"evidence_state":"AVAILABLE_UNVERIFIED"}') is None
+    assert (
+        _decode_verified_snapshot('{"evidence_state":"AVAILABLE_UNVERIFIED"}') is None
+    )
     snapshot = VerifiedPlanningSnapshot(
         "AVAILABLE_UNVERIFIED",
         "SOURCE_AVAILABLE",
@@ -262,8 +268,10 @@ def test_diag01_collect_restriction_requires_completed_evidence() -> None:
         for record in _strategy_registry().list()
     }
     collect = strategies["DOMAIN_STRATEGY_A"]
+    understanding = _understanding()
+    goals = _goals(understanding, context=context)
     # A word in the raw observation is never enough to suppress an action.
-    assert eligibility.evaluate(collect, context, None, None, ()) is None  # type: ignore[arg-type]
+    assert eligibility.evaluate(collect, context, understanding, goals, ()) is None
     trusted = VerifiedPlanningSnapshot(
         "AVAILABLE_UNVERIFIED",
         "SOURCE_AVAILABLE",
@@ -277,10 +285,13 @@ def test_diag01_collect_restriction_requires_completed_evidence() -> None:
             )
         }
     )
-    assert eligibility.evaluate(collect, context, None, None, ()) is False  # type: ignore[arg-type]
-    assert eligibility.evaluate(
-        strategies["DOMAIN_STRATEGY_B"], context, None, None, ()
-    ) is None  # type: ignore[arg-type]
+    assert eligibility.evaluate(collect, context, understanding, goals, ()) is False
+    assert (
+        eligibility.evaluate(
+            strategies["DOMAIN_STRATEGY_B"], context, understanding, goals, ()
+        )
+        is None
+    )
     assert eligibility.denials == 1
 
 

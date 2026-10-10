@@ -54,6 +54,7 @@ class Decision:
     context: RuntimeContext | None = None
     approved: ApprovedActionPlan | None = None
     reason: str = ""
+    completion_fact: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +108,15 @@ class AgentRunCoordinator:
                 raise RunBoundaryError("decision iteration mismatch")
             if decision.kind == "FINISH":
                 # A task may finish only AFTER evidence from an approved execution.
-                if not observations or not decision.reason:
+                if (
+                    not observations
+                    or not decision.reason
+                    or decision.completion_fact is None
+                    or not any(
+                        decision.completion_fact in observed.facts
+                        for observed in observations
+                    )
+                ):
                     raise RunBoundaryError("unsupported completion claim")
                 return RunOutcome(
                     binding.run_id, RunKind.FINISH, decision.reason,

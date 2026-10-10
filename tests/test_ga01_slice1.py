@@ -21,20 +21,14 @@ from agent_core.runner import (
 )
 from runtime.constraint_management import RuntimeConstraintEvaluator
 from runtime.contracts import (
+    ToolContext,
     ActionPlanDraft,
     ApprovedActionPlan,
     DomainExtensions,
-    ExecutionPlanStatus,
-    ExecutionResult,
-    RuntimeContext,
     RuntimeInput,
-    SafetyPhase,
-    SafetyResult,
-    UnderstandingState,
 )
 from runtime.context_building import DefaultContextBuilder
 from runtime.input_processing import DefaultInputProcessor
-from runtime.interfaces.execution import ExecutionEngine
 from runtime.orchestration.m2_admission import (
     assert_admission_allows_flow,
     evaluate_m2_admission,
@@ -76,6 +70,7 @@ class SandboxTurn:
         )
         self.actions = 0
         self.rounds = 0
+        self.visible_observations: list[tuple[str, ...]] = []
         self._recorder = CallRecorder()
         self._understanding = RequestAwareUnderstandingEngine(self._recorder)
         self._safety = DefaultSafetyGuard(rules=[])
@@ -101,10 +96,14 @@ class SandboxTurn:
         context = await DefaultContextBuilder(
             runtime_state_provider=EngineRuntimeStateProvider(state),
         ).build(normalized, early)
+        observed_facts = tuple(f for obs in observations for f in obs.facts)
+        self.visible_observations.append(observed_facts)
         context = context.model_copy(
             update={
                 "domain_extensions": DomainExtensions(domain_id=self.binding.domain_id),
-                "tool_context": None,
+                "tool_context": ToolContext(
+                    recent_tool_results=[{"fact": fact} for fact in observed_facts]
+                ),
             }
         )
         understanding = await self._understanding.understand(normalized, context)
@@ -121,12 +120,23 @@ class SandboxTurn:
         )
         policy = constraint.policy_decision
         assert_admission_allows_flow(
-            constraint=constraint, request_id=normalized.request_id,
+            constraint=constraint,
+            request_id=normalized.request_id,
             policy_decision=policy,
         )
         # Completion is a deterministic fixture predicate over sandbox evidence.
-        if any("GOAL_SATISFIED" in fact.facts for fact in observations):
-            return Decision(iteration, "FINISH", reason="SANDBOX_GOAL_SATISFIED")
+        if (
+            context.tool_context is not None
+            and context.tool_context.recent_tool_results is not None
+            and any(
+                result.get("fact") == "GOAL_SATISFIED"
+                for result in context.tool_context.recent_tool_results
+            )
+        ):
+            return Decision(
+                iteration, "FINISH", reason="SANDBOX_GOAL_SATISFIED",
+                completion_fact="GOAL_SATISFIED",
+            )
         draft = build_action_plan_draft().model_copy(
             update={
                 "request_id": normalized.request_id,
@@ -176,7 +186,7 @@ class SandboxTurn:
 
 def test_slice1_goal_satisfied_after_single_action_and_second_decision() -> None:
     async def scenario() -> None:
-        initial = build_runtime_input()
+        initial = build_runtime_input(text="find a safe fixture fact")
         step = SandboxTurn(initial, facts=("GOAL_SATISFIED",))
         result = await AgentRunCoordinator(step, LoopBudget()).run(
             initial, step.binding
@@ -186,6 +196,7 @@ def test_slice1_goal_satisfied_after_single_action_and_second_decision() -> None
         assert result.executions == 1
         assert result.iterations == 2
         assert step.rounds == 2 and step.actions == 1
+        assert step.visible_observations == [(), ("GOAL_SATISFIED",)]
 
     asyncio.run(scenario())
 
@@ -224,7 +235,7 @@ def test_slice1_invalid_binding_fails_before_any_tool_attempt() -> None:
         initial = build_runtime_input()
         step = SandboxTurn(initial)
         wrong = initial.model_copy(update={"subject_id": "attacker"})
-        with pytest.raises(Exception):
+        with pytest.raises((RunBoundaryError, ValueError)):
             await AgentRunCoordinator(step, LoopBudget()).run(wrong, step.binding)
         assert step.actions == 0
 

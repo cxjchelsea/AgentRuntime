@@ -31,10 +31,10 @@ from runtime.contracts.context import InteractionContext
 from runtime.contracts.understanding import GoalUnderstanding
 from tests.ga01.projector import SandboxObservationProjector
 from tests.orchestration_stubs import build_runtime_input
-from tests.test_m2_runtime_integration_gate import CallRecorder
 from tests.test_ga01_slice1 import SandboxTurn
 from tests.test_ga01_slice2_loop import GoalAwareUnderstanding, ModelDrivenSandboxTurn
 from tests.test_ga01_slice2_m4 import _build_model_planner
+from tests.test_m2_runtime_integration_gate import CallRecorder
 
 
 @dataclass(frozen=True)

@@ -85,7 +85,10 @@ def test_reordered_keys_and_nonascii_name() -> None:
     )
     changed = parse_package_descriptor(descriptor_bytes({**BASE, "name": "库存核对"}))
     assert changed.name == "库存核对"
-    assert changed.manifest_digest == "0a1817b2be7c17284990a707fc4d687ff2870099e13f0eb071d7706813164677"
+    assert (
+        changed.manifest_digest
+        == "0a1817b2be7c17284990a707fc4d687ff2870099e13f0eb071d7706813164677"
+    )
 
 
 def test_nonempty_asset_refs_are_sorted_in_hash_and_returned_value() -> None:
@@ -98,7 +101,10 @@ def test_nonempty_asset_refs_are_sorted_in_hash_and_returned_value() -> None:
         descriptor_bytes({**BASE, "asset_refs": [two, one]})
     )
     assert left.manifest_digest == right.manifest_digest
-    assert left.manifest_digest == "25fa213498f84ba77d58a36c24e10d4123fe8a04c64d22dafa98733773a804dc"
+    assert (
+        left.manifest_digest
+        == "25fa213498f84ba77d58a36c24e10d4123fe8a04c64d22dafa98733773a804dc"
+    )
     assert left.asset_refs == right.asset_refs
 
 

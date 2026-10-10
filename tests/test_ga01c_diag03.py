@@ -256,7 +256,9 @@ def test_diag03_real_model_typed_multitask_e2e() -> None:
                     finished = False
                 if error_type != "NONE":
                     failures.append(f"{case.case_id}/{repeat}:{error_type}")
-                invalid_choices += len(step.choice_diagnostics.invalid_output_categories)
+                invalid_choices += len(
+                    step.choice_diagnostics.invalid_output_categories
+                )
                 recovered_choices += step.choice_diagnostics.recovered_invalid_choices
                 unhandled_choices += step.choice_diagnostics.unrecovered_invalid_choices
                 model_calls += step.choice_diagnostics.model_calls

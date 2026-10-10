@@ -44,7 +44,9 @@ class StructuredStrategyTransportAdapter:
         try:
             response = await self._transport(payload)
         except Exception as exc:
-            raise StrategyTransportError("structured strategy transport failed") from exc
+            raise StrategyTransportError(
+                "structured strategy transport failed"
+            ) from exc
         if not isinstance(response, Mapping):
             raise StrategyTransportError("strategy transport returned a non-object")
         return response

@@ -85,7 +85,8 @@ def test_model_receives_observation_projection_and_changes_legal_action() -> Non
         assert fake.calls[0]["last_agent_action"] is None
         assert fake.calls[1]["last_agent_action"] == "MOCK_FOUND_NEEDS_VERIFICATION"
         assert set(fake.calls[1]["legal_strategy_ids"]) == {
-            "DOMAIN_STRATEGY_A", "DOMAIN_STRATEGY_B"
+            "DOMAIN_STRATEGY_A",
+            "DOMAIN_STRATEGY_B",
         }
         assert "recent_tool_results" not in fake.calls[1]
         assert "identity_context" not in fake.calls[1]

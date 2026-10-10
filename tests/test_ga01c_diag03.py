@@ -122,8 +122,15 @@ class TypedPlanningTurn(InitialEvidenceTurn):
         self._rechecker = planner.rechecker
 
     def _verified_for_request(self, request_id: str) -> PlanningObservationContext:
-        if request_id != self.binding.original_request_id and not request_id.startswith(
-            f"{self.binding.run_id}-iteration-"
+        iteration_prefix = f"{self.binding.run_id}-iteration-"
+        suffix = (
+            request_id[len(iteration_prefix) :]
+            if request_id.startswith(iteration_prefix)
+            else ""
+        )
+        if request_id != self.binding.original_request_id and not (
+            suffix.isascii() and suffix.isdecimal() and suffix.isdigit()
+            and str(int(suffix)) == suffix and int(suffix) > 0
         ):
             raise ValueError("typed observation request does not match run")
         return self._typed

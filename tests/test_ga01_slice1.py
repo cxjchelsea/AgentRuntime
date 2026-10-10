@@ -362,9 +362,9 @@ def test_slice1_decision_timeout_never_calls_executor() -> None:
         )
         step = SlowDecision()
         with pytest.raises(RunBoundaryError, match="decision timed out"):
-            await AgentRunCoordinator(
-                step, LoopBudget(max_decision_seconds=0.001)
-            ).run(initial, binding)
+            await AgentRunCoordinator(step, LoopBudget(max_decision_seconds=0.001)).run(
+                initial, binding
+            )
         assert step.calls == 0
 
     asyncio.run(scenario())

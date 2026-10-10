@@ -7,7 +7,6 @@ This module does not import SandboxObservation, M6 Grant or any Tool adapter.
 from __future__ import annotations
 
 import asyncio
-
 from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
@@ -182,7 +181,8 @@ class AgentRunCoordinator:
                 raise RunBoundaryError("context scope mismatch")
             # Claim identity before any physical attempt; failed attempts must not replay.
             used_plan_ids.add(plan.plan_id)
-            executions += 1  # Charge before await: timeout/cancel is UNKNOWN, never replay.
+            # Charge before await: timeout/cancel is UNKNOWN, never replay.
+            executions += 1
             try:
                 observation = await asyncio.wait_for(
                     self._step.execute_and_observe(decision),

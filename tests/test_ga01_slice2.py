@@ -12,24 +12,17 @@ from typing import Any
 
 import pytest
 
-from agent_core.model_adapter import (
-    StrategyTransportError,
-    StructuredStrategyTransportAdapter,
-)
-from runtime.contracts import InteractionContext
+from agent_core.model_adapter import StructuredStrategyTransportAdapter
+from runtime.contracts.context import InteractionContext
 from runtime.contracts.enums import PlanningMode
-from runtime.planning import (
-    HybridStrategySelector,
-    StrategyModelOutputError,
-)
-from tests.orchestration_stubs import build_runtime_context
+from runtime.planning import HybridStrategySelector, StrategyModelOutputError
+from tests.orchestration_stubs import build_policy_decision, build_runtime_context
 from tests.test_m4_candidate_strategy_selection import (
     _candidate,
     _goals,
     _strategy_registry,
     _understanding,
 )
-from tests.orchestration_stubs import build_policy_decision
 
 
 class ObservationSensitiveFakeTransport:
@@ -90,9 +83,7 @@ def test_model_receives_observation_projection_and_changes_legal_action() -> Non
         assert after.selected_action_ids == ("DOMAIN_ACTION_B",)
         assert len(fake.calls) == 2
         assert fake.calls[0]["last_agent_action"] is None
-        assert fake.calls[1]["last_agent_action"] == (
-            "MOCK_FOUND_NEEDS_VERIFICATION"
-        )
+        assert fake.calls[1]["last_agent_action"] == "MOCK_FOUND_NEEDS_VERIFICATION"
         assert set(fake.calls[1]["legal_strategy_ids"]) == {
             "DOMAIN_STRATEGY_A", "DOMAIN_STRATEGY_B"
         }
@@ -112,9 +103,7 @@ def test_model_cannot_invent_tool_or_strategy() -> None:
         }
 
     with pytest.raises(StrategyModelOutputError):
-        asyncio.run(
-            _run_soft_selection(StructuredStrategyTransportAdapter(invalid))
-        )
+        asyncio.run(_run_soft_selection(StructuredStrategyTransportAdapter(invalid)))
 
 
 def test_model_transport_failure_is_fail_closed() -> None:
@@ -122,9 +111,7 @@ def test_model_transport_failure_is_fail_closed() -> None:
         raise ConnectionError("simulated offline provider")
 
     with pytest.raises(Exception, match="strategy model execution failed"):
-        asyncio.run(
-            _run_soft_selection(StructuredStrategyTransportAdapter(offline))
-        )
+        asyncio.run(_run_soft_selection(StructuredStrategyTransportAdapter(offline)))
 
 
 def test_model_transport_rejects_non_mapping() -> None:
@@ -138,7 +125,6 @@ def test_model_transport_rejects_non_mapping() -> None:
 
 
 def test_adapter_itself_does_not_call_transport_for_non_model_path() -> None:
-    from runtime.planning import StrategyRuleChoice
     from tests.test_m4_candidate_strategy_selection import StaticStrategyRule
 
     async def scenario() -> None:
@@ -147,11 +133,7 @@ def test_adapter_itself_does_not_call_transport_for_non_model_path() -> None:
         understanding = _understanding()
         selector = HybridStrategySelector(
             strategy_registry=_strategy_registry(),
-            rules=(StaticStrategyRule(StrategyRuleChoice(
-                strategy_id="DOMAIN_STRATEGY_A",
-                reason_code="RULE_OVERRIDES_MODEL",
-                action_ids=("DOMAIN_ACTION_A",),
-            )),),
+            rules=(StaticStrategyRule("DOMAIN_STRATEGY_A"),),
             model=model,
         )
         result = await selector.select(

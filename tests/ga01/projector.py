@@ -43,6 +43,4 @@ class SandboxObservationProjector:
         latest = observations[-1]
         if len(latest.facts) != 1:
             raise SandboxProjectionError("ambiguous final observation facts")
-        return InteractionContext(
-            last_agent_action=self.allowed_facts[latest.facts[0]]
-        )
+        return InteractionContext(last_agent_action=self.allowed_facts[latest.facts[0]])

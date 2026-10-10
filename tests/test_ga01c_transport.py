@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from email.message import Message
 from urllib.error import HTTPError
 from urllib.request import Request
 
@@ -20,17 +21,23 @@ from tests.test_ga01_slice2 import _run_soft_selection
 
 
 def _payload(strategy: str, action: str) -> bytes:
-    return json.dumps({
-        "choices": [{
-            "message": {
-                "content": json.dumps({
-                    "strategy_id": strategy,
-                    "action_ids": [action],
-                    "reason_code": "LIVE_TEST_PROVIDER",
-                })
-            }
-        }]
-    }).encode("utf-8")
+    return json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "strategy_id": strategy,
+                                "action_ids": [action],
+                                "reason_code": "LIVE_TEST_PROVIDER",
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
 
 
 def test_http_json_contract_via_injected_transport_without_network() -> None:
@@ -40,7 +47,9 @@ def test_http_json_contract_via_injected_transport_without_network() -> None:
         assert timeout == 3.0
         assert request.full_url == "https://api.example.org/v1/chat/completions"
         assert request.get_header("Authorization") == "Bearer test-placeholder"
-        body = json.loads(request.data or b"{}")
+        data = request.data
+        assert isinstance(data, bytes)
+        body = json.loads(data)
         captured.append(body)
         assert body["temperature"] == 0
         assert body["response_format"] == {"type": "json_object"}
@@ -93,9 +102,7 @@ def test_model_response_illegal_action_rejected_by_real_m4() -> None:
         ),
     )
     with pytest.raises(StrategyModelOutputError):
-        asyncio.run(
-            _run_soft_selection(StructuredStrategyTransportAdapter(transport))
-        )
+        asyncio.run(_run_soft_selection(StructuredStrategyTransportAdapter(transport)))
 
 
 def test_provider_failure_does_not_retry_or_disclose_secret() -> None:
@@ -104,7 +111,7 @@ def test_provider_failure_does_not_retry_or_disclose_secret() -> None:
     def unavailable(request: Request, timeout: float) -> bytes:
         nonlocal calls
         calls += 1
-        raise HTTPError(request.full_url, 503, "unavailable", None, None)
+        raise HTTPError(request.full_url, 503, "unavailable", Message(), None)
 
     transport = ChatCompletionsStrategyTransport(
         ChatCompletionsConfig(

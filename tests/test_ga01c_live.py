@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 
@@ -74,7 +75,7 @@ def test_projector_rejects_forged_or_unrecognized_evidence(
         {"OBSERVED_SEARCH_RESULT": "MOCK_FOUND_NEEDS_VERIFICATION"}
     )
     with pytest.raises(SandboxProjectionError):
-        projector.project(binding, (replace(observation, **change),))
+        projector.project(binding, (replace(observation, **cast(Any, change)),))
 
 
 def test_projector_rejects_duplicate_execution_evidence() -> None:
@@ -95,9 +96,7 @@ class LiveSandboxTurn(ModelDrivenSandboxTurn):
             api_key=os.environ.get("GA01C_LLM_API_KEY", ""),
         )
         planning = _build_model_planner(
-            StructuredStrategyTransportAdapter(
-                ChatCompletionsStrategyTransport(config)
-            )
+            StructuredStrategyTransportAdapter(ChatCompletionsStrategyTransport(config))
         )
         self._planner = planning.planner
         self._validator = planning.validator
@@ -109,9 +108,7 @@ class LiveSandboxTurn(ModelDrivenSandboxTurn):
             }
         )
 
-    def model_observation_projection(
-        self, observations: tuple[ObservedFact, ...]
-    ):
+    def model_observation_projection(self, observations: tuple[ObservedFact, ...]):
         return self.projector.project(self.binding, observations)
 
 

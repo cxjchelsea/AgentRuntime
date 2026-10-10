@@ -37,7 +37,6 @@ class _DenyRedirects(HTTPRedirectHandler):
         newurl: str,
     ) -> None:
         del req, fp, code, msg, headers, newurl
-        return None
 
 
 def _send_once(request: Request, timeout: float) -> bytes:
@@ -145,7 +144,9 @@ class ChatCompletionsStrategyTransport:
                 timeout=self._config.timeout_seconds + 1.0,
             )
         except (TimeoutError, HTTPError, URLError, OSError) as error:
-            raise LiveModelTransportError("chat completion transport unavailable") from error
+            raise LiveModelTransportError(
+                "chat completion transport unavailable"
+            ) from error
         # Do not echo provider errors/content: they may contain user information.
         try:
             envelope = json.loads(raw)
@@ -155,7 +156,7 @@ class ChatCompletionsStrategyTransport:
                 raise ValueError("non-text response")
             selection = json.loads(content)
             if not isinstance(selection, dict):
-                raise ValueError("non-object model selection")
+                raise TypeError("non-object model selection")
         except (ValueError, TypeError, KeyError, IndexError) as error:
             raise LiveModelTransportError(
                 "chat completion returned invalid structured content"

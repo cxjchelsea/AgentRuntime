@@ -129,8 +129,10 @@ class TypedPlanningTurn(InitialEvidenceTurn):
             else ""
         )
         if request_id != self.binding.original_request_id and not (
-            suffix.isascii() and suffix.isdecimal() and suffix.isdigit()
-            and str(int(suffix)) == suffix and int(suffix) > 0
+            suffix.isascii()
+            and suffix.isdecimal()
+            and suffix[0] != "0"
+            and len(suffix) <= 9
         ):
             raise ValueError("typed observation request does not match run")
         return self._typed

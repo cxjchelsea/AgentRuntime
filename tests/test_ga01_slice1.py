@@ -28,7 +28,7 @@ from runtime.contracts import (
     DomainExtensions,
     RuntimeInput,
 )
-from runtime.contracts.context import ToolContext
+from runtime.contracts.context import InteractionContext, ToolContext
 from runtime.input_processing import DefaultInputProcessor
 from runtime.orchestration.m2_admission import (
     assert_admission_allows_flow,
@@ -90,6 +90,12 @@ class SandboxTurn:
         self._rechecker = DefaultPolicyRechecker()
         self.mock_calls = 0
 
+    def model_observation_projection(
+        self, observations: tuple[ObservedFact, ...]
+    ) -> InteractionContext | None:
+        del observations
+        return None
+
     async def decide(
         self,
         current_input: RuntimeInput,
@@ -105,14 +111,16 @@ class SandboxTurn:
         ).build(normalized, early)
         observed_facts = tuple(f for obs in observations for f in obs.facts)
         self.visible_observations.append(observed_facts)
-        context = context.model_copy(
-            update={
-                "domain_extensions": DomainExtensions(domain_id=self.binding.domain_id),
-                "tool_context": ToolContext(
-                    recent_tool_results=[{"fact": fact} for fact in observed_facts]
-                ),
-            }
-        )
+        context_updates: dict[str, object] = {
+            "domain_extensions": DomainExtensions(domain_id=self.binding.domain_id),
+            "tool_context": ToolContext(
+                recent_tool_results=[{"fact": fact} for fact in observed_facts]
+            ),
+        }
+        projected = self.model_observation_projection(observations)
+        if projected is not None:
+            context_updates["interaction_context"] = projected
+        context = context.model_copy(update=context_updates)
         understanding = await self._understanding.understand(normalized, context)
         deep = await self._safety.evaluate_deep(
             normalized, context, understanding, early

@@ -30,7 +30,7 @@ jobs:
           python -m pip install -e '.[test]' mypy ruff
       - name: Targeted G01 G02 G03 regression
         run: |
-          python -m pytest tests/test_m2_runtime_integration_gate.py tests/test_m6_iu1_b2_dual_runtime.py tests/test_ga01_slice0.py tests/test_ga01_slice0_integration.py tests/test_ga01_slice0_security.py tests/test_ga01_slice1.py tests/test_ga01_slice2.py tests/test_ga01_slice2_m4.py -q
+          python -m pytest tests/test_m2_runtime_integration_gate.py tests/test_m6_iu1_b2_dual_runtime.py tests/test_ga01_slice0.py tests/test_ga01_slice0_integration.py tests/test_ga01_slice0_security.py tests/test_ga01_slice1.py tests/test_ga01_slice2.py tests/test_ga01_slice2_m4.py tests/test_ga01_slice2_loop.py -q
       - name: Full pytest
         if: success() || failure()
         run: python -m pytest tests -q

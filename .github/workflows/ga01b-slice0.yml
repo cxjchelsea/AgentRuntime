@@ -54,7 +54,7 @@ jobs:
 
   free-local-model:
     name: Free local Qwen2.5 3B real inference
-    if: github.event_name == 'pull_request' && github.head_ref == 'feature/ga-01c-real-model-adapter-20261010'
+    if: github.event_name == 'pull_request' && (github.head_ref == 'feature/ga-01c-real-model-adapter-20261010' || github.head_ref == 'eval/ga-01c-no-answer-leak-qwen3b-20261010')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

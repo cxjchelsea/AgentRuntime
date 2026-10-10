@@ -21,6 +21,7 @@ import pytest
 from agent_core.runner import AgentRunCoordinator, LoopBudget, ObservedFact, RunKind
 from runtime.contracts import RuntimeContext, RuntimeInput, UnderstandingState
 from runtime.contracts.context import InteractionContext
+from runtime.planning import StrategyEligibilityRule
 from runtime.planning.candidates import PlanningActionCandidate
 from runtime.planning.goals import GoalResolutionResult
 from runtime.registries import StrategyDefinition
@@ -148,7 +149,7 @@ class DiagnosticTurn(MultiTaskSandboxTurn):
 
     def planning_eligibility_rules(
         self,
-    ) -> tuple[ProvenanceBoundCollectEligibility, ...]:
+    ) -> tuple[StrategyEligibilityRule, ...]:
         return (self.eligibility,) if self.arm == "C_TYPED_ELIGIBILITY" else ()
 
     def model_observation_projection(

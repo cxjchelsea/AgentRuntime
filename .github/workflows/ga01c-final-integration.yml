@@ -1,0 +1,96 @@
+name: GA-01C Final Integration Gate
+
+on:
+  pull_request:
+    paths:
+      - "runtime/**"
+      - "agent_core/**"
+      - "tests/**"
+      - ".github/workflows/ga01c-final-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration-standard:
+    name: GA-01C integration standard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install gate dependencies
+        run: python -m pip install -e '.[test]' mypy ruff
+      - name: Full pytest (historical opt-in diagnostics retain their original tests)
+        run: python -m pytest tests -q
+      - name: Mypy
+        run: python -m mypy runtime agent_core tests
+      - name: Ruff lint
+        run: python -m ruff check runtime agent_core tests
+      - name: Ruff format
+        run: python -m ruff format --check runtime agent_core tests
+
+  integration-qwen:
+    name: GA-01C final Qwen2.5 3B live E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal test dependencies
+        run: python -m pip install -e '.[test]'
+      - name: Start isolated Ollama and record pinned evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GIT_SHA=${GITHUB_SHA}"
+          echo "GIT_REF=${GITHUB_REF}"
+          docker run -d --name ga01c-integration-qwen --cpus=2 --memory=5g -p 127.0.0.1:11434:11434 ollama/ollama:latest
+          for attempt in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null
+          docker exec ga01c-integration-qwen ollama pull qwen2.5:3b
+          docker exec ga01c-integration-qwen ollama list
+          docker exec ga01c-integration-qwen sha256sum /root/.ollama/models/manifests/registry.ollama.ai/library/qwen2.5/3b
+          docker image inspect ollama/ollama:latest --format 'OLLAMA_IMAGE_ID={{.Id}}'
+      - name: Real model smoke and Agent Loop
+        env:
+          GA01C_LIVE_OPT_IN: "1"
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+          GA01C_LLM_API_KEY: ""
+        run: |
+          python -m pytest tests/test_ga01c_free_local.py -q -rs
+          python -m pytest tests/test_ga01c_live.py::test_live_provider_drives_two_approved_mock_actions -q -rs
+          python -m pytest tests/test_ga01c_decision_eval.py::test_real_qwen_semantic_decisions_no_answer_leak -q -s -rs
+      - name: Repeat final DIAG-03 E2E three independent executions
+        shell: bash
+        env:
+          GA01C_DIAG03_OPT_IN: "1"
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: |
+          set -uo pipefail
+          failed=0
+          for repeat in 1 2 3; do
+            echo "::group::DIAG03 independent trial ${repeat}/3"
+            python -m pytest tests/test_ga01c_diag03.py::test_diag03_real_model_typed_multitask_e2e -q -s -rs
+            status=$?
+            echo "DIAG03_TRIAL=${repeat} STATUS=${status}"
+            if [ "$status" -ne 0 ]; then failed=1; fi
+            echo "::endgroup::"
+          done
+          exit "$failed"
+      - name: Report Ollama logs on failure
+        if: failure()
+        run: docker logs --tail 100 ga01c-integration-qwen || true
+      - name: Remove isolated Ollama
+        if: always()
+        run: docker rm -f ga01c-integration-qwen || true

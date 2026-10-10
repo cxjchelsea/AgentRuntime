@@ -113,7 +113,7 @@ def test_disabled_metadata_remains_disabled() -> None:
         {"domain_version": "01.0.0"},
         {"name": " A"},
         {"name": "e\u0301"},
-            {"name": ""},
+        {"name": ""},
         {"enabled": 1},
         {"runtime_compatibility": "latest"},
         {"package_schema_version": "2"},

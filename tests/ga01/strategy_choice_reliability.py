@@ -7,9 +7,8 @@ Raw provider text and user goal are never logged.
 
 from __future__ import annotations
 
-from copy import deepcopy
-
 from collections.abc import Awaitable, Callable, Mapping
+from copy import deepcopy
 from typing import Any
 
 from runtime.planning.errors import StrategyModelOutputError

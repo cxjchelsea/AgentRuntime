@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -277,8 +278,8 @@ async def _run_case(case: TaskCase, attempt: int) -> CaseResult:
         if outcome.kind is RunKind.FINISH and not finished:
             raise AssertionError("unsupported task completion evidence")
     except Exception as error:  # noqa: BLE001 - record failure and continue eval
-        status = f"FAIL_CLOSED:{type(error).__name__}"
-        safe_block = True
+        status = f"ERROR_NOT_A_CONFIRMED_BLOCK:{type(error).__name__}"
+        safe_block = False
     expected = case.expected_actions
     selected = tuple(turn.selected_actions)
     total = max(len(expected), len(selected))
@@ -336,6 +337,10 @@ def test_qwen_real_multitask_loop_completion_and_reliability() -> None:
                 )
         completed = sum(item.finished_with_evidence for item in results)
         blocked = sum(item.safe_block for item in results)
+        errors = sum(
+            not item.finished_with_evidence and not item.safe_block
+            for item in results
+        )
         correct = sum(item.action_correct for item in results)
         total = sum(item.action_total for item in results)
         rate = completed / len(results)
@@ -344,7 +349,7 @@ def test_qwen_real_multitask_loop_completion_and_reliability() -> None:
             f"EVAL02_SUMMARY complete={completed}/{len(results)} "
             f"completion_rate={rate:.3f} action_correct={correct}/{total} "
             f"action_accuracy={accuracy:.3f} safe_block={blocked} "
-            "unsupported_finish=0",
+            f"error_or_unknown={errors} unsupported_finish=0",
             flush=True,
         )
         # Fixed gates: cannot lower acceptance threshold after seeing failures.
@@ -355,3 +360,40 @@ def test_qwen_real_multitask_loop_completion_and_reliability() -> None:
         ), "a run neither completed with evidence nor safely blocked"
 
     asyncio.run(evaluate())
+
+
+def test_eval02_wrong_tool_order_cannot_fake_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Deterministic negative integration: M4 approves a wrong but legal action.
+
+    An early VERIFY never turns into GOAL_SATISFIED without collected evidence.
+    """
+    monkeypatch.setenv(
+        "GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions"
+    )
+    monkeypatch.setenv("GA01C_LLM_MODEL", "test-only-not-contacted")
+    case = TASKS[0]
+
+    async def wrong_choice(_payload: dict[str, Any]) -> dict[str, object]:
+        return {
+            "strategy_id": "DOMAIN_STRATEGY_B",
+            "action_ids": ["DOMAIN_ACTION_B"],
+            "reason_code": "TEST_WRONG_ORDER",
+        }
+
+    async def scenario() -> None:
+        original = build_runtime_input(text=case.goal)
+        step = MultiTaskSandboxTurn(original, case)
+        planner = _build_model_planner(StructuredStrategyTransportAdapter(wrong_choice))
+        step._planner = planner.planner
+        step._validator = planner.validator
+        step._rechecker = planner.rechecker
+        outcome = await AgentRunCoordinator(
+            step, LoopBudget(max_iterations=4, max_executions=3)
+        ).run(original, step.binding)
+        assert outcome.kind is RunKind.BLOCK
+        assert outcome.reason == "NO_PROGRESS"
+        assert step.selected_actions == ["DOMAIN_ACTION_B", "DOMAIN_ACTION_B"]
+        assert all(f.facts != ("GOAL_SATISFIED",) for f in outcome.observations)
+        assert step.mock_calls == 2
+
+    asyncio.run(scenario())

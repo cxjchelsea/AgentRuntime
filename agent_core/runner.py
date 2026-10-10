@@ -6,6 +6,8 @@ This module does not import SandboxObservation, M6 Grant or any Tool adapter.
 
 from __future__ import annotations
 
+import asyncio
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
@@ -29,9 +31,15 @@ class LoopBudget:
     max_iterations: int = 3
     max_executions: int = 2
     max_no_progress: int = 1
+    max_decision_seconds: float = 5.0
+    max_execution_seconds: float = 5.0
 
     def __post_init__(self) -> None:
-        if min(self.max_iterations, self.max_executions, self.max_no_progress) < 1:
+        if (
+            min(self.max_iterations, self.max_executions, self.max_no_progress) < 1
+            or self.max_decision_seconds <= 0
+            or self.max_execution_seconds <= 0
+        ):
             raise ValueError("Loop budgets must all be positive")
 
 
@@ -83,7 +91,11 @@ class StepPort(Protocol):
 
 
 class AgentRunCoordinator:
-    """One-owner bounded Agent loop; never retries external side effects."""
+    """Sandbox-only bounded loop; never retries an UNKNOWN attempt.
+
+    Cancellation propagates; an interrupted physical attempt is not claimed
+    successful or safe to replay. This is NOT a production Composition Root.
+    """
 
     def __init__(self, step: StepPort, budget: LoopBudget) -> None:
         self._step = step
@@ -102,9 +114,13 @@ class AgentRunCoordinator:
         for ordinal in range(self._budget.max_iterations):
             current_input = binding.iteration_input(original_input, ordinal=ordinal)
             iteration = IterationRef.from_input(binding, current_input, ordinal=ordinal)
-            decision = await self._step.decide(
-                current_input, iteration, tuple(observations)
-            )
+            try:
+                decision = await asyncio.wait_for(
+                    self._step.decide(current_input, iteration, tuple(observations)),
+                    timeout=self._budget.max_decision_seconds,
+                )
+            except TimeoutError as error:
+                raise RunBoundaryError("decision timed out; run blocked") from error
             if decision.iteration != iteration:
                 raise RunBoundaryError("decision iteration mismatch")
             if decision.kind == "FINISH":
@@ -166,8 +182,16 @@ class AgentRunCoordinator:
                 raise RunBoundaryError("context scope mismatch")
             # Claim identity before any physical attempt; failed attempts must not replay.
             used_plan_ids.add(plan.plan_id)
-            observation = await self._step.execute_and_observe(decision)
-            executions += 1
+            executions += 1  # Charge before await: timeout/cancel is UNKNOWN, never replay.
+            try:
+                observation = await asyncio.wait_for(
+                    self._step.execute_and_observe(decision),
+                    timeout=self._budget.max_execution_seconds,
+                )
+            except TimeoutError as error:
+                raise RunBoundaryError(
+                    "execution timed out; outcome UNKNOWN and must not replay"
+                ) from error
             if (
                 observation.run_id != binding.run_id
                 or observation.request_id != iteration.request_id

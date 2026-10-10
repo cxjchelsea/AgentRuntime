@@ -292,3 +292,115 @@ def test_slice1_invalid_binding_fails_before_any_tool_attempt() -> None:
         assert step.actions == 0
 
     asyncio.run(scenario())
+
+
+def test_slice1_finish_without_matching_verified_fact_is_blocked() -> None:
+    class UnsupportedCompletion:
+        calls = 0
+
+        async def decide(
+            self,
+            current_input: RuntimeInput,
+            iteration: IterationRef,
+            observations: tuple[ObservedFact, ...],
+        ) -> Decision:
+            del current_input, observations
+            return Decision(
+                iteration,
+                "FINISH",
+                reason="MODEL_SAID_DONE",
+                completion_fact="NOT_OBSERVED",
+            )
+
+        async def execute_and_observe(self, decision: Decision) -> ObservedFact:
+            self.calls += 1
+            raise AssertionError("no tool expected")
+
+    async def scenario() -> None:
+        initial = build_runtime_input(text="fixture goal")
+        binding = AgentRunBinding.from_input(
+            initial,
+            run_id="no-finish",
+            domain_id="fixture-domain",
+            domain_version="v1",
+            binding_fingerprint="fixture-hash",
+        )
+        step = UnsupportedCompletion()
+        with pytest.raises(RunBoundaryError, match="unsupported completion"):
+            await AgentRunCoordinator(step, LoopBudget()).run(initial, binding)
+        assert step.calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_slice1_decision_timeout_never_calls_executor() -> None:
+    class SlowDecision:
+        calls = 0
+
+        async def decide(
+            self,
+            current_input: RuntimeInput,
+            iteration: IterationRef,
+            observations: tuple[ObservedFact, ...],
+        ) -> Decision:
+            del current_input, iteration, observations
+            await asyncio.sleep(1)
+            raise AssertionError("unreachable")
+
+        async def execute_and_observe(self, decision: Decision) -> ObservedFact:
+            self.calls += 1
+            raise AssertionError("unreachable")
+
+    async def scenario() -> None:
+        initial = build_runtime_input(text="fixture goal")
+        binding = AgentRunBinding.from_input(
+            initial,
+            run_id="decision-timeout",
+            domain_id="fixture-domain",
+            domain_version="v1",
+            binding_fingerprint="fixture-hash",
+        )
+        step = SlowDecision()
+        with pytest.raises(RunBoundaryError, match="decision timed out"):
+            await AgentRunCoordinator(
+                step, LoopBudget(max_decision_seconds=0.001)
+            ).run(initial, binding)
+        assert step.calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_slice1_execution_timeout_remains_unknown_and_never_finishes() -> None:
+    class SlowMock(SandboxTurn):
+        async def execute_and_observe(self, decision: Decision) -> ObservedFact:
+            self.actions += 1
+            await asyncio.sleep(1)
+            raise AssertionError("unreachable")
+
+    async def scenario() -> None:
+        initial = build_runtime_input(text="fixture goal")
+        step = SlowMock(initial)
+        with pytest.raises(RunBoundaryError, match="outcome UNKNOWN"):
+            await AgentRunCoordinator(
+                step, LoopBudget(max_execution_seconds=0.001)
+            ).run(initial, step.binding)
+        assert step.actions == 1
+        assert step.rounds == 1
+
+    asyncio.run(scenario())
+
+
+def test_slice1_cancellation_propagates_without_finish() -> None:
+    class CancelledMock(SandboxTurn):
+        async def execute_and_observe(self, decision: Decision) -> ObservedFact:
+            self.actions += 1
+            raise asyncio.CancelledError()
+
+    async def scenario() -> None:
+        initial = build_runtime_input(text="fixture goal")
+        step = CancelledMock(initial)
+        with pytest.raises(asyncio.CancelledError):
+            await AgentRunCoordinator(step, LoopBudget()).run(initial, step.binding)
+        assert step.actions == 1
+
+    asyncio.run(scenario())

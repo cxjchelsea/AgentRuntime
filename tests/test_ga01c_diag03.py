@@ -20,11 +20,15 @@ from agent_core.runner import (
     ObservedFact,
     RunKind,
 )
+from runtime.contracts import RuntimeContext, UnderstandingState
+from runtime.planning.candidates import PlanningActionCandidate
+from runtime.planning.goals import GoalResolutionResult
 from runtime.planning.strategy_selection import (
     PlanningObservationContext,
     StrategyEligibilityRule,
     StrategyModelRequestBuilder,
 )
+from runtime.registries import StrategyDefinition
 from tests.ga01.initial_evidence import admit_initial_evidence
 from tests.ga01.typed_observation import (
     after_verified_execution,
@@ -37,12 +41,12 @@ from tests.test_ga01c_diag02_e2e import (
     InitialEvidenceTurn,
     _seed_store,
 )
-from tests.test_ga01c_eval02 import TASKS, TaskCase, _semantic_instruction
-from runtime.contracts import RuntimeContext, UnderstandingState
-from runtime.planning.candidates import PlanningActionCandidate
-from runtime.planning.goals import GoalResolutionResult
-from runtime.registries import StrategyDefinition
-
+from tests.test_ga01c_eval02 import (
+    TASKS,
+    MultiTaskSandboxTurn,
+    TaskCase,
+    _semantic_instruction,
+)
 
 
 class TrustedTypedEligibility:
@@ -71,9 +75,8 @@ class TrustedTypedEligibility:
         observed = self._provider._typed
         if (
             observed.evidence_state != "AVAILABLE_UNVERIFIED"
-            or observed.source_scope not in {
-                "INITIAL_STATE", "EXECUTION", "INITIAL_AND_EXECUTION"
-            }
+            or observed.source_scope
+            not in {"INITIAL_STATE", "EXECUTION", "INITIAL_AND_EXECUTION"}
             or not observed.evidence_refs
         ):
             return None
@@ -119,11 +122,9 @@ class TypedPlanningTurn(InitialEvidenceTurn):
         self._validator = planner.validator
         self._rechecker = planner.rechecker
 
-
     def _verified_for_request(self, request_id: str) -> PlanningObservationContext:
-        if (
-            request_id != self.binding.original_request_id
-            and not request_id.startswith(f"{self.binding.run_id}-iteration-")
+        if request_id != self.binding.original_request_id and not request_id.startswith(
+            f"{self.binding.run_id}-iteration-"
         ):
             raise ValueError("typed observation request does not match run")
         return self._typed
@@ -131,8 +132,6 @@ class TypedPlanningTurn(InitialEvidenceTurn):
     def model_observation_projection(self, observations: tuple[ObservedFact, ...]):
         # Verify provenance through the existing sandbox projector, but do NOT
         # run the old JSON Snapshot projection or legacy eligibility path.
-        from tests.test_ga01c_eval02 import MultiTaskSandboxTurn
-
         verified = MultiTaskSandboxTurn.model_observation_projection(self, observations)
         if observations:
             self._typed = after_verified_execution(

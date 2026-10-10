@@ -54,7 +54,7 @@ jobs:
 
   free-local-model:
     name: Free local Qwen2.5 3B real inference
-    if: github.event_name == 'pull_request' && (github.head_ref == 'feature/ga-01c-real-model-adapter-20261010' || github.head_ref == 'eval/ga-01c-no-answer-leak-qwen3b-20261010' || github.head_ref == 'eval/ga-01c-eval02-multitask-20261010' || github.head_ref == 'eval/ga-01c-diag01-replanning-20261010' || github.head_ref == 'eval/ga-01c-diag02-initial-evidence-20261010' || github.head_ref == 'eval/ga-01c-diag03-typed-planning-20261010')
+    if: github.event_name == 'pull_request' && (github.head_ref == 'feature/ga-01c-real-model-adapter-20261010' || github.head_ref == 'eval/ga-01c-no-answer-leak-qwen3b-20261010' || github.head_ref == 'eval/ga-01c-eval02-multitask-20261010' || github.head_ref == 'eval/ga-01c-diag01-replanning-20261010' || github.head_ref == 'eval/ga-01c-diag02-initial-evidence-20261010' || github.head_ref == 'eval/ga-01c-diag03-typed-planning-20261010' || github.head_ref == 'review/ga-01c-diag03-typed-consumer-20261010')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -121,7 +121,7 @@ jobs:
         run: |
           python -m pytest tests/test_ga01c_diag02_e2e.py::test_diag02_real_model_initial_evidence_reliability -q -s -rs
       - name: DIAG-03 typed planning real Qwen compatibility
-        if: github.head_ref == 'eval/ga-01c-diag03-typed-planning-20261010'
+        if: github.head_ref == 'eval/ga-01c-diag03-typed-planning-20261010' || github.head_ref == 'review/ga-01c-diag03-typed-consumer-20261010'
         env:
           GA01C_DIAG03_OPT_IN: '1'
           GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions

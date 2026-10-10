@@ -180,7 +180,7 @@ class StrategyModelRequestBuilder:
 
     def __init__(
         self,
-        observation_provider: Callable[[], PlanningObservationContext | None]
+        observation_provider: Callable[[str], PlanningObservationContext | None]
         | None = None,
     ) -> None:
         self._observation_provider = observation_provider
@@ -237,7 +237,7 @@ class StrategyModelRequestBuilder:
             legal_strategy_ids=legal_strategy_ids,
             available_capability_ids=tuple(sorted(available_capability_ids)),
             planning_observation=(
-                self._observation_provider()
+                self._observation_provider(understanding_state.metadata.request_id)
                 if self._observation_provider is not None
                 else None
             ),

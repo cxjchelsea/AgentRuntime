@@ -20,10 +20,14 @@ from agent_core.runner import (
     ObservedFact,
     RunKind,
 )
+from runtime.contracts import RuntimeContext, UnderstandingState
+from runtime.planning.candidates import PlanningActionCandidate
+from runtime.planning.goals import GoalResolutionResult
 from runtime.planning.strategy_selection import (
     PlanningObservationContext,
     StrategyModelRequestBuilder,
 )
+from runtime.registries import StrategyDefinition
 from tests.ga01.initial_evidence import admit_initial_evidence
 from tests.ga01.typed_observation import (
     after_verified_execution,
@@ -36,7 +40,49 @@ from tests.test_ga01c_diag02_e2e import (
     InitialEvidenceTurn,
     _seed_store,
 )
-from tests.test_ga01c_eval02 import TASKS, TaskCase, _semantic_instruction
+from tests.test_ga01c_eval02 import (
+    TASKS,
+    MultiTaskSandboxTurn,
+    TaskCase,
+    _semantic_instruction,
+)
+
+
+class TrustedTypedEligibility:
+    """M4 Domain rule consuming only the isolated admitted/verified read projection."""
+
+    def __init__(self, case: TaskCase, provider: TypedPlanningTurn) -> None:
+        self._collect_strategy = (
+            "DOMAIN_STRATEGY_A"
+            if case.collect_action == "DOMAIN_ACTION_A"
+            else "DOMAIN_STRATEGY_B"
+        )
+        self._provider = provider
+        self.denials = 0
+
+    def evaluate(
+        self,
+        strategy: StrategyDefinition,
+        runtime_context: RuntimeContext,
+        understanding_state: UnderstandingState,
+        goals: GoalResolutionResult,
+        candidates: tuple[PlanningActionCandidate, ...],
+    ) -> bool | None:
+        del runtime_context, understanding_state, goals, candidates
+        if strategy.strategy_id != self._collect_strategy:
+            return None
+        observed = self._provider._typed
+        if (
+            observed.evidence_state != "AVAILABLE_UNVERIFIED"
+            or observed.source_scope
+            not in {"INITIAL_STATE", "EXECUTION", "INITIAL_AND_EXECUTION"}
+            or not observed.evidence_refs
+        ):
+            return None
+        # The projection was created by the admitted store / checked sandbox
+        # projector, not by decoding arbitrary last_agent_action JSON.
+        self.denials += 1
+        return False
 
 
 class TypedPlanningTurn(InitialEvidenceTurn):
@@ -46,6 +92,7 @@ class TypedPlanningTurn(InitialEvidenceTurn):
             self.initial_rule.accepted, self.binding
         )
         self._typed = self._typed_initial
+        self._typed_eligibility = TrustedTypedEligibility(self.case, self)
         self.model_payloads: list[dict[str, Any]] = []
         config = ChatCompletionsConfig(
             endpoint=os.environ["GA01C_LLM_URL"],
@@ -65,19 +112,35 @@ class TypedPlanningTurn(InitialEvidenceTurn):
             StructuredStrategyTransportAdapter(
                 capture, include_legacy_agent_action=False
             ),
-            eligibility_rules=self.planning_eligibility_rules(),
+            eligibility_rules=(self._typed_eligibility,),
             request_builder=StrategyModelRequestBuilder(
-                observation_provider=lambda: self._typed
+                observation_provider=self._verified_for_request
             ),
         )
         self._planner = planner.planner
         self._validator = planner.validator
         self._rechecker = planner.rechecker
 
+    def _verified_for_request(self, request_id: str) -> PlanningObservationContext:
+        iteration_prefix = f"{self.binding.run_id}-iteration-"
+        suffix = (
+            request_id[len(iteration_prefix) :]
+            if request_id.startswith(iteration_prefix)
+            else ""
+        )
+        if request_id != self.binding.original_request_id and not (
+            suffix.isascii()
+            and suffix.isdecimal()
+            and suffix[0] != "0"
+            and len(suffix) <= 9
+        ):
+            raise ValueError("typed observation request does not match run")
+        return self._typed
+
     def model_observation_projection(self, observations: tuple[ObservedFact, ...]):
-        # Legacy DIAG-02 M4 eligibility still uses the checked sandbox snapshot
-        # internally. It is explicitly omitted from the model input.
-        legacy = super().model_observation_projection(observations)
+        # Verify provenance through the existing sandbox projector, but do NOT
+        # run the old JSON Snapshot projection or legacy eligibility path.
+        verified = MultiTaskSandboxTurn.model_observation_projection(self, observations)
         if observations:
             self._typed = after_verified_execution(
                 self.binding,
@@ -86,7 +149,7 @@ class TypedPlanningTurn(InitialEvidenceTurn):
                 tuple(self.selected_actions),
                 self._typed_initial,
             )
-        return legacy
+        return verified
 
 
 def _make_step(case: TaskCase) -> TypedPlanningTurn:

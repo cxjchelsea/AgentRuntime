@@ -1,7 +1,7 @@
 # GA-01B Slice 1｜Minimal Agent Loop 实现与 CI 验证
 
-> **对应代码精确 HEAD**：`b17b472aba62cc3a267e407cf2fa71587d55efca`（PR #93，基于 PR #92 分支）。  
-> **运行证据**：[GitHub Actions Run #38012708696](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38012708696)，Python 3.11，SUCCESS。  
+> **对应代码精确 HEAD**：`40ac63cc62992aa983a5d1d3cd4c78fecb2ee80a`（PR #93，基于 PR #92 分支）。  
+> **运行证据**：[GitHub Actions Run #38012894723](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38012894723)，Python 3.11，SUCCESS。  
 > **状态**：`SLICE1_SANDBOX_E2E_VERIFIED`；不是完整通用 Agent 或生产环境验证。
 
 ## 本次代码
@@ -14,8 +14,8 @@
 
 | 证据 | CI 结果 |
 |---|---|
-| 定向 M2/G1/G2/GA01 Slice 0 + Slice 1 | **80 passed** |
-| 全仓 `python -m pytest tests -q` | **1166 passed, 1 warning** |
+| 定向 M2/G1/G2/GA01 Slice 0 + Slice 1 | **81 passed** |
+| 全仓 `python -m pytest tests -q` | **1167 passed, 1 warning** |
 | `python -m mypy runtime agent_core tests` | **Success，241 files** |
 | `python -m ruff check runtime agent_core tests` | **All checks passed** |
 | `python -m ruff format --check runtime agent_core tests` | **241 files already formatted** |
@@ -25,7 +25,7 @@
 1. 同一任务下第一次决策生成 Draft，经过 Validator、PolicyRechecker 批准，再进入无副作用 Mock Executor；返回模拟观察。
 2. 第二轮处理 `SYSTEM_EVENT`，将上一轮观察作为 ToolContext 数据输入并再次运行理解与 M2 Policy；仅在经 Mock 验证的事实包含 `GOAL_SATISFIED` 时 FINISH。
 3. 相同原始任务、不同观察（未满足目标）不 Finish；进入下一轮已批准计划执行，最终受迭代/进展限制阻断。
-4. 执行预算耗尽后不执行第二次 Mock；身份错配在首次工具调用前被拒绝。
+4. 执行预算耗尽后不执行第二次 Mock；身份错配在首次工具调用前被拒绝。\n5. 运行时再次校验 `ApprovedActionPlan`，即使测试 Adapter 伪造 Draft 类型也不能执行；同一 `plan_id` 的再次物理尝试被拒绝。
 
 ## 边界和未覆盖点
 

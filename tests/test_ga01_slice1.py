@@ -40,14 +40,14 @@ from runtime.safety import DefaultSafetyGuard
 from runtime.state_management import EngineRuntimeStateProvider
 from tests.ga01.sandbox import LocalMockExecutionEngine, verify_local_mock
 from tests.orchestration_stubs import (
+    StubPlanValidator,
     build_execution_result,
     build_runtime_input,
-    StubPlanValidator,
 )
 from tests.test_m2_runtime_integration_gate import (
     CallRecorder,
-    RequestAwareUnderstandingEngine,
     RequestAwarePlanner,
+    RequestAwareUnderstandingEngine,
     StaticPrioritySubjectResolver,
     _build_state_engine,
     _incoming,
@@ -145,9 +145,7 @@ class SandboxTurn:
             )
         draft = await self._planner.plan(context, understanding, policy)
         # Test fixture: enforce a unique plan identity across internal turns.
-        draft = draft.model_copy(
-            update={"plan_id": f"plan-{normalized.request_id}"}
-        )
+        draft = draft.model_copy(update={"plan_id": f"plan-{normalized.request_id}"})
         if not isinstance(draft, ActionPlanDraft):
             raise RunBoundaryError("invalid draft")
         validated = await self._validator.validate(draft)

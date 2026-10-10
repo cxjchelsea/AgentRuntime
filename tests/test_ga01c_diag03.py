@@ -4,19 +4,27 @@ from __future__ import annotations
 
 import asyncio
 import os
-from dataclasses import replace
 from typing import Any
 
 import pytest
 
-from agent_core.chat_transport import ChatCompletionsConfig, ChatCompletionsStrategyTransport
+from agent_core.chat_transport import (
+    ChatCompletionsConfig,
+    ChatCompletionsStrategyTransport,
+)
+from agent_core.iteration import AgentRunBinding
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
-from agent_core.runner import AgentRunCoordinator, LoopBudget, ObservedFact, RunKind
-from runtime.contracts import RuntimeInput
+from agent_core.runner import (
+    AgentRunCoordinator,
+    LoopBudget,
+    ObservedFact,
+    RunKind,
+)
 from runtime.planning.strategy_selection import (
     PlanningObservationContext,
     StrategyModelRequestBuilder,
 )
+from tests.ga01.initial_evidence import admit_initial_evidence
 from tests.ga01.typed_observation import (
     after_verified_execution,
     from_initial_evidence,
@@ -24,13 +32,11 @@ from tests.ga01.typed_observation import (
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga01_slice2_m4 import _build_model_planner
 from tests.test_ga01c_diag02_e2e import (
-    InitialEvidenceTurn,
     _NOW,
+    InitialEvidenceTurn,
     _seed_store,
 )
 from tests.test_ga01c_eval02 import TASKS, TaskCase, _semantic_instruction
-from tests.ga01.initial_evidence import admit_initial_evidence
-from agent_core.iteration import AgentRunBinding
 
 
 class TypedPlanningTurn(InitialEvidenceTurn):
@@ -107,7 +113,9 @@ def test_typed_contract_bounds_and_explicit_unknown() -> None:
     with pytest.raises(ValueError):
         PlanningObservationContext(1, "CLAIMED_VALID", (), (), (), "NONE")
     with pytest.raises(ValueError):
-        PlanningObservationContext(1, "UNKNOWN", ("tool:" + "x" * 130,), (), (), "NONE")
+        PlanningObservationContext(
+            1, "UNKNOWN", ("tool:" + "x" * 130,), (), (), "NONE"
+        )
 
 
 def test_initial_evidence_becomes_typed_context_without_goal_or_answer(

@@ -115,12 +115,10 @@ class PlanningObservationContext:
     def __post_init__(self) -> None:
         if (
             self.schema_version != 1
-            or self.evidence_state not in {
-                "UNKNOWN", "AVAILABLE_UNVERIFIED", "UNAVAILABLE", "VERIFIED"
-            }
-            or self.source_scope not in {
-                "INITIAL_STATE", "EXECUTION", "INITIAL_AND_EXECUTION", "NONE"
-            }
+            or self.evidence_state
+            not in {"UNKNOWN", "AVAILABLE_UNVERIFIED", "UNAVAILABLE", "VERIFIED"}
+            or self.source_scope
+            not in {"INITIAL_STATE", "EXECUTION", "INITIAL_AND_EXECUTION", "NONE"}
             or len(self.evidence_refs) > 16
             or len(self.executed_action_ids) > 16
             or len(self.pending_conditions) > 16
@@ -182,7 +180,8 @@ class StrategyModelRequestBuilder:
 
     def __init__(
         self,
-        observation_provider: Callable[[], PlanningObservationContext | None] | None = None,
+        observation_provider: Callable[[], PlanningObservationContext | None]
+        | None = None,
     ) -> None:
         self._observation_provider = observation_provider
 

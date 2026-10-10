@@ -46,13 +46,17 @@ def after_verified_execution(
 ) -> PlanningObservationContext:
     # Must run the same strict scope/run/execution/fact verification as Slice-2.
     projection = projector.project(binding, observations)
-    if projection is None or not observations or len(executed_actions) < len(observations):
+    if (
+        projection is None
+        or not observations
+        or len(executed_actions) < len(observations)
+    ):
         raise ValueError("missing verified tool observation/action alignment")
     latest = observations[-1]
     fact = latest.facts[0]
     if fact in _VALID_AVAILABLE:
         state = "AVAILABLE_UNVERIFIED"
-        pending = ("EVIDENCE_ACCURACY_NOT_YET_VALIDATED",)
+        pending: tuple[str, ...] = ("EVIDENCE_ACCURACY_NOT_YET_VALIDATED",)
     elif fact == "GOAL_SATISFIED":
         state = "VERIFIED"
         pending = ()

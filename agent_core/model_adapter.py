@@ -43,6 +43,18 @@ class StructuredStrategyTransportAdapter:
             "candidate_action_ids": list(request.candidate_action_ids),
             "available_capability_ids": list(request.available_capability_ids),
         }
+        if self._include_legacy_agent_action:
+            payload["last_agent_action"] = request.context.recent_agent_action
+        observation = request.planning_observation
+        if observation is not None:
+            payload["planning_observation"] = {
+                "schema_version": observation.schema_version,
+                "evidence_state": observation.evidence_state,
+                "evidence_refs": list(observation.evidence_refs),
+                "executed_action_ids": list(observation.executed_action_ids),
+                "pending_conditions": list(observation.pending_conditions),
+                "source_scope": observation.source_scope,
+            }
         try:
             response = await self._transport(payload)
         except Exception as exc:

@@ -68,7 +68,9 @@ def test_g03_sandbox_observation_stays_noncanonical_and_mock_runs_once() -> None
             execution=execution,
         )
         assert type(observation) is SandboxObservation
-        assert not isinstance(observation, (ValidatedResult, RuntimeResponse, UpdateResult))
+        assert not isinstance(
+            observation, (ValidatedResult, RuntimeResponse, UpdateResult)
+        )
         assert observation.facts == ("MOCK_EXECUTION_OBSERVED",)
         assert engine.call_count == 1
         with pytest.raises(IterationCorrelationError, match="repeat"):
@@ -78,7 +80,9 @@ def test_g03_sandbox_observation_stays_noncanonical_and_mock_runs_once() -> None
     asyncio.run(scenario())
 
 
-def test_g02_cross_plan_and_domain_forgery_rejected_before_sandbox_observation() -> None:
+def test_g02_cross_plan_and_domain_forgery_rejected_before_sandbox_observation() -> (
+    None
+):
     binding, iteration, context, approved, execution = _fixture()
     fake_plan = execution.model_copy(update={"plan_id": "foreign-plan"})
     with pytest.raises(IterationCorrelationError):
@@ -111,7 +115,9 @@ def test_g02_cross_plan_and_domain_forgery_rejected_before_sandbox_observation()
         )
 
 
-def test_g03_mock_cannot_relabel_failed_execution_as_authorized_business_success() -> None:
+def test_g03_mock_cannot_relabel_failed_execution_as_authorized_business_success() -> (
+    None
+):
     binding, iteration, context, approved, execution = _fixture()
     unknown = execution.model_copy(update={"plan_status": ExecutionPlanStatus.FAILED})
     # UNKNOWN must not be packaged as an affirmative sandbox fact either.

@@ -30,11 +30,11 @@ jobs:
           python -m pip install -e '.[test]' mypy ruff
       - name: Targeted G01 G02 G03 regression
         run: |
-          python -m pytest tests/test_m2_runtime_integration_gate.py tests/test_m6_iu1_b2_dual_runtime.py tests/test_ga01_slice0.py tests/test_ga01_slice0_integration.py tests/test_ga01_slice0_security.py tests/test_ga01_slice1.py tests/test_ga01_slice2.py tests/test_ga01_slice2_m4.py tests/test_ga01_slice2_loop.py -q
+          python -m pytest tests/test_m2_runtime_integration_gate.py tests/test_m6_iu1_b2_dual_runtime.py tests/test_ga01_slice0.py tests/test_ga01_slice0_integration.py tests/test_ga01_slice0_security.py tests/test_ga01_slice1.py tests/test_ga01_slice2.py tests/test_ga01_slice2_m4.py tests/test_ga01_slice2_loop.py tests/test_ga01c_transport.py tests/test_ga01c_live.py -q
       - name: Full pytest
         if: success() || failure()
         run: python -m pytest tests -q
-      - name: Mypy
+      - name: Optional live LLM sandbox\n        if: success() || failure()\n        env:\n          GA01C_LIVE_OPT_IN: '1'\n          GA01C_LLM_API_KEY: ${{ secrets.GA01C_LLM_API_KEY }}\n          GA01C_LLM_URL: ${{ vars.GA01C_LLM_URL }}\n          GA01C_LLM_MODEL: ${{ vars.GA01C_LLM_MODEL }}\n        run: python -m pytest tests/test_ga01c_live.py -q -rs\n      - name: Mypy
         if: success() || failure()
         run: python -m mypy runtime agent_core tests
       - name: Ruff lint

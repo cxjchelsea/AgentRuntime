@@ -109,7 +109,10 @@ class TypedPlanningTurn(InitialEvidenceTurn):
             self.model_payloads.append(payload)
             return dict(await live(payload))
 
-        self.choice_diagnostics = DiagnosticStrategyChoiceTransport(capture)
+        retry_enabled = os.environ.get("GA01C_INVALID_CHOICE_RETRY_OPT_IN") == "1"
+        self.choice_diagnostics = DiagnosticStrategyChoiceTransport(
+            capture, max_invalid_retries=int(retry_enabled)
+        )
         planner = _build_model_planner(
             StructuredStrategyTransportAdapter(
                 self.choice_diagnostics, include_legacy_agent_action=False

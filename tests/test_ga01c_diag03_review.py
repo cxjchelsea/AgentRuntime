@@ -85,3 +85,59 @@ def test_typed_eligibility_reads_admitted_initial_state_only(
         )
         is None
     )
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    ["", "foo", "0", "00", "01", "-1", "1-extra", "１", "1.0", "9" * 40],
+)
+def test_typed_provider_rejects_noncanonical_iteration_ids(
+    monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    monkeypatch.setenv("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions")
+    monkeypatch.setenv("GA01C_LLM_MODEL", "not-called")
+    step = _make_step(TASKS[0])
+    with pytest.raises(ValueError, match="does not match run"):
+        step._verified_for_request(f"{step.binding.run_id}-iteration-{suffix}")
+
+
+def test_failed_observation_projection_preserves_previous_typed_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent_core.runner import ObservedFact
+
+    monkeypatch.setenv("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions")
+    monkeypatch.setenv("GA01C_LLM_MODEL", "not-called")
+    step = _make_step(TASKS[0])
+    before = step._typed
+    untrusted = ObservedFact(
+        run_id="another-run",
+        request_id="foreign-request",
+        plan_id="foreign-plan",
+        execution_id="foreign-execution",
+        domain_fingerprint=step.binding.binding_fingerprint,
+        facts=("SOURCE_AVAILABLE",),
+    )
+    with pytest.raises(ValueError):
+        step.model_observation_projection((untrusted,))
+    assert step._typed is before
+    assert step._typed_eligibility.denials == 0
+
+
+def test_same_run_canonical_iteration_observes_current_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions")
+    monkeypatch.setenv("GA01C_LLM_MODEL", "not-called")
+    step = _make_step(TASKS[0])
+    request = f"{step.binding.run_id}-iteration-2"
+    assert step._verified_for_request(request) is step._typed
+    # Changing a private sandbox projection must be visible on the next read;
+    # this is a consumer freshness check, not proof of producer authority.
+    from runtime.planning.strategy_selection import PlanningObservationContext
+
+    next_projection = PlanningObservationContext(
+        1, "AVAILABLE_UNVERIFIED", ("synthetic:test",), (), (), "EXECUTION"
+    )
+    step._typed = next_projection
+    assert step._verified_for_request(request) is next_projection

@@ -15,7 +15,6 @@ from agent_core.iteration import (
 from runtime.contracts import (
     DomainExtensions,
     ExecutionPlanStatus,
-    ExecutionResult,
     RuntimeResponse,
     UpdateResult,
     ValidatedResult,
@@ -112,9 +111,9 @@ def test_g02_cross_plan_and_domain_forgery_rejected_before_sandbox_observation()
         )
 
 
-def test_g03_mock_cannot_relabel_unknown_execution_as_authorized_business_success() -> None:
+def test_g03_mock_cannot_relabel_failed_execution_as_authorized_business_success() -> None:
     binding, iteration, context, approved, execution = _fixture()
-    unknown = execution.model_copy(update={"plan_status": ExecutionPlanStatus.UNKNOWN})
+    unknown = execution.model_copy(update={"plan_status": ExecutionPlanStatus.FAILED})
     # UNKNOWN must not be packaged as an affirmative sandbox fact either.
     with pytest.raises(IterationCorrelationError, match="terminal"):
         verify_local_mock(

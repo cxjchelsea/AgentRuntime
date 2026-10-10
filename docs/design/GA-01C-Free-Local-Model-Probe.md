@@ -21,3 +21,23 @@ GitHub Actions Run [#38016686123](https://github.com/cxjchelsea/AgentRuntime/act
 ## 第二轮：Qwen2.5 1.5B
 
 CI [#38016807140](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38016807140)：真实 1.5B 权重下载/CPU 推理成功，结构化 JSON/M4 单轮测试通过，**完整多轮 E2E 仍失败**。同一 Run 中第二轮重复 Action A，两个 Observation 都是 `MOCK_FOUND_NEEDS_VERIFICATION`，AgentRunCoordinator 正确 `BLOCK / NO_PROGRESS`。没有授权放宽或假成功。第三轮上限试验选择 Qwen2.5 3B（约 1.9 GB），同任务、同安全规则；不再无限扩大模型规格。
+
+## 第三轮：Qwen2.5 3B — 真实模型 E2E 成功
+
+GitHub Actions [#38016938372](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38016938372)，精确代码 HEAD `4098ab6c01f7dc5ea50bf2b869d780655fa11491`：
+
+- `Actual Qwen2.5 inference smoke`：**1 passed，10.68s**，权重真实推理 + JSON + M4 合法性链；
+- `Real model inside bounded Agent Loop`：**1 passed，8.84s**，真实 3B 模型参与两轮决策，第一轮 Query/Action A → Mock Observation `MOCK_FOUND_NEEDS_VERIFICATION` → 第二轮选择 Verify/Action B → Mock Evidence `GOAL_SATISFIED` → 第三轮 FINISH；
+- 回归 `targeted`：**110 passed, 1 skipped**；全量：**1197 passed, 2 skipped, 1 warning**；mypy **252 files**、Ruff 检查和格式全部通过。
+- 注：全量测试中两个 skipped 是 CI 中尚未开启的外部云 LLM 测试和需要本地 Ollama 单独 job 的真实探针；但 Ollama 独立 job 真实执行的两项均 PASSED。不能把 skip 解释成 3B 未执行。
+- 该模型没有云模型 API 费用；CI Docker 下载镜像和权重占用免费公共仓库托管计算资源。
+- **限度**：该 E2E 的 system prompt 仍显式描述了 A/B 的决策规则，因此证明结构化模型调用和观察驱动的行为条件在这个已知任务上可运行，不足以证明通用 Agent 的自主规划可靠性。
+- 结论：`GA-01C FREE_LOCAL_QWEN2_5_3B LIVE_INFERENCE_VERIFIED / SANDBOX_E2E_VERIFIED / CLOUD_DEEPSEEK_NOT_ATTESTED / PRODUCTION_TOOL_NOT_AUTHORIZED`。
+
+对照：
+
+| 免费模型 | 真模型 JSON+M4 单轮 | 真模型多轮 E2E | 失败/成功原因 |
+|---|---|---|---|
+| Qwen2.5 0.5B | PASSED | FAILED | 第二轮重复 Action A，No Progress 拒绝 |
+| Qwen2.5 1.5B | PASSED | FAILED | 第二轮重复 Action A，No Progress 拒绝 |
+| Qwen2.5 3B | PASSED | **PASSED** | 第二轮根据观察改选 Action B，Mock 完成证据支持 FINISH |

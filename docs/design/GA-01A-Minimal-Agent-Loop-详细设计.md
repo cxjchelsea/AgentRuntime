@@ -313,3 +313,12 @@ PR#90 MASTER ARCHITECTURE = MERGED INTO MAIN
 ```
 
 此文件只能由单独 PR 合并后成为设计依据；GA-01B 编码仍需目标门槛核对，不需要为普通小修改增加新审查循环。
+
+## 10. PR #91 针对性设计复审补充（G01/G02/G03）
+
+详细裁决见 [GA-01A G01/G02/G03 针对性详细设计复审 V1.0](GA-01A-G01-G02-G03-Targeted-ReReview.md)。本节对原 §8–9 的“未冻结”做**有限修订**，不回写或抹掉初次审查历史：
+
+- **G01（设计已收口）**：不允许新 Agent Core 调用 M2 的 protected gate 或平行复制；首个 GA-01B Slice 0 应将 PrioritySubjectResolver → RuntimeConstraintEvaluator → `_assert_runtime_constraint_allows_flow` 提取为唯一公共组件。保留 Policy BLOCKED → Incoming disposition → Preemption 的判定顺序与错误类型；G2 现有测试必须证明无语义漂移。
+- **G02（条件性设计收口）**：Run 保留原请求身份，每轮拥有唯一 Request/Trace/Plan/Execution；后续迭代拟使用 `source=SYSTEM, trigger_type=SYSTEM_EVENT`，原用户 Goal 保持不变，已验证观察仅经 Context Projection 进入下一轮。**该新内部事件能否被 M3/M4 真实接受尚未执行验证**；失败必须重审设计，不能静默回退成用户消息或绕过 M2。
+- **G03（设计已收口）**：SandBoxEvidence/Mock Executor 和装配入口只在测试包，生产依赖不可引用；SandboxObservation 与 `ValidatedResult` 不能相互转换授权。M6 NoGrant 继续原样阻断 M7/M8。
+- **当前授权**：可以开始 GA-01B **Slice 0** 的最小公共 Adapter 和负向测试实现；尚不表示 Agent Loop 生产执行获批或 GA-01B 全部通过。G01 parity、G02 correlation、G03 import/DI/NoGrant 回归须提交真实运行证据。

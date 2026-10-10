@@ -38,15 +38,16 @@ from runtime.policy_management import DefaultPolicyEngine
 from runtime.priority_management import PreemptionEngine
 from runtime.safety import DefaultSafetyGuard
 from runtime.state_management import EngineRuntimeStateProvider
-from tests.ga01.sandbox import verify_local_mock
+from tests.ga01.sandbox import LocalMockExecutionEngine, verify_local_mock
 from tests.orchestration_stubs import (
-    build_action_plan_draft,
     build_execution_result,
     build_runtime_input,
+    StubPlanValidator,
 )
 from tests.test_m2_runtime_integration_gate import (
     CallRecorder,
     RequestAwareUnderstandingEngine,
+    RequestAwarePlanner,
     StaticPrioritySubjectResolver,
     _build_state_engine,
     _incoming,
@@ -81,7 +82,10 @@ class SandboxTurn:
         self._resolver = StaticPrioritySubjectResolver(
             current=None, incoming=_incoming()
         )
+        self._planner = RequestAwarePlanner(self._recorder)
+        self._validator = StubPlanValidator(self._recorder)
         self._rechecker = DefaultPolicyRechecker()
+        self.mock_calls = 0
 
     async def decide(
         self,
@@ -139,16 +143,15 @@ class SandboxTurn:
                 reason="SANDBOX_GOAL_SATISFIED",
                 completion_fact="GOAL_SATISFIED",
             )
-        draft = build_action_plan_draft().model_copy(
-            update={
-                "request_id": normalized.request_id,
-                "plan_id": f"plan-{normalized.request_id}",
-            }
+        draft = await self._planner.plan(context, understanding, policy)
+        # Test fixture: enforce a unique plan identity across internal turns.
+        draft = draft.model_copy(
+            update={"plan_id": f"plan-{normalized.request_id}"}
         )
         if not isinstance(draft, ActionPlanDraft):
             raise RunBoundaryError("invalid draft")
-        # Adapter test still uses the real Policy Rechecker, never fabricates Approved.
-        approved = await self._rechecker.recheck(draft, policy)
+        validated = await self._validator.validate(draft)
+        approved = await self._rechecker.recheck(validated, policy)
         assert isinstance(approved, ApprovedActionPlan)
         return Decision(iteration, "ACT", context=context, approved=approved)
 
@@ -167,12 +170,16 @@ class SandboxTurn:
                 "execution_id": f"execution-{approved.request_id}",
             }
         )
+        engine = LocalMockExecutionEngine(execution)
+        observed_execution = await engine.execute(approved, decision.context)
+        self.mock_calls += engine.call_count
         sandbox_observation = verify_local_mock(
             binding=self.binding,
             iteration=decision.iteration,
             context=decision.context,
             approved=approved,
-            execution=execution,
+            execution=observed_execution,
+            facts=self.facts,
         )
         assert sandbox_observation.plan_id == approved.plan_id
         return ObservedFact(
@@ -181,7 +188,7 @@ class SandboxTurn:
             plan_id=approved.plan_id,
             execution_id=execution.execution_id,
             domain_fingerprint=self.binding.binding_fingerprint,
-            facts=self.facts,
+            facts=sandbox_observation.facts,
         )
 
 
@@ -197,6 +204,9 @@ def test_slice1_goal_satisfied_after_single_action_and_second_decision() -> None
         assert result.executions == 1
         assert result.iterations == 2
         assert step.rounds == 2 and step.actions == 1
+        assert step.mock_calls == 1
+        assert step._recorder.entries.count("PLAN") == 1
+        assert step._recorder.entries.count("PLAN_VALIDATE") == 1
         assert step.visible_observations == [(), ("GOAL_SATISFIED",)]
 
     asyncio.run(scenario())

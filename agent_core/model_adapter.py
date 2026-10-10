@@ -26,8 +26,11 @@ class StructuredStrategyTransportAdapter:
     def __init__(
         self,
         transport: Callable[[dict[str, Any]], Awaitable[Mapping[str, object]]],
+        *,
+        include_legacy_agent_action: bool = True,
     ) -> None:
         self._transport = transport
+        self._include_legacy_agent_action = include_legacy_agent_action
 
     async def infer(self, request: StrategyModelRequest) -> Mapping[str, object]:
         # Allow-listed fields only; never forward RuntimeContext or ToolResult.
@@ -36,7 +39,6 @@ class StructuredStrategyTransportAdapter:
             "planning_mode": request.planning_mode.value,
             "intent_ids": list(request.understanding.intent_ids),
             "explicit_goal": request.understanding.explicit_goal,
-            "last_agent_action": request.context.recent_agent_action,
             "legal_strategy_ids": list(request.legal_strategy_ids),
             "candidate_action_ids": list(request.candidate_action_ids),
             "available_capability_ids": list(request.available_capability_ids),

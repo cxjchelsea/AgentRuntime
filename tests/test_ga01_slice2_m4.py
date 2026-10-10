@@ -44,6 +44,7 @@ from runtime.planning import (
     SelectedActionResolver,
     SequencePlanner,
     StrategyEligibilityRule,
+    StrategyModelRequestBuilder,
     ToolPlanner,
     ValidationReceiptLedger,
 )
@@ -77,6 +78,7 @@ def _build_model_planner(
     model: StructuredStrategyTransportAdapter,
     *,
     eligibility_rules: tuple[StrategyEligibilityRule, ...] = (),
+    request_builder: StrategyModelRequestBuilder | None = None,
 ) -> PlanningFixture:
     actions = ActionRegistry()
     actions.register(_action("DOMAIN_ACTION_A"))
@@ -115,6 +117,7 @@ def _build_model_planner(
             strategy_registry=strategies,
             model=model,
             eligibility_rules=eligibility_rules,
+            request_builder=request_builder,
         ),
         selected_action_resolver=SelectedActionResolver(strategies),
         knowledge_planner=KnowledgePlanner(

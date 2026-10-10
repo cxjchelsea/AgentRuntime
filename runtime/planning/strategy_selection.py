@@ -6,7 +6,7 @@ choose among registered, enabled, policy-compatible actions and eligible strateg
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -98,6 +98,45 @@ class PlanningModelContext:
 
 
 @dataclass(frozen=True, slots=True)
+class PlanningObservationContext:
+    """Allow-listed non-authorizing observation projection for optional M4 model.
+
+    A trusted caller must produce it from admitted state / verified executions;
+    fields are *not* authority tokens and can never replace M4 Policy/Recheck.
+    """
+
+    schema_version: int
+    evidence_state: str
+    evidence_refs: tuple[str, ...]
+    executed_action_ids: tuple[str, ...]
+    pending_conditions: tuple[str, ...]
+    source_scope: str
+
+    def __post_init__(self) -> None:
+        if (
+            self.schema_version != 1
+            or self.evidence_state not in {
+                "UNKNOWN", "AVAILABLE_UNVERIFIED", "UNAVAILABLE", "VERIFIED"
+            }
+            or self.source_scope not in {
+                "INITIAL_STATE", "EXECUTION", "INITIAL_AND_EXECUTION", "NONE"
+            }
+            or len(self.evidence_refs) > 16
+            or len(self.executed_action_ids) > 16
+            or len(self.pending_conditions) > 16
+            or any(
+                not v or len(v) > 128
+                for v in (
+                    *self.evidence_refs,
+                    *self.executed_action_ids,
+                    *self.pending_conditions,
+                )
+            )
+        ):
+            raise ValueError("invalid bounded planning observation projection")
+
+
+@dataclass(frozen=True, slots=True)
 class StrategyModelRequest:
     """Frozen soft-selection input surface."""
 
@@ -109,6 +148,7 @@ class StrategyModelRequest:
     candidate_action_ids: tuple[str, ...]
     legal_strategy_ids: tuple[str, ...]
     available_capability_ids: tuple[str, ...]
+    planning_observation: PlanningObservationContext | None = None
 
 
 class StructuredStrategyModel(Protocol):
@@ -139,6 +179,12 @@ class StrategySelectionResult:
 
 class StrategyModelRequestBuilder:
     """Project only the data the strategy model is allowed to see."""
+
+    def __init__(
+        self,
+        observation_provider: Callable[[], PlanningObservationContext | None] | None = None,
+    ) -> None:
+        self._observation_provider = observation_provider
 
     def build(
         self,
@@ -191,6 +237,11 @@ class StrategyModelRequestBuilder:
             candidate_action_ids=tuple(candidate.action for candidate in candidates),
             legal_strategy_ids=legal_strategy_ids,
             available_capability_ids=tuple(sorted(available_capability_ids)),
+            planning_observation=(
+                self._observation_provider()
+                if self._observation_provider is not None
+                else None
+            ),
         )
 
 

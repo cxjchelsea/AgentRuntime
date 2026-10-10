@@ -67,3 +67,17 @@ PRODUCTION TRUSTED CONTEXT LOADER = NOT IMPLEMENTED
 ```
 
 **审查前不得合并。** 需明确审查：（1）投影回调是否可受到不可信输入或跨 Run 共享状态污染；（2）冻结 M4 `StrategyModelRequest` 的可选字段是否破坏外部消费者；（3）`include_legacy_agent_action=False` 与旧版本 prompt 的兼容性；（4）现有 DIAG-01 测试 Eligibility 还解析内部旧 snapshot——模型通道迁移不等于所有规划消费者都迁移。还需要过期、反复读取、冲突状态和重新采集确有必要场景验证后才可考虑生产接线。
+
+
+## 最新精确 PR HEAD 的复现记录（同一代码）
+
+PR HEAD `5013e70d5cd62e589c12040c82b17261ee881879` 对比先前通过的 `cdfbfa4eeee7a247c2cd12c382ba10019bf3ac02` **仅增加本文档内容，没有修改代码**。
+
+GitHub Actions [Run #38021659409](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38021659409)：
+- 常规 Job **SUCCESS**（pytest/mypy/Ruff 通过）；
+- 实际 Qwen2.5:3b 模型 Job **FAIL**：`11/12` 任务完成，`16/18 = 88.9%` 动作匹配，1 次 `StrategyModelOutputError`；具体出现在 `inventory-missing` 第一次执行时，模型未给出满足冻结 M4 输出契约的 Strategy，系统拒绝执行。
+- 因预注册验收条件为 **≥10/12 完成、≥90% 动作匹配、0 非预期错误**，此精确 HEAD **未通过真实模型整体验收**。不能用 earlier PASS 覆盖 latest FAIL，也不能用 Model Validator 放宽规则实现假通过。
+
+此两次 CI 的代码等价、实际模型表现不同，提示 3B 对所选 typed input 的结构化策略生成具有波动。应将模型返回的结构合法性失败计入长期可靠性指标；实现增加可诊断的受控错误分类、固定模型版本/权重摘要、重复种子和多次独立运行，而不是只选一次绿灯。当前系统对非法输出的阻断是安全预期，不能算完成成功。
+
+**综合状态**：`TYPED_M4_CONTRACT_IMPLEMENTED / STANDARD_CI_PASS / LIVE_PROOF_EXISTS / LATEST_LIVE_ACCEPTANCE_FAIL / PRODUCTION_INTEGRATION_NOT_AUTHORIZED`。PR #101 保持 Draft，待针对性信任边界 review 和重复测试稳定性证据。

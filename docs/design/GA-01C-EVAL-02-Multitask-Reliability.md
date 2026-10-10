@@ -25,3 +25,57 @@
 - 需要再增加主动失败场景的真实模型测试、Tool UNKNOWN/Timeout/Cancellation 的隔离测试，以及多域更多 Action、长上下文下的 Eval；目前异常安全主要由已全绿的 Slice 1 针对性负测覆盖。
 
 **当前状态**：`EVAL02_IMPLEMENTED / REAL_MODEL_CI_PENDING`；最后按精确代码 HEAD 和 CI 填写。
+
+## 真实验收：EVAL-02 未通过（2026-10-10）
+
+**最终精确代码 HEAD**：`274b11dc4dba0d809541b0a89b9db0e1417d2755`。  
+**GitHub Actions**：[Run #38018294279](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38018294279)。
+- `targeted` Job：**SUCCESS**，原有定向 110 passed / 1 skipped；全量 **1201 passed / 4 skipped / 1 warning**；mypy **254 files**，Ruff lint / format **全绿**。
+- `Free local Qwen2.5 3B real inference` Job：真实 Ollama smoke PASS、原单任务沙箱 Loop PASS、EVAL-01 六道策略选择 PASS；**EVAL-02 真实多任务 E2E FAIL**，验收阈值未达。不得把其余 PASS 冒充 EVAL-02 PASS。
+- **12 条完整真实模型任务**：`complete=5/12`、`completion_rate=0.417`、`action_correct=10/26`、`action_accuracy=0.385`、`safe_block=7`、`error_or_unknown=0`、`unsupported_finish=0`。
+- 预注册阈值：完成至少 10/12、动作正确率至少 90%，两项均未达到；不降低阈值，不将 Block 计入成功。
+- **重运行波动**：初始 [Run #38017886776](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38017886776) 为 5/12；修复静态门禁后的 [Run #38018045310](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38018045310) 为 4/12；最终带 Observation 诊断的 Run #38018294279 为 5/12。三次真实推理都没有达到验收；说明任务可靠性有波动而不是确定性高成功率。
+
+### 最终 Run #38018294279 逐任务真实结果
+
+| 合成任务 | 第 1 次 | 第 2 次 | 观察到的行为 |
+|---|---|---|---|
+| 实验室：数据缺失 | BLOCK | BLOCK | 采集→采集→采集；重复动作，未核验 |
+| 发票：条目缺失，动作映射反转 | BLOCK | BLOCK | 采集→采集→采集；未转为核验 |
+| 仓储：盘点缺失 | FINISH | BLOCK | 首次采集→采集→核验完成，重复时采集三次被阻断 |
+| 实验室：数据已存在，动作映射反转 | FINISH | FINISH | 直接正确核验 |
+| 发票：条目已存在 | FINISH | FINISH | 直接正确核验 |
+| 仓储：数据已存在，动作映射反转 | BLOCK | BLOCK | 错选采集→采集；无进展阻断 |
+
+完成率按所有 12 次完整任务统计，动作正确率用位置匹配数 / max(期望动作数、真实动作数)；多余的采集动作会扣分，即使最终 FINISH 也不算完整正确的动作序列。
+
+### 根因范围：已证实与尚未证实
+
+**已证实**：测试在请求发出前抓取模型实际接收的 `last_agent_action`。对于实验室、发票和仓储的采集后轮次，模型收到了“源数据已经可用、尚未核验”的英文投影文本；例如模型输入记录包含：
+- `Synthetic source evidence is available, but has not yet been checked for accuracy.`
+- `Source evidence remains available, but it still has not been checked for accuracy.`
+
+但 Qwen 3B 多次仍选择采集。故不能将本次失败简单归因于 Observation 未发送到 M4 模型边界。
+
+**合理待证实假设**：模型对“已执行动作/目标剩余工作”的建模偏弱；而当前让 Observation 经 `InteractionContext.last_agent_action` 传入，缺少 `tool_result_status`、`available_evidence`、`remaining_goal`、`tried_actions` 等明确状态结构和禁重复候选策略。应设计经证据支持的 typed Observation → Planning Projection，并独立做消融验证；**当前并未证明任何单一根因**。
+
+### 安全与可靠性说明
+
+- 7 次失败全部是 `BLOCK:NO_PROGRESS`，未观察到 unsupported FINISH；Runtime 在当前模拟环境能拒绝无进展循环。
+- EVAL-02 新增确定性负向测试：当 Planner 反复选了“尚无源数据却执行核验”，仍走真实 M4 审批与 MockTool，但观察不可能满足 `GOAL_SATISFIED`，最终阻断；未知工具事实不能成为可信 Observation 投影。
+- `FAIL_CLOSED:<exception>` 不算“已证明安全阻断”，最后代码把异常和 `BLOCK` 明确分开统计；不能把未分类错误掩盖成安全通过。
+- **限制**：这三类业务只是合成测试场景，同一通用 A/B 动作注册及 Mock Tool 运行，非真正已交付的跨 Domain Package；同样不包含生产 Tool、外部事务或 M6 Positive Grant。
+
+### 正式裁决
+
+```text
+GA-01C EVAL-02 IMPLEMENTATION = CODE COMPLETE
+GA-01C EVAL-02 STANDARD REGRESSION = PASS
+GA-01C EVAL-02 REAL MODEL MULTITASK ACCEPTANCE = FAIL
+TASK COMPLETION = 5/12 (41.7%)
+ACTION SEQUENCE ACCURACY = 10/26 (38.5%)
+SAFETY: OBSERVED NO_PROGRESS BLOCK = 7; UNSUPPORTED_FINISH = 0
+PR #98 = DRAFT / DO NOT MERGE ON EVAL-02 SUCCESS CLAIM
+```
+
+**建议的有限范围整改方向**：单独切出 `EVAL-02-DIAG-01`，用原固定任务集对比 (A) 当前自由文本投影、(B) 结构化已执行动作+证据状态+剩余目标投影，以及 (C) M4 合法候选集中的有证据重复抑制。保持同一 Qwen3B、同一随机/温度设置、同样的预算和同样的预设阈值，至少重复运行，评估每项对完成率和动作错误的贡献。**不要**把本次任务正确答案硬编码进通用 Prompt，也不要绕过 M2/M4 或提升 M6 权限。

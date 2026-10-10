@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import os
-from urllib.parse import urlsplit
 from dataclasses import replace
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 import pytest
 

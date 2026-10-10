@@ -37,10 +37,10 @@ jobs:
       - name: Optional live LLM sandbox
         if: success() || failure()
         env:
-          GA01C_LIVE_OPT_IN: '1'
+          GA01C_LIVE_OPT_IN: ${{ vars.GA01C_LIVE_OPT_IN }}
           GA01C_LLM_API_KEY: ${{ secrets.GA01C_LLM_API_KEY }}
-          GA01C_LLM_URL: ${{ vars.GA01C_LLM_URL }}
-          GA01C_LLM_MODEL: ${{ vars.GA01C_LLM_MODEL }}
+          GA01C_LLM_URL: ${{ vars.GA01C_LLM_URL || 'https://api.deepseek.com/chat/completions' }}
+          GA01C_LLM_MODEL: ${{ vars.GA01C_LLM_MODEL || 'deepseek-flash' }}
         run: python -m pytest tests/test_ga01c_live.py -q -rs
       - name: Mypy
         if: success() || failure()

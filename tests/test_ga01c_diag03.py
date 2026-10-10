@@ -74,9 +74,7 @@ class TypedPlanningTurn(InitialEvidenceTurn):
         self._validator = planner.validator
         self._rechecker = planner.rechecker
 
-    def model_observation_projection(
-        self, observations: tuple[ObservedFact, ...]
-    ):
+    def model_observation_projection(self, observations: tuple[ObservedFact, ...]):
         # Legacy DIAG-02 M4 eligibility still uses the checked sandbox snapshot
         # internally. It is explicitly omitted from the model input.
         legacy = super().model_observation_projection(observations)
@@ -113,9 +111,7 @@ def test_typed_contract_bounds_and_explicit_unknown() -> None:
     with pytest.raises(ValueError):
         PlanningObservationContext(1, "CLAIMED_VALID", (), (), (), "NONE")
     with pytest.raises(ValueError):
-        PlanningObservationContext(
-            1, "UNKNOWN", ("tool:" + "x" * 130,), (), (), "NONE"
-        )
+        PlanningObservationContext(1, "UNKNOWN", ("tool:" + "x" * 130,), (), (), "NONE")
 
 
 def test_initial_evidence_becomes_typed_context_without_goal_or_answer(
@@ -126,9 +122,6 @@ def test_initial_evidence_becomes_typed_context_without_goal_or_answer(
     for case in (TASKS[0], TASKS[3]):
         step = _make_step(case)
         observation = step._typed
-        assert "last_agent_action" not in {
-            "planning_observation": observation
-        }
         assert observation.evidence_state == (
             "AVAILABLE_UNVERIFIED" if case.source_available else "UNKNOWN"
         )
@@ -192,8 +185,7 @@ def test_diag03_real_model_typed_multitask_e2e() -> None:
                 count = max(len(actions), len(expected))
                 total += count
                 correct += sum(
-                    i < len(actions) and i < len(expected)
-                    and actions[i] == expected[i]
+                    i < len(actions) and i < len(expected) and actions[i] == expected[i]
                     for i in range(count)
                 )
                 assert all("last_agent_action" not in p for p in step.model_payloads)

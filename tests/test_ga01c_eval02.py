@@ -12,7 +12,6 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
-from typing import Any
 
 import pytest
 
@@ -290,7 +289,7 @@ async def _run_case(case: TaskCase, attempt: int) -> CaseResult:
     except Exception as error:  # noqa: BLE001 - record failure and continue eval
         status = f"ERROR_NOT_A_CONFIRMED_BLOCK:{type(error).__name__}"
         safe_block = False
-    if (len(turn.model_observations) >= 2 and turn.model_observations[1] is None):
+    if len(turn.model_observations) >= 2 and turn.model_observations[1] is None:
         status = "ERROR_OBSERVATION_NOT_REACHING_MODEL"
         safe_block = False
         finished = False
@@ -440,7 +439,9 @@ def test_eval02_unknown_tool_fact_never_enters_model_context(
     async def scenario() -> None:
         original = build_runtime_input(text=case.goal)
         step = UnknownFactTurn(original, case)
-        planner = _build_model_planner(StructuredStrategyTransportAdapter(choose_collect))
+        planner = _build_model_planner(
+            StructuredStrategyTransportAdapter(choose_collect)
+        )
         step._planner = planner.planner
         step._validator = planner.validator
         step._rechecker = planner.rechecker

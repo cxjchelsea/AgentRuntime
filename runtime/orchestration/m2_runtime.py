@@ -32,7 +32,11 @@ from runtime.orchestration.errors import (
     RuntimeOrchestrationError,
     StageExecutionError,
 )
-from runtime.orchestration.m2_admission import (\n    assert_admission_allows_flow,\n    evaluate_m2_admission,\n)\nfrom runtime.orchestration.m2_control import (
+from runtime.orchestration.m2_admission import (
+    assert_admission_allows_flow,
+    evaluate_m2_admission,
+)
+from runtime.orchestration.m2_control import (
     PrioritySubjectResolver,
 )
 from runtime.orchestration.m6_terminalization import finish_turn_once

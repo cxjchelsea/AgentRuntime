@@ -126,7 +126,13 @@ class IterationRef:
     def from_input(
         cls, binding: AgentRunBinding, runtime_input: RuntimeInput, *, ordinal: int
     ) -> IterationRef:
-        if ordinal < 0:\n            raise IterationCorrelationError("negative iteration")\n        expected = (\n            (binding.original_request_id, binding.original_trace_id)\n            if ordinal == 0\n            else (f"{binding.run_id}-iteration-{ordinal}", f"{binding.run_id}-trace-{ordinal}")\n        )
+        if ordinal < 0:
+            raise IterationCorrelationError("negative iteration")
+        expected = (
+            (binding.original_request_id, binding.original_trace_id)
+            if ordinal == 0
+            else (f"{binding.run_id}-iteration-{ordinal}", f"{binding.run_id}-trace-{ordinal}")
+        )
         binding.assert_identity(runtime_input)
         if (runtime_input.request_id, runtime_input.trace_id) != expected:
             raise IterationCorrelationError("request / trace mismatch")

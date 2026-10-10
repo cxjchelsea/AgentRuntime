@@ -17,3 +17,7 @@ Windows 上也可以使用 `ollama pull qwen2.5:0.5b`，设置 `GA01C_LLM_URL=ht
 GitHub Actions Run [#38016686123](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38016686123)：Ollama 真实加载 0.5B，`Actual Qwen2.5 inference smoke` **PASS**，证明本地权重推理、结构化 JSON、M4 合法性校验真实运行；但 `Real model inside bounded Agent Loop` **FAIL**。实测第一轮选 A、第二轮仍选 A，产生相同观察 `MOCK_FOUND_NEEDS_VERIFICATION`，Coordinator 正确返回 `NO_PROGRESS` / `BLOCK`，没有假冒 FINISH。这属于模型动态决策能力不足，非安全放行失败。
 
 下一轮尝试同样免费的 Qwen2.5 **1.5B**（约 986 MB），相同任务、相同 M4 合法性/审批及 Loop，严格保留模型失败证据。不将真实运行失败修改成伪造 PASS。
+
+## 第二轮：Qwen2.5 1.5B
+
+CI [#38016807140](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38016807140)：真实 1.5B 权重下载/CPU 推理成功，结构化 JSON/M4 单轮测试通过，**完整多轮 E2E 仍失败**。同一 Run 中第二轮重复 Action A，两个 Observation 都是 `MOCK_FOUND_NEEDS_VERIFICATION`，AgentRunCoordinator 正确 `BLOCK / NO_PROGRESS`。没有授权放宽或假成功。第三轮上限试验选择 Qwen2.5 3B（约 1.9 GB），同任务、同安全规则；不再无限扩大模型规格。

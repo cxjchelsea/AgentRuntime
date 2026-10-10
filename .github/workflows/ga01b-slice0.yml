@@ -53,7 +53,7 @@ jobs:
         run: python -m ruff format --check runtime agent_core tests
 
   free-local-model:
-    name: Free local Qwen2.5 1.5B real inference
+    name: Free local Qwen2.5 3B real inference
     if: github.event_name == 'pull_request' && github.head_ref == 'feature/ga-01c-real-model-adapter-20261010'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -74,18 +74,18 @@ jobs:
             sleep 2
           done
           curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null
-          docker exec ga01c-qwen ollama pull qwen2.5:1.5b
+          docker exec ga01c-qwen ollama pull qwen2.5:3b
       - name: Actual Qwen2.5 inference smoke
         env:
           GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
-          GA01C_LLM_MODEL: qwen2.5:1.5b
+          GA01C_LLM_MODEL: qwen2.5:3b
         run: |
           python -m pytest tests/test_ga01c_free_local.py -q -rs
       - name: Real model inside bounded Agent Loop
         env:
           GA01C_LIVE_OPT_IN: '1'
           GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
-          GA01C_LLM_MODEL: qwen2.5:1.5b
+          GA01C_LLM_MODEL: qwen2.5:3b
           GA01C_LLM_API_KEY: ''
         run: |
           python -m pytest tests/test_ga01c_live.py::test_live_provider_drives_two_approved_mock_actions -q -rs

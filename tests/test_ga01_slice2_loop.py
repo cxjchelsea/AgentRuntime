@@ -8,12 +8,18 @@ from __future__ import annotations
 import asyncio
 
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
-from agent_core.runner import AgentRunCoordinator, Decision, LoopBudget, ObservedFact, RunKind
+from agent_core.runner import (
+    AgentRunCoordinator,
+    Decision,
+    LoopBudget,
+    ObservedFact,
+    RunKind,
+)
 from runtime.contracts import RuntimeContext, RuntimeInput, UnderstandingState
 from runtime.contracts.context import InteractionContext
 from runtime.contracts.enums import ProcessingPath
 from runtime.contracts.understanding import GoalUnderstanding
-from tests.orchestration_stubs import CallRecorder, build_runtime_input
+from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga01_slice1 import SandboxTurn
 from tests.test_ga01_slice2 import ObservationSensitiveFakeTransport
 from tests.test_ga01_slice2_m4 import _build_model_planner
@@ -32,9 +38,7 @@ class GoalAwareUnderstanding(RequestAwareUnderstandingEngine):
                 "metadata": result.metadata.model_copy(
                     update={"processing_path": ProcessingPath.FAST_PATH}
                 ),
-                "goal": GoalUnderstanding(
-                    explicit_goal="DOMAIN_GOAL", confidence=1.0
-                ),
+                "goal": GoalUnderstanding(explicit_goal="DOMAIN_GOAL", confidence=1.0),
             }
         )
 

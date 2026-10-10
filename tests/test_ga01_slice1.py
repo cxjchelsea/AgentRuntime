@@ -30,6 +30,7 @@ from runtime.contracts import (
 )
 from runtime.contracts.context import InteractionContext, ToolContext
 from runtime.input_processing import DefaultInputProcessor
+from runtime.interfaces.planning import Planner, PlanValidator, PolicyRechecker
 from runtime.orchestration.m2_admission import (
     assert_admission_allows_flow,
     evaluate_m2_admission,
@@ -85,9 +86,9 @@ class SandboxTurn:
         self._resolver = StaticPrioritySubjectResolver(
             current=None, incoming=_incoming()
         )
-        self._planner = RequestAwarePlanner(self._recorder)
-        self._validator = StubPlanValidator(self._recorder)
-        self._rechecker = DefaultPolicyRechecker()
+        self._planner: Planner = RequestAwarePlanner(self._recorder)
+        self._validator: PlanValidator = StubPlanValidator(self._recorder)
+        self._rechecker: PolicyRechecker = DefaultPolicyRechecker()
         self.mock_calls = 0
 
     def model_observation_projection(

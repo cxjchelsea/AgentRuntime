@@ -29,6 +29,7 @@ from runtime.planning.strategy_selection import (
 )
 from runtime.registries import StrategyDefinition
 from tests.ga01.initial_evidence import admit_initial_evidence
+from tests.ga01.strategy_choice_reliability import DiagnosticStrategyChoiceTransport
 from tests.ga01.typed_observation import (
     after_verified_execution,
     from_initial_evidence,
@@ -108,9 +109,13 @@ class TypedPlanningTurn(InitialEvidenceTurn):
             self.model_payloads.append(payload)
             return dict(await live(payload))
 
+        retry_enabled = os.environ.get("GA01C_INVALID_CHOICE_RETRY_OPT_IN") == "1"
+        self.choice_diagnostics = DiagnosticStrategyChoiceTransport(
+            capture, max_invalid_retries=int(retry_enabled)
+        )
         planner = _build_model_planner(
             StructuredStrategyTransportAdapter(
-                capture, include_legacy_agent_action=False
+                self.choice_diagnostics, include_legacy_agent_action=False
             ),
             eligibility_rules=(self._typed_eligibility,),
             request_builder=StrategyModelRequestBuilder(
@@ -224,6 +229,10 @@ def test_diag03_real_model_typed_multitask_e2e() -> None:
         completed = 0
         correct = 0
         total = 0
+        invalid_choices = 0
+        recovered_choices = 0
+        unhandled_choices = 0
+        model_calls = 0
         failures: list[str] = []
         for repeat in (1, 2):
             for case in TASKS:
@@ -250,6 +259,20 @@ def test_diag03_real_model_typed_multitask_e2e() -> None:
                     finished = False
                 if error_type != "NONE":
                     failures.append(f"{case.case_id}/{repeat}:{error_type}")
+                invalid_choices += len(
+                    step.choice_diagnostics.invalid_output_categories
+                )
+                recovered_choices += step.choice_diagnostics.recovered_invalid_choices
+                unhandled_choices += step.choice_diagnostics.unrecovered_invalid_choices
+                model_calls += step.choice_diagnostics.model_calls
+                if step.choice_diagnostics.invalid_output_categories:
+                    print(
+                        f"DIAG03_DIAGNOSTICS case={case.case_id} repeat={repeat} "
+                        f"categories={step.choice_diagnostics.invalid_output_categories} "
+                        f"recovered={step.choice_diagnostics.recovered_invalid_choices} "
+                        f"unrecovered={step.choice_diagnostics.unrecovered_invalid_choices}",
+                        flush=True,
+                    )
                 actions = tuple(step.selected_actions)
                 expected = case.expected_actions
                 completed += int(finished)
@@ -272,7 +295,11 @@ def test_diag03_real_model_typed_multitask_e2e() -> None:
         print(
             f"DIAG03_SUMMARY complete={completed}/12 "
             f"correct={correct}/{total} accuracy={accuracy:.3f} "
-            f"model_or_runtime_errors={len(failures)}",
+            f"model_or_runtime_errors={len(failures)} "
+            f"first_invalid_choices={invalid_choices} "
+            f"recovered_invalid_choices={recovered_choices} "
+            f"unrecovered_invalid_choices={unhandled_choices} "
+            f"physical_model_calls={model_calls}",
             flush=True,
         )
         assert completed >= 10, f"typed completion failed: {failures}"

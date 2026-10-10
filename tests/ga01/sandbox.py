@@ -58,6 +58,7 @@ def verify_local_mock(
     context: RuntimeContext,
     approved: ApprovedActionPlan,
     execution: ExecutionResult,
+    facts: tuple[str, ...] = ("MOCK_EXECUTION_OBSERVED",),
 ) -> SandboxObservation:
     assert_execution_correlation(
         binding=binding,
@@ -73,5 +74,5 @@ def verify_local_mock(
         iteration_id=iteration.request_id,
         execution_id=execution.execution_id,
         plan_id=execution.plan_id,
-        facts=("MOCK_EXECUTION_OBSERVED",),
+        facts=facts,
     )

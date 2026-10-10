@@ -154,7 +154,7 @@ There are three distinct sources, never interchangeable:
 
 **Versioned envelope (minimal D1):**
 - `package_schema_version: "1"`;
-- `domain_id` and `domain_version`: bounded nonblank ASCII identifiers (e.g. `inventory.reconcile`, `1.0.0`), with D1 grammar: `domain_id` = `[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*`, 1–80 bytes; `domain_version` = `[0-9]+\.[0-9]+\.[0-9]+` with no leading zero except `0`, 1–32 bytes; no case folding/implicit alias;
+- `domain_id` and `domain_version`: bounded nonblank ASCII identifiers (e.g. `inventory.reconcile`, `1.0.0`), with D1 grammar: `domain_id` = `[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*`, 1–80 bytes; `domain_version` = `(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)` (full-string match, no leading zeros except the single digit `0`), 1–32 bytes; no case folding/implicit alias;
 - `name`: required nonblank NFC display string (1–120 Unicode scalar values), rejecting leading/trailing whitespace, control characters and unpaired surrogates; display metadata only, never authority;
 - `enabled`: required JSON boolean; D1 mapping preserves true or false exactly, D2 refuses disabled manifests and D1 must never silently coerce false to true;
 - `runtime_compatibility`: **exact supported runtime contract/profile ID**, not a floating range or `latest`;

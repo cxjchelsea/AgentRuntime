@@ -34,15 +34,33 @@ def descriptor_bytes(value: dict[str, object], *, resign: bool = True) -> bytes:
         data.pop("manifest_digest", None)
         assets = data.get("asset_refs")
         if type(assets) is list:
-            assets.sort(key=lambda r: (r["kind"], r["namespace"], r["id"], r["version"], r["relative_path"]))
-        canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            assets.sort(
+                key=lambda r: (
+                    r["kind"],
+                    r["namespace"],
+                    r["id"],
+                    r["version"],
+                    r["relative_path"],
+                )
+            )
+        canonical = json.dumps(
+            data, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
         data["manifest_digest"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return json.dumps(data, ensure_ascii=False).encode("utf-8")
 
 
-def ref(*, name: str = "stock.count", namespace: str = "inventory.reconcile") -> dict[str, str]:
-    return {"kind": "action", "namespace": namespace, "id": name,
-            "version": "1.0.0", "sha256": "a" * 64, "relative_path": "actions/count.json"}
+def ref(
+    *, name: str = "stock.count", namespace: str = "inventory.reconcile"
+) -> dict[str, str]:
+    return {
+        "kind": "action",
+        "namespace": namespace,
+        "id": name,
+        "version": "1.0.0",
+        "sha256": "a" * 64,
+        "relative_path": "actions/count.json",
+    }
 
 
 def test_exact_golden_vector_and_manifest_adapter() -> None:

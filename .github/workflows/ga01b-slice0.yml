@@ -30,10 +30,18 @@ jobs:
           python -m pip install -e '.[test]' mypy ruff
       - name: Targeted G01 G02 G03 regression
         run: |
-          python -m pytest tests/test_m2_runtime_integration_gate.py tests/test_m6_iu1_b2_dual_runtime.py tests/test_ga01_slice0.py tests/test_ga01_slice0_integration.py tests/test_ga01_slice0_security.py tests/test_ga01_slice1.py tests/test_ga01_slice2.py tests/test_ga01_slice2_m4.py tests/test_ga01_slice2_loop.py -q
+          python -m pytest tests/test_m2_runtime_integration_gate.py tests/test_m6_iu1_b2_dual_runtime.py tests/test_ga01_slice0.py tests/test_ga01_slice0_integration.py tests/test_ga01_slice0_security.py tests/test_ga01_slice1.py tests/test_ga01_slice2.py tests/test_ga01_slice2_m4.py tests/test_ga01_slice2_loop.py tests/test_ga01c_transport.py tests/test_ga01c_live.py tests/test_ga01c_http_e2e.py -q
       - name: Full pytest
         if: success() || failure()
         run: python -m pytest tests -q
+      - name: Optional live LLM sandbox
+        if: success() || failure()
+        env:
+          GA01C_LIVE_OPT_IN: ${{ vars.GA01C_LIVE_OPT_IN }}
+          GA01C_LLM_API_KEY: ${{ secrets.GA01C_LLM_API_KEY }}
+          GA01C_LLM_URL: ${{ vars.GA01C_LLM_URL || 'https://api.deepseek.com/chat/completions' }}
+          GA01C_LLM_MODEL: ${{ vars.GA01C_LLM_MODEL || 'deepseek-flash' }}
+        run: python -m pytest tests/test_ga01c_live.py -q -rs
       - name: Mypy
         if: success() || failure()
         run: python -m mypy runtime agent_core tests
@@ -43,3 +51,86 @@ jobs:
       - name: Ruff formatting
         if: success() || failure()
         run: python -m ruff format --check runtime agent_core tests
+
+  free-local-model:
+    name: Free local Qwen2.5 3B real inference
+    if: github.event_name == 'pull_request' && (github.head_ref == 'feature/ga-01c-real-model-adapter-20261010' || github.head_ref == 'eval/ga-01c-no-answer-leak-qwen3b-20261010' || github.head_ref == 'eval/ga-01c-eval02-multitask-20261010' || github.head_ref == 'eval/ga-01c-diag01-replanning-20261010' || github.head_ref == 'eval/ga-01c-diag02-initial-evidence-20261010' || github.head_ref == 'eval/ga-01c-diag03-typed-planning-20261010' || github.head_ref == 'review/ga-01c-diag03-typed-consumer-20261010')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal test dependencies
+        run: python -m pip install -e '.[test]'
+      - name: Start keyless CPU model server
+        run: |
+          docker run -d --name ga01c-qwen --cpus=2 --memory=5g -p 127.0.0.1:11434:11434 ollama/ollama:latest
+          for attempt in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null
+          docker exec ga01c-qwen ollama pull qwen2.5:3b
+      - name: Actual Qwen2.5 inference smoke
+        env:
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: |
+          python -m pytest tests/test_ga01c_free_local.py -q -rs
+      - name: Real model inside bounded Agent Loop
+        env:
+          GA01C_LIVE_OPT_IN: '1'
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+          GA01C_LLM_API_KEY: ''
+        run: |
+          python -m pytest tests/test_ga01c_live.py::test_live_provider_drives_two_approved_mock_actions -q -rs
+      - name: No-answer-leak real Qwen decision evaluation
+        env:
+          GA01C_EVAL_OPT_IN: '1'
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: |
+          python -m pytest tests/test_ga01c_decision_eval.py::test_real_qwen_semantic_decisions_no_answer_leak -q -s -rs
+      - name: EVAL-02 multiple real-model tasks and repeated runs
+        if: github.head_ref == 'eval/ga-01c-eval02-multitask-20261010'
+        env:
+          GA01C_EVAL02_OPT_IN: '1'
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: |
+          python -m pytest tests/test_ga01c_eval02.py::test_qwen_real_multitask_loop_completion_and_reliability -q -s -rs
+      - name: DIAG-01 real Qwen A/B/C replanning comparison
+        if: github.head_ref == 'eval/ga-01c-diag01-replanning-20261010'
+        env:
+          GA01C_DIAG01_OPT_IN: '1'
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: |
+          python -m pytest tests/test_ga01c_diag01.py::test_diag01_three_arm_real_replanning_comparison -q -s -rs
+      - name: DIAG-02 admitted initial evidence real Qwen E2E
+        if: github.head_ref == 'eval/ga-01c-diag02-initial-evidence-20261010'
+        env:
+          GA01C_DIAG02_OPT_IN: '1'
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: |
+          python -m pytest tests/test_ga01c_diag02_e2e.py::test_diag02_real_model_initial_evidence_reliability -q -s -rs
+      - name: DIAG-03 typed planning real Qwen compatibility
+        if: github.head_ref == 'eval/ga-01c-diag03-typed-planning-20261010' || github.head_ref == 'review/ga-01c-diag03-typed-consumer-20261010'
+        env:
+          GA01C_DIAG03_OPT_IN: '1'
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: |
+          python -m pytest tests/test_ga01c_diag03.py::test_diag03_real_model_typed_multitask_e2e -q -s -rs
+      - name: Report local server logs on failure
+        if: failure()
+        run: docker logs --tail 70 ga01c-qwen || true
+      - name: Remove CPU server
+        if: always()
+        run: docker rm -f ga01c-qwen || true

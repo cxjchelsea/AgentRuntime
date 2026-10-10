@@ -19,12 +19,19 @@ from agent_core.chat_transport import (
 )
 from agent_core.iteration import AgentRunBinding
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
-from agent_core.runner import AgentRunCoordinator, Decision, LoopBudget, ObservedFact, RunKind
+from agent_core.runner import (
+    AgentRunCoordinator,
+    Decision,
+    LoopBudget,
+    ObservedFact,
+    RunKind,
+)
 from runtime.contracts import RuntimeContext, RuntimeInput, UnderstandingState
 from runtime.contracts.context import InteractionContext
 from runtime.contracts.understanding import GoalUnderstanding
 from tests.ga01.projector import SandboxObservationProjector
 from tests.orchestration_stubs import build_runtime_input
+from tests.test_m2_runtime_integration_gate import CallRecorder
 from tests.test_ga01_slice1 import SandboxTurn
 from tests.test_ga01_slice2_loop import GoalAwareUnderstanding, ModelDrivenSandboxTurn
 from tests.test_ga01_slice2_m4 import _build_model_planner
@@ -136,7 +143,7 @@ def _semantic_instruction(case: TaskCase) -> str:
 
 
 class EvaluatedUnderstanding(GoalAwareUnderstanding):
-    def __init__(self, recorder: object, goal: str) -> None:
+    def __init__(self, recorder: CallRecorder, goal: str) -> None:
         super().__init__(recorder)
         self._evaluation_goal = goal
 
@@ -168,9 +175,7 @@ class MultiTaskSandboxTurn(ModelDrivenSandboxTurn):
             domain_version="v1",
             binding_fingerprint=f"eval02-{self.case.family}-v1",
         )
-        self._understanding = EvaluatedUnderstanding(
-            self._recorder, self.case.goal
-        )
+        self._understanding = EvaluatedUnderstanding(self._recorder, self.case.goal)
         config = ChatCompletionsConfig(
             endpoint=os.environ["GA01C_LLM_URL"],
             model=os.environ["GA01C_LLM_MODEL"],
@@ -282,8 +287,15 @@ async def _run_case(case: TaskCase, attempt: int) -> CaseResult:
         for i in range(total)
     )
     return CaseResult(
-        case.case_id, attempt, status, selected, expected,
-        finished, safe_block, correct, total,
+        case.case_id,
+        attempt,
+        status,
+        selected,
+        expected,
+        finished,
+        safe_block,
+        correct,
+        total,
     )
 
 

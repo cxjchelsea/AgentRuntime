@@ -38,3 +38,32 @@ DIAG-01 中将 JSON 直接塞入 `InteractionContext.last_agent_action` 导致�
 ## 尚未涵盖
 
 生产 Domain State Store、分布式跨进程权限、真实工具执行、生产 M6 授权、多模型/多领域长期泛化。此 PR 是 frozen Slice-2 M4 合同的**向后兼容可选扩展**，需针对性审查后才可合并；不将测试里的通过率宣称为通用自主 Agent 成熟度。
+
+## 真实执行与安全结果（2026-10-10）
+
+**最终验证代码 HEAD** `cdfbfa4eeee7a247c2cd12c382ba10019bf3ac02`。GitHub Actions **[Run #38021400487](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38021400487)** 两项 Jobs SUCCESS：
+
+- 旧版定向回归：`110 passed / 1 skipped`；
+- 全量：`1225 passed / 7 skipped / 1 warning`；
+- mypy：`260 source files`，无问题；Ruff lint 和 format：PASS；
+- 真正的本地 Ollama `qwen2.5:3b` CPU 推理，旧 Live Smoke + Loop + EVAL-01 全部 PASS；
+- **DIAG-03 Typed Planning E2E：12/12 FINISH，18/18 动作序列完全匹配，0 模型/运行异常**；六种合成任务各 2 次重复，与 DIAG-02 保持相同预算与预注册门槛。
+- 6 次起始已有证据的运行：因 DIAG-02 initial evidence admission + M4 `SINGLE_LEGAL`，`typed_model_requests=0`，不计入真实模型选择；
+- 6 次起始无证据的运行：每次发起 1 次真正的结构化模型选择；执行后已验证事实缩窄合法策略，后续无需模型再次作策略选择。新模型请求包含 `planning_observation`，且不包含旧的 `last_agent_action` 字段。
+
+### 失败证据（必须保留）
+
+先前代码 HEAD `7f862b18af841d5d5b4ef26227dfe502342eeff3` 的 [Run #38021224276](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38021224276) 中，真实 Qwen3B 在第三个任务输出 `strategy_id: 1`（非字符串）。M4 `StrategyModelOutputValidator` 正确拒绝并使 Live Job 失败，未授权执行。后续提交**没有修改系统提示词、模型、合法性验证或评分阈值**，只改了评测为逐任务记录异常、完成剩余任务并准确报告错误。最终新模型运行未复现该非法输出。两次实验体现小模型输出随运行波动，单次 12/12 不能作为长期稳定性的统计结论。
+
+### 交付边界与遗留问题
+
+```text
+DIAG-03 OPTIONAL TYPED CONTRACT = IMPLEMENTED
+DIAG-03 LEGACY M4 COMPATIBILITY = VERIFIED
+DIAG-03 LIVE QWEN3B SANDBOX E2E = 12/12 VERIFIED ON EXACT CODE HEAD
+MODEL INDEPENDENT MULTISTEP REPLANNING = NOT ESTABLISHED
+PRODUCTION M6 POSITIVE GRANT = NOT AUTHORIZED
+PRODUCTION TRUSTED CONTEXT LOADER = NOT IMPLEMENTED
+```
+
+**审查前不得合并。** 需明确审查：（1）投影回调是否可受到不可信输入或跨 Run 共享状态污染；（2）冻结 M4 `StrategyModelRequest` 的可选字段是否破坏外部消费者；（3）`include_legacy_agent_action=False` 与旧版本 prompt 的兼容性；（4）现有 DIAG-01 测试 Eligibility 还解析内部旧 snapshot——模型通道迁移不等于所有规划消费者都迁移。还需要过期、反复读取、冲突状态和重新采集确有必要场景验证后才可考虑生产接线。

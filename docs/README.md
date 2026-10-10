@@ -11,6 +11,9 @@
 - [06 源码兼容性预审](06-设计兼容性审查.md)：可复用边界、阻塞和冻结条件。
 - [04 开发路线速览](04-开发路线.md)：方便快速阅读，细节以 05 为准。
 
+- [GA-01A 最小 Agent Loop 详细设计](design/GA-01A-Minimal-Agent-Loop-详细设计.md)：只读设计入口，明确 M2/M3/M4/M5/M6 接线和 Sandbox 边界。
+- [GA-01A Targeted Self-Review](design/GA-01A-Targeted-Design-Review.md)：未解决项和进入 GA-01B 的先决条件。
+
 **更新规则**：任何影响总体架构或新完成能力的 PR，应同时更新相应文件；不能只新增 CA/IU 文档让首页过期。每一条“已验证”必须附精确 SHA、测试路径与结果。
 
 ## 原有资料保留区：历史设计与审查证据

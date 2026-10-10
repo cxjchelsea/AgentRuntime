@@ -104,6 +104,12 @@ class ProvenanceBoundCollectEligibility:
             else "DOMAIN_STRATEGY_B"
         )
         self.denials = 0
+        self._attested: VerifiedPlanningSnapshot | None = None
+
+    def accept_verified_projection(self, snapshot: VerifiedPlanningSnapshot) -> None:
+        # Called only after SandboxObservationProjector checked the observation.
+        # A user-crafted JSON marker alone is NEVER a trust grant.
+        self._attested = snapshot
 
     def evaluate(
         self,
@@ -122,6 +128,7 @@ class ProvenanceBoundCollectEligibility:
         )
         if (
             snapshot is None
+            or snapshot != self._attested
             or snapshot.evidence_fact not in _AVAILABLE_FACTS
             or snapshot.evidence_state != "AVAILABLE_UNVERIFIED"
             or not snapshot.executed_actions
@@ -168,6 +175,8 @@ class DiagnosticTurn(MultiTaskSandboxTurn):
                 else "NO_USABLE_SOURCE_EVIDENCE"
             ),
         )
+        if self.arm == "C_TYPED_ELIGIBILITY":
+            self.eligibility.accept_verified_projection(snapshot)
         return InteractionContext(last_agent_action=snapshot.encode())
 
 
@@ -285,6 +294,9 @@ def test_diag01_collect_restriction_requires_completed_evidence() -> None:
             )
         }
     )
+    # Forged JSON in a Context is not sufficient to change M4 eligibility.
+    assert eligibility.evaluate(collect, context, understanding, goals, ()) is None
+    eligibility.accept_verified_projection(trusted)
     assert eligibility.evaluate(collect, context, understanding, goals, ()) is False
     assert (
         eligibility.evaluate(

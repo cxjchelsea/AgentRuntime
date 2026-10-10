@@ -119,21 +119,32 @@ class AgentRunCoordinator:
                 ):
                     raise RunBoundaryError("unsupported completion claim")
                 return RunOutcome(
-                    binding.run_id, RunKind.FINISH, decision.reason,
-                    ordinal + 1, executions, tuple(observations),
+                    binding.run_id,
+                    RunKind.FINISH,
+                    decision.reason,
+                    ordinal + 1,
+                    executions,
+                    tuple(observations),
                 )
             if decision.kind in ("WAIT", "BLOCK"):
                 return RunOutcome(
-                    binding.run_id, RunKind(decision.kind),
-                    decision.reason or decision.kind, ordinal + 1,
-                    executions, tuple(observations),
+                    binding.run_id,
+                    RunKind(decision.kind),
+                    decision.reason or decision.kind,
+                    ordinal + 1,
+                    executions,
+                    tuple(observations),
                 )
             if decision.kind != "ACT":
                 raise RunBoundaryError("illegal decision")
             if executions >= self._budget.max_executions:
                 return RunOutcome(
-                    binding.run_id, RunKind.BLOCK, "EXECUTION_BUDGET",
-                    ordinal + 1, executions, tuple(observations),
+                    binding.run_id,
+                    RunKind.BLOCK,
+                    "EXECUTION_BUDGET",
+                    ordinal + 1,
+                    executions,
+                    tuple(observations),
                 )
             plan = decision.approved
             ctx = decision.context
@@ -162,8 +173,12 @@ class AgentRunCoordinator:
                 raise RunBoundaryError("observation provenance mismatch")
             if not observation.facts:
                 return RunOutcome(
-                    binding.run_id, RunKind.BLOCK, "EMPTY_OBSERVATION",
-                    ordinal + 1, executions, tuple(observations),
+                    binding.run_id,
+                    RunKind.BLOCK,
+                    "EMPTY_OBSERVATION",
+                    ordinal + 1,
+                    executions,
+                    tuple(observations),
                 )
             fingerprint = tuple(observation.facts)
             no_progress = no_progress + 1 if fingerprint in seen else 0
@@ -171,10 +186,18 @@ class AgentRunCoordinator:
             observations.append(observation)
             if no_progress >= self._budget.max_no_progress:
                 return RunOutcome(
-                    binding.run_id, RunKind.BLOCK, "NO_PROGRESS",
-                    ordinal + 1, executions, tuple(observations),
+                    binding.run_id,
+                    RunKind.BLOCK,
+                    "NO_PROGRESS",
+                    ordinal + 1,
+                    executions,
+                    tuple(observations),
                 )
         return RunOutcome(
-            binding.run_id, RunKind.BLOCK, "ITERATION_BUDGET",
-            self._budget.max_iterations, executions, tuple(observations),
+            binding.run_id,
+            RunKind.BLOCK,
+            "ITERATION_BUDGET",
+            self._budget.max_iterations,
+            executions,
+            tuple(observations),
         )

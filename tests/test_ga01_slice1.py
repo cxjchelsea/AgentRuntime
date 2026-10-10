@@ -21,13 +21,13 @@ from agent_core.runner import (
 )
 from runtime.constraint_management import RuntimeConstraintEvaluator
 from runtime.contracts import (
-    ToolContext,
     ActionPlanDraft,
     ApprovedActionPlan,
     DomainExtensions,
     RuntimeInput,
 )
 from runtime.context_building import DefaultContextBuilder
+from runtime.contracts.context import ToolContext
 from runtime.input_processing import DefaultInputProcessor
 from runtime.orchestration.m2_admission import (
     assert_admission_allows_flow,
@@ -134,7 +134,9 @@ class SandboxTurn:
             )
         ):
             return Decision(
-                iteration, "FINISH", reason="SANDBOX_GOAL_SATISFIED",
+                iteration,
+                "FINISH",
+                reason="SANDBOX_GOAL_SATISFIED",
                 completion_fact="GOAL_SATISFIED",
             )
         draft = build_action_plan_draft().model_copy(
@@ -155,10 +157,9 @@ class SandboxTurn:
             raise RunBoundaryError("no approved action")
         approved = decision.approved
         self.actions += 1
-        if self.actions > 1:
-            # May execute multiple distinct approved plans, never an implicit replay.
-            if approved.request_id == self.initial.request_id:
-                raise RunBoundaryError("repeated same request")
+        # May execute multiple distinct approved plans, never an implicit replay.
+        if self.actions > 1 and approved.request_id == self.initial.request_id:
+            raise RunBoundaryError("repeated same request")
         execution = build_execution_result().model_copy(
             update={
                 "request_id": approved.request_id,

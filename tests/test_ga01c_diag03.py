@@ -25,7 +25,6 @@ from runtime.planning.candidates import PlanningActionCandidate
 from runtime.planning.goals import GoalResolutionResult
 from runtime.planning.strategy_selection import (
     PlanningObservationContext,
-    StrategyEligibilityRule,
     StrategyModelRequestBuilder,
 )
 from runtime.registries import StrategyDefinition
@@ -52,7 +51,7 @@ from tests.test_ga01c_eval02 import (
 class TrustedTypedEligibility:
     """M4 Domain rule consuming only the isolated admitted/verified read projection."""
 
-    def __init__(self, case: TaskCase, provider: "TypedPlanningTurn") -> None:
+    def __init__(self, case: TaskCase, provider: TypedPlanningTurn) -> None:
         self._collect_strategy = (
             "DOMAIN_STRATEGY_A"
             if case.collect_action == "DOMAIN_ACTION_A"

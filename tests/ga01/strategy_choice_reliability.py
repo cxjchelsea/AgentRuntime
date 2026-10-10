@@ -7,6 +7,8 @@ Raw provider text and user goal are never logged.
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
@@ -25,7 +27,7 @@ class DiagnosticStrategyChoiceTransport:
         self,
         infer_once: Callable[[dict[str, Any]], Awaitable[Mapping[str, object]]],
         *,
-        max_invalid_retries: int = 1,
+        max_invalid_retries: int = 0,
     ) -> None:
         if max_invalid_retries not in (0, 1):
             raise ValueError("sandbox supports zero or one pre-execution retry")
@@ -37,8 +39,10 @@ class DiagnosticStrategyChoiceTransport:
         self.model_calls = 0
 
     async def __call__(self, payload: dict[str, Any]) -> Mapping[str, object]:
-        strategies = payload.get("legal_strategy_ids")
-        actions = payload.get("candidate_action_ids")
+        # Freeze the entire caller input before the first transport attempt.
+        snapshot = deepcopy(payload)
+        strategies = snapshot.get("legal_strategy_ids")
+        actions = snapshot.get("candidate_action_ids")
         if (
             not isinstance(strategies, list)
             or not strategies
@@ -51,7 +55,13 @@ class DiagnosticStrategyChoiceTransport:
         for attempt in range(self._max_invalid_retries + 1):
             self.model_calls += 1
             # Transport failures are NOT retried by this choice-only wrapper.
-            choice = await self._infer_once(payload)
+            candidate = deepcopy(snapshot)
+            try:
+                choice = await self._infer_once(candidate)
+            finally:
+                # Do not permit transport mutation to change a later attempt.
+                if candidate != snapshot:
+                    raise ValueError("strategy model transport mutated frozen request")
             try:
                 validator.validate(
                     choice,

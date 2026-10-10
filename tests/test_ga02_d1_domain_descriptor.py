@@ -51,14 +51,20 @@ def test_exact_golden_vector_and_manifest_adapter() -> None:
     assert result.manifest_digest == DIGEST
     manifest = descriptor_to_domain_manifest(result)
     assert (manifest.domain_id, manifest.name, manifest.version, manifest.enabled) == (
-        "inventory.reconcile", "Inventory Reconciliation", "1.0.0", True
+        "inventory.reconcile",
+        "Inventory Reconciliation",
+        "1.0.0",
+        True,
     )
     assert manifest.runtime_compatibility == PROFILE
 
 
 def test_reordered_keys_and_nonascii_name() -> None:
     reversed_order = dict(reversed(list(BASE.items())))
-    assert parse_package_descriptor(descriptor_bytes(reversed_order)).manifest_digest == DIGEST
+    assert (
+        parse_package_descriptor(descriptor_bytes(reversed_order)).manifest_digest
+        == DIGEST
+    )
     changed = parse_package_descriptor(descriptor_bytes({**BASE, "name": "库存核对"}))
     assert changed.name == "库存核对"
     assert changed.manifest_digest != DIGEST
@@ -67,8 +73,12 @@ def test_reordered_keys_and_nonascii_name() -> None:
 def test_nonempty_asset_refs_are_sorted_in_hash_and_returned_value() -> None:
     one = ref()
     two = {**ref(name="reconcile"), "relative_path": "actions/reconcile.json"}
-    left = parse_package_descriptor(descriptor_bytes({**BASE, "asset_refs": [one, two]}))
-    right = parse_package_descriptor(descriptor_bytes({**BASE, "asset_refs": [two, one]}))
+    left = parse_package_descriptor(
+        descriptor_bytes({**BASE, "asset_refs": [one, two]})
+    )
+    right = parse_package_descriptor(
+        descriptor_bytes({**BASE, "asset_refs": [two, one]})
+    )
     assert left.manifest_digest == right.manifest_digest
     assert left.asset_refs == right.asset_refs
 
@@ -78,47 +88,52 @@ def test_disabled_metadata_remains_disabled() -> None:
     assert descriptor_to_domain_manifest(result).enabled is False
 
 
-@pytest.mark.parametrize("change", [
-    {"domain_id": "Invalid_ID"},
-    {"domain_version": "01.0.0"},
-    {"name": " A"},
-    {"name": "e\u0301"},
-    {"name": "a\ud800"},
-    {"name": ""},
-    {"enabled": 1},
-    {"runtime_compatibility": "latest"},
-    {"package_schema_version": "2"},
-    {"feature_flags": ["skip-safety"]},
-    {"unexpected": True},
-    {"asset_refs": [ref(namespace="foreign.domain")]},
-    {"asset_refs": [ref(), ref()]},
-    {"asset_refs": [{**ref(), "sha256": "BAD"}]},
-    {"asset_refs": [{**ref(), "relative_path": "../escape"}]},
-    {"asset_refs": [{**ref(), "relative_path": "x//y"}]},
-    {"asset_refs": [{**ref(), "relative_path": "x\\y"}]},
-    {"asset_refs": [{**ref(), "relative_path": "https://unsafe"}]},
-    {"asset_refs": [{**ref(), "relative_path": "a%2fb"}]},
-    {"asset_refs": [{**ref(), "kind": "executable"}]},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"domain_id": "Invalid_ID"},
+        {"domain_version": "01.0.0"},
+        {"name": " A"},
+        {"name": "e\u0301"},
+            {"name": ""},
+        {"enabled": 1},
+        {"runtime_compatibility": "latest"},
+        {"package_schema_version": "2"},
+        {"feature_flags": ["skip-safety"]},
+        {"unexpected": True},
+        {"asset_refs": [ref(namespace="foreign.domain")]},
+        {"asset_refs": [ref(), ref()]},
+        {"asset_refs": [{**ref(), "sha256": "BAD"}]},
+        {"asset_refs": [{**ref(), "relative_path": "../escape"}]},
+        {"asset_refs": [{**ref(), "relative_path": "x//y"}]},
+        {"asset_refs": [{**ref(), "relative_path": "x\\y"}]},
+        {"asset_refs": [{**ref(), "relative_path": "https://unsafe"}]},
+        {"asset_refs": [{**ref(), "relative_path": "a%2fb"}]},
+        {"asset_refs": [{**ref(), "kind": "executable"}]},
+    ],
+)
 def test_invalid_descriptor_rejected(change: dict[str, object]) -> None:
     with pytest.raises(PackageDescriptorError):
         parse_package_descriptor(descriptor_bytes({**BASE, **change}))
 
 
-@pytest.mark.parametrize("data", [
-    b'{"x":1,"x":2}',
-    b'{"x":{"y":1,"y":2}}',
-    b'{"x":NaN}',
-    b'{"x":Infinity}',
-    b'{"x":0.5}',
-    b'{"x":1e2}',
-    b'\xef\xbb\xbf{}',
-    b'\xff',
-    b'{"name":"\\ud800"}',
-    b'[]',
-    b'{}',
-    b'',
-])
+@pytest.mark.parametrize(
+    "data",
+    [
+        b'{"x":1,"x":2}',
+        b'{"x":{"y":1,"y":2}}',
+        b'{"x":NaN}',
+        b'{"x":Infinity}',
+        b'{"x":0.5}',
+        b'{"x":1e2}',
+        b"\xef\xbb\xbf{}",
+        b"\xff",
+        b'{"name":"\\ud800"}',
+        b"[]",
+        b"{}",
+        b"",
+    ],
+)
 def test_json_malformed_fails_closed(data: bytes) -> None:
     with pytest.raises(PackageDescriptorError):
         parse_package_descriptor(data)

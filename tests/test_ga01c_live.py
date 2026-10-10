@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from urllib.parse import urlsplit
 from dataclasses import replace
 from typing import Any, cast
 
@@ -112,13 +113,24 @@ class LiveSandboxTurn(ModelDrivenSandboxTurn):
         return self.projector.project(self.binding, observations)
 
 
+def _live_configured() -> bool:
+    if os.environ.get("GA01C_LIVE_OPT_IN") != "1":
+        return False
+    url = os.environ.get("GA01C_LLM_URL", "")
+    model = os.environ.get("GA01C_LLM_MODEL", "")
+    if not url or not model:
+        return False
+    try:
+        hostname = urlsplit(url).hostname
+    except ValueError:
+        return False
+    local = hostname in {"127.0.0.1", "localhost", "::1"}
+    return local or bool(os.environ.get("GA01C_LLM_API_KEY"))
+
+
 @pytest.mark.skipif(
-    os.environ.get("GA01C_LIVE_OPT_IN") != "1"
-    or not all(
-        os.environ.get(name)
-        for name in ("GA01C_LLM_URL", "GA01C_LLM_MODEL", "GA01C_LLM_API_KEY")
-    ),
-    reason="real LLM credentials and explicit opt-in are required",
+    not _live_configured(),
+    reason="opt-in model endpoint/model and remote key are required",
 )
 def test_live_provider_drives_two_approved_mock_actions() -> None:
     """Actual HTTPS model requests; all task tools remain local deterministic mocks."""

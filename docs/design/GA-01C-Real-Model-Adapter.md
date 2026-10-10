@@ -18,11 +18,11 @@
 export GA01C_LIVE_OPT_IN=1
 export GA01C_LLM_URL="https://YOUR_PROVIDER/v1/chat/completions"
 export GA01C_LLM_MODEL="YOUR_MODEL"
-export GA01C_LLM_API_KEY="YOUR_SECRET"
+export GA01C_LLM_API_KEY="YOUR_SECRET"  # 仅远程模型必须设置
 python -m pytest tests/test_ga01c_live.py -q -rs
 ```
 
-不要在 issue、日志、聊天或仓库提交中粘贴真实密钥；Windows PowerShell 使用 `$env:GA01C_LLM_API_KEY = ...` 等环境变量。此类 endpoint 必须由用户在可信模型服务中自行确认。GitHub Actions 可通过 Secret `GA01C_LLM_API_KEY` 和 Variables `GA01C_LLM_URL`、`GA01C_LLM_MODEL` 配置；没配时 live case 显式 skip，**不是 PASS**。
+不要在 issue、日志、聊天或仓库提交中粘贴真实密钥；Windows PowerShell 使用 `$env:GA01C_LLM_API_KEY = ...` 等环境变量。此类 endpoint 必须由用户在可信模型服务中自行确认。GitHub Actions 可通过 Secret `GA01C_LLM_API_KEY` 和 Variables `GA01C_LLM_URL`、`GA01C_LLM_MODEL` 配置；没配时 live case 显式 skip，**不是 PASS**。仅 loopback（localhost/127.0.0.1/::1）本地模型可不配置密钥，但仍需明确开启 `GA01C_LIVE_OPT_IN=1`，并提供 URL 和模型名称。
 
 ## 安全边界
 

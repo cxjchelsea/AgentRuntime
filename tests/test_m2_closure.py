@@ -133,7 +133,9 @@ def test_m2_orchestrator_keeps_turn_continuity_checks_at_plan_boundaries() -> No
     assert '"PLAN_VALIDATE"' in source
     assert '"POLICY_RECHECK"' in source
     assert "_assert_plan_request_id" in source
-    assert "RuntimeConstraint.request_id must match current RuntimeInput" in source
+    shared = Path("runtime/orchestration/m2_admission.py").read_text(encoding="utf-8")
+    assert "assert_admission_allows_flow" in source
+    assert "RuntimeConstraint.request_id must match current RuntimeInput" in shared
 
 
 def test_m2_closure_does_not_claim_deferred_effect_components() -> None:

@@ -396,7 +396,7 @@ def test_incomparable_timestamps_are_structural_collection_error() -> None:
         _collect(
             _skill_outcome(),
             # 故意使用 naive datetime，验证与 aware started_at 无法比较时走结构错误。
-            observed_at=datetime(2026, 9, 21, 9, 0),  # noqa: DTZ001
+            observed_at=datetime(2026, 9, 21, 9, 0),
         )
 
     assert exc_info.value.reason_code == "RESULT_COLLECTION_TIME_INVALID"

@@ -315,7 +315,7 @@ def test_handle_rejects_unparented_tool_and_naive_time() -> None:
             kind=InFlightOperationKind.SKILL,
             capability_id="skill-001",
             capability_version="1.0.0",
-            started_at=datetime(2026, 9, 22, 14, 0),  # noqa: DTZ001
+            started_at=datetime(2026, 9, 22, 14, 0),
         )
 
 

@@ -32,11 +32,12 @@ from runtime.orchestration.errors import (
     RuntimeOrchestrationError,
     StageExecutionError,
 )
+from runtime.orchestration.m2_admission import (
+    assert_admission_allows_flow,
+    evaluate_m2_admission,
+)
 from runtime.orchestration.m2_control import (
-    AlternatePathRequiredError,
-    PreemptionEffectRequiredError,
     PrioritySubjectResolver,
-    RuntimeControlBlockedError,
 )
 from runtime.orchestration.m6_terminalization import finish_turn_once
 from runtime.orchestration.runtime import (
@@ -47,7 +48,6 @@ from runtime.orchestration.runtime import (
     _gated_validate,
 )
 from runtime.orchestration.trace import TraceStatus
-from runtime.priority_management import IncomingDisposition
 from runtime.validation.m6_no_grant_facade import (
     M6NoGrantTurnHandle,
     TurnOriginSnapshot,
@@ -340,18 +340,14 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
         safety_result: SafetyResult,
         constraint_box: list[RuntimeConstraint],
     ) -> PolicyDecision:
-        subjects = await self.priority_subject_resolver.resolve(
-            runtime_input,
-            runtime_context,
-            understanding_state,
-            safety_result,
-        )
-        constraint = await self.runtime_constraint_evaluator.evaluate(
+        """Compatibility facade: G2 and GA-01B share one admission implementation."""
+        constraint = await evaluate_m2_admission(
+            runtime_input=runtime_input,
             runtime_context=runtime_context,
             understanding_state=understanding_state,
             safety_result=safety_result,
-            current_priority_subject=subjects.current,
-            incoming_priority_subject=subjects.incoming,
+            priority_subject_resolver=self.priority_subject_resolver,
+            runtime_constraint_evaluator=self.runtime_constraint_evaluator,
         )
         constraint_box.append(constraint)
         return constraint.policy_decision
@@ -362,39 +358,17 @@ class M2RuntimeOrchestrator(RuntimeOrchestrator):
         request_id: str,
         policy_decision: PolicyDecision,
     ) -> None:
+        """Preserve the original G2 single-result invariant and exception order."""
         if len(constraint_box) != 1:
             raise OrchestrationInvariantError(
                 "POLICY",
                 "integrated M2 policy evaluation must produce exactly one RuntimeConstraint",
             )
-        constraint = constraint_box[0]
-        if constraint.request_id != request_id:
-            raise OrchestrationInvariantError(
-                "POLICY",
-                "RuntimeConstraint.request_id must match current RuntimeInput",
-            )
-        if constraint.policy_decision != policy_decision:
-            raise OrchestrationInvariantError(
-                "POLICY",
-                "RuntimeConstraint policy decision must match POLICY output",
-            )
-
-        if policy_decision.blocked or not policy_decision.allowed:
-            if policy_decision.forced_workflow is not None:
-                raise AlternatePathRequiredError(policy_decision.forced_workflow)
-            raise RuntimeControlBlockedError("POLICY_BLOCKED")
-
-        if constraint.incoming_disposition is not IncomingDisposition.PROCESS_NOW:
-            raise RuntimeControlBlockedError(
-                f"INCOMING_{constraint.incoming_disposition.value}",
-                disposition=constraint.incoming_disposition,
-            )
-
-        if (
-            constraint.requires_interruption
-            and constraint.preemption_decision.current_subject_id is not None
-        ):
-            raise PreemptionEffectRequiredError()
+        assert_admission_allows_flow(
+            constraint=constraint_box[0],
+            request_id=request_id,
+            policy_decision=policy_decision,
+        )
 
     @staticmethod
     def _assert_plan_request_id(

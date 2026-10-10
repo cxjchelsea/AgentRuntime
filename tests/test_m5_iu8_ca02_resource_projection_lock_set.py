@@ -700,5 +700,5 @@ def test_lock_set_request_requires_timezone_aware_time() -> None:
             lock_set_id="set-001",
             owner=_owner(),
             resolved_locks=(_resolved("a-lock"),),
-            requested_at=datetime(2026, 9, 23, 8, 30),  # noqa: DTZ001
+            requested_at=datetime(2026, 9, 23, 8, 30),
         )

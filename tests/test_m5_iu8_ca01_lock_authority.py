@@ -269,7 +269,7 @@ def test_acquire_request_requires_timezone_aware_time() -> None:
             lock_key="opaque-lock-001",
             owner=_owner(),
             acquisition_id="acq-001",
-            requested_at=datetime(2026, 9, 22, 16, 30),  # noqa: DTZ001
+            requested_at=datetime(2026, 9, 22, 16, 30),
         )
 
 

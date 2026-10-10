@@ -17,7 +17,7 @@ from copy import deepcopy
 from dataclasses import dataclass, fields, is_dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from runtime.contracts.enums import ExecutionPlanStatus
 from runtime.contracts.execution import (
@@ -316,7 +316,10 @@ class CanonicalExecutionResultProjector:
                             )
                 journal_entries = joined
             else:
-                journal_entries = evidence.tool_journal
+                journal_entries = cast(
+                    tuple[Mapping[str, Any] | ToolInvocationJournalEntry, ...],
+                    evidence.tool_journal,
+                )
 
             for source_index, entry in enumerate(journal_entries):
                 _collect_tool_result(

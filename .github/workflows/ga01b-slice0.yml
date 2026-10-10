@@ -54,7 +54,7 @@ jobs:
 
   free-local-model:
     name: Free local Qwen2.5 3B real inference
-    if: github.event_name == 'pull_request' && (github.head_ref == 'feature/ga-01c-real-model-adapter-20261010' || github.head_ref == 'eval/ga-01c-no-answer-leak-qwen3b-20261010')
+    if: github.event_name == 'pull_request' && (github.head_ref == 'feature/ga-01c-real-model-adapter-20261010' || github.head_ref == 'eval/ga-01c-no-answer-leak-qwen3b-20261010' || github.head_ref == 'eval/ga-01c-eval02-multitask-20261010')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -96,6 +96,14 @@ jobs:
           GA01C_LLM_MODEL: qwen2.5:3b
         run: |
           python -m pytest tests/test_ga01c_decision_eval.py::test_real_qwen_semantic_decisions_no_answer_leak -q -s -rs
+      - name: EVAL-02 multiple real-model tasks and repeated runs
+        if: github.head_ref == 'eval/ga-01c-eval02-multitask-20261010'
+        env:
+          GA01C_EVAL02_OPT_IN: '1'
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: |
+          python -m pytest tests/test_ga01c_eval02.py::test_qwen_real_multitask_loop_completion_and_reliability -q -s -rs
       - name: Report local server logs on failure
         if: failure()
         run: docker logs --tail 70 ga01c-qwen || true

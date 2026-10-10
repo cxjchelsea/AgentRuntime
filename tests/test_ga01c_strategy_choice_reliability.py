@@ -26,7 +26,10 @@ def _choice(strategy: str, action: str) -> dict[str, object]:
 def test_invalid_strategy_recovers_once_without_changing_request() -> None:
     received: list[dict[str, Any]] = []
     replies = iter(
-        [_choice("UNREGISTERED", "DOMAIN_ACTION_A"), _choice("DOMAIN_STRATEGY_A", "DOMAIN_ACTION_A")]
+        [
+            _choice("UNREGISTERED", "DOMAIN_ACTION_A"),
+            _choice("DOMAIN_STRATEGY_A", "DOMAIN_ACTION_A"),
+        ]
     )
 
     async def infer(payload: dict[str, Any]) -> dict[str, object]:

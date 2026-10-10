@@ -10,7 +10,12 @@ from agent_core.iteration import (
     IterationRef,
     assert_execution_correlation,
 )
-from runtime.contracts import ApprovedActionPlan, ExecutionResult, RuntimeContext
+from runtime.contracts import (
+    ApprovedActionPlan,
+    ExecutionPlanStatus,
+    ExecutionResult,
+    RuntimeContext,
+)
 from runtime.interfaces.execution import ExecutionEngine
 
 
@@ -61,6 +66,8 @@ def verify_local_mock(
         approved=approved,
         execution=execution,
     )
+    if execution.plan_status is not ExecutionPlanStatus.SUCCESS:
+        raise IterationCorrelationError("non-success terminal execution evidence")
     # Deliberately not a ValidatedResult: local facts do not grant M6 authority.
     return SandboxObservation(
         iteration_id=iteration.request_id,

@@ -25,12 +25,16 @@ def _strategies():
     }
 
 
-def test_typed_provider_rejects_foreign_request(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_typed_provider_rejects_foreign_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions")
     monkeypatch.setenv("GA01C_LLM_MODEL", "not-called")
     step = _make_step(TASKS[0])
     assert step._verified_for_request(step.binding.original_request_id) is step._typed
-    assert step._verified_for_request(f"{step.binding.run_id}-iteration-1") is step._typed
+    assert (
+        step._verified_for_request(f"{step.binding.run_id}-iteration-1") is step._typed
+    )
     with pytest.raises(ValueError, match="does not match run"):
         step._verified_for_request("another-run-iteration-1")
 
@@ -52,9 +56,7 @@ def test_typed_eligibility_ignores_user_claim_without_admitted_evidence(
     goals = _goals(understanding, context=context)
     collect = _strategies()["DOMAIN_STRATEGY_A"]
     assert (
-        step._typed_eligibility.evaluate(
-            collect, context, understanding, goals, ()
-        )
+        step._typed_eligibility.evaluate(collect, context, understanding, goals, ())
         is None
     )
     assert step._typed_eligibility.denials == 0

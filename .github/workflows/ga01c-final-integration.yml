@@ -48,7 +48,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "GIT_SHA=${GITHUB_SHA}"
+          echo "CHECKOUT_SHA=${GITHUB_SHA}"
+          echo "PR_HEAD_SHA=${{ github.event.pull_request.head.sha || github.sha }}"
           echo "GIT_REF=${GITHUB_REF}"
           docker run -d --name ga01c-integration-qwen --cpus=2 --memory=5g -p 127.0.0.1:11434:11434 ollama/ollama:latest
           for attempt in $(seq 1 90); do
@@ -81,8 +82,11 @@ jobs:
           failed=0
           for repeat in 1 2 3; do
             echo "::group::DIAG03 independent trial ${repeat}/3"
-            python -m pytest tests/test_ga01c_diag03.py::test_diag03_real_model_typed_multitask_e2e -q -s -rs
-            status=$?
+            if python -m pytest tests/test_ga01c_diag03.py::test_diag03_real_model_typed_multitask_e2e -q -s -rs; then
+              status=0
+            else
+              status=$?
+            fi
             echo "DIAG03_TRIAL=${repeat} STATUS=${status}"
             if [ "$status" -ne 0 ]; then failed=1; fi
             echo "::endgroup::"

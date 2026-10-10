@@ -57,12 +57,12 @@ from runtime.registries import (
     WorkflowRegistry,
 )
 from tests.orchestration_stubs import build_policy_decision, build_runtime_context
+from tests.test_ga01_slice2 import ObservationSensitiveFakeTransport
 from tests.test_m4_candidate_strategy_selection import (
     _action,
     _strategy_registry,
     _understanding,
 )
-from tests.test_ga01_slice2 import ObservationSensitiveFakeTransport
 
 
 @dataclass(frozen=True)
@@ -82,13 +82,15 @@ def _build_model_planner(
     skills = SkillRegistry()
     skills.register(
         SkillDefinition(
-            skill_id="SKILL_A", version="1.0.0",
+            skill_id="SKILL_A",
+            version="1.0.0",
             supported_actions=["DOMAIN_ACTION_A"],
         )
     )
     skills.register(
         SkillDefinition(
-            skill_id="SKILL_B", version="1.0.0",
+            skill_id="SKILL_B",
+            version="1.0.0",
             supported_actions=["DOMAIN_ACTION_B"],
         )
     )
@@ -103,10 +105,12 @@ def _build_model_planner(
         mode_router=PlanningModeRouter(),
         goal_resolver=GoalResolver(),
         candidate_builder=LegalActionCandidateBuilder(
-            action_registry=actions, strategy_registry=strategies,
+            action_registry=actions,
+            strategy_registry=strategies,
         ),
         strategy_selector=HybridStrategySelector(
-            strategy_registry=strategies, model=model,
+            strategy_registry=strategies,
+            model=model,
         ),
         selected_action_resolver=SelectedActionResolver(strategies),
         knowledge_planner=KnowledgePlanner(
@@ -119,10 +123,12 @@ def _build_model_planner(
         execution_preplanner=ExecutionPreplanner(
             memory_planner=MemoryUsagePlanner(),
             capability_planner=CapabilityPlanner(
-                skill_registry=skills, workflow_registry=workflows,
+                skill_registry=skills,
+                workflow_registry=workflows,
             ),
             tool_planner=ToolPlanner(
-                skill_registry=skills, tool_registry=tools,
+                skill_registry=skills,
+                tool_registry=tools,
             ),
             confirmation_planner=ConfirmationPlanner(actions),
             sequence_planner=SequencePlanner(),

@@ -34,7 +34,15 @@ jobs:
       - name: Full pytest
         if: success() || failure()
         run: python -m pytest tests -q
-      - name: Optional live LLM sandbox\n        if: success() || failure()\n        env:\n          GA01C_LIVE_OPT_IN: '1'\n          GA01C_LLM_API_KEY: ${{ secrets.GA01C_LLM_API_KEY }}\n          GA01C_LLM_URL: ${{ vars.GA01C_LLM_URL }}\n          GA01C_LLM_MODEL: ${{ vars.GA01C_LLM_MODEL }}\n        run: python -m pytest tests/test_ga01c_live.py -q -rs\n      - name: Mypy
+      - name: Optional live LLM sandbox
+        if: success() || failure()
+        env:
+          GA01C_LIVE_OPT_IN: '1'
+          GA01C_LLM_API_KEY: ${{ secrets.GA01C_LLM_API_KEY }}
+          GA01C_LLM_URL: ${{ vars.GA01C_LLM_URL }}
+          GA01C_LLM_MODEL: ${{ vars.GA01C_LLM_MODEL }}
+        run: python -m pytest tests/test_ga01c_live.py -q -rs
+      - name: Mypy
         if: success() || failure()
         run: python -m mypy runtime agent_core tests
       - name: Ruff lint

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import cast
 
 import pytest
 
@@ -42,6 +43,8 @@ from tests.ga01.sandbox import LocalMockExecutionEngine, verify_local_mock
 from tests.orchestration_stubs import (
     StubPlanValidator,
     build_execution_result,
+    build_action_plan_draft,
+    build_runtime_context,
     build_runtime_input,
 )
 from tests.test_m2_runtime_integration_gate import (
@@ -235,6 +238,46 @@ def test_slice1_execution_budget_stops_before_second_side_effect() -> None:
         assert result.kind is RunKind.BLOCK
         assert result.reason == "EXECUTION_BUDGET"
         assert result.executions == 1 and step.actions == 1
+
+    asyncio.run(scenario())
+
+
+def test_slice1_draft_cannot_enter_execution_even_with_fake_step() -> None:
+    class UnauthorizedStep:
+        calls = 0
+
+        async def decide(
+            self,
+            current_input: RuntimeInput,
+            iteration: IterationRef,
+            observations: tuple[ObservedFact, ...],
+        ) -> Decision:
+            del current_input, observations
+            # Malicious adapter abuses Python's runtime typing. Coordinator must reject it.
+            return Decision(
+                iteration,
+                "ACT",
+                context=build_runtime_context(),
+                approved=cast(ApprovedActionPlan, build_action_plan_draft()),
+            )
+
+        async def execute_and_observe(self, decision: Decision) -> ObservedFact:
+            self.calls += 1
+            raise AssertionError("draft must never execute")
+
+    async def scenario() -> None:
+        initial = build_runtime_input(text="task fixture")
+        binding = AgentRunBinding.from_input(
+            initial,
+            run_id="draft-block",
+            domain_id="fixture-domain",
+            domain_version="v1",
+            binding_fingerprint="fixture-hash",
+        )
+        step = UnauthorizedStep()
+        with pytest.raises(RunBoundaryError, match="unapproved"):
+            await AgentRunCoordinator(step, LoopBudget()).run(initial, binding)
+        assert step.calls == 0
 
     asyncio.run(scenario())
 

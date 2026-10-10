@@ -98,6 +98,7 @@ class AgentRunCoordinator:
         seen: set[tuple[str, ...]] = set()
         no_progress = 0
         executions = 0
+        used_plan_ids: set[str] = set()
         for ordinal in range(self._budget.max_iterations):
             current_input = binding.iteration_input(original_input, ordinal=ordinal)
             iteration = IterationRef.from_input(binding, current_input, ordinal=ordinal)
@@ -148,8 +149,10 @@ class AgentRunCoordinator:
                 )
             plan = decision.approved
             ctx = decision.context
-            if plan is None or ctx is None:
+            if type(plan) is not ApprovedActionPlan or ctx is None:
                 raise RunBoundaryError("unapproved or context-free action")
+            if plan.plan_id in used_plan_ids:
+                raise RunBoundaryError("duplicate approved plan must not replay")
             if plan.request_id != iteration.request_id:
                 raise RunBoundaryError("plan request mismatch")
             if (
@@ -161,6 +164,8 @@ class AgentRunCoordinator:
                 or ctx.domain_extensions.domain_id != binding.domain_id
             ):
                 raise RunBoundaryError("context scope mismatch")
+            # Claim identity before any physical attempt; failed attempts must not replay.
+            used_plan_ids.add(plan.plan_id)
             observation = await self._step.execute_and_observe(decision)
             executions += 1
             if (

@@ -10,11 +10,13 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from agent_core.iteration import AgentRunBinding
+from runtime.contracts import RuntimeInput
+from runtime.planning import StrategyEligibilityRule
 from agent_core.runner import AgentRunCoordinator, LoopBudget
 from runtime.contracts import RuntimeContext, UnderstandingState
 from runtime.planning.candidates import PlanningActionCandidate
@@ -27,13 +29,10 @@ from tests.ga01.initial_evidence import (
     admit_initial_evidence,
 )
 from tests.orchestration_stubs import build_runtime_input
-from tests.test_ga01c_diag01 import (
-    DiagnosticTurn,
-    _run_diag_case,
-)
+from tests.test_ga01c_diag01 import DiagnosticTurn
 from tests.test_ga01c_eval02 import TASKS, TaskCase
 
-_NOW = datetime(2026, 10, 10, 1, tzinfo=timezone.utc)
+_NOW = datetime(2026, 10, 10, 1, tzinfo=UTC)
 
 
 class InitiallyAvailableEligibility:
@@ -70,7 +69,7 @@ class InitiallyAvailableEligibility:
 class InitialEvidenceTurn(DiagnosticTurn):
     def __init__(
         self,
-        original,
+        original: RuntimeInput,
         case: TaskCase,
         admitted: AcceptedInitialEvidence | None,
     ) -> None:
@@ -78,7 +77,7 @@ class InitialEvidenceTurn(DiagnosticTurn):
         self.initial_rule.accepted = admitted
         super().__init__(original, case, "C_TYPED_ELIGIBILITY")
 
-    def planning_eligibility_rules(self):
+    def planning_eligibility_rules(self) -> tuple[StrategyEligibilityRule, ...]:
         return (self.eligibility, self.initial_rule)
 
 

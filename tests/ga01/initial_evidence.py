@@ -7,7 +7,7 @@ not the user's sentence or the expected model action. No production M6 grant.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 from agent_core.iteration import AgentRunBinding
 
@@ -85,7 +85,9 @@ def admit_initial_evidence(
         or now >= record.expires_at
         or record.expires_at <= record.observed_at
     ):
-        raise InitialEvidenceError("initial evidence identity, revision or freshness invalid")
+        raise InitialEvidenceError(
+            "initial evidence identity, revision or freshness invalid"
+        )
     if record.status in {"UNKNOWN", "MISSING", "CONTRADICTORY"}:
         return None
     if record.status != "AVAILABLE_UNVERIFIED":

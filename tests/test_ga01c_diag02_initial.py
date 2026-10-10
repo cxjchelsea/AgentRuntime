@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from typing import Any, cast
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -16,7 +17,7 @@ from tests.ga01.initial_evidence import (
 )
 from tests.orchestration_stubs import build_runtime_input
 
-_NOW = datetime(2026, 10, 10, 1, tzinfo=timezone.utc)
+_NOW = datetime(2026, 10, 10, 1, tzinfo=UTC)
 
 
 def _fixture() -> tuple[AgentRunBinding, InitialEvidenceRecord]:
@@ -87,7 +88,7 @@ def test_initial_evidence_rejects_foreign_stale_untrusted_or_invalid(
     change: dict[str, object],
 ) -> None:
     binding, record = _fixture()
-    updated = replace(record, **change)
+    updated = replace(record, **cast(Any, change))
     with pytest.raises(InitialEvidenceError):
         admit_initial_evidence(
             binding,

@@ -63,7 +63,7 @@ def test_terminal_signal_requires_complete_auditable_envelope() -> None:
 
 def test_terminal_signal_rejects_naive_issued_at() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
-        _cancel_signal(issued_at=datetime(2026, 9, 22, 12, 0))  # noqa: DTZ001
+        _cancel_signal(issued_at=datetime(2026, 9, 22, 12, 0))
 
 
 def test_none_signal_rejects_terminal_authority_fields() -> None:
@@ -108,7 +108,7 @@ def test_observed_control_requires_terminal_signal_and_core_aware_time() -> None
     with pytest.raises(ValueError, match="timezone-aware"):
         ObservedExecutionControl(
             signal=_cancel_signal(),
-            observed_at=datetime(2026, 9, 22, 12, 0),  # noqa: DTZ001
+            observed_at=datetime(2026, 9, 22, 12, 0),
         )
 
 

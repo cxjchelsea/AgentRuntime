@@ -131,14 +131,20 @@ class IterationRef:
         expected = (
             (binding.original_request_id, binding.original_trace_id)
             if ordinal == 0
-            else (f"{binding.run_id}-iteration-{ordinal}", f"{binding.run_id}-trace-{ordinal}")
+            else (
+                f"{binding.run_id}-iteration-{ordinal}",
+                f"{binding.run_id}-trace-{ordinal}",
+            )
         )
         binding.assert_identity(runtime_input)
         if (runtime_input.request_id, runtime_input.trace_id) != expected:
             raise IterationCorrelationError("request / trace mismatch")
         return cls(
-            binding.run_id, ordinal, runtime_input.request_id,
-            runtime_input.trace_id, binding.binding_fingerprint,
+            binding.run_id,
+            ordinal,
+            runtime_input.request_id,
+            runtime_input.trace_id,
+            binding.binding_fingerprint,
         )
 
 
@@ -167,7 +173,9 @@ def assert_execution_correlation(
     ):
         raise IterationCorrelationError("execution binding or identity mismatch")
     decision = admit_validation_input(
-        execution, runtime_context, approved,
+        execution,
+        runtime_context,
+        approved,
         expected_request_id=iteration.request_id,
         expected_session_id=binding.session_id,
     )

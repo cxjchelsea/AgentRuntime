@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 from pathlib import Path
 from typing import cast
 
@@ -14,11 +14,11 @@ from agent_core.iteration import (
     IterationCorrelationError,
     IterationRef,
 )
-from runtime.input_processing import DefaultInputProcessor
 from runtime.constraint_management import RuntimeConstraint
 from runtime.contracts import InputSource, InputTriggerType, RuntimeInput
-from runtime.orchestration.m2_admission import assert_admission_allows_flow
+from runtime.input_processing import DefaultInputProcessor
 from runtime.orchestration import OrchestrationInvariantError
+from runtime.orchestration.m2_admission import assert_admission_allows_flow
 from tests.orchestration_stubs import (
     build_policy_decision,
     build_runtime_input,
@@ -63,7 +63,9 @@ def test_g02_new_iteration_is_system_event_not_tool_or_user_text() -> None:
     assert actual.request_id == second.request_id
 
 
-@pytest.mark.parametrize("bad_field", ["subject_id", "identity_scope", "session_id", "tenant_id"])
+@pytest.mark.parametrize(
+    "bad_field", ["subject_id", "identity_scope", "session_id", "tenant_id"]
+)
 def test_g02_mismatched_scope_rejected(bad_field: str) -> None:
     binding, original = binding_input()
     corrupt = original.model_copy(update={bad_field: "wrong"})

@@ -37,9 +37,7 @@ def test_system_event_is_accepted_by_real_context_m3_m2_and_m4() -> None:
         runtime, _ = await _build_orchestrator(
             next_input,
             recorder=recorder,
-            resolver=StaticPrioritySubjectResolver(
-                current=None, incoming=_incoming()
-            ),
+            resolver=StaticPrioritySubjectResolver(current=None, incoming=_incoming()),
         )
         # This full legacy pipeline is *only* an existing-M1..M4
         # compatibility probe; the future Loop must NOT call run() repeatedly.

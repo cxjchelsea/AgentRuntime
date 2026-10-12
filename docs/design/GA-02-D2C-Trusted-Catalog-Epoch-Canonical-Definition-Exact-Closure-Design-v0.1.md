@@ -679,3 +679,94 @@ The test suite must assert \`str(error)==error.code.value\`, deterministic behav
 | C1 physical issuer/write fence | Unimplemented, unchanged | HARD HOLD |
 
 **Formal state:** \`C0-R3-01..03 FINAL EXECUTABLE INPUT SCHEMA AND BOUNDARY FIXTURE REMEDIATION = SUBMITTED\`; \`PR #114 EXACT-HEAD INDEPENDENT C0 READINESS RE-REVIEW = PENDING\`; \`C0 CODE IMPLEMENTATION AUTHORIZATION = NOT ISSUED\`; \`PR #114 MERGE = NOT AUTHORIZED\`; \`C1 PRODUCTION TRUST = HARD HOLD\`. Next bounded gate: **GA-02 D2-C — PR #114 C0-R3-01..03 Exact-HEAD Independent Physical Fixture Feasibility + Implementation Readiness Re-Review**.
+
+
+---
+
+## 16. C0-R4-01..03 — Final Mode/Digest Contract + Reachable Fixture / Error Precedence Amendment v0.6
+
+**Status:** TARGETED DESIGN AMENDMENT SUBMITTED; EXACT-HEAD INDEPENDENT PHYSICAL FEASIBILITY RE-REVIEW REQUIRED. **This amendment does not authorize C0 implementation, C1 trust, PR merge, DomainBinding or runtime execution.** For C0 only, §16 overrides conflicting local §§13.5, 14.4 and 15.1–15.3 as indicated below. Parent merged D2 §11.4/§11.7 and D1/D2-A/D2-B physical contracts remain unchanged. Previously verified E01/E03/E04/E05 byte fixtures and five upstream D2-D fingerprint vectors remain historical regression references, not fabricated trusted publication evidence.
+
+### 16.1 R4-01 — Bind classification modes into versioned diagnostic Catalog identity
+
+**Problem and decision:** \`prompt_mode\` and \`rule_mode\` select Registry-backed versus inert diagnostic assets. A Catalog digest computed without them could remain equal while the graph's admitted seed set changes. Do **not** silently change historical \`GA02-D2C-CATALOG-1\` E02; introduce **\`GA02-D2C-CATALOG-2\`** for all new C0 results. Its actual \`host_catalog_digest\` is solely a *self-consistency digest*, never Host authenticity.
+
+\`CATALOG-2\` canonical root keys are exactly the thirteen \`CATALOG-1\` keys from §13.5 E02, plus **\`prompt_mode\`** and **\`rule_mode\`**. Both values are required strings, each exactly \`REGISTRY_EXACT\` or \`INERT_ONLY\`, and must equal their corresponding fixed \`DiagnosticCatalogInputV1\` fields. \`publisher_generation\` in the derived envelope equals the input's exact \`source_generation\`; no inference from a file path, unverified Root Lease or materialized package object. \`host_policy_id\`, \`host_policy_generation\`, \`host_catalog_generation\`, domain/version/manifest/profile and runtime_profile are exact copied input identity values, not newly issued tokens. For C0, **these tokens are untrusted diagnostic identifiers**; a caller who changes a token cannot create issuer authenticity.
+
+The digest bytes are exactly:
+
+\`\`\`text
+SHA256(UTF8("GA02-D2C-CATALOG-2") + one NUL byte + UTF8(sorted-keys compact canonical JSON of the 15-key envelope))
+\`\`\`
+
+\`host_catalog_digest\` is excluded from its own hashed envelope. Edge catalog digest E01/E04 remains \`GA02-D2C-EDGES-1\`; Closure digest E03/E05 remains \`GA02-D2C-CLOSURE-1\`; \`definition_sha256\` stays the **unprefixed** upstream D2 §11.7 SHA-256. The derived \`DiagnosticResolutionSnapshotV1\` carries both \`host_catalog_digest\` (\`CATALOG-2\`) and \`closure_digest\`; **the pair** is the diagnostic binding of policy/classification identity to resolved closure content. Never expose the closure digest alone as an authorization/completeness certificate. The upstream \`GA02-D2-BINDING-1\` schema and existing fingerprint vectors are unchanged.
+
+**C06 exact empty-catalog reference** (synthetic and untrusted, one-line canonical JSON):
+
+~~~json
+{"adapter_entries":[],"approved_core_schema_keys":[],"domain_id":"inventory.reconcile","domain_version":"1.0.0","edge_digest":"df28640283682cbc5ce71f51e2581ded513ede5223aa335e89b55e615c8ff1ef","host_catalog_generation":"diagnostic-g1","host_policy_generation":"diagnostic-p1","host_policy_id":"diagnostic-policy","manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profile":"GA02-D2C-CATALOG-2","prompt_mode":"REGISTRY_EXACT","publisher_generation":"package-g1","registry_entries":[],"rule_mode":"INERT_ONLY","runtime_profile":"GA02-D1-1"}
+~~~
+
+\`C06 host_catalog_digest = 2c1388a320cbb4752e2aae0e2d777c560781d742bfdedf49d8773d1b0ae1f02d\`.
+
+**C07 exact single-mode change:** use C06's identical JSON except \`prompt_mode="INERT_ONLY"\`; the expected digest is \`776576af1529d2e63326fe10dcc778cfe3fc7d0de38fdb801fbd444ef148ee64\`. C06 != C07 must be verified by independent SHA recomputation; a similar \`rule_mode\` flip must also change the catalog digest. C06/C07 are **hash serialization vectors only**; a zero-entry Catalog cannot meet §15.1's required DomainManifest record, and MUST NOT be claimed to be admitted as a valid diagnostic input. E02 remains a \`CATALOG-1\` historical vector, **not** a C0 active digest profile.
+
+The normal nonempty E04/E05 graph remains stable under an unrelated prompt-mode flip when it contains no prompt D1 ref; in that case only CATALOG-2 digest differs. In an input with a prompt ref, mode change must also update the Registry-backed seed/entry classification and graph/closure evidence, fail closed if new required entries are missing, and prevent reusing an old Catalog digest across classifications. **No arbitrary host policy object or catalog-supplied override of the fixed 12-kind table is authorized.**
+
+### 16.2 R4-02 — Reachability-proof construction and precise primitive-element ledger
+
+**Fix the ingestion counting unit** (supersedes §15.2's ambiguous double count): each field-value **slot** in a trusted-shape carrier, each positional tuple/list **slot**, and each key-value pair in a Definition primitive dict counts **exactly once**. A dict's field-value slot is counted once and not also counted as an additional primitive leaf; a tuple/list element is counted once and not again as a primitive leaf. A nested container itself is reached via its containing slot (root is one container) and its *children* count separately; root container counts one. The total \`primitive_element_count\` is the sum of these visited slots and root. This deterministic rule applies to already type-validated diagnostic containers; it does not perform arbitrary \`__repr__\`, \`__hash__\`, \`__iter__\` or customer callbacks. A string is one slot regardless of length, subject separately to 1024-character cap. Container nesting depth and repeated aliases are evaluated by the bounded iterative traversal. Independently count and reject >4096 before creating a full over-budget defensive copy.
+
+**EX-01/EX-02 external ingestion builder (constructive target, no test execution claimed):**
+
+1. Start from a C0 input with \`profile="GA02-D2C-C0-INPUT-1"\`, exact domain \`inventory.reconcile@1.0.0\`, \`runtime_profile=GA02-D1-1\`, \`manifest_sha256="a"×64\`, \`source_generation="package-g1"\`, \`host_catalog_generation="diagnostic-g1"\`, \`host_policy_id="diagnostic-policy"\`, \`host_policy_generation="diagnostic-p1"\`, \`prompt_mode=rule_mode=INERT_ONLY\`. Include one matching enabled DomainManifest Registry entry.
+2. Add **eight CapabilityDefinition** assets \`stock.capability.0\` through \`stock.capability.7\` (each \`namespace=inventory.reconcile\`, version 1.0.0, distinct D1-valid \`capabilities/capability-0.json\` through \`capabilities/capability-7.json\` and lowercase 64-hex asset SHA). Add exactly one matching enabled \`DiagnosticRegistryEntryV1\` per asset, \`definition_type=CapabilityDefinition\`, full §13.2 canonical field payload and independently recomputed \`definition_sha256\`, \`intrinsic_enabled=null\`. Use exact domain labels; \`skills/workflows/tools\` remain null, so **no versioned graph edges are declared**.
+3. Use only \`CapabilityDefinition.intents\`, \`entities\`, and \`needs\` (non-graph metadata) as **24 independently present list fields** (eight definitions × three fields), initially \`[]\`. Fill list elements with the canonical one-character label \`"x"\` in a fixed order by capability ID then \`intents\` → \`entities\` → \`needs\`, maximum **256 per list**. After every append recompute the affected Definition hash and execute **the exact field-slot-count algorithm above**. Each append increases the count by **exactly one**, not two. All other Definition fields remain unchanged; the eight Capability ID/version/namespace keys and associated input assets remain fixed.
+4. Let \`C0\` be the slot count with all 24 lists empty. Assert, **rather than assume**, \`0 <= 4096-C0 <= 6144\` and that all other constraints hold (8 assets <256, 8 graph seeds <256, 0 edges, ≤256 per list, ≤10,240 canonical bytes per Definition, ≤2,097,152 total encoded bytes). Fill \`4096-C0\` slots. **EX-01** must establish exact postcopy admission count 4096, successful preflight, and a diagnostic-only result; otherwise the fixture must report infeasible instead of marking the limit PASS.
+5. **EX-02** is the same valid input plus **one additional** non-graph list occurrence, giving exact count 4097 and \`D2C_RESOURCE_LIMIT\` at external admission. If no list has remaining room, the construction is invalid and must be amended before implementation authorization. No other earlier error may explain EX-02.
+
+The referenced lists represent **non-graph metadata only** and do not certify operational dependency readiness. Repeated \`"x"\` labels are allowed within these diagnostic non-graph fields: they are not D1 asset references, graph occurrence keys or Host execution permissions. Input must still report \`UNRESOLVED_NON_GRAPH_METADATA\` and \`NOT_ASSESSED\`.
+
+**NG-01/NG-02 internal graph edge-limit builder (genuinely valid bounded structural construction):**
+
+1. Use the internal **already owned**, non-authoritative graph test builder only, *never* a production entry, with exact admitted-domain D1 set containing \`skill/stock.skill.a,b,c,d@1.0.0\` and \`tool/stock.tool@1.0.0\` (all names treated as exact D1-valid IDs; the four Skill references share the same one Tool target). Include matching full typed Definition values and DomainManifest.
+2. Each of four SkillDefinition objects sets \`optional_tools=["stock.tool"]\` repeated **256** times. For each position ordinal 0…255, create the exact \`skill.optional_tools\` \`PINNED\` edge record with the matching source key, target \`tool/stock.tool@1.0.0\` in the same namespace, no duplicate occurrence ordinal. Because all edges lead from Skill nodes to one terminal Tool node, the graph is acyclic. Duplicate declared target **names** across *distinct ordinals* are valid under §13.3; duplicate \`source+relation+ordinal\` is invalid.
+3. With 4×256 occurrences the graph has **1024 edges and 5 distinct nodes**, depth 1 from each Skill seed. Each Skill list has exactly 256 entries, within its field cap. Both the E01-style edge JSON and E05-style closure JSON include 1024 occurrences but must independently remain within the 2-MiB aggregate encoded evidence byte cap; use the exact byte-size counter, not an estimated size. \`NG-01\` must pass the 1024-edge algorithm cap if and only if every independent graph/content limit passes. Do not present this as passing 4096-slot external admission.
+4. For \`NG-02\`, add a fifth exact D1 Skill asset \`stock.skill.e\` whose \`optional_tools=["stock.tool"]\`, and its one ordinal-0 pinned edge; this produces **1025 edges, 6 nodes**, all individual list ≤256 and graph still acyclic. Assuming canonical payload under the separately checked aggregate cap, graph validation must return \`D2C_RESOURCE_LIMIT\` **for the 1025th edge**, not another premature error.
+5. A valid count of 1024 graph occurrences does **not** imply they fit 4096 external slots. \`NG-01/02\` are strictly labeled **INTERNAL_GRAPH_LIMIT**, and may invoke \`_resolve_owned_diagnostic_graph\` directly with a deterministic private test-owned value projection; the graph helper still enforces exact graph limits and emits only \`UNTRUSTED_DIAGNOSTIC_ONLY\`.
+
+The \`NG\` builders specify an explicit physically valid repeated-optional-reference pattern and a single terminal target. Their deterministic construction is a **test specification, not a completed pytest result**. Independent feasibility review must recompute encoded byte sizes and verify that the source schema permits repeated list values, then either ACCEPT the example or report a precise physical contradiction.
+
+### 16.3 R4-03 — Two-pass missing-D1 versus orphan Catalog oracle
+
+The previous §15.1 “no extra Registry entries” invariant remains. Its **error precedence** is resolved without weakening the closed world, by distinguishing the *same independent orphan* with and without a referenced missing D1 target.
+
+**Stage order after preflight, shape, generation and resource checks:**
+
+1. Strictly validate Definition field schema/typed digest/identity for all provided Registry entries (including extras), then validate all edge occurrence structure and its declared source field/ordinal/reference correspondence. Any malformed Definition or malformed edge denies by its existing higher-precedence code.
+2. Construct the canonical D1 **asset key set** and the declared reference occurrences. For each structurally valid \`PINNED\` edge, check its target **against D1 refs first**, before global catalog no-extra-set equality. Missing D1 ref, unsupported CORE target, wrong scope or foreign namespace ⇒ \`D2C_EXACT_DEPENDENCY_MISSING\`, even if the Catalog has a matching **orphan** Definition.
+3. Then require exactly one matching Registry catalog entry for each D1 active Registry-backed seed/target, plus exactly one DomainManifest bootstrap record; missing ⇒ \`D2C_EXACT_DEPENDENCY_MISSING\`. Reject any **remaining unreferenced extra** Registry catalog entry (other than DomainManifest) with \`D2C_RESOLUTION_UNSTABLE\` as a well-formed-but-unauthorized diagnostic catalog shape.
+4. Then perform enabled/intrinsic enabled checks, adapter discriminated-union checks and finally deterministic cycle detection. Output exists only if all checks pass. Sorting and failure selection are by canonical edge key and canonical Registry key, never caller iteration order. For simultaneous missing-target and orphan errors, **missing-target wins** by step 2.
+
+**Paired exact fixtures** on one source domain:
+
+| Fixture | D1 assets | Catalog entries | Edge declaration | Expected outcome |
+|---|---|---|---|---|
+| \`OR-01\` orphan only | Action \`stock.count\` with \`required_capability=null\` | DomainManifest, exact Action, plus extra Capability \`stock.capability\` | No edges | \`D2C_RESOLUTION_UNSTABLE\` (orphan Catalog entry) |
+| \`OR-02\` referenced missing D1 + same orphan | Same Action \`stock.count\`, now \`required_capability="stock.capability"\`; **no** capability D1 asset | Same catalog items, with the Action Definition SHA recomputed to its changed canonical content | One exact \`action.required_capability\` ordinal-0 PINNED edge to \`capability/stock.capability@1.0.0\` | \`D2C_EXACT_DEPENDENCY_MISSING\` (missing D1 first; orphan does not mask it) |
+| \`OR-03\` target included in D1 | Add exact Capability \`stock.capability\` D1 asset | Same DomainManifest + Action + Capability (both exact) | Same OR-02 pinned edge | Success, diagnostic-only, provided all other fields/budgets/adapter assumptions are satisfied |
+| \`OR-04\` simultaneous two faults | OR-02 plus wrong Action Definition digest | Same | Same | \`D2C_DEFINITION_HASH_MISMATCH\` (definition check precedes D1 target check) |
+
+The DomainManifest, Action and Capability entries must satisfy the ten-class §13.2 full field/null manifest; each fixture independently computes correct \`definition_sha256\` unless its named fault is the deliberate hash tamper. Exact D1 asset hashes remain independent from Definition hashes. All four must preserve \`graph_completeness="SUPPORTED_RELATIONS_ONLY"\` and \`operational_readiness="NOT_ASSESSED"\` on success. A C1/Host admission request remains **outside** this C0 API.
+
+### 16.4 Closure / independent next gate
+
+| ID | Submitted normative refinement | Evidence still required |
+|---|---|---|
+| C0-R4-01 | New immutable **diagnostic** CATALOG-2 digest covers prompt/rule modes and pins source_generation→publisher_generation; E02 remains archived CATALOG-1 | Independent C06/C07 recomputation, active-prompt classification regression, no upstream fingerprint change |
+| C0-R4-02 | Exact one-slot count; 8-Capability 4096/4097 constructive EX fixture and 4-Skill×256 internal 1024/1025 graph fixture | Independently prove exact baseline count, both reachable paths, edge/closure byte budgets and 1025th-edge-first error |
+| C0-R4-03 | Ordered two-pass D1 target admission vs catalog orphan; OR-01..04 same-domain paired first-error fixtures | Independent physical oracle review and no-op side effects / typed error checks |
+
+**Formal current status:** \`C0-R4-01..03 FINAL MODE/DIGEST + REACHABLE FIXTURE REMEDIATION = SUBMITTED\`; \`PR #114 EXACT-HEAD INDEPENDENT PHYSICAL FIXTURE REVIEW = PENDING\`; \`C0 IMPLEMENTATION READINESS = HOLD\`; \`C0 IMPLEMENTATION AUTHORIZATION = NOT ISSUED\`; \`C1 TRUSTED HOST CATALOG = HARD HOLD\`; \`PR #114 MERGE AUTHORIZATION = NOT ISSUED\`.
+
+**Next bounded gate:** \`GA-02 D2-C — PR #114 C0-R4-01..03 Exact-HEAD Independent Fixture Feasibility / Digest Compatibility Re-Review + Scoped C0 Implementation Readiness Decision\`. Preserve design-only scope and avoid claiming synthetic test vectors as real production evidence.

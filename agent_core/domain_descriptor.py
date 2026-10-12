@@ -46,7 +46,6 @@ _TOP = frozenset(
         "runtime_compatibility",
         "asset_refs",
         "manifest_digest",
-        "feature_flags",
     }
 )
 _ASSET = frozenset({"kind", "namespace", "id", "version", "sha256", "relative_path"})
@@ -159,7 +158,7 @@ def parse_package_descriptor(
         )
     except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise PackageDescriptorError("invalid descriptor JSON") from exc
-    top = _object(data, _TOP - {"feature_flags"}, _TOP)
+    top = _object(data, _TOP, _TOP)
     if (
         type(top["package_schema_version"]) is not str
         or top["package_schema_version"] != "1"
@@ -178,8 +177,6 @@ def parse_package_descriptor(
     digest = top["manifest_digest"]
     if type(digest) is not str or not _SHA.fullmatch(digest):
         raise PackageDescriptorError("invalid manifest digest")
-    if "feature_flags" in top and top["feature_flags"] != []:
-        raise PackageDescriptorError("unsupported feature flags")
     if type(top["asset_refs"]) is not list or len(top["asset_refs"]) > MAX_ASSETS:
         raise PackageDescriptorError("invalid assets")
     refs: list[AssetReferenceV1] = []
@@ -227,8 +224,6 @@ def parse_package_descriptor(
             for r in refs
         ],
     }
-    if "feature_flags" in top:
-        canonical["feature_flags"] = []
     byte_value = json.dumps(
         canonical,
         sort_keys=True,
@@ -245,8 +240,44 @@ def parse_package_descriptor(
 
 def descriptor_to_domain_manifest(descriptor: PackageDescriptorV1) -> DomainManifest:
     """Pure metadata adapter: no Registry writes and no execution permission."""
-    if type(descriptor) is not PackageDescriptorV1:
+    if (
+        type(descriptor) is not PackageDescriptorV1
+        or type(descriptor.asset_refs) is not tuple
+        or any(type(ref) is not AssetReferenceV1 for ref in descriptor.asset_refs)
+    ):
         raise PackageDescriptorError("not a validated descriptor")
+
+    # Frozen dataclass constructors do not validate runtime values. Reconstruct
+    # the complete descriptor and re-run the same strict parser before projection;
+    # an arbitrary caller-created instance must not launder unvalidated metadata.
+    # This checks integrity/shape, NOT the authenticity of the package source.
+    payload = {
+        "package_schema_version": descriptor.package_schema_version,
+        "domain_id": descriptor.domain_id,
+        "domain_version": descriptor.domain_version,
+        "name": descriptor.name,
+        "enabled": descriptor.enabled,
+        "runtime_compatibility": descriptor.runtime_compatibility,
+        "asset_refs": [
+            {
+                "kind": ref.kind,
+                "namespace": ref.namespace,
+                "id": ref.id,
+                "version": ref.version,
+                "sha256": ref.sha256,
+                "relative_path": ref.relative_path,
+            }
+            for ref in descriptor.asset_refs
+        ],
+        "manifest_digest": descriptor.manifest_digest,
+    }
+    try:
+        raw = json.dumps(payload, ensure_ascii=False).encode("utf-8", "strict")
+    except (TypeError, ValueError, UnicodeError) as exc:
+        raise PackageDescriptorError("invalid descriptor projection") from exc
+    verified = parse_package_descriptor(raw)
+    if verified != descriptor:
+        raise PackageDescriptorError("descriptor is not canonical and verified")
     return DomainManifest(
         domain_id=descriptor.domain_id,
         name=descriptor.name,

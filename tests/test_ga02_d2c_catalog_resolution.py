@@ -848,8 +848,16 @@ def test_canonical_input_budget_precedes_semantic_adapter_fault() -> None:
     large = "𠜎" * 1024
     adapters = tuple(
         c.DiagnosticAdapterEntryV1(
-            "tool", "inventory.reconcile", f"stock.tool.extra.{i}", "1.0.0",
-            "DECLARED_NON_AUTHORITATIVE", large, large, large, large, "a" * 64,
+            "tool",
+            "inventory.reconcile",
+            f"stock.tool.extra.{i}",
+            "1.0.0",
+            "DECLARED_NON_AUTHORITATIVE",
+            large,
+            large,
+            large,
+            large,
+            "a" * 64,
         )
         for i in range(140)
     )
@@ -868,7 +876,7 @@ def _physical_chain(path_edges: int) -> c.DiagnosticCatalogInputV1:
     names: list[tuple[str, str, str]] = []
     for ordinal in range(path_edges + 1):
         triad = ordinal // 3
-        suffix = f"a{30-triad:02d}"
+        suffix = f"a{30 - triad:02d}"
         if ordinal % 3 == 0:
             names.append(("action", "ActionDefinition", f"chain.action.{suffix}"))
         elif ordinal % 3 == 1:
@@ -923,7 +931,10 @@ def test_strict_asset_paths_and_carrier_strings() -> None:
     too_long = replace(f.registry_entries[1], definition_type="A" * 1025)
     expect_code(
         c.D2CCode.D2C_RESOLUTION_UNSTABLE,
-        replace(f, registry_entries=(f.registry_entries[0], too_long) + f.registry_entries[2:]),
+        replace(
+            f,
+            registry_entries=(f.registry_entries[0], too_long) + f.registry_entries[2:],
+        ),
     )
 
 
@@ -940,9 +951,19 @@ def test_graph_diamond_shared_dag_and_alias_copy() -> None:
         f,
         asset_refs=f.asset_refs + (asset("skill", "stock.skill.two"),),
         registry_entries=tuple(one),
-        edge_occurrences=f.edge_occurrences + (
-            edge("capability", "stock.capability", "capability.skills", "skill", "stock.skill.two", 1),
-            edge("skill", "stock.skill.two", "skill.required_tools", "tool", "stock.tool"),
+        edge_occurrences=f.edge_occurrences
+        + (
+            edge(
+                "capability",
+                "stock.capability",
+                "capability.skills",
+                "skill",
+                "stock.skill.two",
+                1,
+            ),
+            edge(
+                "skill", "stock.skill.two", "skill.required_tools", "tool", "stock.tool"
+            ),
         ),
     )
     assert len(c._resolve_untrusted_catalog_observation(valid).seed_keys) == 5
@@ -955,8 +976,11 @@ def test_graph_diamond_shared_dag_and_alias_copy() -> None:
     owned_input = replace(
         valid,
         registry_entries=tuple(records),
-        edge_occurrences=valid.edge_occurrences + (
-            edge("skill", "stock.skill.two", "skill.optional_tools", "tool", "stock.tool"),
+        edge_occurrences=valid.edge_occurrences
+        + (
+            edge(
+                "skill", "stock.skill.two", "skill.optional_tools", "tool", "stock.tool"
+            ),
         ),
     )
     owned = c._admit_and_copy_diagnostic_input(owned_input)

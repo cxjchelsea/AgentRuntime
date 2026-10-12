@@ -335,7 +335,9 @@ def _map_untrusted_observation(
             except D2BMappingError:
                 raise
             except Exception:  # noqa: BLE001 - untrusted Registry read must fail closed
-                raise D2BMappingError(D2BCode.D2B_REGISTRY_OBSERVATION_UNSTABLE) from None
+                raise D2BMappingError(
+                    D2BCode.D2B_REGISTRY_OBSERVATION_UNSTABLE
+                ) from None
         output.append(
             RegistryMatchEvidenceV1(
                 classification,

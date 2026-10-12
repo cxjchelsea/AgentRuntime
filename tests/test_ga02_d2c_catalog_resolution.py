@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 
@@ -335,6 +336,7 @@ def test_defensive_copy_and_hostile_input_no_methods() -> None:
 
         def __iter__(self) -> object:
             raise AssertionError("hostile iter invoked")
+
     rows = list(f.registry_entries)
     a = dict(rows[1].fields)
     a["description"] = Hostile()
@@ -406,20 +408,63 @@ def test_no_trusted_api_or_runtime_export() -> None:
 @pytest.mark.parametrize(
     ("kind", "item", "expected"),
     [
-        ("ActionDefinition", "stock.count", "991e6b213af25e38fb6482b8e0f4f52f201fff26c157ac1953b169013063ffbf"),
-        ("StrategyDefinition", "stock.strategy", "5ca6bcd39d3e3899e0e43c33c9a7f2e055905795646aa95af3bcf879fc7fe389"),
-        ("SkillDefinition", "stock.skill", "07dd4a06978f8fe8665edb5587826e3de36fe5acae6808d0576b150ec86d8ef2"),
-        ("WorkflowDefinition", "stock.workflow", "4fc3bad08bbaa5bcedb90bd1f5eade2bd39bb0aa45ea7b32e00084704b62e98a"),
-        ("ToolDefinition", "stock.tool", "0c3f922fe6b16cac6ce54235d5938a4ac14f225487417bd92cafd49a0ac4f55a"),
-        ("PolicyDefinition", "stock.rule", "7181937a3b97dc8ee345e59db9b2332cb56b8192c6a34fe1da6cedc2bd5ce2d8"),
-        ("PromptDefinition", "stock.prompt", "1693c258ac856f25af1ca1cc5679513e2bb2595b0cf8f4ca6509591f98249e05"),
-        ("DomainManifest", "inventory.reconcile", "3d0a395c4760745a913247eb2ff0e0a65fd84fe7b0733d2e9c25a8152f083f56"),
-        ("SchemaDefinition", "stock.schema", "fc7cd1e466d3bc4b8b0a2ab6eba0843789282e96482710ae0646bd0b37a90591"),
-        ("CapabilityDefinition", "stock.capability", "5c16c2c9f1d09a357bf856d56745f561b6ad63685e15db1fdf7b0ab7c9ac7be0"),
+        (
+            "ActionDefinition",
+            "stock.count",
+            "991e6b213af25e38fb6482b8e0f4f52f201fff26c157ac1953b169013063ffbf",
+        ),
+        (
+            "StrategyDefinition",
+            "stock.strategy",
+            "5ca6bcd39d3e3899e0e43c33c9a7f2e055905795646aa95af3bcf879fc7fe389",
+        ),
+        (
+            "SkillDefinition",
+            "stock.skill",
+            "07dd4a06978f8fe8665edb5587826e3de36fe5acae6808d0576b150ec86d8ef2",
+        ),
+        (
+            "WorkflowDefinition",
+            "stock.workflow",
+            "4fc3bad08bbaa5bcedb90bd1f5eade2bd39bb0aa45ea7b32e00084704b62e98a",
+        ),
+        (
+            "ToolDefinition",
+            "stock.tool",
+            "0c3f922fe6b16cac6ce54235d5938a4ac14f225487417bd92cafd49a0ac4f55a",
+        ),
+        (
+            "PolicyDefinition",
+            "stock.rule",
+            "7181937a3b97dc8ee345e59db9b2332cb56b8192c6a34fe1da6cedc2bd5ce2d8",
+        ),
+        (
+            "PromptDefinition",
+            "stock.prompt",
+            "1693c258ac856f25af1ca1cc5679513e2bb2595b0cf8f4ca6509591f98249e05",
+        ),
+        (
+            "DomainManifest",
+            "inventory.reconcile",
+            "3d0a395c4760745a913247eb2ff0e0a65fd84fe7b0733d2e9c25a8152f083f56",
+        ),
+        (
+            "SchemaDefinition",
+            "stock.schema",
+            "fc7cd1e466d3bc4b8b0a2ab6eba0843789282e96482710ae0646bd0b37a90591",
+        ),
+        (
+            "CapabilityDefinition",
+            "stock.capability",
+            "5c16c2c9f1d09a357bf856d56745f561b6ad63685e15db1fdf7b0ab7c9ac7be0",
+        ),
     ],
 )
 def test_ten_definition_golden_vectors(kind: str, item: str, expected: str) -> None:
-    assert hashlib.sha256(c._canonical_definition(entry(kind, item))).hexdigest() == expected
+    assert (
+        hashlib.sha256(c._canonical_definition(entry(kind, item))).hexdigest()
+        == expected
+    )
 
 
 def test_c06_c07_catalog_two_mode_vectors() -> None:
@@ -472,7 +517,7 @@ def _ex_boundary(extra: int = 0) -> c.DiagnosticCatalogInputV1:
     slots = 3780 + extra
     records = list(base.registry_entries)
     for i in range(1, 9):
-        item = f"stock.capability.{i-1}"
+        item = f"stock.capability.{i - 1}"
         fields_copy = dict(records[i].fields)
         for field in ("intents", "entities", "needs"):
             amount = min(256, slots)
@@ -509,7 +554,9 @@ def _ng_boundary(extra: bool = False) -> c.DiagnosticCatalogInputV1:
         records.append(entry("SkillDefinition", item, data))
         for ordinal in range(count):
             occurrences.append(
-                edge("skill", item, "skill.optional_tools", "tool", "stock.tool", ordinal)
+                edge(
+                    "skill", item, "skill.optional_tools", "tool", "stock.tool", ordinal
+                )
             )
     records.append(entry("ToolDefinition", "stock.tool"))
     return replace(
@@ -538,14 +585,23 @@ def test_or03_included_target_is_diagnostic_success() -> None:
     source["required_capability"] = "stock.capability"
     input_value = replace(
         fixture(),
-        asset_refs=(asset("action", "stock.count"), asset("capability", "stock.capability")),
+        asset_refs=(
+            asset("action", "stock.count"),
+            asset("capability", "stock.capability"),
+        ),
         registry_entries=(
             entry("DomainManifest", "inventory.reconcile"),
             entry("ActionDefinition", "stock.count", source),
             entry("CapabilityDefinition", "stock.capability"),
         ),
         edge_occurrences=(
-            edge("action", "stock.count", "action.required_capability", "capability", "stock.capability"),
+            edge(
+                "action",
+                "stock.count",
+                "action.required_capability",
+                "capability",
+                "stock.capability",
+            ),
         ),
     )
     result = c._resolve_untrusted_catalog_observation(input_value)
@@ -559,17 +615,23 @@ def test_core_schema_requires_matching_scope_and_allowlist() -> None:
     schema["scope"] = "CORE"
     schema["namespace"] = "CORE"
     schema_ref = replace(asset("schema", "stock.schema"), namespace="CORE")
-    schema_entry = replace(entry("SchemaDefinition", "stock.schema", schema), namespace="CORE")
+    schema_entry = replace(
+        entry("SchemaDefinition", "stock.schema", schema), namespace="CORE"
+    )
     full = replace(
         f,
         asset_refs=f.asset_refs + (schema_ref,),
         registry_entries=f.registry_entries + (schema_entry,),
-        approved_core_schema_keys=(c.DiagnosticCoreSchemaKeyV1("stock.schema", "1.0.0"),),
+        approved_core_schema_keys=(
+            c.DiagnosticCoreSchemaKeyV1("stock.schema", "1.0.0"),
+        ),
     )
     assert len(c._resolve_untrusted_catalog_observation(full).seed_keys) == 5
     bad = dict(schema)
     bad["scope"] = "DOMAIN"
-    bad_entry = replace(entry("SchemaDefinition", "stock.schema", bad), namespace="CORE")
+    bad_entry = replace(
+        entry("SchemaDefinition", "stock.schema", bad), namespace="CORE"
+    )
     expect_code(
         c.D2CCode.D2C_EXACT_DEPENDENCY_MISSING,
         replace(full, registry_entries=f.registry_entries + (bad_entry,)),
@@ -583,14 +645,25 @@ def test_core_schema_requires_matching_scope_and_allowlist() -> None:
 def test_adapter_union_refuses_nonnull_absent() -> None:
     f = fixture()
     bad = c.DiagnosticAdapterEntryV1(
-        "tool", "inventory.reconcile", "stock.tool", "1.0.0",
-        "ABSENT_UNVERIFIED", None, "rogue", None, None, None,
+        "tool",
+        "inventory.reconcile",
+        "stock.tool",
+        "1.0.0",
+        "ABSENT_UNVERIFIED",
+        None,
+        "rogue",
+        None,
+        None,
+        None,
     )
     expect_code(c.D2CCode.D2C_HOST_ADAPTER_MISMATCH, replace(f, adapter_entries=(bad,)))
     good = replace(bad, adapter_generation=None)
-    assert c._resolve_untrusted_catalog_observation(
-        replace(f, adapter_entries=(good,))
-    ).operational_readiness == "NOT_ASSESSED"
+    assert (
+        c._resolve_untrusted_catalog_observation(
+            replace(f, adapter_entries=(good,))
+        ).operational_readiness
+        == "NOT_ASSESSED"
+    )
 
 
 def test_copy_owns_nested_definition_lists() -> None:
@@ -618,7 +691,8 @@ def test_prompt_mode_switch_requires_exact_registry_entry() -> None:
     )
     prompt = entry("PromptDefinition", "stock.prompt")
     active = replace(
-        inert, prompt_mode="REGISTRY_EXACT",
+        inert,
+        prompt_mode="REGISTRY_EXACT",
         registry_entries=f.registry_entries + (prompt,),
     )
     result = c._resolve_untrusted_catalog_observation(active)
@@ -653,4 +727,4 @@ def test_external_list_overflow_and_unsupported_type() -> None:
     skill["optional_tools"] = ["stock.tool"] * 257
     rows[3] = entry("SkillDefinition", "stock.skill", skill)
     expect_code(c.D2CCode.D2C_RESOURCE_LIMIT, replace(f, registry_entries=tuple(rows)))
-    expect_code(c.D2CCode.D2C_RESOLUTION_UNSTABLE, replace(f, prompt_mode=123))
+    expect_code(c.D2CCode.D2C_RESOLUTION_UNSTABLE, replace(f, prompt_mode=cast(Any, 123)))

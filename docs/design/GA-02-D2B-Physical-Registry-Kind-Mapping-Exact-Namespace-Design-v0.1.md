@@ -326,3 +326,133 @@ Actual concrete Registry `register` functions for Action/Strategy/Skill/Tool/Wor
 **Formal state:** `IR-01..03 READINESS AMENDMENT = SUBMITTED`; `D2-B READINESS INDEPENDENT EXACT-HEAD REVIEW = PENDING`; `D2-B IMPLEMENTATION AUTHORIZATION = NOT ISSUED`; `PR #112 MERGE = NOT AUTHORIZED`; `PRODUCTION HOST ISSUER / IMMUTABLE SEALED PUBLICATION = NOT PROVEN`; `D2-C/D/E/D3 ACTIVATION = NOT AUTHORIZED`.
 
 **Next:** GA-02 D2-B — IR-01..03 Targeted Independent Implementation Readiness Re-Review. On PASS, separately authorize **isolated, test-only metadata mapping** without production entry; on any host provenance bypass or physical constructor mismatch, HOLD.
+
+---
+
+## 11. IR-01A / IR-03A Final Test-Only Admission Boundary + Executable Fixture Amendment v0.4
+
+**Status:** TARGETED DESIGN AMENDMENT SUBMITTED — exact-HEAD targeted independent review required. This is NOT code implementation, a GitHub PR merge authorization or real host publisher admission. The permitted first implementation is an **isolated metadata-only test harness**, with zero production-consumable trusted mapping entry points.
+
+**Precedence:** real physical D1/D2-A/Registry contracts and merged D2 §11/§13 > this §11 final two-item gate > §10 readiness proposal > §9 normalized design > §§1–8 background. §11 deliberately narrows the apparent public `map_verified_package` signature in §10.1: the name and `admission` object from §10 are a conceptual future host boundary, **not an approved public production API for the first implementation**.
+
+### 11.1 IR-01A — Enforceable test-only separation, not token-by-convention
+
+**Selected option B: NO production-facing trusted mapper in the first implementation.** Since a Python frozen dataclass / secret-looking string / opaque object field / caller-injected lambda is forgeable or caller-controlled, it cannot certify provenance of `VerifiedPackageSnapshotV1`. This slice must not claim host source attestation, executable binding, registry authority or trusted durable evidence.
+
+Concrete file and symbol boundary:
+
+| Location | Allowed first-slice content | Prohibited content |
+|---|---|---|
+| `agent_core/domain_registry_mapping.py` | Fixed 12-kind policy table, typed errors, purely inert metadata projection / exact Registry read-and-compare primitive with **non-authoritative** results; prefix internal routine `_map_untrusted_observation` | No exported/public `map_verified_package` that upgrades caller data to trusted; no `HostIssuer`, real trusted Admission constructor, DomainBinding/RunBinding, Registry mutation or tool dispatch |
+| `tests/test_ga02_d2b_registry_mapping.py` | Exact source-backed fixture builder, `_TestOnlyMappingHarness` and a test-only method that directly calls the private observation routine after an actual D2-A test fixture load; assertions for P01–P04/N01–N12 | No production-importable policy factory; no importable public Host admission token |
+| Public `agent_core` imports / Application composition | Unchanged, no exports or call sites for mapping module; if a future integration requests trusted mapping, fail closed until separately authorized | No environment-variable or `PYTEST_CURRENT_TEST` production bypass, no `if __debug__`, no sentinel token, no fallback issuer constructed from arbitrary user-supplied values |
+
+**Separation limitation stated explicitly:** Python naming (`_private`), test directory location and lack of `__all__` export are *packaging/test isolation*, not a cryptographic or language-enforced security boundary. Any Python code with direct interpreter access can call internal functions. Therefore the first slice MUST expose only `NON_AUTHORITATIVE_AT_READ` / `INERT_INSPECTION_ONLY` evidence, never a trusted host admission object. No downstream D2-C/D3 code may treat those values as authoritative. Production trusted use remains impossible by contract and absent call sites until the separately reviewed issuer/admission implementation exists. A future public `map_verified_package` must be a **new separately authorized integration** whose trust comes from a verified application-owned issuer, not from a caller-supplied dataclass.
+
+**Positive test-only flow:** harness provisions a temporary local generation using `HostPackageRootIssuer` with a fixture-owned test verifier; creates `TrustedPackageIdentity`; loads with a live lease via `LocalPackageLoader.load`; pins its own expected host policy values; calls `_map_untrusted_observation` inside tests and checks metadata, exact namespace, error hygiene, non-authority. The fixture's `publication_verifier=lambda ...` is test-only and is not a production publisher. D2-B never itself calls `LocalPackageLoader`, reopens assets, mints a D2-A lease or registers any Registry entries; fixture setup may register predetermined records outside the mapper.
+
+**Mandatory negative proofs:**
+
+1. Search the entire candidate source for production imports/calls to `domain_registry_mapping`; none allowed. `agent_core/__init__.py` exports unchanged. There is no public factory that converts `(snapshot, policy, admission)` into a `trusted=True` result.
+2. A forged `VerifiedPackageSnapshotV1` and forged `D2BTrustedAdmissionV1` / host policy from an arbitrary caller are **never** accepted as a trusted domain mapping. Under the selected option B there is no implemented trusted admission object at all; tests assert no such exported class/function exists. Calling the internal observation routine directly can return non-authoritative metadata, which is NOT a bypass of a production grant because no grant exists.
+3. An untrusted input cannot select Registry class, reroute fixed kind or authorize active use. Unknown profile and mismatched descriptor/host fixture identity fail closed with D2-B typed error prior to any Registry `get`.
+4. No `setattr`, proxy or malicious `implementation_ref` can cause `__call__`, `__str__`, `__repr__`, pickle/deepcopy or execution. A successful metadata observation has no Registry/Tool/Workflow/Model/StateStore side effects.
+5. The test harness must be self-contained and **not imported in runtime files**. Its issuer does not survive tests and cannot be used to claim a real SEALED host publisher. An attempt to wire the module into a production application is outside approved scope and requires a separate authority review.
+
+**Exact entry and output contract for the first implementation:**
+
+```python
+# agent_core/domain_registry_mapping.py — internal, untrusted metadata-only API
+def _map_untrusted_observation(
+    snapshot: VerifiedPackageSnapshotV1,
+    *,
+    policy: KindMappingPolicyV1,
+    registries: RegistryCatalogViewV1,
+) -> RegistryKindMappingSnapshotV1: ...
+# Always returns only INERT_INSPECTION_ONLY / NON_AUTHORITATIVE_AT_READ.
+# No admission parameter and no trusted=True/runnable result.
+# No public map_verified_package() or D2BTrustedAdmissionV1 in this slice.
+```
+
+Host policy fields still undergo complete structural and equality validation for reproducibility; these checks establish *consistency only*, NOT issuer authenticity. Source provenance is NOT solved by this isolated unit and must remain a hard gate for production D2-C/D3.
+
+### 11.2 IR-03A — Executable test-fixture builder, not D2-A `ref()` misclassification
+
+Source-verified baseline: `tests/test_ga02_d2a_package_loader.py` defines `package_bytes(assets, enabled=True)`, `prepare(tmp_path, assets)` whose asset tuple elements are `(relative_path, content_bytes, item_id)`, and `ref(path, content, item=...)` that **always sets `kind='action'`**; `LocalPackageLoader().load(lease, TrustedPackageIdentity(...))` consumes `package.json` and exact referenced files. For D2-B multikind fixtures, **do not call `ref()`** for `prompt`, `schema` or `knowledge`. Build exact references explicitly.
+
+Deterministic standalone test helper outline (pseudocode, imported only by `tests/`):
+
+```python
+from hashlib import sha256
+import json
+from pathlib import Path
+
+DOMAIN = 'inventory.reconcile'
+VERSION = '1.0.0'
+PROFILE = 'GA02-D1-1'
+
+def asset(kind: str, ident: str, path: str, payload: bytes, *, namespace: str = DOMAIN):
+    return {
+        'kind': kind, 'namespace': namespace, 'id': ident,
+        'version': VERSION, 'sha256': sha256(payload).hexdigest(),
+        'relative_path': path,
+    }
+
+def write_package(tmp_path: Path, assets: list[tuple[dict[str, str], bytes]]):
+    # No absolute paths / collisions; create each exact referenced relative file.
+    for ref, contents in assets:
+        file = tmp_path / ref['relative_path']
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_bytes(contents)
+    refs = sorted([ref for ref, _ in assets], key=lambda r: (
+        r['kind'], r['namespace'], r['id'], r['version'], r['relative_path']))
+    unsigned = {
+        'package_schema_version': '1',
+        'domain_id': DOMAIN, 'domain_version': VERSION,
+        'name': 'Inventory Reconciliation', 'enabled': True,
+        'runtime_compatibility': PROFILE, 'asset_refs': refs,
+    }
+    canonical = json.dumps(unsigned, sort_keys=True, separators=(',', ':'),
+                           ensure_ascii=False).encode('utf-8')
+    digest = sha256(canonical).hexdigest()
+    descriptor = dict(unsigned, manifest_digest=digest)
+    (tmp_path / 'package.json').write_bytes(json.dumps(descriptor).encode('utf-8'))
+    return digest
+
+def load_test_snapshot(tmp_path: Path, assets):
+    digest = write_package(tmp_path, assets)
+    identity = TrustedPackageIdentity('generation-1', DOMAIN, VERSION, PROFILE, digest)
+    issuer = HostPackageRootIssuer(
+        (HostPublishedGeneration(identity, str(tmp_path), True),),
+        publication_verifier=lambda record: (
+            record.sealed is True and record.absolute_root == str(tmp_path)),
+    )  # STRICTLY TEST-ONLY verifier; not a real immutable publisher.
+    with issuer.issue('generation-1') as lease:
+        return LocalPackageLoader().load(lease, identity), identity
+```
+
+Above helper is fixed to Linux fixture execution because D2-A is Linux-only; skip where `sys.platform` does not start with `linux`. Actual importer names must be resolved to `agent_core.domain_package_loader` in the implementing test file. Asset tuples must use fresh distinct paths and no `..`, duplicate or symlink. The fixture is executable-style pseudocode: implementation review must actually run it; it is not falsely claimed tested merely because it appears here.
+
+**Reference fixture dataset with exact expected mode/result:**
+
+| Case | D1 asset ref + bytes | Host Registry fixture | Expected D2-B outcome |
+|---|---|---|---|
+| A01 domain action | `asset('action','stock.count','actions/count.txt',b'count')` | `DomainRegistry.register(DomainManifest(domain_id=DOMAIN,name='Inventory Reconciliation',version=VERSION,enabled=True,runtime_compatibility=PROFILE), namespace=DOMAIN)`; `ActionRegistry.register(ActionDefinition(action_id='stock.count',version=VERSION,category='inventory',description='count',intrusiveness_level=IntrusivenessLevel.LOW,requires_confirmation=False,required_capability=None,allowed_planning_modes=[PlanningMode.DETERMINISTIC]), namespace=DOMAIN)` | REGISTRY_MAPPING yields NON_AUTHORITATIVE_AT_READ action identity; no runnable grant |
+| A02 CORE schema | `asset('schema','shared.schema','schemas/shared.json',b'{}',namespace='CORE')` | Register `SchemaDefinition(schema_id='shared.schema',version=VERSION,scope=SchemaScope.CORE,namespace='CORE')` in `SchemaRegistry` with namespace CORE; host policy exact allowlist contains `('shared.schema',VERSION)` | Exact CORE triple/scope accepted as read-time metadata only |
+| A03 inert knowledge | `asset('knowledge','catalog.notes','knowledge/notes.txt',b'notes')` | Only enabled DomainRegistry needed for REGISTRY_MAPPING; no knowledge Registry exists | INERT_ONLY ref; no retriever instantiated |
+| A04 missing domain | Same A01 but no DomainRegistry record (or only legacy namespace=None) | Action record may exist but host domain not registered | D2B_EXACT_DEPENDENCY_NOT_FOUND, no partial snapshot |
+| A05 forged admission | Any A01 descriptor and arbitrary hand-built frozen snapshot or pretend policy token | No trusted admission class/entry exists | No trusted mapping possible; direct internal read may only produce non-authoritative metadata; no active use |
+| A06 inert inspection | A01+A02+A03, with spy registries that throw if `get` is called | No domain pre-registration required | All INERT_INSPECTION_ONLY, zero Registry lookup, no runnable claim |
+
+**Additional deterministic expected tests:** reject CORE schema with `definition.namespace=None`, wrong `SchemaScope.DOMAIN`, unapproved exact CORE key; reject Action/Domain mismatched ID/version, record disabled, and `RegistryItemNotFoundError` even where a newer version exists. For a hostile `implementation_ref`, use a trap object that raises in `__repr__`, `__str__` and `__call__`; assert counters remain zero and public error messages are only D2BCode values. Test failure after a successful earlier asset has no returned partial result. Verify full tuple/str/bool-only result recursively and that no live `RegistryRecord` or Pydantic Definition escapes. No per-asset `register` calls inside mapper; fixture registration belongs only to the test setup.
+
+### 11.3 Final bounded readiness / independent review matrix
+
+| Gate | Requirement for targeted independent review | Decision before review |
+|---|---|---|
+| IR-01A | Option B test-only isolation specified; no production export/trust admission; forged values cannot yield authorization; internal evidence always NON_AUTHORITATIVE_AT_READ | DESIGN SUBMITTED |
+| IR-03A | Exact multikind D1 canonical fixture builder with action/CORE schema/knowledge, missing DomainRegistry and forged admission cases; explicit D2-A Linux loader path | DESIGN SUBMITTED |
+| IR-02 | Existing §9.3/§10.2 stable typed errors, redaction and atomic denial unchanged | PREVIOUSLY DESIGN PASS |
+| Source/test gates | Later implementation must actually execute targeted tests, full pytest, mypy, Ruff lint/format and GA-01C integration; test-only issuer cannot be production proof | NOT RUN IN THIS DOC CHANGE |
+
+**Final status:** `IR-01A / IR-03A AMENDMENT = SUBMITTED`; `INDEPENDENT EXACT-HEAD RE-REVIEW = PENDING`; `D2-B ISOLATED TEST-ONLY METADATA IMPLEMENTATION = NOT YET AUTHORIZED`; `PR #112 MERGE = NOT AUTHORIZED`; `TRUSTED PRODUCTION HOST ISSUER = NOT PROVEN`; `D2-C/D/E/D3 ACTIVE ADMISSION = NOT AUTHORIZED`. Next: **GA-02 D2-B — IR-01A / IR-03A Targeted Independent Final Readiness Re-Review + Isolated Implementation Authorization Assessment**.

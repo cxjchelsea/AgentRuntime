@@ -1145,9 +1145,16 @@ def _precise_input_boundary(over: int) -> c.DiagnosticCatalogInputV1:
         full = _adapter_pressure_input(count, astral=True)
         small = tuple(
             c.DiagnosticAdapterEntryV1(
-                "tool", "inventory.reconcile", f"filler.{i}", "1.0.0",
+                "tool",
+                "inventory.reconcile",
+                f"filler.{i}",
+                "1.0.0",
                 "DECLARED_NON_AUTHORITATIVE",
-                "x", "x", "x", "x", "a" * 64,
+                "x",
+                "x",
+                "x",
+                "x",
+                "a" * 64,
             )
             for i in range(2)
         )
@@ -1196,10 +1203,17 @@ def test_projected_evidence_limit_precedes_cycle_and_adapter_semantics() -> None
     skill["supported_actions"] = ["stock.count"]
     rows[3] = entry("SkillDefinition", "stock.skill", skill)
     cycle = replace(
-        pressure, registry_entries=tuple(rows),
+        pressure,
+        registry_entries=tuple(rows),
         edge_occurrences=pressure.edge_occurrences
         + (
-            edge("skill", "stock.skill", "skill.supported_actions", "action", "stock.count"),
+            edge(
+                "skill",
+                "stock.skill",
+                "skill.supported_actions",
+                "action",
+                "stock.count",
+            ),
         ),
     )
     expect_code(c.D2CCode.D2C_RESOURCE_LIMIT, cycle)

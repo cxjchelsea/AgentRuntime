@@ -145,6 +145,8 @@ class TrustedPackageRootLease:
         if not self._closed:
             self._closed = True
             self._active = False
+            if isinstance(self._owner, HostPackageRootIssuer):
+                self._owner._live.pop(self._fd, None)
             os.close(self._fd)
 
 
@@ -359,6 +361,9 @@ class LocalPackageLoader:
                 for fd in reversed(opened):
                     os.close(fd)
         return VerifiedPackageSnapshotV1(
-            descriptor, raw, tuple(assets),
-            expected.generation_id, expected.expected_manifest_digest,
+            descriptor,
+            raw,
+            tuple(assets),
+            expected.generation_id,
+            expected.expected_manifest_digest,
         )

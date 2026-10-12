@@ -166,7 +166,7 @@ def test_symlink_asset_is_not_followed(tmp_path: Path) -> None:
     file = tmp_path / "actions/a.txt"
     file.unlink()
     file.symlink_to(tmp_path / "prompts/b.txt")
-    expect(PackageLoadCode.PACKAGE_IO_FAILURE, lambda: load(issuer, identity))
+    expect(PackageLoadCode.PACKAGE_ROOT_UNSAFE, lambda: load(issuer, identity))
 
 
 def test_symlink_directory_is_not_followed(tmp_path: Path) -> None:
@@ -175,7 +175,7 @@ def test_symlink_directory_is_not_followed(tmp_path: Path) -> None:
     file.unlink()
     (tmp_path / "actions").rmdir()
     (tmp_path / "actions").symlink_to(tmp_path / "prompts", target_is_directory=True)
-    expect(PackageLoadCode.PACKAGE_IO_FAILURE, lambda: load(issuer, identity))
+    expect(PackageLoadCode.PACKAGE_ROOT_UNSAFE, lambda: load(issuer, identity))
 
 
 def test_hardlink_is_denied(tmp_path: Path) -> None:
@@ -213,3 +213,27 @@ def test_descriptor_is_not_a_tool_or_registry(tmp_path: Path) -> None:
     assert not hasattr(snapshot, "execute")
     assert not hasattr(snapshot, "register")
     assert not hasattr(snapshot, "binding_fingerprint")
+
+def test_missing_asset_is_integrity_failure(tmp_path: Path) -> None:
+    issuer, identity = prepare(tmp_path)
+    (tmp_path / "actions/a.txt").unlink()
+    expect(PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE, lambda: load(issuer, identity))
+
+
+def test_symlink_descriptor_is_denied(tmp_path: Path) -> None:
+    issuer, identity = prepare(tmp_path)
+    source = tmp_path / "saved_package.json"
+    (tmp_path / "package.json").rename(source)
+    (tmp_path / "package.json").symlink_to(source)
+    expect(PackageLoadCode.PACKAGE_ROOT_UNSAFE, lambda: load(issuer, identity))
+
+
+def test_lease_cannot_be_reused_after_close(tmp_path: Path) -> None:
+    issuer, identity = prepare(tmp_path)
+    with issuer.issue(identity.generation_id) as lease:
+        assert LocalPackageLoader().load(lease, identity).assets
+    assert lease._fd not in issuer._live
+    expect(
+        PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
+        lambda: LocalPackageLoader().load(lease, identity),
+    )

@@ -94,7 +94,8 @@ def prepare(
         "generation-1", DOMAIN, "1.0.0", "GA02-D1-1", digest
     )
     issuer = HostPackageRootIssuer(
-        (HostPublishedGeneration(identity, str(tmp_path), True),)
+        (HostPublishedGeneration(identity, str(tmp_path), True),),
+        publication_verifier=lambda record: record.sealed and record.absolute_root == str(tmp_path),
     )
     return issuer, identity
 
@@ -140,7 +141,8 @@ def test_host_digest_mismatch_is_denied(tmp_path: Path) -> None:
     expect(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE, lambda: load(issuer, changed))
     # A trusted publisher can be wrong: a mismatching allowlisted digest still denies.
     false_issuer = HostPackageRootIssuer(
-        (HostPublishedGeneration(changed, str(tmp_path), True),)
+        (HostPublishedGeneration(changed, str(tmp_path), True),),
+        publication_verifier=lambda record: record.sealed and record.absolute_root == str(tmp_path),
     )
     expect(
         PackageLoadCode.PACKAGE_DESCRIPTOR_DIGEST_MISMATCH,
@@ -202,7 +204,8 @@ def test_untrusted_generation_is_denied(tmp_path: Path) -> None:
 def test_unsealed_generation_is_denied(tmp_path: Path) -> None:
     _issuer, identity = prepare(tmp_path)
     bad = HostPackageRootIssuer(
-        (HostPublishedGeneration(identity, str(tmp_path), False),)
+        (HostPublishedGeneration(identity, str(tmp_path), False),),
+        publication_verifier=lambda record: record.sealed and record.absolute_root == str(tmp_path),
     )
     expect(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE, lambda: load(bad, identity))
 

@@ -547,12 +547,10 @@ def test_root_generation_rename_does_not_change_pinned_fd(tmp_path: Path) -> Non
         generation.rename(tmp_path / "renamed")
         assert LocalPackageLoader().load(lease, identity).assets
 
+
 def test_aggregate_asset_limit_denied(tmp_path: Path) -> None:
     payload = b"a" * 1_048_576
-    entries = [
-        (f"assets/item{i}.txt", payload, f"stock.item{i}")
-        for i in range(17)
-    ]
+    entries = [(f"assets/item{i}.txt", payload, f"stock.item{i}") for i in range(17)]
     issuer, identity = prepare(tmp_path, entries)
     expect(PackageLoadCode.PACKAGE_RESOURCE_LIMIT, lambda: load(issuer, identity))
 

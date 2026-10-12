@@ -166,3 +166,127 @@ Proposed isolation: a new `agent_core/domain_catalog_resolution.py` for pure dat
 **D2-C initial normative design = SUBMITTED FOR INDEPENDENT REVIEW.**
 
 Source-grounded architecture is feasible as a staged isolated resolver, but **production trustworthy C1 evidence is currently NOT READY** because the repository has no demonstrated Host-owned immutable Registry/Adapter/Edge catalog publisher or comprehensive mutation fence. This must not be downgraded to a cosmetic epoch token. Do not create a production trusted mapper, DomainBinding, side-effect authorization or runnable status based on this design. Next gate: **GA-02 D2-C — Targeted Independent Design Review + Host Catalog Authority/Physical Gap Assessment** at exact draft PR head, followed by bounded normative remediation.
+
+
+---
+
+## 12. B01–B10 + R11–R13 Targeted Normative Remediation v0.2 — C0 Isolated Contract Freeze
+
+**Status:** TARGETED DESIGN REMEDIATION SUBMITTED / INDEPENDENT EXACT-HEAD RE-REVIEW PENDING.
+**Design-only authority:** This amendment overrides §§2–10 wherever they conflict, but cannot override physical source or merged upstream D2 §11. It authorizes **neither** a Python implementation nor a merge nor C1 production trust. An exact-head independent re-review and separate C0 implementation-readiness authorization are mandatory.
+
+### 12.1 B01/B02 — Honest owner boundary and enforceable publication protocol
+
+**Current physical availability:** No existing source-backed \`HostCatalogPublisher\`, shared Registry epoch, writer interception, generation lease or trusted issuer was found in the reviewed \`BaseRegistry\`/D2-A/D2-B interfaces. The name **\`ProposedHostCatalogOwnerV1\`** below is a *future design role*, not an implemented symbol.
+
+**C0 permitted:** Read a test-owned, already copied immutable primitive catalog image supplied from an isolated fixture. Verify structural consistency and calculate hashes/closure. Return \`UNTRUSTED_DIAGNOSTIC_ONLY\` resolution evidence; do not attest a production publisher or consume any live Registry / D2-B observation as trustworthy evidence. A forged \`CatalogSnapshotV1\` may produce this diagnostic result, never C1 authority. C0 is not allowed to call Host Root Issuer, Registrar or D3 active-use.
+
+**C1 required before separate authorization:** A real Application-owned HostCatalogOwner must exclusively control (a) registration intake, (b) immutable snapshot creation, (c) adapter/edge publication, (d) monotonic epoch/generation state and (e) revocation. All writes affecting authoritative eligibility must be serialized through that owner: \`register\`, \`_store\`, \`unregister\`, \`enable\`, \`disable\`, \`clear\`, direct \`RegistryRecord.enabled/definition/key/implementation_ref\` assignment, nested Pydantic field/list mutation and Host adapter/edge rotation. Existing public mutable aliases make this **not satisfied today**; a deployment merely promising “maintenance window” is insufficient. If a bypassing mutable alias or writer exists, C1 fails closed. No hand-waved direct instrumentation of \`BaseRegistry\` is approved here.
+
+A proposed future owner would capture exact primitive/typed definition fields under enforced exclusive ownership; validate those copies against the authoritative host registration source, make a deep **value copy** with no live Python objects, hash the immutable image, then atomically publish a generation carrying its own recorded issuer provenance. A reader pins a generation and checks the authoritative epoch/revocation state before and after resolution. ABA and untracked mutation are denied by monotonic non-reuse of generation IDs and invalidation, not by two arbitrary equal strings. Historical C1 evidence still never grants D3 run permission. Source issuer and write-fencing designs, verification harness and operational deployment proof are **separate blocked work**, not made real by this paragraph.
+
+### 12.2 B03 — First implementation is C0 only: fixed public/private surface
+
+The first allowable **candidate implementation** (pending separate authorization) is \`agent_core/domain_catalog_resolution.py\` with an internal \`_resolve_untrusted_catalog_observation(input: DiagnosticCatalogInputV1) -> DiagnosticResolutionSnapshotV1\`. Inputs comprise only **owned primitive immutable values** created in tests; it MUST not accept a “trusted=True” flag, \`HostIssuer\`, arbitrary Registry object, callable, mutable \`RegistryRecord\`, path or file descriptor. \`DiagnosticResolutionSnapshotV1.observation_role\` must be exactly \`UNTRUSTED_DIAGNOSTIC_ONLY\`; this supersedes generic \`RESOLVED_NON_RUNNABLE\` as the C0 marker to prevent accidental treatment as C1. No exported \`resolve_verified_domain\`, \`TrustedCatalogAdmission\`, \`DomainBindingV1\`, \`BoundRunDomainV1\`, runtime consumer or privilege-upgrading conversion. All C1 contracts from §3 remain **design-only shapes**, not constructors for trusted decisions. Code/test paths must be explicitly authorized and frozen before source implementation.
+
+### 12.3 B04/R12 — Canonical definition content profile: D2C-DEF-1
+
+**Source definitions covered:** \`DomainManifest\`, \`ActionDefinition\`, \`StrategyDefinition\`, \`SkillDefinition\`, \`ToolDefinition\`, \`WorkflowDefinition\`, \`CapabilityDefinition\`, \`PromptDefinition\`, \`PolicyDefinition\`, \`SchemaDefinition\` (exact classes, no subclasses). The exact canonical field lists are the declared Pydantic \`model_fields\` of those ten **source-pinned** classes, compared against an explicitly committed expected field-name/type manifest in implementation tests. A changed source field is schema drift and fails closed until a versioned amendment; do not silently auto-approve a new field from dynamic reflection.
+
+Canonical definition input to C0 is an already-owned primitive representation \`(definition_type_id, fields)\`; no call on an attacker-supplied Pydantic object. A future Host capture adapter, only with exclusive write ownership and separate security review, may convert concrete Pydantic definitions to owned primitive values after exact-class and field checks. The C0 core does **not** call arbitrary \`model_dump()\`, \`__str__()\`, \`__repr__()\`, JSON encoder hooks, pickle or \`implementation_ref\`. The manifest MUST explicitly freeze scalar/list/optional types for every declared physical field before implementation; relying only on a Pydantic field declaration is not the frozen runtime validator.
+
+**Exact v1 canonical bytes:** Given a prevalidated mapping with every expected field present (including explicit \`null\` for optional \`None\`), recursively require \`type(value)\` to be exactly \`dict/list/str/bool/int/NoneType\` as allowed by each field, and forbid float, bytes, callable, unexpected dict/list nesting, unknown keys, NaN, Infinity or bool-as-int. String values must be NFC and contain no surrogate, forbidden control, or noncanonical identifier where an ID field is required. Enum fields use their declared enum **string value** and the allowlisted members only, not arbitrary strings. Lists are arrays of exact validated primitive types with **declared order preserved**; no sorting/deduplication during definition hashing. Serialize only fields to UTF-8 \`json.dumps(..., sort_keys=True, separators=(",",":"), ensure_ascii=False, allow_nan=False)\`, with no BOM/newline. \`definition_sha256=SHA256(b"GA02-D2C-DEF-1\\x00" + canonical_json_bytes)\`; this is a **proposed new definition-digest profile**, distinct from upstream D2-D binding-fingerprint algorithm. Independently review/check compatibility before declaring it frozen and computing authoritative reference vectors. No identity or source authentication follows merely from the hash.
+
+C0 deterministic bounds, proposed for re-review: at most 10 KiB per canonical definition, at most 1024 Unicode characters per string and at most 256 items in each list; oversize denied before hashing. These are policy decisions, **not claims that existing Registry models already enforce them**. Before C0 implementation authorization, include a complete per-class field/type manifest and at least 10 literal independent reference hash vectors (one per class), plus Unicode and \`null\` negative fixtures. Until reference vectors and exact primitive field contracts receive independent approval, **B04 remains implementation-readiness HOLD**.
+
+### 12.4 B05/R11 — Explicit relation inventory and edge identity
+
+The following is the **only proposed traversable relation set** for C0:
+
+| Source class.field | Target kind | Relation ID | Status |
+|---|---|---|---|
+| \`StrategyDefinition.default_actions\` | action | \`strategy.default_actions\` | required for each listed ID |
+| \`SkillDefinition.required_tools\` | tool | \`skill.required_tools\` | required for each listed ID |
+| \`SkillDefinition.optional_tools\` | tool | \`skill.optional_tools\` | host optional-selection policy required |
+| \`WorkflowDefinition.required_tools\` | tool | \`workflow.required_tools\` | required for each listed ID |
+| \`WorkflowDefinition.optional_tools\` | tool | \`workflow.optional_tools\` | host optional-selection policy required |
+| \`CapabilityDefinition.skills\` | skill | \`capability.skills\` | required for each listed ID |
+| \`CapabilityDefinition.workflows\` | workflow | \`capability.workflows\` | required for each listed ID |
+| \`CapabilityDefinition.tools\` | tool | \`capability.tools\` | required for each listed ID |
+| \`ActionDefinition.required_capability\` | capability | \`action.required_capability\` | **required if non-null** |
+| \`SkillDefinition.supported_actions\` | action | \`skill.supported_actions\` | **required for each listed ID** |
+
+**Other physically reference-like fields:** \`DomainManifest.required_core_schemas\`, \`registered_schemas\`, \`registered_intents\`, \`registered_workflows\`, \`registered_capabilities\`, \`registered_skills\`, \`registered_tools\`, \`knowledge_domains\`, \`prompt_packages\`, \`state_schema\`, \`eval_packages\`, \`feature_flags\`; \`CapabilityDefinition.intents/entities/needs/knowledge_dependencies/state_dependencies/policy_dependencies/validation_dependencies/eval_cases\`; \`ActionDefinition.allowed_planning_modes\`; Schema/Prompt strings. These are **not automatically traversed** by C0 v1: their representation does not pin target namespace/version/type, and some are taxonomy or descriptive labels rather than a Registry dependency. They MUST be marked \`UNRESOLVED_NON_GRAPH_METADATA\`, never used to assert complete operational readiness; any Host-operational profile requiring them cannot be admitted as complete without a separate exact-contract extension. \`DomainManifest.required_core_schemas\` must instead be verified by a distinct exact Host-pinned CORE Schema prerequisite check before any future C1 claim; C0 only reports \`NOT_VERIFIED\`.
+
+**Exact edge identity:** \`(source_registry_kind,source_namespace,source_id,source_version,relation_id,ordinal,declared_target_id,target_registry_kind,target_namespace,target_id,target_version,outcome)\`. Ordinal is the zero-based **position in the declared list** (scalar \`required_capability\` uses 0). Repeated declared IDs at different ordinals are distinct edge occurrences; each requires its own Host-pinned exact edge declaration, with no conflicting target version. An extra catalog edge not corresponding to a source occurrence is invalid. \`outcome\` is exactly \`PINNED\` or \`OPTIONAL_ABSENT\`; \`OPTIONAL_ABSENT\` permitted **only** for a declared \`optional_tools\` occurrence, with \`target_kind/namespace/id/version = null\` in an explicitly versioned outcome union. \`OPTIONAL_ABSENT\` signifies a conscious Host exclusion of a genuinely optional dependency, not “the optional reference was silently dropped”; nonempty \`required_tools\` / \`supported_actions\` etc. cannot be absent. \`None\` source list means zero listed occurrences, not permission to omit another field. List \`[]\` means zero occurrences. No wildcard/“latest”/global namespace mapping.
+
+Before C0 implementation, an independent review MUST resolve potential cycles introduced by \`Action.required_capability ↔ Capability.skills ↔ Skill.supported_actions\`, keeping v1 conservative reject-cycles behavior explicit; a legitimate cyclic graph is not proof of execution readiness. Neither coverage breadth nor cycle rejection silently grants operational completeness.
+
+### 12.5 B06 — Exact CORE v1 constraint
+
+Under the current D1 parser, **only \`schema\` may have \`namespace="CORE"\`**. This rule applies to seeds, edge targets, Host exception declarations and required Core Schema prerequisites. An apparent Host allowance for a CORE Tool/Skill/Action/Workflow/Capability/Prompt/Policy is denied, even if a trusted Catalog claims it. The \`CORE\` Schema must have exact key, \`SchemaDefinition.namespace="CORE"\`, \`SchemaScope.CORE\`, Host-approved (id,version) and pinned definition digest. All non-CORE dependency targets must be in the admitted domain's exact namespace; no global lookup, null namespace or implicit cross-domain edge. General shared non-schema Core registries require a separately reviewed versioned D1/provenance amendment, outside C0/C1 v1.
+
+### 12.6 B07 — Deterministic graph rules and resource limits
+
+**Proposed C0 test bounds (approval pending):** at most 256 D1 asset refs (aligns with D1), 256 distinct closure nodes, 1024 edge occurrences, 32 traversal depth, 256 list elements per definition field, 10 KiB serialized definition and 2 MiB total canonical input/evidence payload. Count limits *before* allocating full worklists or returning evidence; reject large/ambiguous input atomically with \`D2C_RESOURCE_LIMIT\`. Independent design re-review must verify these are adequate and consistent with 10 KiB×256 values (total 2 MiB deliberately tighter than the maximum product). Do not invent a wallclock timer or a cross-process CPU guarantee in a pure Python diagnostic implementation.
+
+Graph ordering: sort typed seed keys lexicographically by \`(kind,namespace,id,version)\`; sort each edge by the exact source key + relation ID + ordinal + target key; use deterministic depth-first cycle detection with states \`UNSEEN/ACTIVE/DONE\`. A back-edge to ACTIVE is a cycle, **including** one introduced through a newly added Action/Capability link. Shared reachable subgraphs are allowed; duplicate occurrences are not deduplicated before edge validation. Reject missing exact edge or target; no recursive re-query of mutable Registries. Output nodes/edges sorted and immutable; no partial results. Graph limits must be tested at boundary and boundary+1, independent of Python dict insertion order.
+
+### 12.7 B08 — Host adapter attestation remains non-authoritative in C0
+
+Catalog key: \`(registry_kind,namespace,id,version)\`; attestation value exactly \`(adapter_key,adapter_generation,tenant_scope_allowlist_id,domain_scope,host_registration_digest)\` as upstream D2 §11.2. For C0, values are caller-supplied **diagnostic declarations**; allow explicitly \`NOT_REQUIRED_BY_DIAGNOSTIC_PROFILE\` vs \`ABSENT_UNVERIFIED\` vs \`DECLARED_NON_AUTHORITATIVE\`. None is a grant. Do not infer an Adapter from \`RegistryRecord.implementation_ref\` or call/serialize that object. Operational requirement determination, including when an adapter is mandatory, belongs to a separately authenticated Host operational profile; the C0 resolver must not mint or accept one as trusted. A future C1 requires separately verified registration digest, scope and generation under one authoritative Host epoch; any mismatch denies.
+
+### 12.8 B09 — Domain-separated digest inventory and upstream D2-D compatibility
+
+**Never change upstream D2 §11.7 \`GA02-D2-BINDING-1\\x00\` fingerprint bytes/root key schema or its five existing vectors.** D2-C defines *separate proposed* evidence digests; they are **not** binding fingerprints:
+
+- \`definition_sha256\`: \`SHA256(b"GA02-D2C-DEF-1\\x00" + canonical_definition_json)\` (§12.3).
+- \`edge_digest\`: \`SHA256(b"GA02-D2C-EDGES-1\\x00" + canonical_json_of_sorted_exact_edge_records)\`.
+- \`host_catalog_digest\`: \`SHA256(b"GA02-D2C-CATALOG-1\\x00" + canonical_json_of_host_envelope_excluding_its_own_digest)\`.
+- \`closure_digest\`: \`SHA256(b"GA02-D2C-CLOSURE-1\\x00" + canonical_json_of_sorted_seed_node_edge_and_definition_digest_evidence)\`.
+
+Here \`\\x00\` denotes one NUL byte, **not** the four printable characters backslash/x/zero/zero; all canonical JSON uses the same strict encoding, NFC, enum, null and scalar rules in §12.3. V1 catalog envelope identity must bind D2-A package generation/digest, domain ID/version, runtime profile, host mapping policy ID/generation, whole adapter+edge+registry-definition generation and approved CORE keys; hashes computed over the envelope are consistency proofs only, with issuer authenticity separately required for C1. Exactly freeze every root and nested key and compute multiple independent golden vectors **before code authorization**. A hash can change without an epoch when the untrusted fixture changes; only a real Host owner can rotate authoritative epoch. Tests must reproduce the five upstream D2-D reference vectors without silently rewriting them.
+
+### 12.9 B10 — Deterministic C0 typed errors, atomic denial and C1 revocation
+
+For the diagnostic resolver, ordered precedence is:
+
+1. \`D2C_UNTRUSTED_CATALOG_SOURCE\` for **requested C1** without verified issuer, regardless of supplied snapshots; C0 diagnostic requests are never considered C1.
+2. \`D2C_CATALOG_GENERATION_MISMATCH\` / \`D2C_CATALOG_SNAPSHOT_UNSTABLE\` for explicit internally contradictory generation/epoch or unstable copied input.
+3. \`D2C_RESOURCE_LIMIT\` for bounded-size/type envelope violations that can be checked before traversal.
+4. \`D2C_CANONICAL_DEFINITION_INVALID\`, then \`D2C_DEFINITION_HASH_MISMATCH\` for malformed class/field/bytes or mismatched recomputed digest.
+5. \`D2C_EDGE_CATALOG_INVALID\` for bad/duplicate/ambiguous edge/outcome; \`D2C_EXACT_DEPENDENCY_MISSING\` for absent approved exact target; \`D2C_DEPENDENCY_DISABLED\` for disabled required node; \`D2C_HOST_ADAPTER_MISMATCH\` for contradictions in declared adapter metadata.
+6. \`D2C_DEPENDENCY_CYCLE\` for deterministic detected cycle; \`D2C_RESOLUTION_UNSTABLE\` for any unexpected normal exception (public message: code only), never a success.
+
+All checks fail the **entire** resolution; no partial \`DiagnosticResolutionSnapshotV1\`, no “best effort”, no automatic retry against a later generation, no Registry writes/filesystem reads/Tool/LLM/StateStore calls. Preserve D2-A/D2-B prior gate exceptions at their own boundaries; an explicit composition caller may map them by reviewed fixed mapping, never interpret them as D2-C success. Do not catch \`BaseException\` cancellation/process exit. Avoid invoking attacker-controlled \`repr\`, \`str\` or callable in error creation.
+
+Any trusted C1 check for publisher revocation or epoch drift denies before producing an authoritative result. Even C1 would still be a historical catalog view, not a lasting execution approval. D3 must do independent active-use revalidation at the point of effect; no mutation of the already issued historical evidence retroactively grants use.
+
+### 12.10 R13 — Three independent digests and required linkage
+
+**Never conflate:**
+
+1. **Package file SHA-256**: D1 \`AssetReferenceV1.sha256\` and D2-A verified \`VerifiedAssetV1.content_bytes\` prove only the captured package file content under the loader's publication assumption.
+2. **Registry definition SHA-256**: §12.3 canonical typed definition content obtained from an owned Host-pinned or C0 fixture-owned representation; independent of package file bytes.
+3. **Host registration and adapter attestation digest**: Host-only metadata about exact Registry key, publisher generation, scopes and adapter key/generation; not recoverable from package JSON, \`implementation_ref\` or the two former hashes.
+
+A relation between these values is made **only** by the exact asset \`(kind,namespace,id,version)\` and an independently approved Host registration edge tied to its publication and policy generation. No equality requirement between unrelated digest types, and no claim that metadata hash authenticates the file publisher. C0 labels these as diagnostic associations; C1 cannot be asserted without a trustworthy Host issuer and mutation fence.
+
+### 12.11 Closure ledger and next review gate
+
+| Finding | Targeted design remedy | Current authorization |
+|---|---|---|
+| B01/B02 | §12.1 defines future owner/protocol; accurately exposes absent physical host authority | **C1 HARD HOLD** |
+| B03 | §12.2 freezes isolated C0-only API and forbids grants | C0 design candidate; code still NOT AUTHORIZED |
+| B04/R12 | §12.3 gives strict canonical profile, owner and bounds; per-field manifest/golden fixtures remain a follow-on design deliverable | **C0 READINESS HOLD** |
+| B05/R11 | §12.4 exhaustively classifies traversed and intentionally excluded physical relation fields; pins occurrence semantics | TARGETED DESIGN REMEDIED; independent review pending |
+| B06 | §12.5 enforces schema-only CORE | TARGETED DESIGN REMEDIED; independent review pending |
+| B07 | §12.6 gives deterministic graph and proposed explicit limits | Limit adequacy/review pending |
+| B08 | §12.7 separates non-authoritative C0 adapter declarations from C1 grants | TARGETED DESIGN REMEDIED; independent review pending |
+| B09 | §12.8 separates canonical digests and preserves D2-D reference profile | Golden vectors/nested schemas pending |
+| B10 | §12.9 defines error precedence, cancellation and revocation authority | TARGETED DESIGN REMEDIED; independent review pending |
+| R13 | §12.10 prevents file/definition/registration digest conflation | TARGETED DESIGN REMEDIED; independent review pending |
+
+**Formal current status:** \`GA-02 D2-C B01–B10/R11–R13 TARGETED NORMATIVE REMEDIATION = SUBMITTED\`; \`INDEPENDENT DESIGN RE-REVIEW = PENDING\`; \`C0 IMPLEMENTATION READINESS = HOLD\` pending exact field manifests/vectors and physical test contracts; \`C1 PRODUCTION TRUST = HOLD\`; \`PR #114 MERGE = NOT AUTHORIZED\`.
+
+**Next task:** \`GA-02 D2-C — PR #114 Exact-HEAD Targeted Independent Normative Design Re-Review + C0 Readiness Gap Assessment\`. If any blocked items remain, address them as bounded design-only amendments **before** a separate isolated implementation authorization.

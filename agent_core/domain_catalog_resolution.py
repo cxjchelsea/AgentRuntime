@@ -244,27 +244,46 @@ def _digest(profile: str | None, value: Any) -> str:
     return hashlib.sha256(prefix + _json(value)).hexdigest()
 
 
-def _record(value: object, klass: type[Any], counter: list[int]) -> dict[str, Any]:
+
+def _add_canonical_bytes(budget: list[int], size: int) -> None:
+    """Incrementally enforce one exact canonical-input byte budget."""
+    budget[0] += size
+    if budget[0] > 2097152:
+        _deny(D2CCode.D2C_RESOURCE_LIMIT)
+
+
+def _record(
+    value: object, klass: type[Any], counter: list[int], budget: list[int]
+) -> dict[str, Any]:
     if type(value) is not klass:
         _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
     result: dict[str, Any] = {}
-    for field in fields(cast(Any, klass)):
+    declared = fields(cast(Any, klass))
+    _add_canonical_bytes(
+        budget,
+        2 + max(0, len(declared) - 1)
+        + sum(len(_json(field.name)) + 1 for field in declared),
+    )
+    for field in declared:
         counter[0] += 1
         if counter[0] > 4096:
             _deny(D2CCode.D2C_RESOURCE_LIMIT)
         v = object.__getattribute__(value, field.name)
         if field.name == "fields":
-            result[field.name] = _copy_fields(v, counter)
+            result[field.name] = _copy_fields(v, counter, budget)
         elif type(v) in (str, bool, int, type(None)):
             if type(v) is str and not _string(v):
                 _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
+            _add_canonical_bytes(budget, len(_json(v)))
             result[field.name] = v
         else:
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
     return result
 
 
-def _copy_fields(value: object, counter: list[int]) -> dict[str, Any]:
+def _copy_fields(
+    value: object, counter: list[int], budget: list[int]
+) -> dict[str, Any]:
     if type(value) is not dict:
         _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
     # Explicit iterative stack; only exact builtins, no hostile iterators.
@@ -282,9 +301,11 @@ def _copy_fields(value: object, counter: list[int]) -> dict[str, Any]:
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
         ancestors = ancestors | {id(node)}
         if type(node) is dict:
+            _add_canonical_bytes(budget, 2 + max(0, len(node) - 1))
             for k, v in node.items():
                 if not _string(k):
                     _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
+                _add_canonical_bytes(budget, len(_json(k)) + 1)
                 counter[0] += 1
                 if counter[0] > 4096:
                     _deny(D2CCode.D2C_RESOURCE_LIMIT)
@@ -295,11 +316,13 @@ def _copy_fields(value: object, counter: list[int]) -> dict[str, Any]:
                 elif type(v) in (str, bool, int, type(None)):
                     if type(v) is str and not _string(v):
                         _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
+                    _add_canonical_bytes(budget, len(_json(v)))
                     target[k] = v
                 else:
                     _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
         else:
             list_node = cast(list[Any], node)
+            _add_canonical_bytes(budget, 2 + max(0, len(list_node) - 1))
             if len(list_node) > 256:
                 _deny(D2CCode.D2C_RESOURCE_LIMIT)
             for v in list_node:
@@ -313,6 +336,7 @@ def _copy_fields(value: object, counter: list[int]) -> dict[str, Any]:
                 elif type(v) in (str, bool, int, type(None)):
                     if type(v) is str and not _string(v):
                         _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
+                    _add_canonical_bytes(budget, len(_json(v)))
                     target.append(v)
                 else:
                     _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
@@ -334,27 +358,32 @@ def _admit_and_copy_diagnostic_input(
     if type(input) is not DiagnosticCatalogInputV1:
         _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
     count = [1]
+    declared_fields = fields(DiagnosticCatalogInputV1)
+    budget = [2 + max(0, len(declared_fields) - 1)
+              + sum(len(_json(field.name)) + 1 for field in declared_fields)]
     data: dict[str, Any] = {}
-    for field in fields(DiagnosticCatalogInputV1):
+    for field in declared_fields:
         count[0] += 1
         if field.name in _CARRIERS:
             original = object.__getattribute__(input, field.name)
             if type(original) is not tuple:
                 _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
-            if field.name == "asset_refs" and len(original) > 256:
+            if (field.name == "asset_refs" and len(original) > 256) or len(original) > 4096:
                 _deny(D2CCode.D2C_RESOURCE_LIMIT)
+            _add_canonical_bytes(budget, 2 + max(0, len(original) - 1))
             copied = []
             for v in original:
                 count[0] += 1
                 if count[0] > 4096:
                     _deny(D2CCode.D2C_RESOURCE_LIMIT)
-                props = _record(v, _CARRIERS[field.name], count)
+                props = _record(v, _CARRIERS[field.name], count, budget)
                 copied.append(_CARRIERS[field.name](**props))
             data[field.name] = tuple(copied)
         else:
             v = object.__getattribute__(input, field.name)
             if type(v) is not str or not _string(v):
                 _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
+            _add_canonical_bytes(budget, len(_json(v)))
             data[field.name] = v
     if count[0] > 4096:
         _deny(D2CCode.D2C_RESOURCE_LIMIT)
@@ -370,9 +399,9 @@ def _admit_and_copy_diagnostic_input(
     ):
         _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
     canonical_size = _input_canonical_size(owned)
-    if canonical_size > 2097152:
-        _deny(D2CCode.D2C_RESOURCE_LIMIT)
-    return _OwnedDiagnosticInputV1(owned, count[0], canonical_size)
+    if canonical_size != budget[0]:
+        _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
+    return _OwnedDiagnosticInputV1(owned, count[0], budget[0])
 
 
 def _input_canonical_size(value: DiagnosticCatalogInputV1) -> int:

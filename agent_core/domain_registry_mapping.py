@@ -2,6 +2,7 @@
 
 This module has NO trusted host admission, binding, execution, or production consumer.
 """
+
 from __future__ import annotations
 
 import re
@@ -294,7 +295,8 @@ def _map_untrusted_observation(
             _deny(D2BCode.D2B_EXACT_NAMESPACE_MISMATCH)
         if (
             ns == "CORE"
-            and (asset_ref.id, asset_ref.version) not in policy.approved_core_schema_keys
+            and (asset_ref.id, asset_ref.version)
+            not in policy.approved_core_schema_keys
         ):
             _deny(D2BCode.D2B_EXACT_NAMESPACE_MISMATCH)
         inactive = (

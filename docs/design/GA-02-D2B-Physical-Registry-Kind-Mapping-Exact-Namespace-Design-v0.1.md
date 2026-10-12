@@ -120,3 +120,110 @@ Public failure surfaces must not include sensitive adapter representations, impl
 **Design proposal submitted only.** The mapped concrete code above supports a source-compatible D2-B *design direction*. It does not yet settle every independent B-D2B-01..08 gate and **does not authorize D2-B physical implementation**.
 
 Next: **GA-02 D2-B — Targeted Independent Design Review + Physical Contract Gap Assessment** on the exact new Draft PR HEAD, followed (if required) by bounded design remediation, then implementation-readiness authorization. D2-C/D/E, active DomainBinding, trusted publisher deployment and PR merge decisions remain independent.
+
+---
+
+## 9. R1–R5 Targeted Design Remediation v0.2 — Normative Amendment
+
+**Status: SUBMITTED / EXACT-HEAD INDEPENDENT DESIGN RE-REVIEW PENDING.** This is a design-only revision, not D2-B implementation, PR merge, D2-C/D/E development or production domain admission authorization. Physical D1, D2-A and Registry source contracts remain authoritative; merged D2 normative design §11.1–11.2 and §13 apply. Within this file §9 supersedes conflicting §§2–8; previous proposals remain as historical design context.
+
+### 9.1 R1 — Fixed host policy and distinct admission modes
+
+Proposed immutable KindMappingPolicyV1 exact required fields:
+
+| Field | Required type and semantics |
+|---|---|
+| profile | Literal GA02-D2B-KIND-1; no default |
+| host_policy_id | Nonempty trusted-host-issued canonical ID |
+| host_policy_generation | Nonempty immutable host-issued generation token |
+| admitted_domain_id / admitted_domain_version | D1 canonical exact domain ID and version |
+| runtime_profile | Literal GA02-D1-1 |
+| expected_manifest_digest | Lowercase 64-hex SHA-256 from independently pinned host source |
+| expected_publication_generation_id | Host-verified SEALED publication generation ID |
+| prompt_mode / rule_mode | Each exactly REGISTRY_EXACT or INERT_ONLY |
+| approved_core_schema_keys | Immutable set of exact (schema_id, schema_version) pairs |
+| admission_mode | Exactly INERT_INSPECTION or REGISTRY_MAPPING |
+
+All fields are mandatory, validated at the trusted Application composition boundary. Unknown fields, modes, versions, wildcard CORE keys, mutable policy mappings or package-specified class selectors are refused. The other ten kind policies are fixed by §2; only prompt/rule have host-declared per-kind classification choices. Do not accept arbitrary callable, import path or Registry class from package data. A frozen dataclass, a string saying SEALED or a correctly formatted policy generation is NOT evidence of trusted issuance. Host policy provenance/issuer verification is required at any untrusted call boundary, and remains a production integration dependency.
+
+Require exact coherence of policy domain ID/version/profile/expected digest/publication generation with the D2-A verified snapshot and its trusted host load provenance. VerifiedPackageSnapshotV1 is frozen data, NOT an unforgeable capability; isinstance or equality of fields alone cannot establish that the host created it. A trusted Application-controlled issuer/loading boundary must attest provenance of the independent digest, generation and root lease. Test fixtures may use a deliberately isolated test-only issuer but cannot establish production authenticity. D2-B never reopens paths or reads unverified package-supplied data.
+
+| Admission mode | Exact behavior |
+|---|---|
+| INERT_INSPECTION | No DomainRegistry or per-kind Registry lookup; return inert typed reference metadata only, all tagged INERT_INSPECTION_ONLY regardless of normal kind; zero assets allowed, no enabled or runnable claim. An explicitly untrusted diagnostic is never accepted as verified mapping evidence. |
+| REGISTRY_MAPPING | Require exact DomainRegistry preregistration before inspecting any asset, record and DomainManifest enabled True, descriptor.enabled True, and exact host policy/snapshot identity. Registry-backed assets undergo exact-key non-authoritative observations. Inert-only assets stay inert. Failure denies whole mapping; zero assets never grants runtime readiness. |
+
+DomainRegistry lookup: get(descriptor.domain_id, descriptor.domain_version, namespace=descriptor.domain_id). Legacy namespace=None does not qualify. D2-B does not register or repair missing records. DomainManifest domain ID/version/runtime compatibility must match exact trusted descriptor. Tenant/scope admission comes from trusted Application, not optional definition.domain labels.
+
+### 9.2 R2 — Exact three-way Schema namespace and scope
+
+§3 CORE 'when present' leniency is superseded. Both cases require precise equality of stored RegistryKey.namespace, D1 ref.namespace and SchemaDefinition.namespace, with no None exception.
+
+| Ref namespace | Stored key namespace | Definition.namespace | Definition.scope | Extra gate |
+|---|---|---|---|---|
+| CORE | CORE | CORE, not None | SchemaScope.CORE | Exact (id,version) present in host approved_core_schema_keys |
+| Trusted domain ID | Same exact domain ID | Same exact domain ID, not None | SchemaScope.DOMAIN | Domain equals trusted policy.admitted_domain_id |
+
+Even if SchemaRegistry.register(namespace or definition.namespace) accepted a conflicting explicit namespace or a CORE record with definition.namespace=None, reject at observation time. Check intrinsic schema_id/version exactly. CORE reserved exclusively for schema and cannot override a Core Contract. No namespace normalization, alias, case fold, None fallback, wildcard/version fallback, legacy migration or unapproved CORE global visibility.
+
+### 9.3 R3 — Typed error and atomic denial contract
+
+D2-B owns D2BCode(str, Enum) and D2BMappingError(ValueError) with code and public str(error) exactly equal to the stable enum value. Preserve D2-A PackageLoadError untouched. Freeze the eight §5 D2B_* codes as exhaustive v1 public categories. Apply checks in this order:
+
+1. Missing/untrusted host policy, origin, provenance, publication/digest mismatch, invalid registry view -> D2B_TRUSTED_CATALOG_INVALID; unknown mapping kind/profile -> D2B_UNKNOWN_KIND_OR_POLICY.
+2. Invalid/foreign/None namespace, CORE reservation/allowlist/schema scope mismatch -> D2B_EXACT_NAMESPACE_MISMATCH.
+3. Request to treat INERT_ONLY as active -> D2B_UNSUPPORTED_ACTIVE_KIND.
+4. Exact RegistryItemNotFoundError from domain or asset Registry -> D2B_EXACT_DEPENDENCY_NOT_FOUND. Catch before generic RegistryError.
+5. Wrong RegistryKey, strict definition class or intrinsic ID/version/metadata -> D2B_REGISTRY_DEFINITION_MISMATCH.
+6. record.enabled is not True, or intrinsic definition.enabled is not True only where defined -> D2B_REGISTRY_DISABLED.
+7. Other RegistryError, unexpected read exception, malformed observed record or detectable inconsistent mutation -> D2B_REGISTRY_OBSERVATION_UNSTABLE.
+
+Do not expose raw exception messages, file paths, bytes, tenant secrets, RegistryRecord, implementation_ref or object repr in public errors or exception formatting. Never call attacker-controlled __str__, __repr__, __call__, or untrusted callbacks. Do not swallow process-fatal conditions or cancellation. Build and return only a complete frozen mapping result after every required check succeeds; on failure, no partial result, no retry/fallback, no register/enable/disable/unregister/clear/list and no filesystem reopen. An unstable-denial code reports detected uncertainty, NOT guaranteed detection of every race.
+
+### 9.4 R4 — Immutable non-authoritative observation evidence
+
+Proposed frozen/slotted result values with owned scalars and tuples only:
+
+| Result | Required immutable fields and semantics |
+|---|---|
+| AssetClassificationV1 | (kind, namespace, id, version) and fixed classification REGISTRY_EXACT or INERT_ONLY |
+| RegistryMatchEvidenceV1 | Exact ref tuple, Registry kind, observed exact (id,version,namespace), allowlisted expected definition type name, observed record.enabled boolean, observed intrinsic definition.enabled boolean or None, observation_role=NON_AUTHORITATIVE_AT_READ |
+| InertAssetEvidenceV1 | Exact ref tuple, D1 digest and normalized relative path, observation_role=INERT_ONLY |
+| RegistryKindMappingSnapshotV1 | Host policy ID/generation, exact domain/version, publication generation, admission mode, non-authoritative observation role, sorted tuple of immutable evidence |
+
+In INERT_INSPECTION mode no RegistryMatchEvidenceV1 is present and the whole snapshot is INERT_INSPECTION_ONLY. In REGISTRY_MAPPING mode, Registry evidence is marked NON_AUTHORITATIVE_AT_READ. Intrinsic enabled None is permitted only for PromptDefinition, CapabilityDefinition and SchemaDefinition; no invented enabled field. Copy no mutable RegistryRecord, live definition, implementation_ref, Registry object, mutable list/dict, callable or handle. Do not pickle, deepcopy or log execution refs. The observation is historical, and successive Registry.get calls do NOT establish an atomic multi-Registry transaction. D2-C separately owns trusted catalog epoch, canonical definition hashing, transitive closure/host adapter evidence; D3 rechecks active-use permission/revocation. No D2-B result can be consumed as a grant or an ApprovedActionPlan.
+
+### 9.5 R5 — Mandatory physical test and implementation-isolation matrix
+
+| Test | Deterministic requirement |
+|---|---|
+| P01 | Exhaustive twelve-kind host-fixed table; only prompt/rule mode varies; reject injected policy map and unknown profile |
+| P02 | INERT_INSPECTION for empty and mixed assets: zero Registry reads, all inert role, no runnable authority |
+| P03 | REGISTRY_MAPPING: exact enabled DomainRegistry preregistration first; exact typed lookup and ID/version checks |
+| P04 | Allowed CORE schema: stored key CORE, definition namespace CORE, SchemaScope.CORE, exact host allowlist |
+| N01 | Forged frozen D2-A snapshot, invalid host origin/digest/generation/domain/profile: deny before Registry access |
+| N02 | Missing, namespace=None legacy, wrong version or disabled DomainRegistry record: atomic denial |
+| N03 | CORE definition.namespace=None, mismatched explicit SchemaRegistry.register namespace, wrong scope or CORE list: deny |
+| N04 | Identical ID/version in two domains, only newer version, None-only legacy record: never fall back |
+| N05 | Wrong definition class/key/intrinsic identity, malformed record, unexpected Registry exception: redacted error |
+| N06 | Record disabled, intrinsic disabled where real; no fictitious enabled on Prompt/Capability/Schema |
+| N07 | implementation_ref object traps for __repr__/__str__/__call__: never inspect, serialize or invoke |
+| N08 | Prompt/rule inert vs backed; knowledge/state/eval always inert; active request on inert denied |
+| N09 | Concurrent observable mutation, policy generation change: deny without partial snapshot; no claim invisible changes detected |
+| N10 | Result frozen/slots with owned scalars/tuples only and explicit observation role; no record/definition/callable escapes |
+| N11 | No Registry mutation or list(), no filesystem re-open, model/Tool/Skill/Workflow/StateStore side effects |
+| N12 | Exact-HEAD full pytest/mypy/Ruff check/format and GA-01C integration with D2-A regression |
+
+If later authorized, implementation is confined to new agent_core/domain_registry_mapping.py and tests/test_ga02_d2b_registry_mapping.py. Do not modify BaseRegistry, concrete Registries, D1, D2-A or Agent Loop. Before physical implementation readiness, reviewers must source-check actual fixtures and constructors, identify the host trusted policy issuer entry point, and confirm strict typed error identity. If trusted host provenance is unimplemented, code may only be tested through isolated synthetic fixtures; production admission remains denied.
+
+### 9.6 Remediation evidence and review stop lines
+
+| Target | Remediation status | Closure status |
+|---|---|---|
+| R1 / B-D2B-01 | Fixed host policy and disjoint modes specified §9.1 | PENDING INDEPENDENT RE-REVIEW |
+| R2 / B-D2B-03 | Uniform explicit schema namespace/scope §9.2 | PENDING INDEPENDENT RE-REVIEW |
+| R3 / B-D2B-06 | Error enum, mapping and no-partial-return §9.3 | PENDING INDEPENDENT RE-REVIEW |
+| R4 / B-D2B-04/08 | Non-authoritative immutable read evidence §9.4 | PENDING INDEPENDENT RE-REVIEW |
+| R5 / B-D2B-05/07 | Physical fixture and scope gates §9.5 | PENDING INDEPENDENT RE-REVIEW |
+
+**Formal status:** R1–R5 DESIGN REMEDIATION SUBMITTED; EXACT-HEAD SOURCE-COMPATIBILITY RE-REVIEW PENDING; D2-B IMPLEMENTATION NOT AUTHORIZED; PR #112 MERGE NOT AUTHORIZED; PRODUCTION PACKAGE ADMISSION NOT AUTHORIZED. Next: GA-02 D2-B — R1–R5 Targeted Independent Design Re-Review + Implementation Readiness Gap Assessment.

@@ -840,3 +840,125 @@ def test_upstream_d2d_binding_five_golden_vectors_unchanged() -> None:
     assert c._digest("GA02-D2-BINDING-1", changed_asset) == (
         "3e19d5c7c5b8a71fd1dad2d991d42e240264cdf911bc97aa7b02fffbb259d125"
     )
+
+
+def test_canonical_input_budget_precedes_semantic_adapter_fault() -> None:
+    source = fixture()
+    # 140 × 4 × 1024 astral scalars: >2 MiB in UTF-8 within 4096 slots.
+    large = "𠜎" * 1024
+    adapters = tuple(
+        c.DiagnosticAdapterEntryV1(
+            "tool", "inventory.reconcile", f"stock.tool.extra.{i}", "1.0.0",
+            "DECLARED_NON_AUTHORITATIVE", large, large, large, large, "a" * 64,
+        )
+        for i in range(140)
+    )
+    invalid = replace(source, adapter_entries=adapters)
+    expect_code(c.D2CCode.D2C_RESOURCE_LIMIT, invalid)
+    # The same malformed catalog within the byte cap has a semantic denial.
+    expect_code(
+        c.D2CCode.D2C_HOST_ADAPTER_MISMATCH,
+        replace(source, adapter_entries=adapters[:1]),
+    )
+
+
+def _physical_chain(path_edges: int) -> c.DiagnosticCatalogInputV1:
+    """Versioned Action→Capability→Skill→Action DAG with reverse-sorted roots."""
+    base = fixture()
+    names: list[tuple[str, str, str]] = []
+    for ordinal in range(path_edges + 1):
+        triad = ordinal // 3
+        suffix = f"a{30-triad:02d}"
+        if ordinal % 3 == 0:
+            names.append(("action", "ActionDefinition", f"chain.action.{suffix}"))
+        elif ordinal % 3 == 1:
+            names.append(("capability", "CapabilityDefinition", f"chain.cap.{suffix}"))
+        else:
+            names.append(("skill", "SkillDefinition", f"chain.skill.{suffix}"))
+    refs = []
+    records = [entry("DomainManifest", "inventory.reconcile")]
+    edges = []
+    for position, (kind, cls, item) in enumerate(names):
+        data = definition(cls, item)
+        if position < path_edges:
+            target_kind, _, target_id = names[position + 1]
+            if kind == "action":
+                data["required_capability"] = target_id
+                relation = "action.required_capability"
+            elif kind == "capability":
+                data["skills"] = [target_id]
+                relation = "capability.skills"
+            else:
+                data["supported_actions"] = [target_id]
+                relation = "skill.supported_actions"
+            edges.append(edge(kind, item, relation, target_kind, target_id))
+        refs.append(asset(kind, item))
+        records.append(entry(cls, item, data))
+    return replace(
+        base,
+        asset_refs=tuple(refs),
+        registry_entries=tuple(records),
+        edge_occurrences=tuple(edges),
+    )
+
+
+def test_global_done_does_not_hide_path_depth_33() -> None:
+    safe = c._resolve_untrusted_catalog_observation(_physical_chain(32))
+    assert len(safe.seed_keys) == 33
+    expect_code(c.D2CCode.D2C_RESOURCE_LIMIT, _physical_chain(33))
+
+
+def test_strict_asset_paths_and_carrier_strings() -> None:
+    f = fixture()
+    bad_path = replace(f.asset_refs[0], relative_path="a/" + "b" * 512)
+    expect_code(
+        c.D2CCode.D2C_RESOLUTION_UNSTABLE,
+        replace(f, asset_refs=(bad_path,) + f.asset_refs[1:]),
+    )
+    non_nfc = replace(f.asset_refs[0], relative_path="actions/cafe\u0301.json")
+    expect_code(
+        c.D2CCode.D2C_RESOLUTION_UNSTABLE,
+        replace(f, asset_refs=(non_nfc,) + f.asset_refs[1:]),
+    )
+    too_long = replace(f.registry_entries[1], definition_type="A" * 1025)
+    expect_code(
+        c.D2CCode.D2C_RESOLUTION_UNSTABLE,
+        replace(f, registry_entries=(f.registry_entries[0], too_long) + f.registry_entries[2:]),
+    )
+
+
+def test_graph_diamond_shared_dag_and_alias_copy() -> None:
+    f = fixture()
+    one = list(f.registry_entries)
+    cap = dict(one[2].fields)
+    cap["skills"] = ["stock.skill", "stock.skill.two"]
+    one[2] = entry("CapabilityDefinition", "stock.capability", cap)
+    skilltwo = definition("SkillDefinition", "stock.skill.two")
+    skilltwo["required_tools"] = ["stock.tool"]
+    one.append(entry("SkillDefinition", "stock.skill.two", skilltwo))
+    valid = replace(
+        f,
+        asset_refs=f.asset_refs + (asset("skill", "stock.skill.two"),),
+        registry_entries=tuple(one),
+        edge_occurrences=f.edge_occurrences + (
+            edge("capability", "stock.capability", "capability.skills", "skill", "stock.skill.two", 1),
+            edge("skill", "stock.skill.two", "skill.required_tools", "tool", "stock.tool"),
+        ),
+    )
+    assert len(c._resolve_untrusted_catalog_observation(valid).seed_keys) == 5
+    common: list[str] = ["stock.tool"]
+    aliased = dict(skilltwo)
+    aliased["required_tools"] = common
+    aliased["optional_tools"] = common
+    records = list(valid.registry_entries)
+    records[-1] = entry("SkillDefinition", "stock.skill.two", aliased)
+    owned_input = replace(
+        valid,
+        registry_entries=tuple(records),
+        edge_occurrences=valid.edge_occurrences + (
+            edge("skill", "stock.skill.two", "skill.optional_tools", "tool", "stock.tool"),
+        ),
+    )
+    owned = c._admit_and_copy_diagnostic_input(owned_input)
+    common.append("new.tool")
+    assert len(c._resolve_owned_diagnostic_graph(owned).edge_occurrences) == 6

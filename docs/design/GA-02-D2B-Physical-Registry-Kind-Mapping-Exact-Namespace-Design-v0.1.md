@@ -300,7 +300,7 @@ def map_verified_package(
 |---|---|
 | DomainManifest | `DomainManifest(domain_id='inventory.reconcile',name='Inventory Reconciliation',version='1.0.0',enabled=True,runtime_compatibility='GA02-D1-1')` |
 | DomainRegistry | `DomainRegistry().register(manifest, namespace='inventory.reconcile')`; legacy negative uses `namespace=None`; `get(domain_id,version,namespace=domain_id)` |
-| ActionDefinition | `ActionDefinition(action_id='stock.count',version='1.0.0',category='inventory',description='count',intrusiveness_level=IntrusivenessLevel.LOW,requires_confirmation=False,required_capability=None,allowed_planning_modes=[PlanningMode.<VALID_MEMBER>])` — choose actual existing enum member by inspecting `runtime.contracts.enums` before coding |
+| ActionDefinition | `ActionDefinition(action_id='stock.count',version='1.0.0',category='inventory',description='count',intrusiveness_level=IntrusivenessLevel.LOW,requires_confirmation=False,required_capability=None,allowed_planning_modes=[PlanningMode.DETERMINISTIC])` — source-verified member in `runtime.contracts.enums.PlanningMode` |
 | StrategyDefinition | `StrategyDefinition(strategy_id='stock.strategy',version='1.0.0',description='...',preferred_goals=[],preferred_needs=[],compatible_emotions=[],required_conditions=[],avoid_conditions=[],default_actions=[],intrusiveness_level=IntrusivenessLevel.LOW)` |
 | SkillDefinition | `SkillDefinition(skill_id='stock.skill',version='1.0.0')` |
 | ToolDefinition | `ToolDefinition(tool_id='stock.tool',version='1.0.0')` |
@@ -313,7 +313,7 @@ def map_verified_package(
 
 Actual concrete Registry `register` functions for Action/Strategy/Skill/Tool/Workflow/Capability/Prompt/Policy all accept `(definition, *, namespace: str|None=None, implementation_ref=None)`; `SchemaRegistry.register` uses `namespace or definition.namespace`. Build one typed `RegistryCatalogViewV1` from instances, not a dictionary of strings/classes controlled by package input. The tests should assert `get(id,version,namespace=domain)` and exact returned `RegistryRecord.key` and intrinsic definition identity, not infer namespace from optional definition.domain.
 
-**Test modules/names after approval:** new `tests/test_ga02_d2b_registry_mapping.py` with `test_d2b_p01_*` through `test_d2b_p04_*` and `test_d2b_n01_*` through `test_d2b_n12_*`; `pytest` full and targeted, `python -m mypy agent_core runtime tests` (or repository-pinned full command), `python -m ruff check agent_core runtime tests`, `python -m ruff format --check agent_core runtime tests`, plus GA-01C compatibility workflows. Source review must resolve `PlanningMode.<VALID_MEMBER>` to an actual member before frozen fixture execution; no placeholder enum may remain in implementation.
+**Test modules/names after approval:** new `tests/test_ga02_d2b_registry_mapping.py` with `test_d2b_p01_*` through `test_d2b_p04_*` and `test_d2b_n01_*` through `test_d2b_n12_*`; `pytest` full and targeted, `python -m mypy agent_core runtime tests` (or repository-pinned full command), `python -m ruff check agent_core runtime tests`, `python -m ruff format --check agent_core runtime tests`, plus GA-01C compatibility workflows. `PlanningMode.DETERMINISTIC` is confirmed in `runtime.contracts.enums`; tests must still execute the actual constructor before authorization.
 
 ### 10.4 Readiness authorization limits and evidence ledger
 

@@ -263,3 +263,122 @@ The revocation checker itself is NOT a D2 implementation deliverable unless sepa
 **v0.2 gates:** B-D2-01..07 and additional B-D2-08..10 have proposed remedies recorded. Separate independent design re-review MUST evaluate unresolved implementation choices (notably host publication/cross-device safety, exact definition serializer, catalog atomics and revocation time-of-use) before authorizing D2-A. D2-A readiness does not authorize D2-B–E or merge this design PR.
 
 **Decision remains:** D2 DESIGN v0.2 = TARGETED REMEDIATION PROPOSED; D2 IMPLEMENTATION = NOT AUTHORIZED; PR #110 stays Draft. Next: GA-02 D2 v0.2 Targeted Independent Design Re-Review and then narrow D2-A readiness, with explicit stop on any remaining blocker.
+
+
+---
+
+## 12. D2-A Targeted Implementation Readiness Remediation — A-01/A-02/A-03
+
+
+
+**Authority and status:** This section supersedes §11.3 for D2-A only. Scope is the Linux-only inert local package loader; it is a design remediation for independent re-review, NOT implementation authorization. It does not allow Registry access, model inference, Tool/Skill/Workflow invocation, Agent Loop binding, StateStore writes or changes to existing Core contracts.
+
+
+
+### 12.1 A-01 — Trusted root issuer, publisher and lease lifecycle
+
+
+
+**Trust chain:** Trusted Host Publisher → immutable SEALED generation + independently distributed expected descriptor SHA256 → trusted Application HostRootIssuer → opaque TrustedPackageRootLease → inert LocalPackageLoader. No package descriptor, user input, tool output, prompt or model result can choose the trusted root, expected SHA, catalog generation or publisher attestation. A self-declared descriptor digest proves internal consistency only.
+
+
+
+HostRootIssuer is part of the trusted Application bootstrap, not Domain Package code. Its host-only allowlist has exactly the following fields: generation_id, domain_id, exact domain_version, runtime_profile, expected_manifest_digest (lowercase 64-hex), absolute allowlisted generation location, SEALED publication state and host-fixed resource limits. It must verify the independent digest is not copied from package JSON, and that the publisher guarantees no in-place writes to the published generation throughout the lease. It must open the generation directory using Linux O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC, fstat and pin root (st_dev, st_ino) identity, then issue a nonserializable, context-managed lease with an owned FD. Caller-supplied plain paths or integer FDs must be refused as trusted roots; the type of a wrapper by itself is not provenance.
+
+
+
+Publisher protocol: create a new private generation, write and close its files, compute/pin digest evidence independently, seal publication, atomically make that generation visible, and never modify published inodes in place. Any update receives a new generation_id and fresh lease. Filesystem permission bits alone do not prove immutable publication. The trusted publisher, process privileges and mount namespace are inside the trusted computing base. Privileged root/mount-namespace takeover is explicitly outside the D2-A threat model; O_NOFOLLOW is not claimed to defeat it.
+
+
+
+Lifetime: a lease pins a held root directory FD throughout descriptor and asset reads; its ownership is singular and no coroutine may share a mutable lease with simultaneous loads. An issuer needing to keep an FD must duplicate it explicitly, so the loader never closes an issuer-owned handle. All opened component/leaf FDs are closed in reverse order on success, exception, limit failure and cancellation. The lease closes its owned root FD in a finalizer/context-manager exit. Closed, foreign, revoked or wrong-generation lease fails before reading. A VerifiedPackageSnapshot never holds an FD, path, callback, open file or live lease.
+
+
+
+Limits are host-owned exact v1 values: descriptor at most 262144 bytes, at most 256 D1 asset references, each asset at most 1048576 bytes, aggregate asset content at most 16777216 bytes, maximum 12 relative path components. Descriptor bytes are counted separately from the aggregate asset bound. Unsupported platform or missing secure-open primitive means fail-closed runtime admission. A test-only issuer may use temporary sealed fixture roots, but it is not a production path/FD trust bypass.
+
+
+
+### 12.2 A-02 — Linux file-descriptor-based read algorithm
+
+
+
+Proposed pure API: LocalPackageLoader.load(lease: TrustedPackageRootLease, expected: TrustedPackageIdentity) -> VerifiedPackageSnapshotV1 or typed error. The expected identity and lease are host-paired by generation_id, exact domain/version/profile and independently pinned expected digest.
+
+
+
+1. Require Linux, secure openat via os.open(dir_fd=...), O_NOFOLLOW, O_DIRECTORY and O_CLOEXEC. Re-fstat the live root FD and require pinned (st_dev, st_ino) match. No fallback to Path.resolve then open. Verify issuer SEALED publication attestation and the host limits.
+
+2. Open only the literal descriptor name package.json beneath held root FD, using O_RDONLY|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK. fstat must prove regular file, st_nlink == 1 and st_dev == root device. Read bounded chunks, at most MAX_DESCRIPTOR+1; extra byte denies. Compare pre/post (st_dev,st_ino,st_size,st_mtime_ns,st_ctime_ns) and captured byte count. Parse the *owned captured bytes* with unmodified D1 parse_package_descriptor; require enabled=true, exact host domain_id/domain_version/runtime_profile and descriptor.manifest_digest == the host independently expected SHA. Fail atomically.
+
+3. For each D1 canonical sorted asset_ref, enforce depth <=12 and deny duplicate normalized relative paths (not merely duplicate logical asset identities). Start from root FD; open every intermediate directory with O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC and fstat directory/type and same st_dev. Open leaf with O_RDONLY|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK, fstat to require regular file, st_nlink==1, same device; reject reused (st_dev,st_ino) leaf identities. Do not follow symlink, cross device or infer that an unknown bind mount is safe. Package cannot supply an absolute path, URL, empty/dot/dotdot component or encoded traversal.
+
+4. Read each asset from its leaf FD only once into owned bytes, using chunked cap per file MAX_ASSET+1 and cumulative MAX_TOTAL_ASSETS. Compare pre/post fstat identity/size/mtime_ns/ctime_ns, then compute SHA256 over exactly those bytes and compare lowercase declared ref.sha256. Any missing file, nonregular inode, size/digest mismatch, detected race or IO error aborts without partial snapshot. Always close opened FDs in reverse order; cancellation propagates after cleanup. Do not reopen checked paths for assembly.
+
+5. After *all* assets verify, construct frozen owned-byte values. Neither Registry, adapter resolver, model nor tool is touched. A file replacement after root FD issuance does not redirect already-open directory identity, but in-place writes can still change bytes; immutable host generation publication is a mandatory security premise. Pre/post fstat detects some, not all, concurrent mutations. Do not claim strong TOCTOU protection if publisher permits in-place modification.
+
+
+
+**Stable typed error mapping:** UNTRUSTED_PACKAGE_SOURCE (no independently pinned source/issuer/SEALED generation); PACKAGE_ROOT_UNSAFE (FD, link, device, hardlink, unsupported secure primitive); PACKAGE_DESCRIPTOR_INVALID (D1 parse/self hash or descriptor identity malformed); PACKAGE_DESCRIPTOR_DIGEST_MISMATCH (independent expected SHA differs); PACKAGE_DISABLED; PACKAGE_PROFILE_MISMATCH; PACKAGE_READ_UNSTABLE (observable identity/time/size race); PACKAGE_ASSET_INTEGRITY_FAILURE (missing/nonregular/wrong asset SHA); PACKAGE_RESOURCE_LIMIT (oversize/count/depth); PACKAGE_IO_FAILURE (permission/IO). No raw bytes, host paths, credentials, personal/tenant identifiers in public errors. Typed OS error categories are logged only after redaction. Each failure returns no snapshot or side effect; no fallback, retry selecting another version, or partial success.
+
+
+
+### 12.3 A-03 — Exact immutable snapshot and adversarial verification matrix
+
+
+
+VerifiedAssetV1 is frozen/slots and holds AssetReferenceV1 and a genuine owned content_bytes: bytes. VerifiedPackageSnapshotV1 is frozen/slots and holds D1 PackageDescriptorV1, owned descriptor_bytes: bytes, sorted tuple of VerifiedAssetV1, trusted generation_id and independently trusted expected_manifest_digest. Every ref has exactly one corresponding asset in normalized D1 order; identical logical keys/relative paths/observed physical inode aliases are refused. No memoryview, bytearray, lazy file reader, mutable RegistryRecord, path/FD/callable, tenant/run/user identity or permission claim is retained. Empty ref tuple is accepted for *inspection only*, never permission to run an Agent.
+
+
+
+**Positive fixtures:** (P01) one trusted sealed package generation with two real local assets, correct D1 self digest and host pinned descriptor digest, exact asset digests, sorted immutable bytes, no FD leak. (P02) valid zero-asset descriptor yields inert inspection snapshot only. (P03) read fixture once then mutate source buffers/files: returned snapshot bytes cannot change.
+
+
+
+**Negative fixtures:**
+
+- N01: missing/wrong trusted issuer, expired/closed/foreign root FD, mismatched generation or host digest => typed denial before admission.
+
+- N02: wrong descriptor domain ID/version/profile, disabled descriptor, invalid D1 JSON/self digest => typed rejection.
+
+- N03: intermediate/leaf symlink, traversal, encoded path, too deep, root pathname replaced between issuance and read => no outside reads, correct pinned-FD behavior.
+
+- N04: FIFO/socket/device/dir leaf, hardlink count >1, cross-device path, repeated inode => fail closed and no hang.
+
+- N05: descriptor/asset file replaced during open, changed in-place mid-read under controlled injection, bad post-read fstat, truncated/growing content => unstable/integrity rejection and no partial return.
+
+- N06: oversized descriptor, per-asset or aggregate bytes, repeated relative paths, missing asset or wrong SHA => resource/integrity rejection.
+
+- N07: open/read/hash exception or asyncio cancellation at each resource boundary => all owned FDs closed, no partial value, no mutation/network.
+
+- N08: unsupported OS or missing O_NOFOLLOW/dir_fd => runtime denial; a non-Linux CI skip is not a PASS for the Linux production gate.
+
+- N09: attempt to use snapshot as executable implementation, Registry mutation, permission grant, DomainBinding issuance or StateStore update => no such surface exposed.
+
+
+
+Tests must run kernel-backed Linux filesystem cases (not only mocked open behavior). Use synthetic fixtures and deterministic fault injection; ensure fstat, FD lifetime accounting (e.g., /proc/self/fd or injected FD spy), atomic failure and stable error codes. No external services or patient data. Assert no partial snapshot and no external writes for every denial. For inode race tests, accept the explicitly documented fail-closed observed-race result, and never claim fstat can detect an adversarial invisible rewrite; publisher immutability remains the trust prerequisite.
+
+
+
+### 12.4 D2-A implementation readiness and scope gates
+
+
+
+| Gate | Required evidence before authorizing code |
+
+|---|---|
+
+| A-01 | Host lease issuance, independent digest, SEALED publication and FD lifetime explicitly confirmed against Linux test issuer |
+
+| A-02 | Flags, component traversal, fstat/hash ordering, hardlink/device policy, bounded reads, cancellation cleanup and threat model independently checked |
+
+| A-03 | Immutable owned snapshot fields, typed errors, positive and adversarial fixture matrix complete |
+
+| Scope | D2-A may only create inert loader/issuer port and tests; D1 parser unchanged, no runtime/contracts, registries, StepPort, M2-M6, StateStore or model integration |
+
+| Verification | New exact-head targeted Linux suite + full pytest, mypy, Ruff lint/format, GA-01C regression; independent physical code/security review later |
+
+
+
+**Formal status:** A-01/A-02/A-03 TARGETED READINESS REMEDIATION SUBMITTED. D2-A IMPLEMENTATION NOT YET AUTHORIZED. PR #110 remains Draft. Next is a *focused independent D2-A implementation-readiness re-review* with an explicit AUTHORIZE/READY_WITH_FIXES decision; no automatic D2-B/C/D/E or D3/D4 authorization.

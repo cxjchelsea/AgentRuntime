@@ -488,3 +488,17 @@ def test_d2b_n15_no_registry_lookup_for_inert_inspection(tmp_path):
     )
     assert spy.get_calls == 0
     assert all(isinstance(e, InertAssetEvidenceV1) for e in output.evidence)
+
+
+# Temporary diagnostic only: removed after reviewing the exact formatter diff.
+def test_d2b_temporary_formatter_diff_diagnostic():
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "format", "--diff",
+         "agent_core/domain_registry_mapping.py", "tests/test_ga02_d2b_registry_mapping.py"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -69,7 +69,7 @@ def definition(kind: str, item: str) -> dict[str, object]:
         result["runtime_compatibility"] = "GA02-D1-1"
     if kind == "SchemaDefinition":
         result["namespace"] = "inventory.reconcile"
-    if kind == "CapabilityDefinition":
+    if kind in ("CapabilityDefinition", "PromptDefinition"):
         result["domain"] = "inventory.reconcile"
     return result
 

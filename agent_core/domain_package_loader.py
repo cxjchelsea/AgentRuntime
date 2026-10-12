@@ -268,18 +268,12 @@ class HostPackageRootIssuer:
                     os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
                     dir_fd=current,
                 )
-                try:
-                    os.close(current)
-                except OSError:
-                    os.close(child)
-                    raise
+                previous = current
                 current = child
+                _close_owned_fds([previous])
             return current
         except BaseException:
-            try:
-                os.close(current)
-            except OSError:
-                pass  # Preserve the primary open failure.
+            _close_owned_fds([current])
             raise
 
     def issue(self, generation_id: str) -> TrustedPackageRootLease:
@@ -308,10 +302,7 @@ class HostPackageRootIssuer:
                 with self._lock:
                     self._live.pop(issuance, None)
                 if fd >= 0:
-                    try:
-                        os.close(fd)
-                    except OSError:
-                        pass  # Never mask issuance failure.
+                    _close_owned_fds([fd])
 
     def _release(self, issuance: object) -> None:
         with self._lock:
@@ -342,6 +333,22 @@ class HostPackageRootIssuer:
         if (info.st_dev, info.st_ino) != pinned[1:3]:
             raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
         return info.st_dev, info.st_ino
+
+
+def _close_owned_fds(fds: list[int]) -> None:
+    """Attempt every owned close once; preserve the active primary failure.
+
+    A close that raises may have already closed its integer descriptor. Never
+    retry it: a subsequent os.close could close an unrelated reused FD.
+    """
+    failed = False
+    for fd in reversed(fds):
+        try:
+            os.close(fd)
+        except OSError:
+            failed = True
+    if failed and sys.exc_info()[0] is None:
+        raise PackageLoadError(PackageLoadCode.PACKAGE_IO_FAILURE)
 
 
 def _read_open_fd(fd: int, max_bytes: int) -> bytes:
@@ -397,8 +404,7 @@ def _open_asset(
             raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
         return fd, opened
     except BaseException:
-        for fd in reversed(opened):
-            os.close(fd)
+        _close_owned_fds(opened)
         raise
 
 
@@ -432,7 +438,7 @@ class LocalPackageLoader:
                 raise _safe_os_error(exc, asset=False) from exc
             finally:
                 if descriptor_fd >= 0:
-                    os.close(descriptor_fd)
+                    _close_owned_fds([descriptor_fd])
             if expected.runtime_profile != PROFILE:
                 raise PackageLoadError(PackageLoadCode.PACKAGE_PROFILE_MISMATCH)
             try:
@@ -495,8 +501,7 @@ class LocalPackageLoader:
                 except OSError as exc:
                     raise _safe_os_error(exc, asset=True) from exc
                 finally:
-                    for fd in reversed(opened):
-                        os.close(fd)
+                    _close_owned_fds(opened)
             return VerifiedPackageSnapshotV1(
                 descriptor,
                 raw,

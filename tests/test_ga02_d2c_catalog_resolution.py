@@ -325,6 +325,7 @@ def test_mode_changes_catalog_digest() -> None:
 
 def test_defensive_copy_and_hostile_input_no_methods() -> None:
     f = fixture()
+
     class Hostile:
         def __repr__(self) -> str:
             raise AssertionError("hostile repr invoked")

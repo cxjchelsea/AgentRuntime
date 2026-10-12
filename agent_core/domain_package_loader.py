@@ -128,7 +128,16 @@ def _directory(info: os.stat_result, root_device: int) -> None:
 class TrustedPackageRootLease:
     """Opaque FD lifetime; only HostPackageRootIssuer can mint a live lease."""
 
-    __slots__ = ("_active", "_borrowing", "_closed", "_fd", "_identity", "_issuance", "_lock", "_owner")
+    __slots__ = (
+        "_active",
+        "_borrowing",
+        "_closed",
+        "_fd",
+        "_identity",
+        "_issuance",
+        "_lock",
+        "_owner",
+    )
 
     def __init__(
         self,
@@ -322,6 +331,7 @@ class HostPackageRootIssuer:
             raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
         return info.st_dev, info.st_ino
 
+
 def _read_open_fd(fd: int, max_bytes: int) -> bytes:
     before = os.fstat(fd)
     if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
@@ -434,7 +444,9 @@ class LocalPackageLoader:
             if not descriptor.enabled:
                 raise PackageLoadError(PackageLoadCode.PACKAGE_DISABLED)
             if descriptor.manifest_digest != expected.expected_manifest_digest:
-                raise PackageLoadError(PackageLoadCode.PACKAGE_DESCRIPTOR_DIGEST_MISMATCH)
+                raise PackageLoadError(
+                    PackageLoadCode.PACKAGE_DESCRIPTOR_DIGEST_MISMATCH
+                )
             if len(descriptor.asset_refs) > MAX_ASSETS:
                 raise PackageLoadError(PackageLoadCode.PACKAGE_RESOURCE_LIMIT)
             assets: list[VerifiedAssetV1] = []
@@ -443,11 +455,15 @@ class LocalPackageLoader:
             total = 0
             for ref in descriptor.asset_refs:
                 if ref.relative_path in paths:
-                    raise PackageLoadError(PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE)
+                    raise PackageLoadError(
+                        PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE
+                    )
                 paths.add(ref.relative_path)
                 opened: list[int] = []
                 try:
-                    asset_fd, opened = _open_asset(lease._fd, ref.relative_path, root_dev)
+                    asset_fd, opened = _open_asset(
+                        lease._fd, ref.relative_path, root_dev
+                    )
                     info = os.fstat(asset_fd)
                     identity = (info.st_dev, info.st_ino)
                     if identity in inodes:
@@ -455,7 +471,9 @@ class LocalPackageLoader:
                             PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE
                         )
                     inodes.add(identity)
-                    content = _read_open_fd(asset_fd, min(_MAX_ASSET, _MAX_TOTAL - total))
+                    content = _read_open_fd(
+                        asset_fd, min(_MAX_ASSET, _MAX_TOTAL - total)
+                    )
                     if hashlib.sha256(content).hexdigest() != ref.sha256:
                         raise PackageLoadError(
                             PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE

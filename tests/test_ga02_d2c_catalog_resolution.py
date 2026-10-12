@@ -1,4 +1,5 @@
 """GA-02 D2-C isolated C0 contract tests; no live registries or providers."""
+
 from __future__ import annotations
 
 import hashlib
@@ -273,7 +274,9 @@ def test_duplicate_ordinal_and_missing_target() -> None:
     )
     expect_code(
         c.D2CCode.D2C_EXACT_DEPENDENCY_MISSING,
-        replace(f, asset_refs=f.asset_refs[:1], edge_occurrences=f.edge_occurrences[:1]),
+        replace(
+            f, asset_refs=f.asset_refs[:1], edge_occurrences=f.edge_occurrences[:1]
+        ),
     )
 
 

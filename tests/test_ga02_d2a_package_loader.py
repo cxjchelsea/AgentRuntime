@@ -6,10 +6,12 @@ import hashlib
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 
 import pytest
 
+import agent_core.domain_package_loader as loader_mod
 from agent_core.domain_package_loader import (
     HostPackageRootIssuer,
     HostPublishedGeneration,
@@ -242,4 +244,211 @@ def test_lease_cannot_be_reused_after_close(tmp_path: Path) -> None:
     expect(
         PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
         lambda: LocalPackageLoader().load(lease, identity),
+    )
+
+def test_host_verifier_rejects_untrusted_publisher(tmp_path: Path) -> None:
+    _issuer, identity = prepare(tmp_path)
+    rejected = HostPackageRootIssuer(
+        (HostPublishedGeneration(identity, str(tmp_path), True),),
+        publication_verifier=lambda _entry: False,
+    )
+    expect(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE, lambda: load(rejected, identity))
+
+
+def test_absolute_root_intermediate_symlink_denied(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    _issuer, identity = prepare(real)
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    unsafe = HostPackageRootIssuer(
+        (HostPublishedGeneration(identity, str(alias), True),),
+        publication_verifier=lambda entry: entry.absolute_root == str(alias),
+    )
+    expect(PackageLoadCode.PACKAGE_ROOT_UNSAFE, lambda: load(unsafe, identity))
+
+
+def test_descriptor_max_bytes_denied(tmp_path: Path) -> None:
+    issuer, identity = prepare(tmp_path)
+    (tmp_path / "package.json").write_bytes(b"x" * 262145)
+    expect(PackageLoadCode.PACKAGE_RESOURCE_LIMIT, lambda: load(issuer, identity))
+
+
+def test_duplicate_asset_relative_path_denied(tmp_path: Path) -> None:
+    _issuer, identity = prepare(tmp_path)
+    refs = [
+        ref("actions/a.txt", b"first", item="stock.count"),
+        ref("actions/a.txt", b"first", item="stock.inspect"),
+    ]
+    data, digest = package_bytes(refs)
+    (tmp_path / "package.json").write_bytes(data)
+    updated = TrustedPackageIdentity(
+        identity.generation_id, DOMAIN, "1.0.0", "GA02-D1-1", digest
+    )
+    issuer = HostPackageRootIssuer(
+        (HostPublishedGeneration(updated, str(tmp_path), True),),
+        publication_verifier=lambda entry: entry.absolute_root == str(tmp_path),
+    )
+    expect(
+        PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE,
+        lambda: load(issuer, updated),
+    )
+
+
+def test_fifo_asset_denied_without_block(tmp_path: Path) -> None:
+    issuer, identity = prepare(tmp_path)
+    asset = tmp_path / "actions/a.txt"
+    asset.unlink()
+    os.mkfifo(asset)
+    expect(PackageLoadCode.PACKAGE_ROOT_UNSAFE, lambda: load(issuer, identity))
+
+
+def test_stale_lease_issuance_not_reused(tmp_path: Path) -> None:
+    issuer, identity = prepare(tmp_path)
+    first = issuer.issue(identity.generation_id)
+    first.close()
+    second = issuer.issue(identity.generation_id)
+    try:
+        assert first._issuance is not second._issuance
+        expect(
+            PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
+            lambda: LocalPackageLoader().load(first, identity),
+        )
+        with second:
+            assert LocalPackageLoader().load(second, identity).assets
+    finally:
+        second.close()
+
+
+def test_nested_load_same_lease_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    issuer, identity = prepare(tmp_path)
+    actual = loader_mod._read_open_fd
+    counter = 0
+
+    def guarded_read(fd: int, limit: int) -> bytes:
+        nonlocal counter
+        counter += 1
+        if counter == 1:
+            expect(
+                PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
+                lambda: LocalPackageLoader().load(lease, identity),
+            )
+        return actual(fd, limit)
+
+    with issuer.issue(identity.generation_id) as lease:
+        monkeypatch.setattr(loader_mod, "_read_open_fd", guarded_read)
+        assert LocalPackageLoader().load(lease, identity).assets
+
+
+def test_concurrent_close_waits_for_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    issuer, identity = prepare(tmp_path)
+    entered = threading.Event()
+    release = threading.Event()
+    close_started = threading.Event()
+    close_finished = threading.Event()
+    errors: list[BaseException] = []
+    original = loader_mod._read_open_fd
+
+    def blocked(fd: int, limit: int) -> bytes:
+        entered.set()
+        if not release.wait(5):
+            raise AssertionError("loader timeout")
+        return original(fd, limit)
+
+    lease = issuer.issue(identity.generation_id)
+    lease.__enter__()
+    monkeypatch.setattr(loader_mod, "_read_open_fd", blocked)
+
+    def reader() -> None:
+        try:
+            LocalPackageLoader().load(lease, identity)
+        except BaseException as exc:
+            errors.append(exc)
+
+    def closer() -> None:
+        close_started.set()
+        try:
+            lease.close()
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            close_finished.set()
+
+    worker = threading.Thread(target=reader)
+    stopper = threading.Thread(target=closer)
+    try:
+        worker.start()
+        assert entered.wait(5)
+        stopper.start()
+        assert close_started.wait(5)
+        assert not close_finished.wait(0.05)
+    finally:
+        release.set()
+        worker.join(timeout=5)
+        stopper.join(timeout=5)
+        lease.close()
+    assert not worker.is_alive() and not stopper.is_alive()
+    assert not errors
+
+
+def test_injected_asset_io_error_releases_fds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    issuer, identity = prepare(tmp_path)
+    initial = len(os.listdir("/proc/self/fd"))
+    actual = loader_mod._read_open_fd
+    count = 0
+
+    def broken(fd: int, limit: int) -> bytes:
+        nonlocal count
+        count += 1
+        if count == 2:
+            raise OSError("injected read failure")
+        return actual(fd, limit)
+
+    monkeypatch.setattr(loader_mod, "_read_open_fd", broken)
+    expect(PackageLoadCode.PACKAGE_IO_FAILURE, lambda: load(issuer, identity))
+    assert issuer._live == {}
+    assert len(os.listdir("/proc/self/fd")) == initial
+
+
+def test_injected_base_exception_releases_fds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    issuer, identity = prepare(tmp_path)
+    initial = len(os.listdir("/proc/self/fd"))
+    actual = loader_mod._read_open_fd
+    count = 0
+
+    def interrupted(fd: int, limit: int) -> bytes:
+        nonlocal count
+        count += 1
+        if count == 2:
+            raise KeyboardInterrupt()
+        return actual(fd, limit)
+
+    monkeypatch.setattr(loader_mod, "_read_open_fd", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        load(issuer, identity)
+    assert issuer._live == {}
+    assert len(os.listdir("/proc/self/fd")) == initial
+
+
+def test_unsupported_profile_is_typed(tmp_path: Path) -> None:
+    _issuer, identity = prepare(tmp_path)
+    unsupported = TrustedPackageIdentity(
+        identity.generation_id, identity.domain_id, identity.domain_version,
+        "WRONG-PROFILE", identity.expected_manifest_digest,
+    )
+    issuer = HostPackageRootIssuer(
+        (HostPublishedGeneration(unsupported, str(tmp_path), True),),
+        publication_verifier=lambda entry: entry.absolute_root == str(tmp_path),
+    )
+    expect(
+        PackageLoadCode.PACKAGE_PROFILE_MISMATCH,
+        lambda: load(issuer, unsupported),
     )

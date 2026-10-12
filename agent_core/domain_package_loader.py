@@ -7,6 +7,7 @@ cannot detect every concurrent in-place write.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import stat
@@ -44,6 +45,15 @@ class PackageLoadCode(str, Enum):
     PACKAGE_ASSET_INTEGRITY_FAILURE = "PACKAGE_ASSET_INTEGRITY_FAILURE"
     PACKAGE_RESOURCE_LIMIT = "PACKAGE_RESOURCE_LIMIT"
     PACKAGE_IO_FAILURE = "PACKAGE_IO_FAILURE"
+
+
+def _safe_os_error(exc: OSError, *, asset: bool) -> PackageLoadError:
+    """Classify kernel denial without leaking unsafe paths or content."""
+    if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+        return PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
+    if asset and exc.errno == errno.ENOENT:
+        return PackageLoadError(PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE)
+    return PackageLoadError(PackageLoadCode.PACKAGE_IO_FAILURE)
 
 
 class PackageLoadError(ValueError):
@@ -307,7 +317,7 @@ class LocalPackageLoader:
                 raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
             raw = _read_open_fd(descriptor_fd, MAX_BYTES)
         except OSError as exc:
-            raise PackageLoadError(PackageLoadCode.PACKAGE_IO_FAILURE) from exc
+            raise _safe_os_error(exc, asset=False) from exc
         finally:
             if descriptor_fd >= 0:
                 os.close(descriptor_fd)
@@ -356,7 +366,7 @@ class LocalPackageLoader:
                 total += len(content)
                 assets.append(VerifiedAssetV1(ref, content))
             except OSError as exc:
-                raise PackageLoadError(PackageLoadCode.PACKAGE_IO_FAILURE) from exc
+                raise _safe_os_error(exc, asset=True) from exc
             finally:
                 for fd in reversed(opened):
                     os.close(fd)

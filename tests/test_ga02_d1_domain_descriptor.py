@@ -184,8 +184,14 @@ def test_digest_tamper_missing_name_and_oversize() -> None:
 
 def test_unvalidated_hand_built_descriptor_cannot_bypass_manifest_adapter() -> None:
     forged = PackageDescriptorV1(
-        "1", "inventory.reconcile", "1.0.0",
-        "Inventory Reconciliation", True, PROFILE, (), "0" * 64
+        "1",
+        "inventory.reconcile",
+        "1.0.0",
+        "Inventory Reconciliation",
+        True,
+        PROFILE,
+        (),
+        "0" * 64,
     )
     with pytest.raises(PackageDescriptorError, match="digest mismatch"):
         descriptor_to_domain_manifest(forged)
@@ -196,10 +202,19 @@ def test_unvalidated_hand_built_descriptor_cannot_bypass_manifest_adapter() -> N
         replace(validated, enabled=False),
         replace(validated, runtime_compatibility="FORGED"),
         replace(validated, domain_version="01.0.0"),
-        replace(validated, asset_refs=(AssetReferenceV1(
-            "action", "inventory.reconcile", "stock.count", "1.0.0",
-            "a" * 64, "actions/count.json"
-        ),)),
+        replace(
+            validated,
+            asset_refs=(
+                AssetReferenceV1(
+                    "action",
+                    "inventory.reconcile",
+                    "stock.count",
+                    "1.0.0",
+                    "a" * 64,
+                    "actions/count.json",
+                ),
+            ),
+        ),
     ):
         with pytest.raises(PackageDescriptorError):
             descriptor_to_domain_manifest(tampered)
@@ -212,7 +227,9 @@ def test_manifest_adapter_rejects_wrong_runtime_dataclass_field_types() -> None:
     with pytest.raises(PackageDescriptorError):
         descriptor_to_domain_manifest(replace(original, name="a\\ud800"))
     with pytest.raises(PackageDescriptorError):
-        descriptor_to_domain_manifest(replace(original, asset_refs=cast(Any, (object(),))))
+        descriptor_to_domain_manifest(
+            replace(original, asset_refs=cast(Any, (object(),)))
+        )
     with pytest.raises(PackageDescriptorError):
         descriptor_to_domain_manifest(replace(original, asset_refs=cast(Any, [])))
 

@@ -329,8 +329,10 @@ def test_defensive_copy_and_hostile_input_no_methods() -> None:
     class Hostile:
         def __repr__(self) -> str:
             raise AssertionError("hostile repr invoked")
+
         def __hash__(self) -> int:
             raise AssertionError("hostile hash invoked")
+
         def __iter__(self) -> object:
             raise AssertionError("hostile iter invoked")
     rows = list(f.registry_entries)

@@ -507,6 +507,106 @@ def _asset_kind(kind: str, prompt: str, rule: str) -> str | None:
     return _REG[kind]
 
 
+def _preflight_evidence_budget(
+    owned: _OwnedDiagnosticInputV1, active: set[_KEY]
+) -> None:
+    """Bound the *projected* diagnostic envelopes before graph semantics.
+
+    The projection is computed solely from an already owned, finite primitive
+    snapshot. It gives no authority to caller-declared edges or definitions.
+    Its size equals final evidence size for a structurally valid catalog with
+    authentic canonical definition hashes; malformed relations are still
+    rejected by the normal typed graph checks.
+    """
+    x = owned.value
+    edgeobjs = [
+        _edge_obj(edge)
+        for edge in sorted(
+            x.edge_occurrences,
+            key=lambda edge: (
+                edge.source_kind,
+                edge.source_namespace,
+                edge.source_id,
+                edge.source_version,
+                edge.relation_id,
+                edge.ordinal,
+            ),
+        )
+    ]
+    adapters = sorted(
+        (_adapter_obj(adapter) for adapter in x.adapter_entries),
+        key=lambda v: (v["registry_kind"], v["namespace"], v["id"], v["version"]),
+    )
+    records = sorted(
+        x.registry_entries,
+        key=lambda v: (v.registry_kind, v.namespace, v.id, v.version),
+    )
+    catalog_entries = [
+        {
+            "registry_kind": v.registry_kind,
+            "namespace": v.namespace,
+            "id": v.id,
+            "version": v.version,
+            "definition_type": v.definition_type,
+            "definition_sha256": v.definition_sha256,
+            "record_enabled": v.record_enabled,
+            "intrinsic_enabled": v.intrinsic_enabled,
+        }
+        for v in records
+    ]
+    edge_envelope = {
+        "profile": "GA02-D2C-EDGES-1",
+        "host_catalog_generation": x.host_catalog_generation,
+        "edges": edgeobjs,
+    }
+    catalog = {
+        "profile": "GA02-D2C-CATALOG-2",
+        "domain_id": x.domain_id,
+        "domain_version": x.domain_version,
+        "runtime_profile": x.runtime_profile,
+        "manifest_sha256": x.manifest_sha256,
+        "publisher_generation": x.source_generation,
+        "host_catalog_generation": x.host_catalog_generation,
+        "host_policy_id": x.host_policy_id,
+        "host_policy_generation": x.host_policy_generation,
+        "prompt_mode": x.prompt_mode,
+        "rule_mode": x.rule_mode,
+        "approved_core_schema_keys": [
+            {"id": v.id, "version": v.version} for v in x.approved_core_schema_keys
+        ],
+        "registry_entries": catalog_entries,
+        "adapter_entries": adapters,
+        "edge_digest": "0" * 64,
+    }
+    keys = sorted(active)
+    hashes = {
+        (v.registry_kind, v.namespace, v.id, v.version): v.definition_sha256
+        for v in records
+    }
+    closure = {
+        "profile": "GA02-D2C-CLOSURE-1",
+        "host_catalog_generation": x.host_catalog_generation,
+        "manifest_sha256": x.manifest_sha256,
+        "graph_completeness": "SUPPORTED_RELATIONS_ONLY",
+        "operational_readiness": "NOT_ASSESSED",
+        "seed_keys": [_key_obj(key) for key in keys],
+        "dependency_keys": [_key_obj(key) for key in keys],
+        "edges": edgeobjs,
+        "definition_hashes": [
+            {
+                **_key_obj(key),
+                "definition_sha256": hashes.get(key, "0" * 64),
+            }
+            for key in keys
+        ],
+        "adapter_evidence": adapters,
+    }
+    if owned.canonical_input_bytes + sum(
+        len(_json(value)) for value in (edge_envelope, catalog, closure)
+    ) > 2097152:
+        _deny(D2CCode.D2C_RESOURCE_LIMIT)
+
+
 def _resolve_owned_diagnostic_graph(
     owned: _OwnedDiagnosticInputV1,
 ) -> DiagnosticResolutionSnapshotV1:
@@ -585,6 +685,7 @@ def _resolve_owned_diagnostic_graph(
                 or candidate_fields.get("version") != x.domain_version
             ):
                 _deny(D2CCode.D2C_CATALOG_GENERATION_MISMATCH)
+    _preflight_evidence_budget(owned, active)
     for registry_entry in x.registry_entries:
         k = _key(
             registry_entry.registry_kind,

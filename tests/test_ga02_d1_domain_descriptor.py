@@ -13,8 +13,8 @@ import pytest
 from agent_core.domain_descriptor import (
     PROFILE,
     AssetReferenceV1,
-    PackageDescriptorV1,
     PackageDescriptorError,
+    PackageDescriptorV1,
     descriptor_to_domain_manifest,
     parse_package_descriptor,
 )

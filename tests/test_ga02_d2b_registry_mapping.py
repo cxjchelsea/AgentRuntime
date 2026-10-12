@@ -6,8 +6,8 @@ import hashlib
 import json
 import sys
 from dataclasses import FrozenInstanceError, replace
-from types import MethodType
 from pathlib import Path
+from types import MethodType
 
 import pytest
 
@@ -28,14 +28,8 @@ from agent_core.domain_registry_mapping import (
 )
 from runtime.contracts.enums import PlanningMode
 from runtime.registries.action import ActionRegistry
-from runtime.registries.capability import CapabilityRegistry
 from runtime.registries.base import RegistryKey
-from runtime.registries.policy import PolicyRegistry
-from runtime.registries.prompt import PromptRegistry
-from runtime.registries.skill import SkillRegistry
-from runtime.registries.strategy import StrategyRegistry
-from runtime.registries.tool import ToolRegistry
-from runtime.registries.workflow import WorkflowRegistry
+from runtime.registries.capability import CapabilityRegistry
 from runtime.registries.definitions import (
     ActionDefinition,
     CapabilityDefinition,
@@ -53,7 +47,13 @@ from runtime.registries.definitions import (
 )
 from runtime.registries.domain import DomainRegistry
 from runtime.registries.errors import RegistryError, RegistryItemNotFoundError
+from runtime.registries.policy import PolicyRegistry
+from runtime.registries.prompt import PromptRegistry
 from runtime.registries.schema import SchemaRegistry
+from runtime.registries.skill import SkillRegistry
+from runtime.registries.strategy import StrategyRegistry
+from runtime.registries.tool import ToolRegistry
+from runtime.registries.workflow import WorkflowRegistry
 
 DOMAIN = "inventory.reconcile"
 VERSION = "1.0.0"
@@ -244,7 +244,9 @@ def test_d2b_n01_missing_domain_is_atomic(tmp_path):
         _map_untrusted_observation(
             s,
             policy=_policy(s),
-            registries=RegistryCatalogViewV1(domain=DomainRegistry()),
+            registries=RegistryCatalogViewV1(
+                domain=DomainRegistry(), action=ActionRegistry()
+            ),
         )
     assert exc.value.code is D2BCode.D2B_EXACT_DEPENDENCY_NOT_FOUND
     assert str(exc.value) == exc.value.code.value
@@ -271,7 +273,7 @@ def test_d2b_n03_core_schema_needs_allowlist(tmp_path):
     d, _ = _registries()
     with pytest.raises(D2BMappingError) as exc:
         _map_untrusted_observation(
-            s, policy=_policy(s), registries=RegistryCatalogViewV1(domain=d)
+            s, policy=_policy(s), registries=RegistryCatalogViewV1(domain=d, schema=SchemaRegistry())
         )
     assert exc.value.code is D2BCode.D2B_EXACT_NAMESPACE_MISMATCH
 

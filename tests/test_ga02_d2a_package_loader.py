@@ -570,6 +570,7 @@ def test_publisher_verifier_exception_fails_closed(tmp_path: Path) -> None:
         lambda: load(issuer, identity),
     )
 
+
 def test_cleanup_attempts_all_fds_and_preserves_primary_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -597,6 +598,7 @@ def test_cleanup_attempts_all_fds_and_preserves_primary_failure(
     assert set(attempted) == set(fds)
     assert len(attempted) == 2
     assert len(os.listdir("/proc/self/fd")) == live_before
+    monkeypatch.setattr(loader_mod.os, "close", original_close)
     assert load(issuer, identity).assets
 
 

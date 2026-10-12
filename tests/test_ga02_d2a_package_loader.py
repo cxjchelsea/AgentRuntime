@@ -97,7 +97,9 @@ def prepare(
     )
     issuer = HostPackageRootIssuer(
         (HostPublishedGeneration(identity, str(tmp_path), True),),
-        publication_verifier=lambda record: record.sealed and record.absolute_root == str(tmp_path),
+        publication_verifier=lambda record: (
+            record.sealed and record.absolute_root == str(tmp_path)
+        ),
     )
     return issuer, identity
 
@@ -144,7 +146,9 @@ def test_host_digest_mismatch_is_denied(tmp_path: Path) -> None:
     # A trusted publisher can be wrong: a mismatching allowlisted digest still denies.
     false_issuer = HostPackageRootIssuer(
         (HostPublishedGeneration(changed, str(tmp_path), True),),
-        publication_verifier=lambda record: record.sealed and record.absolute_root == str(tmp_path),
+        publication_verifier=lambda record: (
+            record.sealed and record.absolute_root == str(tmp_path)
+        ),
     )
     expect(
         PackageLoadCode.PACKAGE_DESCRIPTOR_DIGEST_MISMATCH,
@@ -207,7 +211,9 @@ def test_unsealed_generation_is_denied(tmp_path: Path) -> None:
     _issuer, identity = prepare(tmp_path)
     bad = HostPackageRootIssuer(
         (HostPublishedGeneration(identity, str(tmp_path), False),),
-        publication_verifier=lambda record: record.sealed and record.absolute_root == str(tmp_path),
+        publication_verifier=lambda record: (
+            record.sealed and record.absolute_root == str(tmp_path)
+        ),
     )
     expect(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE, lambda: load(bad, identity))
 
@@ -245,6 +251,7 @@ def test_lease_cannot_be_reused_after_close(tmp_path: Path) -> None:
         PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
         lambda: LocalPackageLoader().load(lease, identity),
     )
+
 
 def test_host_verifier_rejects_untrusted_publisher(tmp_path: Path) -> None:
     _issuer, identity = prepare(tmp_path)
@@ -366,14 +373,14 @@ def test_concurrent_close_waits_for_load(
     def reader() -> None:
         try:
             LocalPackageLoader().load(lease, identity)
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001  # Capture worker failures.
             errors.append(exc)
 
     def closer() -> None:
         close_started.set()
         try:
             lease.close()
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001  # Capture worker failures.
             errors.append(exc)
         finally:
             close_finished.set()
@@ -441,8 +448,11 @@ def test_injected_base_exception_releases_fds(
 def test_unsupported_profile_is_typed(tmp_path: Path) -> None:
     _issuer, identity = prepare(tmp_path)
     unsupported = TrustedPackageIdentity(
-        identity.generation_id, identity.domain_id, identity.domain_version,
-        "WRONG-PROFILE", identity.expected_manifest_digest,
+        identity.generation_id,
+        identity.domain_id,
+        identity.domain_version,
+        "WRONG-PROFILE",
+        identity.expected_manifest_digest,
     )
     issuer = HostPackageRootIssuer(
         (HostPublishedGeneration(unsupported, str(tmp_path), True),),

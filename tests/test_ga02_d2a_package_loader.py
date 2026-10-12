@@ -19,12 +19,16 @@ from agent_core.domain_package_loader import (
     TrustedPackageIdentity,
 )
 
-pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux-only secure FD loading")
+pytestmark = pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="Linux-only secure FD loading"
+)
 
 DOMAIN = "inventory.reconcile"
 
 
-def package_bytes(assets: list[dict[str, str]], *, enabled: bool = True) -> tuple[bytes, str]:
+def package_bytes(
+    assets: list[dict[str, str]], *, enabled: bool = True
+) -> tuple[bytes, str]:
     payload = {
         "asset_refs": assets,
         "domain_id": DOMAIN,
@@ -34,9 +38,20 @@ def package_bytes(assets: list[dict[str, str]], *, enabled: bool = True) -> tupl
         "package_schema_version": "1",
         "runtime_compatibility": "GA02-D1-1",
     }
-    ordered = sorted(assets, key=lambda v: (v["kind"], v["namespace"], v["id"], v["version"], v["relative_path"]))
+    ordered = sorted(
+        assets,
+        key=lambda v: (
+            v["kind"],
+            v["namespace"],
+            v["id"],
+            v["version"],
+            v["relative_path"],
+        ),
+    )
     payload["asset_refs"] = ordered
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
     digest = hashlib.sha256(canonical).hexdigest()
     payload["manifest_digest"] = digest
     return json.dumps(payload).encode(), digest
@@ -53,8 +68,20 @@ def ref(path: str, content: bytes, *, item: str = "stock.count") -> dict[str, st
     }
 
 
-def prepare(tmp_path: Path, assets: list[tuple[str, bytes, str]] | None = None, *, enabled: bool = True):
-    items = assets if assets is not None else [("actions/a.txt", b"first", "stock.count"), ("prompts/b.txt", b"second", "stock.inspect")]
+def prepare(
+    tmp_path: Path,
+    assets: list[tuple[str, bytes, str]] | None = None,
+    *,
+    enabled: bool = True,
+):
+    items = (
+        assets
+        if assets is not None
+        else [
+            ("actions/a.txt", b"first", "stock.count"),
+            ("prompts/b.txt", b"second", "stock.inspect"),
+        ]
+    )
     refs = []
     for name, data, ident in items:
         file = tmp_path / name
@@ -63,8 +90,12 @@ def prepare(tmp_path: Path, assets: list[tuple[str, bytes, str]] | None = None, 
         refs.append(ref(name, data, item=ident))
     data, digest = package_bytes(refs, enabled=enabled)
     (tmp_path / "package.json").write_bytes(data)
-    identity = TrustedPackageIdentity("generation-1", DOMAIN, "1.0.0", "GA02-D1-1", digest)
-    issuer = HostPackageRootIssuer((HostPublishedGeneration(identity, str(tmp_path), True),))
+    identity = TrustedPackageIdentity(
+        "generation-1", DOMAIN, "1.0.0", "GA02-D1-1", digest
+    )
+    issuer = HostPackageRootIssuer(
+        (HostPublishedGeneration(identity, str(tmp_path), True),)
+    )
     return issuer, identity
 
 
@@ -90,7 +121,10 @@ def test_two_assets_are_owned_immutable_bytes_and_fd_lifetime(tmp_path: Path) ->
         assert {a.content_bytes for a in snapshot.assets} == {b"first", b"second"}
     (tmp_path / "actions/a.txt").write_bytes(b"changed")
     assert {a.content_bytes for a in snapshot.assets} == {b"first", b"second"}
-    expect(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE, lambda: LocalPackageLoader().load(lease, identity))
+    expect(
+        PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
+        lambda: LocalPackageLoader().load(lease, identity),
+    )
 
 
 def test_empty_descriptor_is_inert_snapshot(tmp_path: Path) -> None:
@@ -99,12 +133,19 @@ def test_empty_descriptor_is_inert_snapshot(tmp_path: Path) -> None:
 
 
 def test_host_digest_mismatch_is_denied(tmp_path: Path) -> None:
-    issuer, identity = prepare(tmp_path)
-    changed = TrustedPackageIdentity("generation-1", DOMAIN, "1.0.0", "GA02-D1-1", "a" * 64)
+    issuer, _identity = prepare(tmp_path)
+    changed = TrustedPackageIdentity(
+        "generation-1", DOMAIN, "1.0.0", "GA02-D1-1", "a" * 64
+    )
     expect(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE, lambda: load(issuer, changed))
     # A trusted publisher can be wrong: a mismatching allowlisted digest still denies.
-    false_issuer = HostPackageRootIssuer((HostPublishedGeneration(changed, str(tmp_path), True),))
-    expect(PackageLoadCode.PACKAGE_DESCRIPTOR_DIGEST_MISMATCH, lambda: load(false_issuer, changed))
+    false_issuer = HostPackageRootIssuer(
+        (HostPublishedGeneration(changed, str(tmp_path), True),)
+    )
+    expect(
+        PackageLoadCode.PACKAGE_DESCRIPTOR_DIGEST_MISMATCH,
+        lambda: load(false_issuer, changed),
+    )
 
 
 def test_disabled_descriptor(tmp_path: Path) -> None:
@@ -115,7 +156,9 @@ def test_disabled_descriptor(tmp_path: Path) -> None:
 def test_asset_sha_mismatch(tmp_path: Path) -> None:
     issuer, identity = prepare(tmp_path)
     (tmp_path / "actions/a.txt").write_bytes(b"tampered")
-    expect(PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE, lambda: load(issuer, identity))
+    expect(
+        PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE, lambda: load(issuer, identity)
+    )
 
 
 def test_symlink_asset_is_not_followed(tmp_path: Path) -> None:
@@ -150,12 +193,17 @@ def test_asset_over_limit(tmp_path: Path) -> None:
 def test_untrusted_generation_is_denied(tmp_path: Path) -> None:
     issuer, identity = prepare(tmp_path)
     expect(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE, lambda: issuer.issue("unknown"))
-    expect(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE, lambda: LocalPackageLoader().load(object(), identity))
+    expect(
+        PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
+        lambda: LocalPackageLoader().load(object(), identity),  # type: ignore[arg-type]
+    )
 
 
 def test_unsealed_generation_is_denied(tmp_path: Path) -> None:
-    issuer, identity = prepare(tmp_path)
-    bad = HostPackageRootIssuer((HostPublishedGeneration(identity, str(tmp_path), False),))
+    _issuer, identity = prepare(tmp_path)
+    bad = HostPackageRootIssuer(
+        (HostPublishedGeneration(identity, str(tmp_path), False),)
+    )
     expect(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE, lambda: load(bad, identity))
 
 

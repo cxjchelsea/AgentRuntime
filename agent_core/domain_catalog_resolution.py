@@ -244,7 +244,6 @@ def _digest(profile: str | None, value: Any) -> str:
     return hashlib.sha256(prefix + _json(value)).hexdigest()
 
 
-
 def _add_canonical_bytes(budget: list[int], size: int) -> None:
     """Incrementally enforce one exact canonical-input byte budget."""
     budget[0] += size
@@ -261,7 +260,8 @@ def _record(
     declared = fields(cast(Any, klass))
     _add_canonical_bytes(
         budget,
-        2 + max(0, len(declared) - 1)
+        2
+        + max(0, len(declared) - 1)
         + sum(len(_json(field.name)) + 1 for field in declared),
     )
     for field in declared:
@@ -359,8 +359,11 @@ def _admit_and_copy_diagnostic_input(
         _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
     count = [1]
     declared_fields = fields(DiagnosticCatalogInputV1)
-    budget = [2 + max(0, len(declared_fields) - 1)
-              + sum(len(_json(field.name)) + 1 for field in declared_fields)]
+    budget = [
+        2
+        + max(0, len(declared_fields) - 1)
+        + sum(len(_json(field.name)) + 1 for field in declared_fields)
+    ]
     data: dict[str, Any] = {}
     for field in declared_fields:
         count[0] += 1
@@ -368,7 +371,9 @@ def _admit_and_copy_diagnostic_input(
             original = object.__getattribute__(input, field.name)
             if type(original) is not tuple:
                 _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
-            if (field.name == "asset_refs" and len(original) > 256) or len(original) > 4096:
+            if (field.name == "asset_refs" and len(original) > 256) or len(
+                original
+            ) > 4096:
                 _deny(D2CCode.D2C_RESOURCE_LIMIT)
             _add_canonical_bytes(budget, 2 + max(0, len(original) - 1))
             copied = []
@@ -601,9 +606,11 @@ def _preflight_evidence_budget(
         ],
         "adapter_evidence": adapters,
     }
-    if owned.canonical_input_bytes + sum(
-        len(_json(value)) for value in (edge_envelope, catalog, closure)
-    ) > 2097152:
+    if (
+        owned.canonical_input_bytes
+        + sum(len(_json(value)) for value in (edge_envelope, catalog, closure))
+        > 2097152
+    ):
         _deny(D2CCode.D2C_RESOURCE_LIMIT)
 
 

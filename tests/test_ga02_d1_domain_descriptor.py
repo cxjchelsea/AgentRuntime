@@ -6,6 +6,7 @@ import hashlib
 import json
 from copy import deepcopy
 from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 
@@ -207,13 +208,13 @@ def test_unvalidated_hand_built_descriptor_cannot_bypass_manifest_adapter() -> N
 def test_manifest_adapter_rejects_wrong_runtime_dataclass_field_types() -> None:
     original = parse_package_descriptor(descriptor_bytes(BASE))
     with pytest.raises(PackageDescriptorError):
-        descriptor_to_domain_manifest(replace(original, enabled=1))
+        descriptor_to_domain_manifest(replace(original, enabled=cast(Any, 1)))
     with pytest.raises(PackageDescriptorError):
         descriptor_to_domain_manifest(replace(original, name="a\\ud800"))
     with pytest.raises(PackageDescriptorError):
-        descriptor_to_domain_manifest(replace(original, asset_refs=(object(),)))
+        descriptor_to_domain_manifest(replace(original, asset_refs=cast(Any, (object(),))))
     with pytest.raises(PackageDescriptorError):
-        descriptor_to_domain_manifest(replace(original, asset_refs=[]))
+        descriptor_to_domain_manifest(replace(original, asset_refs=cast(Any, [])))
 
 
 def test_manifest_adapter_valid_nonempty_sorted_assets_and_disabled() -> None:
@@ -228,6 +229,7 @@ def test_manifest_adapter_valid_nonempty_sorted_assets_and_disabled() -> None:
 
 
 def test_feature_flags_even_empty_are_explicitly_unsupported() -> None:
-    for flags in ([], ["skip-safety"], None, {}, False):
+    values: tuple[object, ...] = ([], ["skip-safety"], None, {}, False)
+    for flags in values:
         with pytest.raises(PackageDescriptorError, match="fields"):
             parse_package_descriptor(descriptor_bytes({**BASE, "feature_flags": flags}))

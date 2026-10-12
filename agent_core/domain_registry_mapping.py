@@ -12,10 +12,22 @@ from typing import Any
 
 from agent_core.domain_descriptor import (
     PROFILE,
+    AssetReferenceV1,
     PackageDescriptorError,
+    PackageDescriptorV1,
     descriptor_to_domain_manifest,
 )
-from agent_core.domain_package_loader import VerifiedPackageSnapshotV1
+from agent_core.domain_package_loader import VerifiedAssetV1, VerifiedPackageSnapshotV1
+from runtime.registries.action import ActionRegistry
+from runtime.registries.capability import CapabilityRegistry
+from runtime.registries.domain import DomainRegistry
+from runtime.registries.policy import PolicyRegistry
+from runtime.registries.prompt import PromptRegistry
+from runtime.registries.schema import SchemaRegistry
+from runtime.registries.skill import SkillRegistry
+from runtime.registries.strategy import StrategyRegistry
+from runtime.registries.tool import ToolRegistry
+from runtime.registries.workflow import WorkflowRegistry
 from runtime.registries.base import RegistryKey
 from runtime.registries.definitions import (
     ActionDefinition,
@@ -44,6 +56,18 @@ _TYPES: dict[str, tuple[str, type[Any], str, bool]] = {
     "schema": ("schema", SchemaDefinition, "schema_id", False),
 }
 _INERT = frozenset({"knowledge", "state", "eval"})
+_REGISTRY_CLASSES: dict[str, type[Any]] = {
+    "domain": DomainRegistry,
+    "action": ActionRegistry,
+    "strategy": StrategyRegistry,
+    "skill": SkillRegistry,
+    "tool": ToolRegistry,
+    "workflow": WorkflowRegistry,
+    "capability": CapabilityRegistry,
+    "prompt": PromptRegistry,
+    "policy": PolicyRegistry,
+    "schema": SchemaRegistry,
+}
 _SHA = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
 _ID = re.compile(r"[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*\Z", re.ASCII)
 _VERSION = re.compile(
@@ -145,14 +169,37 @@ class RegistryKindMappingSnapshotV1:
 
 
 def _valid_policy(policy: object, snapshot: object, registries: object) -> bool:
+    """Structural consistency only; never a trusted host provenance decision."""
     if (
         type(policy) is not KindMappingPolicyV1
         or type(snapshot) is not VerifiedPackageSnapshotV1
         or type(registries) is not RegistryCatalogViewV1
+        or type(snapshot.descriptor) is not PackageDescriptorV1
+        or type(snapshot.descriptor_bytes) is not bytes
+        or type(snapshot.assets) is not tuple
+        or type(snapshot.generation_id) is not str
+        or type(snapshot.expected_manifest_digest) is not str
     ):
         return False
     p = policy
     d = snapshot.descriptor
+    if not all(
+        type(v) is str and bool(v)
+        for v in (
+            p.profile,
+            p.host_policy_id,
+            p.host_policy_generation,
+            p.admitted_domain_id,
+            p.admitted_domain_version,
+            p.runtime_profile,
+            p.expected_manifest_digest,
+            p.expected_publication_generation_id,
+            p.prompt_mode,
+            p.rule_mode,
+            p.admission_mode,
+        )
+    ):
+        return False
     if type(p.approved_core_schema_keys) is not frozenset or not all(
         type(x) is tuple
         and len(x) == 2
@@ -163,15 +210,6 @@ def _valid_policy(policy: object, snapshot: object, registries: object) -> bool:
         for x in p.approved_core_schema_keys
     ):
         return False
-    if not all(
-        type(v) is str and bool(v)
-        for v in (
-            p.host_policy_id,
-            p.host_policy_generation,
-            p.expected_publication_generation_id,
-        )
-    ):
-        return False
     return (
         p.profile == "GA02-D2B-KIND-1"
         and p.runtime_profile == PROFILE
@@ -179,7 +217,6 @@ def _valid_policy(policy: object, snapshot: object, registries: object) -> bool:
         and p.rule_mode in {"REGISTRY_EXACT", "INERT_ONLY"}
         and p.admission_mode in {"INERT_INSPECTION", "REGISTRY_MAPPING"}
         and type(d.manifest_digest) is str
-        and type(p.expected_manifest_digest) is str
         and bool(_SHA.fullmatch(p.expected_manifest_digest))
         and p.admitted_domain_id == d.domain_id
         and p.admitted_domain_version == d.domain_version
@@ -189,6 +226,32 @@ def _valid_policy(policy: object, snapshot: object, registries: object) -> bool:
         == snapshot.expected_manifest_digest
         and p.expected_publication_generation_id == snapshot.generation_id
     )
+
+
+def _valid_catalog(
+    policy: KindMappingPolicyV1,
+    snapshot: VerifiedPackageSnapshotV1,
+    registries: RegistryCatalogViewV1,
+) -> bool:
+    """Validate fixed physical Registry slots before *any* get call."""
+    if policy.admission_mode == "INERT_INSPECTION":
+        return True
+    if type(registries.domain) is not DomainRegistry:
+        return False
+    for ref in snapshot.descriptor.asset_refs:
+        kind = ref.kind
+        if kind not in _TYPES and kind not in _INERT:
+            continue
+        if (
+            kind in _INERT
+            or (kind == "prompt" and policy.prompt_mode == "INERT_ONLY")
+            or (kind == "rule" and policy.rule_mode == "INERT_ONLY")
+        ):
+            continue
+        slot = _TYPES[kind][0]
+        if type(getattr(registries, slot)) is not _REGISTRY_CLASSES[slot]:
+            return False
+    return True
 
 
 def _read(registry: Any, item: str, version: str, namespace: str) -> Any:
@@ -249,17 +312,30 @@ def _map_untrusted_observation(
     registries: RegistryCatalogViewV1,
 ) -> RegistryKindMappingSnapshotV1:
     """Pure metadata read. The returned object is NEVER trusted admission."""
-    if not _valid_policy(policy, snapshot, registries):
-        _deny(D2BCode.D2B_TRUSTED_CATALOG_INVALID)
     try:
-        descriptor_to_domain_manifest(snapshot.descriptor)
-        d = snapshot.descriptor
-        if (
-            type(snapshot.assets) is not tuple
-            or tuple(a.ref for a in snapshot.assets) != d.asset_refs
-        ):
+        valid = _valid_policy(policy, snapshot, registries)
+        if valid:
+            descriptor_to_domain_manifest(snapshot.descriptor)
+            d = snapshot.descriptor
+            valid = (
+                type(d.asset_refs) is tuple
+                and len(snapshot.assets) == len(d.asset_refs)
+                and all(
+                    type(asset) is VerifiedAssetV1
+                    and type(asset.ref) is AssetReferenceV1
+                    and type(asset.content_bytes) is bytes
+                    for asset in snapshot.assets
+                )
+                and tuple(asset.ref for asset in snapshot.assets) == d.asset_refs
+            )
+        if not valid:
             _deny(D2BCode.D2B_TRUSTED_CATALOG_INVALID)
-    except (PackageDescriptorError, AttributeError, TypeError, ValueError):
+    except D2BMappingError:
+        raise
+    except Exception:  # noqa: BLE001 - hostile frozen-dataclass fields fail closed
+        raise D2BMappingError(D2BCode.D2B_TRUSTED_CATALOG_INVALID) from None
+
+    if not _valid_catalog(policy, snapshot, registries):
         _deny(D2BCode.D2B_TRUSTED_CATALOG_INVALID)
 
     if policy.admission_mode == "REGISTRY_MAPPING":

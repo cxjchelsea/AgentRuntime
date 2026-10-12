@@ -427,3 +427,117 @@ No partial result, success-with-warning, retry of mismatched generations, fallba
 | RR-07 | One C0 API and ordered denial matrix | Physical adversarial fixtures |
 
 **Formal status: \`RR-01..07 FINAL NORMATIVE CONTRACT REMEDIATION = SUBMITTED\`; \`INDEPENDENT EXACT-HEAD RE-REVIEW = PENDING\`; \`C0 IMPLEMENTATION AUTHORIZATION = NOT ISSUED\`; \`C1 HOST PROVENANCE/ATOMIC PUBLICATION = HARD HOLD\`; \`PR #114 MERGE = NOT AUTHORIZED\`.** No new Runtime trusted issuer or physical concurrency guarantee is implied by the presence of these design vectors.
+
+
+---
+
+## 14. IRR-C0-01..04 — Final Nonempty Closure + Defensive Admission Fixture Amendment v0.4
+
+**Status:** DESIGN FIXTURES SUBMITTED / INDEPENDENT EXACT-HEAD C0 READINESS RE-REVIEW REQUIRED. This §14 supersedes any incompatible D2-C §§3–13 on C0 fixtures, input limits, and asset-closure eligibility; upstream D2 §11.4/11.7 and physical source remain superior. No implementation, PR merge or C1 trust is authorized. The C0 interpretation remains \`UNTRUSTED_DIAGNOSTIC_ONLY\` and \`operational_readiness=NOT_ASSESSED\`.
+
+### 14.1 IRR-C0-04 — Exact package-asset closed-world rule
+
+The initial C0 resolver uses a **closed-world reference set**: every resolved Registry-backed dependency \`(kind, namespace, id, version)\` MUST correspond to an **exact D1 asset ref** in the diagnostic package's asset list and to an exact catalog Definition entry. External same-domain Registry entries, even with matching ID/version and a caller-supplied edge declaration, are **NOT ELIGIBLE** if absent from D1. Do not search live Registries, resolve latest versions, accept \`namespace=None\`, or treat D2-B historical observation as an admission. Schema-kind \`CORE\` is allowed **only when that exact schema is present in D1 refs, host-allowlisted in policy-shaped diagnostic input, and has SchemaDefinition.namespace/scope CORE**; this is a structural diagnostic comparison, not provenance. No general external CORE exception is usable by C0 because there is no trustworthy host issuer or independent Core attestation. This is a conservative *non-authoritative C0 restriction* compatible with upstream D2 §11.4's refusal of dependencies absent from the package except separately authenticated Host-Core allowances.
+
+A kind's seed subset for DFS is the set of **all exact active Registry-backed D1 refs**, not merely the first action. Thus every in-package active key is in \`seed_keys\` and \`dependency_keys\` in a complete C0 diagnostic result; \`dependency_keys\` includes the full reachable/seed union without duplicates. Inert D1 refs are never graph nodes. Duplicate exact seed keys deny. Zero seeds may be diagnostically empty but never runnable. An omitted same-domain target yields \`D2C_EXACT_DEPENDENCY_MISSING\` even when catalog contains that target. A CORE non-schema edge yields the same typed denial, with no fallback. Unknown/trusted operational profile requirements remain \`NOT_ASSESSED\`.
+
+### 14.2 IRR-C0-01 — Nonempty four-node DAG: exact source definitions and seed set
+
+**Diagnostic fixtures only.** Domain namespace \`inventory.reconcile\`, version \`1.0.0\`, \`manifest_sha256 = "a"×64\`, catalog generation \`diagnostic-g1\`. The D1 diagnostic exact asset set is **four** active Registry-backed refs, each with a distinct trusted-looking but **untrusted** package file sha256/path in the fixture: \`action/stock.count@1.0.0\`, \`capability/stock.capability@1.0.0\`, \`skill/stock.skill@1.0.0\`, \`tool/stock.tool@1.0.0\`, all \`namespace=inventory.reconcile\`. Their D1 asset hashes are not the canonical Definition hashes below and are not authorization evidence; choose any D1-valid independent 64-hex asset digest and sorted safe relative path when materializing the fixture.
+
+Use the **complete ten-class manifest baseline** from §13.2 for the selected four definitions, including all optional fields as explicit null and \`enabled=true\` where physically present, with the following exact overrides:
+
+| Definition | Additional overrides on §13.2 reference object | Nonempty DAG \`definition_sha256\` |
+|---|---|---|
+| ActionDefinition D01 | \`required_capability="stock.capability"\` | \`b4c5c567443b3b088d6385ef5f9669c5ffbdd0b74c0d266387b99558a2fecc95\` |
+| CapabilityDefinition D10 | \`skills=["stock.skill"]\` | \`f5ce1bf1849fe9089597f97f1274fb361e2a5d0b581211347ed54141bd0bcb3a\` |
+| SkillDefinition D03 | \`required_tools=["stock.tool"]\`, \`supported_actions=null\` | \`f2d615a581532a0bcfd2cd43e994daff6b8b06c6f35c5bccb018582931abe23b\` |
+| ToolDefinition D05 | no additional overrides | \`0c3f922fe6b16cac6ce54235d5938a4ac14f225487417bd92cafd49a0ac4f55a\` |
+
+The field overrides change the Definition hashes. **Do not reuse §13.2's D01/D03/D10 no-edge hashes** in this graph. All four records have \`record_enabled=true\`; Action/Skill/Tool have \`definition.enabled=true\`; Capability has no intrinsic enabled field and uses \`intrinsic_enabled=null\`. All adapter status observations are diagnostic/empty in this fixture; none is a Host grant.
+
+**Exact three pinned directed occurrences** (every field/occurrence is required; ordinal=0 for each):
+
+| Source exact kind/id | \`relation_id\` | \`declared_target_id\` | Target exact kind/id |
+|---|---|---|---|
+| action / stock.count | \`action.required_capability\` | stock.capability | capability / stock.capability |
+| capability / stock.capability | \`capability.skills\` | stock.skill | skill / stock.skill |
+| skill / stock.skill | \`skill.required_tools\` | stock.tool | tool / stock.tool |
+
+All edge source/target namespaces are \`inventory.reconcile\`, versions \`1.0.0\`, \`outcome="PINNED"\`. Sort edge records lexicographically by (source_kind,source_namespace,source_id,source_version,relation_id,ordinal,target_kind,target_namespace,target_id,target_version); result order is Action, Capability, Skill. \`seed_keys\` and \`dependency_keys\` contain the same exact sorted 4 Registry keys (Action, Capability, Skill, Tool). Result \`graph_completeness="SUPPORTED_RELATIONS_ONLY"\`, \`operational_readiness="NOT_ASSESSED"\`, \`adapter_evidence=[]\`, \`observation_role="UNTRUSTED_DIAGNOSTIC_ONLY"\`. These output-role fields are **not** part of the hashed closure envelope unless explicitly listed in §13.5.
+
+**Exact E04 canonical Edge JSON bytes** (one UTF-8 line, no trailing newline):
+
+~~~json
+{"edges":[{"declared_target_id":"stock.capability","ordinal":0,"outcome":"PINNED","relation_id":"action.required_capability","source_id":"stock.count","source_kind":"action","source_namespace":"inventory.reconcile","source_version":"1.0.0","target_id":"stock.capability","target_kind":"capability","target_namespace":"inventory.reconcile","target_version":"1.0.0"},{"declared_target_id":"stock.skill","ordinal":0,"outcome":"PINNED","relation_id":"capability.skills","source_id":"stock.capability","source_kind":"capability","source_namespace":"inventory.reconcile","source_version":"1.0.0","target_id":"stock.skill","target_kind":"skill","target_namespace":"inventory.reconcile","target_version":"1.0.0"},{"declared_target_id":"stock.tool","ordinal":0,"outcome":"PINNED","relation_id":"skill.required_tools","source_id":"stock.skill","source_kind":"skill","source_namespace":"inventory.reconcile","source_version":"1.0.0","target_id":"stock.tool","target_kind":"tool","target_namespace":"inventory.reconcile","target_version":"1.0.0"}],"host_catalog_generation":"diagnostic-g1","profile":"GA02-D2C-EDGES-1"}
+~~~
+
+\`E04 edge_digest = 92bf389659d722d526bb7f0c2226c7533c2b9179a85dff5d031a8b9bb6381ed0\` = SHA256(UTF8("GA02-D2C-EDGES-1") + NUL + E04 JSON UTF-8 bytes).
+
+**Exact E05 canonical Closure JSON bytes** (one UTF-8 line, no trailing newline):
+
+~~~json
+{"adapter_evidence":[],"definition_hashes":[{"definition_sha256":"b4c5c567443b3b088d6385ef5f9669c5ffbdd0b74c0d266387b99558a2fecc95","id":"stock.count","namespace":"inventory.reconcile","registry_kind":"action","version":"1.0.0"},{"definition_sha256":"f5ce1bf1849fe9089597f97f1274fb361e2a5d0b581211347ed54141bd0bcb3a","id":"stock.capability","namespace":"inventory.reconcile","registry_kind":"capability","version":"1.0.0"},{"definition_sha256":"f2d615a581532a0bcfd2cd43e994daff6b8b06c6f35c5bccb018582931abe23b","id":"stock.skill","namespace":"inventory.reconcile","registry_kind":"skill","version":"1.0.0"},{"definition_sha256":"0c3f922fe6b16cac6ce54235d5938a4ac14f225487417bd92cafd49a0ac4f55a","id":"stock.tool","namespace":"inventory.reconcile","registry_kind":"tool","version":"1.0.0"}],"dependency_keys":[{"id":"stock.count","namespace":"inventory.reconcile","registry_kind":"action","version":"1.0.0"},{"id":"stock.capability","namespace":"inventory.reconcile","registry_kind":"capability","version":"1.0.0"},{"id":"stock.skill","namespace":"inventory.reconcile","registry_kind":"skill","version":"1.0.0"},{"id":"stock.tool","namespace":"inventory.reconcile","registry_kind":"tool","version":"1.0.0"}],"edges":[{"declared_target_id":"stock.capability","ordinal":0,"outcome":"PINNED","relation_id":"action.required_capability","source_id":"stock.count","source_kind":"action","source_namespace":"inventory.reconcile","source_version":"1.0.0","target_id":"stock.capability","target_kind":"capability","target_namespace":"inventory.reconcile","target_version":"1.0.0"},{"declared_target_id":"stock.skill","ordinal":0,"outcome":"PINNED","relation_id":"capability.skills","source_id":"stock.capability","source_kind":"capability","source_namespace":"inventory.reconcile","source_version":"1.0.0","target_id":"stock.skill","target_kind":"skill","target_namespace":"inventory.reconcile","target_version":"1.0.0"},{"declared_target_id":"stock.tool","ordinal":0,"outcome":"PINNED","relation_id":"skill.required_tools","source_id":"stock.skill","source_kind":"skill","source_namespace":"inventory.reconcile","source_version":"1.0.0","target_id":"stock.tool","target_kind":"tool","target_namespace":"inventory.reconcile","target_version":"1.0.0"}],"graph_completeness":"SUPPORTED_RELATIONS_ONLY","host_catalog_generation":"diagnostic-g1","manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","operational_readiness":"NOT_ASSESSED","profile":"GA02-D2C-CLOSURE-1","seed_keys":[{"id":"stock.count","namespace":"inventory.reconcile","registry_kind":"action","version":"1.0.0"},{"id":"stock.capability","namespace":"inventory.reconcile","registry_kind":"capability","version":"1.0.0"},{"id":"stock.skill","namespace":"inventory.reconcile","registry_kind":"skill","version":"1.0.0"},{"id":"stock.tool","namespace":"inventory.reconcile","registry_kind":"tool","version":"1.0.0"}]}
+~~~
+
+\`E05 closure_digest = f5b9d515f87ae8253c64f81c3b8309c83e57feb1af5b337eed18da3190604b71\` = SHA256(UTF8("GA02-D2C-CLOSURE-1") + NUL + E05 JSON UTF-8 bytes).
+
+These E04/E05 hashes were separately computed locally from exact fixture bytes; **their independent second reproduction is still required** at the next gate. Their correctness is not an authenticated Host publication.
+
+**Adversarial graph oracles:** To create the conservative-cycle negative, change only \`SkillDefinition.supported_actions\` from null to \`["stock.count"]\`, add its exact occurrence \`skill.supported_actions\` ordinal 0 pinned to action/stock.count, and recompute Skill hash; result MUST be \`D2C_DEPENDENCY_CYCLE\`, no digest/evidence returned. A supported shared DAG joins into a common Tool target from two separate Skill paths without a back-edge and MUST pass. To test optional absence, add a declared \`skill.optional_tools=["stock.optional"]\` occurrence with exact \`outcome="OPTIONAL_ABSENT"\`, all four target fields null and no fifth seed, and assert a complete supported-relations diagnostic with no added graph node; a required-tool occurrence marked absent MUST yield \`D2C_EDGE_CATALOG_INVALID\`. Two occurrences with equal \`source+relation+ordinal\` are a duplicate error even when their target values agree; two equal declared target names at *different* ordinals are separately validated. An extra edge with no matching declared source occurrence MUST deny.
+
+### 14.3 IRR-C0-02 — Owned-copy input admission: fixed preflight budget
+
+The C0 entry accepts a **strictly typed top-level input object** (\`DiagnosticCatalogInputV1\`) containing *only* catalog primitive values and allowed fixed scalar policy-shaped fields. No user object, Registry instance, Host issuer, Pydantic model, arbitrary deserializer, memory view, generator, callable, path, file descriptor or \`trusted\` tag is a valid member. Top-level field set must be specified by the §13.5 exact envelopes and declared seed/definition association keys; missing/extra or inherited fields fail closed. Even if an attacker can instantiate a frozen input dataclass, its only possible result is diagnostic.
+
+**Preflight ownership algorithm (no unbounded deep copy):**
+
+1. Check \`type(root)\` exactly matches expected diagnostic input type; get its *declared fields* without \`vars()\`, \`__dict__\`, \`repr()\`, \`str()\`, dynamically dispatched methods or hashing arbitrary keys. If the actual runtime supports a malicious forged slot value, reject by exact primitive checks.
+2. Traverse a bounded iterative stack of **builtin** \`dict/list/str/int/bool/NoneType\` only; reject all subclasses. Check container type **before** iterating. Each dict key must be exactly a string and must satisfy the expected allowlisted schema; never perform arbitrary-object hashing, equality or user serialization. Detect cycles via active ancestor-container identities (direct/indirect); a repeated noncyclic alias is copied by value, never retained as shared mutable input.
+3. Reject nested container depth > **12** (root depth 0), total visited primitive+container elements > **4096**, any string > **1024** Unicode codepoints, any per-field list > **256**, and early-reject any input containing an unsupported nesting shape even when below the depth limit. Count source input canonical UTF-8 bytes and separately each normalized evidence-envelope byte length; aggregate source plus evidence ≤ **2,097,152** bytes using incremental accounting. Each canonical Definition object bytes ≤ **10,240**. Refuse oversize before constructing a complete over-limit copy/encoding. No recursion on caller-controlled nesting.
+4. Stage a **private owned deep value copy** of validated data; after admission never read original mutable dict/list again. Materialize immutable tuple/key-value tuple internal projection before expensive graph processing; no mutable original or custom object escapes. Re-read by pointer is forbidden; input mutation after ownership copy must not affect output. C0 does not promise that a separate thread mutating a source container *during the copy* can always be detected; it therefore never asserts C1 coherent snapshot or trust.
+5. For malformed exact types, cycles, foreign objects or missing schema fields issue \`D2C_RESOLUTION_UNSTABLE\`; for size, count and depth violations issue \`D2C_RESOURCE_LIMIT\`; for a structurally well-formed manifest whose Definition fields are semantically ill-typed issue \`D2C_CANONICAL_DEFINITION_INVALID\`. No callable callbacks, custom encoders, process cancellation swallowing or raw exception leakage.
+
+**Adversarial ownership fixtures:** list containing itself; dict containing itself; mutual two-container cycle; list alias appearing in two distinct otherwise valid fields; object with hostile \`__repr__\`, \`__hash__\`, \`__eq__\`, \`__iter__\`, \`__str__\` counters (all remain zero); dict subclass overriding iterator; Pydantic instance injected in primitive slot; forged dataclass field \`None\`; 12-level nest vs 13-level nest; 4096th element vs 4097th; 1024 vs 1025 Unicode scalar string; 256 vs 257 list entries; 2,097,152 vs 2,097,153 aggregate bytes. Assert no mutation, Registry reads or partial output on denial. This is a **test contract**, not a claim that a secure implementation already exists.
+
+### 14.4 IRR-C0-03 — Deterministic first-slice error / boundary fixture matrix
+
+All public D2-C errors remain code-only with exact \`str(error)==code.value\`, as in §13.7. The **ordered admission pipeline** must be explicitly staged so that the same facts yield the same first denial independent of input-order:
+
+| Case | Faults injected | Expected denial / outcome |
+|---|---|---|
+| A01 | unexpected/missing top-level key or untrusted \`trusted=True\` field | \`D2C_RESOLUTION_UNSTABLE\` |
+| A02 | wrong exact catalog generation and otherwise invalid Definition | \`D2C_CATALOG_GENERATION_MISMATCH\` |
+| A03 | primitive-list self-cycle with malicious object nearby | \`D2C_RESOLUTION_UNSTABLE\`; no hostile methods |
+| A04 | 13-level nesting with syntactically invalid Definition | \`D2C_RESOURCE_LIMIT\` |
+| A05 | structurally valid oversized payload and cycle-shaped graph | \`D2C_RESOURCE_LIMIT\` |
+| A06 | Definition enum/nullable/priority invalid and edge missing | \`D2C_CANONICAL_DEFINITION_INVALID\` |
+| A07 | valid Definition fields but altered pinned definition SHA | \`D2C_DEFINITION_HASH_MISMATCH\` |
+| A08 | duplicate occurrence key, wrong ordinal, extra unmatched edge | \`D2C_EDGE_CATALOG_INVALID\` |
+| A09 | exact required target omitted from D1 seeds but present in diagnostic catalog | \`D2C_EXACT_DEPENDENCY_MISSING\` |
+| A10 | absent namespace or foreign tenant/domain target | \`D2C_EXACT_DEPENDENCY_MISSING\` |
+| A11 | non-schema CORE reference, even if catalog declares it | \`D2C_EXACT_DEPENDENCY_MISSING\` |
+| A12 | a required target exists but record_enabled=false | \`D2C_DEPENDENCY_DISABLED\` |
+| A13 | contradictory diagnostic Adapter union and otherwise cyclic graph | \`D2C_HOST_ADAPTER_MISMATCH\` |
+| A14 | exact valid source→target chain ending in a returning edge | \`D2C_DEPENDENCY_CYCLE\` |
+| A15 | all four DAG nodes in D1; valid definitions/edges; no adapter claims | success, \`UNTRUSTED_DIAGNOSTIC_ONLY\`, \`NOT_ASSESSED\`; E04/E05 byte vectors |
+| A16 | optional declared occurrence marked absent; no new target | success; no new dependency node |
+| A17 | any C1/Host issuer/production trust request routed to C0 | reject *before* C0 entry; \`D2C_UNTRUSTED_CATALOG_SOURCE\` on a future separately reviewed caller boundary |
+| A18 | malformed schema (wrong source Scope or CORE allowlist) | \`D2C_EXACT_DEPENDENCY_MISSING\`; no Core fallback |
+| A19 | unexpected ordinary exception during bounded pure graph processing | \`D2C_RESOLUTION_UNSTABLE\` sanitized |
+| A20 | wrong adapter tag / non-null status fields on ABSENT | \`D2C_HOST_ADAPTER_MISMATCH\` |
+
+**Denial precedence:** top-level shape/ownership failures → explicit generation mismatch → resource limits → definition schema/hash → occurrence catalog shape → exact D1 target/domain/CORE → disabled → adapter contradictions → cycles → return. Cycle in the same input does not eclipse an earlier adapter/error. An impossible C1 request is handled by a future outer boundary and is never made into a usable parameter of the private C0 resolver. No fallback or partial success.
+
+**Physical limits oracle:** at boundary values the appropriate structure may succeed if all other semantic contracts are satisfied; boundary+1 MUST fail with \`D2C_RESOURCE_LIMIT\` for 256 vs 257 nodes, 1024 vs 1025 edges, depth 32 vs 33, list 256 vs 257, definition bytes 10240 vs 10241, total bytes 2097152 vs 2097153. A fixture may require synthetic graph records and must remain within the other limits to isolate the one being tested. In particular, 1025 edges cannot be achieved by violating the 4096 total primitive-element cap first; a dedicated **internal already-normalized** graph-budget fixture may exercise the edge ceiling, while the external input-path honors whichever bound is hit first. Do not label a different earlier denial as a passing exact-limit test.
+
+### 14.5 Exact closure decision and next gate
+
+| IRR | Amendment outcome | Gate |
+|---|---|---|
+| IRR-C0-01 | E04/E05 exact nonempty DAG/definition vectors; cycle, optional absent and duplicate ordinal oracle | SUBMITTED — independent rehash / fixture review pending |
+| IRR-C0-02 | bounded iterative primitive ownership/admission and adversarial alias/cycle behavior | SUBMITTED — physical implementability review pending |
+| IRR-C0-03 | A01–A20 typed expected behavior, complete/over-limit conditions | SUBMITTED — independent precedence verification pending |
+| IRR-C0-04 | D1-seed closed world with schema-only CORE; no untrusted external same-domain target | SUBMITTED — upstream exact-closure equivalence review pending |
+
+**Final amendment status:** \`IRR-C0-01..04 DESIGN FIXTURE REMEDIATION = SUBMITTED\`; \`EXACT-HEAD INDEPENDENT C0 READINESS REVIEW = PENDING\`; \`C0 IMPLEMENTATION AUTHORIZATION = NOT ISSUED\`; \`C1 TRUSTED HOST CATALOG = HARD HOLD\`; \`PR #114 MERGE AUTHORIZATION = NOT ISSUED\`. No production trust or executable domain binding is implied by this appendix.

@@ -3,6 +3,7 @@
 No Registry lookup, publisher, DomainBinding, filesystem, tools or runtime consumers.
 The only entry takes test-owned primitive metadata; hashes authenticate no issuer.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -11,26 +12,48 @@ import re
 import unicodedata
 from dataclasses import dataclass, fields
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 _ID = re.compile(r"[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*\Z", re.ASCII)
 _VER = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\Z", re.ASCII)
 _SHA = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
-_KIND = {"action", "strategy", "skill", "tool", "workflow", "capability",
-         "prompt", "rule", "schema", "knowledge", "state", "eval"}
-_REG = {"action": "action", "strategy": "strategy", "skill": "skill",
-        "tool": "tool", "workflow": "workflow", "capability": "capability",
-        "prompt": "prompt", "rule": "policy", "schema": "schema"}
-_TYPES = {"action": ("ActionDefinition", "action_id", True),
-          "strategy": ("StrategyDefinition", "strategy_id", True),
-          "skill": ("SkillDefinition", "skill_id", True),
-          "tool": ("ToolDefinition", "tool_id", True),
-          "workflow": ("WorkflowDefinition", "workflow_id", True),
-          "capability": ("CapabilityDefinition", "capability_id", False),
-          "prompt": ("PromptDefinition", "prompt_id", False),
-          "policy": ("PolicyDefinition", "rule_id", True),
-          "schema": ("SchemaDefinition", "schema_id", False),
-          "domain": ("DomainManifest", "domain_id", True)}
+_KIND = {
+    "action",
+    "strategy",
+    "skill",
+    "tool",
+    "workflow",
+    "capability",
+    "prompt",
+    "rule",
+    "schema",
+    "knowledge",
+    "state",
+    "eval",
+}
+_REG = {
+    "action": "action",
+    "strategy": "strategy",
+    "skill": "skill",
+    "tool": "tool",
+    "workflow": "workflow",
+    "capability": "capability",
+    "prompt": "prompt",
+    "rule": "policy",
+    "schema": "schema",
+}
+_TYPES = {
+    "action": ("ActionDefinition", "action_id", True),
+    "strategy": ("StrategyDefinition", "strategy_id", True),
+    "skill": ("SkillDefinition", "skill_id", True),
+    "tool": ("ToolDefinition", "tool_id", True),
+    "workflow": ("WorkflowDefinition", "workflow_id", True),
+    "capability": ("CapabilityDefinition", "capability_id", False),
+    "prompt": ("PromptDefinition", "prompt_id", False),
+    "policy": ("PolicyDefinition", "rule_id", True),
+    "schema": ("SchemaDefinition", "schema_id", False),
+    "domain": ("DomainManifest", "domain_id", True),
+}
 # Field codes: s string, b strict bool, i strict int, l ordered strings,
 # ? nullable, e:<members> enum string, L:<members> enum list.
 _FIELDS = {
@@ -46,7 +69,11 @@ _FIELDS = {
     "CapabilityDefinition": "capability_id:s version:s domain:s? implementation_type:s? status:s? business_taxonomy_ref:s? intents:l? entities:l? needs:l? skills:l? workflows:l? tools:l? knowledge_dependencies:l? state_dependencies:l? policy_dependencies:l? validation_dependencies:l? eval_cases:l?",
 }
 _REL = {
-    ("action", "required_capability"): ("capability", "action.required_capability", False),
+    ("action", "required_capability"): (
+        "capability",
+        "action.required_capability",
+        False,
+    ),
     ("strategy", "default_actions"): ("action", "strategy.default_actions", False),
     ("skill", "supported_actions"): ("action", "skill.supported_actions", False),
     ("skill", "required_tools"): ("tool", "skill.required_tools", False),
@@ -202,8 +229,13 @@ def _string(value: object, *, identifier: bool = False, version: bool = False) -
 
 
 def _json(value: Any) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"),
-                      ensure_ascii=False, allow_nan=False).encode("utf-8", "strict")
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8", "strict")
 
 
 def _digest(profile: str | None, value: Any) -> str:
@@ -264,9 +296,10 @@ def _copy_fields(value: object, counter: list[int]) -> dict[str, Any]:
                 else:
                     _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
         else:
-            if len(node) > 256:
+            list_node = cast(list[Any], node)
+            if len(list_node) > 256:
                 _deny(D2CCode.D2C_RESOURCE_LIMIT)
-            for v in node:
+            for v in list_node:
                 counter[0] += 1
                 if counter[0] > 4096:
                     _deny(D2CCode.D2C_RESOURCE_LIMIT)
@@ -327,9 +360,11 @@ def _admit_and_copy_diagnostic_input(
         _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
     if owned.prompt_mode not in _ALLOWED_MODE or owned.rule_mode not in _ALLOWED_MODE:
         _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
-    if not (_string(owned.domain_id, identifier=True)
-            and _string(owned.domain_version, version=True)
-            and bool(_SHA.fullmatch(owned.manifest_sha256))):
+    if not (
+        _string(owned.domain_id, identifier=True)
+        and _string(owned.domain_version, version=True)
+        and bool(_SHA.fullmatch(owned.manifest_sha256))
+    ):
         _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
     return _OwnedDiagnosticInputV1(owned, count[0])
 
@@ -338,7 +373,10 @@ def _canonical_definition(entry: DiagnosticRegistryEntryV1) -> bytes:
     schema = _FIELDS.get(entry.definition_type)
     if schema is None or type(entry.fields) is not dict:
         _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
-    spec = dict(token.split(":", 1) for token in schema.split())
+    spec: dict[str, str] = {}
+    for token in schema.split():
+        name, _, kind_tag = token.partition(":")
+        spec[name] = kind_tag
     if set(entry.fields) != set(spec):
         _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
     for key, tag in spec.items():
@@ -372,22 +410,33 @@ def _canonical_definition(entry: DiagnosticRegistryEntryV1) -> bytes:
     return payload
 
 
-def _key(kind: str, ns: str, item: str, version: str) -> _KEY:
-    return kind, ns, item, version
+def _key(kind: str | None, ns: str | None, item: str | None, version: str | None) -> _KEY:
+    if not all(type(value) is str for value in (kind, ns, item, version)):
+        _deny(D2CCode.D2C_EDGE_CATALOG_INVALID)
+    return cast(str, kind), cast(str, ns), cast(str, item), cast(str, version)
 
 
 def _edge_obj(edge: DiagnosticEdgeOccurrenceV1) -> dict[str, Any]:
-    return {field.name: object.__getattribute__(edge, field.name)
-            for field in fields(DiagnosticEdgeOccurrenceV1)}
+    return {
+        field.name: object.__getattribute__(edge, field.name)
+        for field in fields(DiagnosticEdgeOccurrenceV1)
+    }
 
 
 def _adapter_obj(adapter: DiagnosticAdapterEntryV1) -> dict[str, Any]:
-    return {field.name: object.__getattribute__(adapter, field.name)
-            for field in fields(DiagnosticAdapterEntryV1)}
+    return {
+        field.name: object.__getattribute__(adapter, field.name)
+        for field in fields(DiagnosticAdapterEntryV1)
+    }
 
 
 def _key_obj(key: _KEY) -> dict[str, str]:
-    return {"registry_kind": key[0], "namespace": key[1], "id": key[2], "version": key[3]}
+    return {
+        "registry_kind": key[0],
+        "namespace": key[1],
+        "id": key[2],
+        "version": key[3],
+    }
 
 
 def _asset_kind(kind: str, prompt: str, rule: str) -> str | None:
@@ -409,62 +458,79 @@ def _resolve_owned_diagnostic_graph(
     assetkeys: set[_KEY] = set()
     active: set[_KEY] = set()
     seen_assets: set[tuple[str, str, str, str]] = set()
-    for a in x.asset_refs:
-        if a.kind not in _KIND or not (
-            _string(a.id, identifier=True) and _string(a.version, version=True)
-        ) or not _SHA.fullmatch(a.sha256):
+    for asset_ref in x.asset_refs:
+        if (
+            asset_ref.kind not in _KIND
+            or not (_string(asset_ref.id, identifier=True) and _string(asset_ref.version, version=True))
+            or not _SHA.fullmatch(asset_ref.sha256)
+        ):
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
-        if a.namespace != x.domain_id and not (a.kind == "schema" and a.namespace == "CORE"):
+        if asset_ref.namespace != x.domain_id and not (
+            asset_ref.kind == "schema" and asset_ref.namespace == "CORE"
+        ):
             _deny(D2CCode.D2C_EXACT_DEPENDENCY_MISSING)
-        if (a.kind, a.namespace, a.id, a.version) in seen_assets:
+        if (asset_ref.kind, asset_ref.namespace, asset_ref.id, asset_ref.version) in seen_assets:
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
-        if not a.relative_path or any(p in {"", ".", ".."} for p in a.relative_path.split("/")) or any(
-            c in a.relative_path for c in ("\\", ":", "%")
-        ) or a.relative_path.startswith("/"):
+        if (
+            not asset_ref.relative_path
+            or any(p in {"", ".", ".."} for p in asset_ref.relative_path.split("/"))
+            or any(c in asset_ref.relative_path for c in ("\\", ":", "%"))
+            or asset_ref.relative_path.startswith("/")
+        ):
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
-        seen_assets.add((a.kind, a.namespace, a.id, a.version))
-        kind = _asset_kind(a.kind, x.prompt_mode, x.rule_mode)
+        seen_assets.add((asset_ref.kind, asset_ref.namespace, asset_ref.id, asset_ref.version))
+        kind = _asset_kind(asset_ref.kind, x.prompt_mode, x.rule_mode)
         if kind is not None:
-            k = _key(kind, a.namespace, a.id, a.version)
-            if a.namespace == "CORE" and (
-                a.kind != "schema" or (a.id, a.version) not in {
-                    (v.id, v.version) for v in x.approved_core_schema_keys
-                }
+            k = _key(kind, asset_ref.namespace, asset_ref.id, asset_ref.version)
+            if asset_ref.namespace == "CORE" and (
+                asset_ref.kind != "schema"
+                or (asset_ref.id, asset_ref.version)
+                not in {(v.id, v.version) for v in x.approved_core_schema_keys}
             ):
                 _deny(D2CCode.D2C_EXACT_DEPENDENCY_MISSING)
             active.add(k)
-        assetkeys.add(_key(a.kind, a.namespace, a.id, a.version))
+        assetkeys.add(_key(asset_ref.kind, asset_ref.namespace, asset_ref.id, asset_ref.version))
     if len(active) > 256:
         _deny(D2CCode.D2C_RESOURCE_LIMIT)
     records: dict[_KEY, DiagnosticRegistryEntryV1] = {}
     definition_hashes: dict[_KEY, str] = {}
     domain_key = _key("domain", x.domain_id, x.domain_id, x.domain_version)
-    for e in x.registry_entries:
-        k = _key(e.registry_kind, e.namespace, e.id, e.version)
-        if k in records or e.registry_kind not in _TYPES:
+    for registry_entry in x.registry_entries:
+        k = _key(registry_entry.registry_kind, registry_entry.namespace, registry_entry.id, registry_entry.version)
+        if k in records or registry_entry.registry_kind not in _TYPES:
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
-        cls, id_field, intrinsic = _TYPES[e.registry_kind]
-        if e.definition_type != cls or e.fields.get(id_field) != e.id or e.fields.get("version") != e.version:
+        cls, id_field, intrinsic = _TYPES[registry_entry.registry_kind]
+        if (
+            registry_entry.definition_type != cls
+            or registry_entry.fields.get(id_field) != registry_entry.id
+            or registry_entry.fields.get("version") != registry_entry.version
+        ):
             _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
-        raw = _canonical_definition(e)
+        raw = _canonical_definition(registry_entry)
         actual = hashlib.sha256(raw).hexdigest()
-        if type(e.definition_sha256) is not str or actual != e.definition_sha256:
+        if type(registry_entry.definition_sha256) is not str or actual != registry_entry.definition_sha256:
             _deny(D2CCode.D2C_DEFINITION_HASH_MISMATCH)
-        if type(e.record_enabled) is not bool or type(e.intrinsic_enabled) not in (bool, type(None)):
+        if type(registry_entry.record_enabled) is not bool or type(registry_entry.intrinsic_enabled) not in (
+            bool,
+            type(None),
+        ):
             _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
-        if intrinsic and type(e.intrinsic_enabled) is not bool:
+        if intrinsic and type(registry_entry.intrinsic_enabled) is not bool:
             _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
-        if not intrinsic and e.intrinsic_enabled is not None:
+        if not intrinsic and registry_entry.intrinsic_enabled is not None:
             _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
-        if intrinsic and e.fields["enabled"] != e.intrinsic_enabled:
+        if intrinsic and registry_entry.fields["enabled"] != registry_entry.intrinsic_enabled:
             _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
-        records[k] = e
+        records[k] = registry_entry
         definition_hashes[k] = actual
     if domain_key not in records:
         _deny(D2CCode.D2C_EXACT_DEPENDENCY_MISSING)
     manifest = records[domain_key]
-    if (manifest.fields["runtime_compatibility"] != x.runtime_profile or
-            manifest.fields["domain_id"] != x.domain_id or manifest.fields["version"] != x.domain_version):
+    if (
+        manifest.fields["runtime_compatibility"] != x.runtime_profile
+        or manifest.fields["domain_id"] != x.domain_id
+        or manifest.fields["version"] != x.domain_version
+    ):
         _deny(D2CCode.D2C_CATALOG_GENERATION_MISMATCH)
     expected: dict[tuple[_KEY, str, int], tuple[str, str, bool]] = {}
     for k, entry in sorted(records.items()):
@@ -474,24 +540,45 @@ def _resolve_owned_diagnostic_graph(
             if kind != k[0]:
                 continue
             refs = entry.fields[field]
-            vals = ([refs] if field == "required_capability" and refs is not None
-                    else [] if refs is None else refs)
+            vals = (
+                [refs]
+                if field == "required_capability" and refs is not None
+                else []
+                if refs is None
+                else refs
+            )
             for ordinal, target in enumerate(vals):
                 expected[(k, relation, ordinal)] = (targetkind, target, optional)
     edges: dict[tuple[_KEY, str, int], DiagnosticEdgeOccurrenceV1] = {}
     for e in x.edge_occurrences:
         source = _key(e.source_kind, e.source_namespace, e.source_id, e.source_version)
         ek = (source, e.relation_id, e.ordinal)
-        if type(e.ordinal) is not int or e.ordinal < 0 or ek in edges or ek not in expected:
+        if (
+            type(e.ordinal) is not int
+            or e.ordinal < 0
+            or ek in edges
+            or ek not in expected
+        ):
             _deny(D2CCode.D2C_EDGE_CATALOG_INVALID)
         tk, tid, optional = expected[ek]
         if e.declared_target_id != tid:
             _deny(D2CCode.D2C_EDGE_CATALOG_INVALID)
         if e.outcome == "OPTIONAL_ABSENT":
-            if not optional or any(v is not None for v in (e.target_kind, e.target_namespace, e.target_id, e.target_version)):
+            if not optional or any(
+                v is not None
+                for v in (
+                    e.target_kind,
+                    e.target_namespace,
+                    e.target_id,
+                    e.target_version,
+                )
+            ):
                 _deny(D2CCode.D2C_EDGE_CATALOG_INVALID)
-        elif e.outcome != "PINNED" or e.target_kind != tk or e.target_id != tid or not (
-            type(e.target_namespace) is str and type(e.target_version) is str
+        elif (
+            e.outcome != "PINNED"
+            or e.target_kind != tk
+            or e.target_id != tid
+            or not (type(e.target_namespace) is str and type(e.target_version) is str)
         ):
             _deny(D2CCode.D2C_EDGE_CATALOG_INVALID)
         edges[ek] = e
@@ -504,11 +591,15 @@ def _resolve_owned_diagnostic_graph(
         if e.outcome != "PINNED":
             continue
         target = _key(e.target_kind, e.target_namespace, e.target_id, e.target_version)
-        if target not in active or e.target_namespace not in {x.domain_id, "CORE"} or (
-            e.target_namespace == "CORE" and e.target_kind != "schema"
+        if (
+            target not in active
+            or e.target_namespace not in {x.domain_id, "CORE"}
+            or (e.target_namespace == "CORE" and e.target_kind != "schema")
         ):
             _deny(D2CCode.D2C_EXACT_DEPENDENCY_MISSING)
-        adjacency[_key(e.source_kind, e.source_namespace, e.source_id, e.source_version)].append(target)
+        adjacency[
+            _key(e.source_kind, e.source_namespace, e.source_id, e.source_version)
+        ].append(target)
     if set(records) != active | {domain_key}:
         if any(k not in records for k in active):
             _deny(D2CCode.D2C_EXACT_DEPENDENCY_MISSING)
@@ -521,15 +612,23 @@ def _resolve_owned_diagnostic_graph(
     seen_adapter: set[_KEY] = set()
     for a in x.adapter_entries:
         k = _key(a.registry_kind, a.namespace, a.id, a.version)
-        values = (a.adapter_key, a.adapter_generation, a.tenant_scope_allowlist_id,
-                  a.domain_scope, a.host_registration_digest)
+        values = (
+            a.adapter_key,
+            a.adapter_generation,
+            a.tenant_scope_allowlist_id,
+            a.domain_scope,
+            a.host_registration_digest,
+        )
         if k in seen_adapter or k not in active:
             _deny(D2CCode.D2C_HOST_ADAPTER_MISMATCH)
         seen_adapter.add(k)
         if a.status in {"NOT_REQUIRED_BY_DIAGNOSTIC_PROFILE", "ABSENT_UNVERIFIED"}:
             valid = all(v is None for v in values)
         elif a.status == "DECLARED_NON_AUTHORITATIVE":
-            valid = all(_string(v) for v in values) and bool(_SHA.fullmatch(a.host_registration_digest))
+            valid = all(_string(v) for v in values) and (
+                type(a.host_registration_digest) is str
+                and bool(_SHA.fullmatch(a.host_registration_digest))
+            )
         else:
             valid = False
         if not valid:
@@ -553,49 +652,89 @@ def _resolve_owned_diagnostic_graph(
                 _deny(D2CCode.D2C_RESOURCE_LIMIT)
             visiting.add(node)
             stack.append((node, depth, True))
-            for child in reversed(sorted(set(adjacency[node]))):
+            for child in sorted(set(adjacency[node]), reverse=True):
                 if child in visiting:
                     _deny(D2CCode.D2C_DEPENDENCY_CYCLE)
                 if child not in visited:
                     stack.append((child, depth + 1, False))
     sorted_keys = sorted(active)
-    edgeobjs = [_edge_obj(e) for e in sorted(
-        edges.values(), key=lambda e: (
-            e.source_kind, e.source_namespace, e.source_id,
-            e.source_version, e.relation_id, e.ordinal
+    edgeobjs = [
+        _edge_obj(e)
+        for e in sorted(
+            edges.values(),
+            key=lambda e: (
+                e.source_kind,
+                e.source_namespace,
+                e.source_id,
+                e.source_version,
+                e.relation_id,
+                e.ordinal,
+            ),
         )
-    )]
-    adapter_objects.sort(key=lambda v: (v["registry_kind"],v["namespace"],v["id"],v["version"]))
-    edge_envelope = {"profile": "GA02-D2C-EDGES-1",
-                     "host_catalog_generation": x.host_catalog_generation,
-                     "edges": edgeobjs}
-    edge_digest = _digest("GA02-D2C-EDGES-1", edge_envelope)
-    catalog_entries = [{
-        "registry_kind": k[0], "namespace": k[1], "id": k[2], "version": k[3],
-        "definition_type": v.definition_type, "definition_sha256": definition_hashes[k],
-        "record_enabled": v.record_enabled, "intrinsic_enabled": v.intrinsic_enabled,
-    } for k, v in sorted(records.items())]
-    catalog = {
-        "profile": "GA02-D2C-CATALOG-2", "domain_id": x.domain_id,
-        "domain_version": x.domain_version, "runtime_profile": x.runtime_profile,
-        "manifest_sha256": x.manifest_sha256, "publisher_generation": x.source_generation,
+    ]
+    adapter_objects.sort(
+        key=lambda v: (v["registry_kind"], v["namespace"], v["id"], v["version"])
+    )
+    edge_envelope = {
+        "profile": "GA02-D2C-EDGES-1",
         "host_catalog_generation": x.host_catalog_generation,
-        "host_policy_id": x.host_policy_id, "host_policy_generation": x.host_policy_generation,
-        "prompt_mode": x.prompt_mode, "rule_mode": x.rule_mode,
-        "approved_core_schema_keys": [{"id": v.id, "version": v.version} for v in x.approved_core_schema_keys],
-        "registry_entries": catalog_entries, "adapter_entries": adapter_objects,
+        "edges": edgeobjs,
+    }
+    edge_digest = _digest("GA02-D2C-EDGES-1", edge_envelope)
+    catalog_entries = [
+        {
+            "registry_kind": k[0],
+            "namespace": k[1],
+            "id": k[2],
+            "version": k[3],
+            "definition_type": v.definition_type,
+            "definition_sha256": definition_hashes[k],
+            "record_enabled": v.record_enabled,
+            "intrinsic_enabled": v.intrinsic_enabled,
+        }
+        for k, v in sorted(records.items())
+    ]
+    catalog = {
+        "profile": "GA02-D2C-CATALOG-2",
+        "domain_id": x.domain_id,
+        "domain_version": x.domain_version,
+        "runtime_profile": x.runtime_profile,
+        "manifest_sha256": x.manifest_sha256,
+        "publisher_generation": x.source_generation,
+        "host_catalog_generation": x.host_catalog_generation,
+        "host_policy_id": x.host_policy_id,
+        "host_policy_generation": x.host_policy_generation,
+        "prompt_mode": x.prompt_mode,
+        "rule_mode": x.rule_mode,
+        "approved_core_schema_keys": [
+            {"id": v.id, "version": v.version} for v in x.approved_core_schema_keys
+        ],
+        "registry_entries": catalog_entries,
+        "adapter_entries": adapter_objects,
         "edge_digest": edge_digest,
     }
     catalog_digest = _digest("GA02-D2C-CATALOG-2", catalog)
-    hashes = [{"registry_kind": k[0], "namespace": k[1], "id": k[2], "version": k[3],
-               "definition_sha256": definition_hashes[k]} for k in sorted_keys]
+    hashes = [
+        {
+            "registry_kind": k[0],
+            "namespace": k[1],
+            "id": k[2],
+            "version": k[3],
+            "definition_sha256": definition_hashes[k],
+        }
+        for k in sorted_keys
+    ]
     closure = {
-        "profile": "GA02-D2C-CLOSURE-1", "host_catalog_generation": x.host_catalog_generation,
+        "profile": "GA02-D2C-CLOSURE-1",
+        "host_catalog_generation": x.host_catalog_generation,
         "manifest_sha256": x.manifest_sha256,
-        "graph_completeness": "SUPPORTED_RELATIONS_ONLY", "operational_readiness": "NOT_ASSESSED",
+        "graph_completeness": "SUPPORTED_RELATIONS_ONLY",
+        "operational_readiness": "NOT_ASSESSED",
         "seed_keys": [_key_obj(k) for k in sorted_keys],
         "dependency_keys": [_key_obj(k) for k in sorted_keys],
-        "edges": edgeobjs, "definition_hashes": hashes, "adapter_evidence": adapter_objects,
+        "edges": edgeobjs,
+        "definition_hashes": hashes,
+        "adapter_evidence": adapter_objects,
     }
     if sum(len(_json(v)) for v in (edge_envelope, catalog, closure)) > 2097152:
         _deny(D2CCode.D2C_RESOURCE_LIMIT)
@@ -604,12 +743,15 @@ def _resolve_owned_diagnostic_graph(
         observation_role="UNTRUSTED_DIAGNOSTIC_ONLY",
         graph_completeness="SUPPORTED_RELATIONS_ONLY",
         operational_readiness="NOT_ASSESSED",
-        seed_keys=tuple(sorted_keys), dependency_keys=tuple(sorted_keys),
+        seed_keys=tuple(sorted_keys),
+        dependency_keys=tuple(sorted_keys),
         edge_occurrences=tuple(tuple(sorted(v.items())) for v in edgeobjs),
         definition_hashes=tuple((k, definition_hashes[k]) for k in sorted_keys),
         adapter_evidence=tuple(tuple(sorted(v.items())) for v in adapter_objects),
-        edge_digest=edge_digest, host_catalog_digest=catalog_digest,
-        closure_digest=closure_digest, unresolved_non_graph_metadata=True,
+        edge_digest=edge_digest,
+        host_catalog_digest=catalog_digest,
+        closure_digest=closure_digest,
+        unresolved_non_graph_metadata=True,
     )
 
 
@@ -622,5 +764,5 @@ def _resolve_untrusted_catalog_observation(
         return _resolve_owned_diagnostic_graph(owned)
     except D2CResolutionError:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001 - hostile diagnostic data must fail closed
         raise D2CResolutionError(D2CCode.D2C_RESOLUTION_UNSTABLE) from None

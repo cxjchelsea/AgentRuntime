@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 
 from agent_core.domain_descriptor import (
     PROFILE,
+    AssetReferenceV1,
+    PackageDescriptorV1,
     PackageDescriptorError,
     descriptor_to_domain_manifest,
     parse_package_descriptor,
@@ -125,6 +128,7 @@ def test_disabled_metadata_remains_disabled() -> None:
         {"runtime_compatibility": "latest"},
         {"package_schema_version": "2"},
         {"feature_flags": ["skip-safety"]},
+        {"feature_flags": []},
         {"unexpected": True},
         {"asset_refs": [ref(namespace="foreign.domain")]},
         {"asset_refs": [ref(), ref()]},
@@ -175,3 +179,55 @@ def test_digest_tamper_missing_name_and_oversize() -> None:
         parse_package_descriptor(descriptor_bytes(missing))
     with pytest.raises(PackageDescriptorError):
         parse_package_descriptor(b" " * 262145)
+
+
+def test_unvalidated_hand_built_descriptor_cannot_bypass_manifest_adapter() -> None:
+    forged = PackageDescriptorV1(
+        "1", "inventory.reconcile", "1.0.0",
+        "Inventory Reconciliation", True, PROFILE, (), "0" * 64
+    )
+    with pytest.raises(PackageDescriptorError, match="digest mismatch"):
+        descriptor_to_domain_manifest(forged)
+
+    validated = parse_package_descriptor(descriptor_bytes(BASE))
+    for tampered in (
+        replace(validated, name="Forged"),
+        replace(validated, enabled=False),
+        replace(validated, runtime_compatibility="FORGED"),
+        replace(validated, domain_version="01.0.0"),
+        replace(validated, asset_refs=(AssetReferenceV1(
+            "action", "inventory.reconcile", "stock.count", "1.0.0",
+            "a" * 64, "actions/count.json"
+        ),)),
+    ):
+        with pytest.raises(PackageDescriptorError):
+            descriptor_to_domain_manifest(tampered)
+
+
+def test_manifest_adapter_rejects_wrong_runtime_dataclass_field_types() -> None:
+    original = parse_package_descriptor(descriptor_bytes(BASE))
+    with pytest.raises(PackageDescriptorError):
+        descriptor_to_domain_manifest(replace(original, enabled=1))
+    with pytest.raises(PackageDescriptorError):
+        descriptor_to_domain_manifest(replace(original, name="a\\ud800"))
+    with pytest.raises(PackageDescriptorError):
+        descriptor_to_domain_manifest(replace(original, asset_refs=(object(),)))
+    with pytest.raises(PackageDescriptorError):
+        descriptor_to_domain_manifest(replace(original, asset_refs=[]))
+
+
+def test_manifest_adapter_valid_nonempty_sorted_assets_and_disabled() -> None:
+    original = parse_package_descriptor(
+        descriptor_bytes({**BASE, "asset_refs": [ref(name="one"), ref(name="two")]})
+    )
+    manifest = descriptor_to_domain_manifest(original)
+    assert manifest.name == original.name
+    assert manifest.enabled is True
+    disabled = parse_package_descriptor(descriptor_bytes({**BASE, "enabled": False}))
+    assert descriptor_to_domain_manifest(disabled).enabled is False
+
+
+def test_feature_flags_even_empty_are_explicitly_unsupported() -> None:
+    for flags in ([], ["skip-safety"], None, {}, False):
+        with pytest.raises(PackageDescriptorError, match="fields"):
+            parse_package_descriptor(descriptor_bytes({**BASE, "feature_flags": flags}))

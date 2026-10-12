@@ -540,6 +540,22 @@ def _resolve_owned_diagnostic_graph(
     records: dict[_KEY, DiagnosticRegistryEntryV1] = {}
     definition_hashes: dict[_KEY, str] = {}
     domain_key = _key("domain", x.domain_id, x.domain_id, x.domain_version)
+    # Generation/profile coherence precedes Definition semantics, even if an
+    # unrelated Definition is corrupt. This does not authenticate the issuer.
+    for candidate in x.registry_entries:
+        if (
+            candidate.registry_kind == "domain"
+            and candidate.namespace == x.domain_id
+            and candidate.id == x.domain_id
+            and candidate.version == x.domain_version
+        ):
+            candidate_fields = candidate.fields
+            if (
+                candidate_fields.get("runtime_compatibility") != x.runtime_profile
+                or candidate_fields.get("domain_id") != x.domain_id
+                or candidate_fields.get("version") != x.domain_version
+            ):
+                _deny(D2CCode.D2C_CATALOG_GENERATION_MISMATCH)
     for registry_entry in x.registry_entries:
         k = _key(
             registry_entry.registry_kind,

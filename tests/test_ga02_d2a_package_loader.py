@@ -569,3 +569,110 @@ def test_publisher_verifier_exception_fails_closed(tmp_path: Path) -> None:
         PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
         lambda: load(issuer, identity),
     )
+
+def test_cleanup_attempts_all_fds_and_preserves_primary_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    issuer, identity = prepare(tmp_path)
+    paths = [tmp_path / "actions/a.txt", tmp_path / "prompts/b.txt"]
+    live_before = len(os.listdir("/proc/self/fd"))
+    fds = [os.open(path, os.O_RDONLY) for path in paths]
+    original_close = loader_mod.os.close
+    attempted: list[int] = []
+
+    def close_then_fail(fd: int) -> None:
+        if fd in fds:
+            attempted.append(fd)
+            original_close(fd)
+            raise OSError("synthetic close-after-success")
+        original_close(fd)
+
+    monkeypatch.setattr(loader_mod.os, "close", close_then_fail)
+    with pytest.raises(PackageLoadError) as error:
+        try:
+            raise PackageLoadError(PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE)
+        finally:
+            loader_mod._close_owned_fds(fds)
+    assert error.value.code is PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE
+    assert set(attempted) == set(fds)
+    assert len(attempted) == 2
+    assert len(os.listdir("/proc/self/fd")) == live_before
+    assert load(issuer, identity).assets
+
+
+def test_cleanup_error_without_primary_is_typed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file = tmp_path / "local.txt"
+    file.write_bytes(b"x")
+    fd = os.open(file, os.O_RDONLY)
+    original_close = loader_mod.os.close
+
+    def close_then_fail(target: int) -> None:
+        original_close(target)
+        if target == fd:
+            raise OSError("synthetic close-after-success")
+
+    monkeypatch.setattr(loader_mod.os, "close", close_then_fail)
+    expect(
+        PackageLoadCode.PACKAGE_IO_FAILURE,
+        lambda: loader_mod._close_owned_fds([fd]),
+    )
+
+
+def test_asset_failure_and_multiple_cleanup_close_faults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    issuer, identity = prepare(
+        tmp_path,
+        [("deep/one/two/file.txt", b"original", "stock.count")],
+    )
+    live_before = len(os.listdir("/proc/self/fd"))
+    real_read = loader_mod._read_open_fd
+    real_close = loader_mod.os.close
+    reads = 0
+    injected_closes: list[str] = []
+
+    def fail_leaf_read(fd: int, cap: int) -> bytes:
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            raise PackageLoadError(PackageLoadCode.PACKAGE_READ_UNSTABLE)
+        return real_read(fd, cap)
+
+    def fail_nested_closes(fd: int) -> None:
+        target = os.readlink(f"/proc/self/fd/{fd}")
+        real_close(fd)
+        if "/deep/" in target or target.endswith("/deep"):
+            injected_closes.append(target)
+            raise OSError("synthetic close-after-success")
+
+    monkeypatch.setattr(loader_mod, "_read_open_fd", fail_leaf_read)
+    monkeypatch.setattr(loader_mod.os, "close", fail_nested_closes)
+    expect(PackageLoadCode.PACKAGE_READ_UNSTABLE, lambda: load(issuer, identity))
+    assert len(injected_closes) >= 2
+    assert issuer._live == {}
+    assert len(os.listdir("/proc/self/fd")) == live_before
+
+
+def test_root_parent_close_failure_does_not_leak_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    issuer, identity = prepare(tmp_path)
+    live_before = len(os.listdir("/proc/self/fd"))
+    original_close = loader_mod.os.close
+    failed = False
+
+    def fail_root_close_after_success(fd: int) -> None:
+        nonlocal failed
+        target = os.readlink(f"/proc/self/fd/{fd}")
+        original_close(fd)
+        if target == "/" and not failed:
+            failed = True
+            raise OSError("synthetic parent-close failure")
+
+    monkeypatch.setattr(loader_mod.os, "close", fail_root_close_after_success)
+    expect(PackageLoadCode.PACKAGE_IO_FAILURE, lambda: load(issuer, identity))
+    assert failed
+    assert issuer._live == {}
+    assert len(os.listdir("/proc/self/fd")) == live_before

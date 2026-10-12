@@ -13,7 +13,7 @@ import stat
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import Final
+from typing import Final, Self
 
 from agent_core.domain_descriptor import (
     MAX_ASSETS,
@@ -115,10 +115,13 @@ def _directory(info: os.stat_result, root_device: int) -> None:
 class TrustedPackageRootLease:
     """Opaque FD lifetime; only HostPackageRootIssuer can mint a live lease."""
 
-    __slots__ = ("_fd", "_identity", "_owner", "_closed", "_active")
+    __slots__ = ("_active", "_closed", "_fd", "_identity", "_owner")
 
     def __init__(
-        self, token: object, fd: int, identity: TrustedPackageIdentity,
+        self,
+        token: object,
+        fd: int,
+        identity: TrustedPackageIdentity,
         owner: object,
     ) -> None:
         if token is not _LEASE_TOKEN:
@@ -129,7 +132,7 @@ class TrustedPackageRootLease:
         self._closed = False
         self._active = False
 
-    def __enter__(self) -> TrustedPackageRootLease:
+    def __enter__(self) -> Self:
         if self._closed or self._active:
             raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
         self._active = True
@@ -164,7 +167,10 @@ class HostPackageRootIssuer:
                 or ident.generation_id in self._catalog
                 or type(ident.expected_manifest_digest) is not str
                 or len(ident.expected_manifest_digest) != 64
-                or any(ch not in "0123456789abcdef" for ch in ident.expected_manifest_digest)
+                or any(
+                    ch not in "0123456789abcdef"
+                    for ch in ident.expected_manifest_digest
+                )
             ):
                 raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
             self._catalog[ident.generation_id] = generation
@@ -190,7 +196,9 @@ class HostPackageRootIssuer:
                 os.close(fd)
             raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE) from exc
 
-    def _check(self, lease: TrustedPackageRootLease, expected: TrustedPackageIdentity) -> tuple[int, int]:
+    def _check(
+        self, lease: TrustedPackageRootLease, expected: TrustedPackageIdentity
+    ) -> tuple[int, int]:
         if (
             type(lease) is not TrustedPackageRootLease
             or lease._owner is not self
@@ -232,7 +240,9 @@ def _read_open_fd(fd: int, max_bytes: int) -> bytes:
     return bytes(result)
 
 
-def _open_asset(root_fd: int, relative_path: str, root_device: int) -> tuple[int, list[int]]:
+def _open_asset(
+    root_fd: int, relative_path: str, root_device: int
+) -> tuple[int, list[int]]:
     components = relative_path.split("/")
     if (
         len(components) > _MAX_DEPTH
@@ -272,13 +282,18 @@ class LocalPackageLoader:
     """Never interprets assets or issues a DomainBinding."""
 
     def load(
-        self, lease: TrustedPackageRootLease, expected: TrustedPackageIdentity,
+        self,
+        lease: TrustedPackageRootLease,
+        expected: TrustedPackageIdentity,
     ) -> VerifiedPackageSnapshotV1:
         _linux()
         # The private issuer is the only authority to validate this lease.
         if type(lease) is not TrustedPackageRootLease:
             raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
-        root_dev, _ = lease._owner._check(lease, expected)
+        owner = lease._owner
+        if not isinstance(owner, HostPackageRootIssuer):
+            raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
+        root_dev, _ = owner._check(lease, expected)
         descriptor_fd = -1
         try:
             descriptor_fd = os.open(
@@ -295,10 +310,15 @@ class LocalPackageLoader:
             if descriptor_fd >= 0:
                 os.close(descriptor_fd)
         try:
-            descriptor = parse_package_descriptor(raw, supported_profile=expected.runtime_profile)
+            descriptor = parse_package_descriptor(
+                raw, supported_profile=expected.runtime_profile
+            )
         except PackageDescriptorError as exc:
             raise PackageLoadError(PackageLoadCode.PACKAGE_DESCRIPTOR_INVALID) from exc
-        if descriptor.domain_id != expected.domain_id or descriptor.domain_version != expected.domain_version:
+        if (
+            descriptor.domain_id != expected.domain_id
+            or descriptor.domain_version != expected.domain_version
+        ):
             raise PackageLoadError(PackageLoadCode.PACKAGE_DESCRIPTOR_INVALID)
         if descriptor.runtime_compatibility != PROFILE:
             raise PackageLoadError(PackageLoadCode.PACKAGE_PROFILE_MISMATCH)
@@ -322,11 +342,15 @@ class LocalPackageLoader:
                 info = os.fstat(asset_fd)
                 identity = (info.st_dev, info.st_ino)
                 if identity in inodes:
-                    raise PackageLoadError(PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE)
+                    raise PackageLoadError(
+                        PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE
+                    )
                 inodes.add(identity)
                 content = _read_open_fd(asset_fd, min(_MAX_ASSET, _MAX_TOTAL - total))
                 if hashlib.sha256(content).hexdigest() != ref.sha256:
-                    raise PackageLoadError(PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE)
+                    raise PackageLoadError(
+                        PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE
+                    )
                 total += len(content)
                 assets.append(VerifiedAssetV1(ref, content))
             except OSError as exc:

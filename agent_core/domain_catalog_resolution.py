@@ -529,7 +529,10 @@ def _resolve_owned_diagnostic_graph(
             scope = registry_entry.fields.get("scope")
             declared_namespace = registry_entry.fields.get("namespace")
             required_scope = "CORE" if registry_entry.namespace == "CORE" else "DOMAIN"
-            if scope != required_scope or declared_namespace != registry_entry.namespace:
+            if (
+                scope != required_scope
+                or declared_namespace != registry_entry.namespace
+            ):
                 _deny(D2CCode.D2C_EXACT_DEPENDENCY_MISSING)
         raw = _canonical_definition(registry_entry)
         actual = hashlib.sha256(raw).hexdigest()

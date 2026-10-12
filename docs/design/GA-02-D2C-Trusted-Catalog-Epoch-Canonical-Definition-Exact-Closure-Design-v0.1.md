@@ -290,3 +290,140 @@ A relation between these values is made **only** by the exact asset \`(kind,name
 **Formal current status:** \`GA-02 D2-C B01–B10/R11–R13 TARGETED NORMATIVE REMEDIATION = SUBMITTED\`; \`INDEPENDENT DESIGN RE-REVIEW = PENDING\`; \`C0 IMPLEMENTATION READINESS = HOLD\` pending exact field manifests/vectors and physical test contracts; \`C1 PRODUCTION TRUST = HOLD\`; \`PR #114 MERGE = NOT AUTHORIZED\`.
 
 **Next task:** \`GA-02 D2-C — PR #114 Exact-HEAD Targeted Independent Normative Design Re-Review + C0 Readiness Gap Assessment\`. If any blocked items remain, address them as bounded design-only amendments **before** a separate isolated implementation authorization.
+
+
+---
+
+## 13. RR-01–RR-07 Final Normative Contract + Reproducible Hash Vector Remediation v0.3
+
+**Status: TARGETED REMEDIATION SUBMITTED — INDEPENDENT EXACT-HEAD RE-REVIEW REQUIRED; C0 IMPLEMENTATION STILL NOT AUTHORIZED.** This §13 supersedes conflicting D2-C §§3–12 only. The physical Registry/Definition/D1/D2-A/D2-B contracts and merged parent D2 §11.7 remain superior. All literals in §13 are *diagnostic C0 test references*, not authorized publisher artifacts. No production C1 owner, catalog epoch/mutation fence, or DomainBinding is created.
+
+### 13.1 RR-01 — Definitive definition digest compatibility
+
+**Authoritative definition_sha256 = SHA256(canonical_definition_json_UTF8_bytes)**, without any prefix or trailing NUL. This is the exact merged upstream D2 §11.7 algorithm; the previously proposed §12.3 / §12.8 \`SHA256(b"GA02-D2C-DEF-1\x00" + ...)\` under the same field name is **RETRACTED**, never emitted under \`definition_sha256\`. No versioned alternative definition digest is approved for C0. Definition canonical JSON uses sorted recursive keys, compact separators, UTF-8 \`ensure_ascii=false\`, no BOM/newline; rules for NFC, strings, strict numeric types, nulls and list order follow §13.2. Existing upstream D2-D \`GA02-D2-BINDING-1\x00\` root schema and five published binding vectors are untouched.
+
+Domain separation remains appropriate solely for **distinct** D2-C evidence fields \`edge_digest\`, \`host_catalog_digest\`, \`closure_digest\`; their root schemas and independent reference outputs appear in §13.5. None substitutes for \`definition_sha256\`.
+
+### 13.2 RR-02 — Exact ten-class field/type manifest, ownership and definition vectors
+
+**Locked source baseline:** \`runtime/registries/definitions.py@3c8d8eca2855236f2c3870926d5cd304c16e5edd\` and \`runtime/contracts/enums.py\` for \`PlanningMode\`. All ten exact physical classes below are covered; a missing/extra field or different field type requires a separately versioned amendment. The C0 validator receives plain primitive *owned copied data* only; it does not call \`model_dump\`, deserialize a callable, or consult live RegistryRecord objects. Prior to validation, its input-container ownership is enforced by a recursive defensive copy of only exact builtin \`dict/list/str/bool/int/NoneType\` values, rejecting subclasses, cycles, arbitrary objects, excessive nesting and oversized content. No caller-mutable \`dict\` or \`list\` may survive in returned evidence. A resulting internal tuple/key-value tuple projection and immutable scalar-only result are mandatory. Host capture from live Pydantic objects remains separate C1 authority work.
+
+The following type notation is normative:
+\`S\` = exactly \`str\`; \`B\` = exactly \`bool\`; \`I\` = exactly \`int\` but never bool; \`L[S]\` = exactly list of exactly strings; \`?\` means either the specified type or explicit JSON null; \`E(x)\` = enum string in the listed physical members. **Every field listed below must appear in the canonical object**, including optional fields as explicit null; no omission of fields with model defaults. \`S\` values must be NFC with no surrogate / forbidden control, and explicit ID/version/namespace validation is applied by the associated source-key contract. Optional IDs when non-null also require the canonical D1 identifier profile. Treat \`None\` distinct from \`[]\`. Only \`PolicyDefinition.priority\` allows an integer; no float anywhere.
+
+| Exact physical definition class | Required canonical keys and permitted types |
+|---|---|
+| ActionDefinition | action_id:S, version:S, category:S, description:S, intrusiveness_level:E(VERY_LOW,LOW,MEDIUM,HIGH), requires_confirmation:B, required_capability:S?, allowed_planning_modes:L[E(FORCED,DETERMINISTIC,AGENT_PLANNED,DEGRADED)], enabled:B |
+| StrategyDefinition | strategy_id:S, version:S, description:S, preferred_goals:L[S], preferred_needs:L[S], compatible_emotions:L[S], required_conditions:L[S], avoid_conditions:L[S], default_actions:L[S], intrusiveness_level:E(VERY_LOW,LOW,MEDIUM,HIGH), enabled:B |
+| SkillDefinition | skill_id:S, version:S, enabled:B, supported_actions:L[S]?, required_tools:L[S]?, optional_tools:L[S]?, allowed_states:L[S]?, input_schema:S?, output_schema:S?, timeout_policy:S?, retry_policy:S?, idempotency_policy:S?, side_effect_level:S? |
+| WorkflowDefinition | workflow_id:S, version:S, enabled:B, states:L[S]?, entry_conditions:L[S]?, exit_conditions:L[S]?, supported_events:L[S]?, allowed_states:L[S]?, checkpoint_enabled:B?, timeout_policy:S?, resume_policy:S?, required_tools:L[S]?, optional_tools:L[S]? |
+| ToolDefinition | tool_id:S, version:S, enabled:B, description:S?, input_schema:S?, output_schema:S?, timeout_policy:S?, retry_policy:S?, idempotency_mode:S?, side_effect_level:S?, required_permissions:L[S]?, resource_locks:L[S]? |
+| PolicyDefinition | rule_id:S, version:S, priority:I, scope:S, trigger:S?, effect:S?, enabled:B |
+| PromptDefinition | prompt_id:S, version:S, layer:E(RUNTIME_BASE,DOMAIN,TASK,CONSTRAINT), domain:S?, stage:S?, model_constraints:S?, schema_contract:S? |
+| DomainManifest | domain_id:S, name:S, version:S, enabled:B, runtime_compatibility:S?, required_core_schemas:L[S]?, registered_schemas:L[S]?, registered_intents:L[S]?, registered_workflows:L[S]?, registered_capabilities:L[S]?, registered_skills:L[S]?, registered_tools:L[S]?, knowledge_domains:L[S]?, prompt_packages:L[S]?, state_schema:S?, eval_packages:L[S]?, feature_flags:L[S]? |
+| SchemaDefinition | schema_id:S, version:S, scope:E(CORE,DOMAIN), namespace:S?, schema_reference:S? |
+| CapabilityDefinition | capability_id:S, version:S, domain:S?, implementation_type:S?, status:S?, business_taxonomy_ref:S?, intents:L[S]?, entities:L[S]?, needs:L[S]?, skills:L[S]?, workflows:L[S]?, tools:L[S]?, knowledge_dependencies:L[S]?, state_dependencies:L[S]?, policy_dependencies:L[S]?, validation_dependencies:L[S]?, eval_cases:L[S]? |
+
+**Fixture generation rule (unambiguous full canonical input):** To construct each vector below, materialize **exactly every field** in that row; put JSON null in every \`?\` field **unless overridden below**, \`true\` in \`enabled\`, and \`[]\` in every non-nullable \`L[S]\` field. Use literal \`version="1.0.0"\`. Overrides below replace only the named fields; all other fields retain that deterministic baseline. Serialize as stated §13.1; do not add type wrappers, hash prefixes, implicit Pydantic fields or inferred defaults.
+
+| Vector | Exact overrides on the complete manifest baseline | SHA-256 of canonical JSON UTF-8 |
+|---|---|---|
+| D01 ActionDefinition | action_id="stock.count"; category="inventory"; description="Count"; intrusiveness_level="LOW"; requires_confirmation=false; allowed_planning_modes=["DETERMINISTIC"] | \`991e6b213af25e38fb6482b8e0f4f52f201fff26c157ac1953b169013063ffbf\` |
+| D02 StrategyDefinition | strategy_id="stock.strategy"; description="Strategy"; intrusiveness_level="LOW" | \`5ca6bcd39d3e3899e0e43c33c9a7f2e055905795646aa95af3bcf879fc7fe389\` |
+| D03 SkillDefinition | skill_id="stock.skill" | \`07dd4a06978f8fe8665edb5587826e3de36fe5acae6808d0576b150ec86d8ef2\` |
+| D04 WorkflowDefinition | workflow_id="stock.workflow" | \`4fc3bad08bbaa5bcedb90bd1f5eade2bd39bb0aa45ea7b32e00084704b62e98a\` |
+| D05 ToolDefinition | tool_id="stock.tool" | \`0c3f922fe6b16cac6ce54235d5938a4ac14f225487417bd92cafd49a0ac4f55a\` |
+| D06 PolicyDefinition | rule_id="stock.rule"; priority=1; scope="inventory.reconcile" | \`7181937a3b97dc8ee345e59db9b2332cb56b8192c6a34fe1da6cedc2bd5ce2d8\` |
+| D07 PromptDefinition | prompt_id="stock.prompt"; layer="DOMAIN"; domain="inventory.reconcile" | \`1693c258ac856f25af1ca1cc5679513e2bb2595b0cf8f4ca6509591f98249e05\` |
+| D08 DomainManifest | domain_id="inventory.reconcile"; name="Inventory"; runtime_compatibility="GA02-D1-1" | \`3d0a395c4760745a913247eb2ff0e0a65fd84fe7b0733d2e9c25a8152f083f56\` |
+| D09 SchemaDefinition | schema_id="stock.schema"; scope="DOMAIN"; namespace="inventory.reconcile" | \`fc7cd1e466d3bc4b8b0a2ab6eba0843789282e96482710ae0646bd0b37a90591\` |
+| D10 CapabilityDefinition | capability_id="stock.capability"; domain="inventory.reconcile" | \`5c16c2c9f1d09a357bf856d56745f561b6ad63685e15db1fdf7b0ab7c9ac7be0\` |
+
+All D01–D10 digest values were **locally computed reference values**, not yet independently validated against a second implementation. An independent exact-byte re-review must reproduce each; a plausible-looking hex digest is not evidence of correct contract compatibility.
+
+**Negative requirements:** reject extra/missing key, omitted nullable key, subclass of a builtin, unhashable or nested callable, cyclic dict/list, float/NaN/Infinity, bool-as-int, unknown enum, non-NFC string, surrogate, forbidden C0/Cs controls, oversized string/list, altered list order being normalized silently, and changes to an originally canonical duplicate ID. No source callback, definition custom serializer or registry read may run from this pure C0 core.
+
+### 13.3 RR-03 — Graph completeness, edge profile and cycles
+
+**Resolution result is only complete relative to the declared supported relation inventory in §12.4.** Fix \`graph_completeness="SUPPORTED_RELATIONS_ONLY"\` and \`operational_readiness="NOT_ASSESSED"\` on every C0 result; no other success value exists in C0. Unresolved \`DomainManifest.required_core_schemas\`, other DomainManifest \`registered_*\`, Capability taxonomy references, Prompt/Schema descriptive refs and downstream host operational policies must be separately reported as \`UNRESOLVED_NON_GRAPH_METADATA\`. An empty valid graph is diagnostic, never runnable.
+
+**Versioned edge extension:** Upstream D2 §11.4 defines the authoritative exact source and target tuple; D2-C adds an *explicitly versioned diagnostic occurrence envelope*, not a silent modification of that tuple. \`DiagnosticEdgeOccurrenceV1(source_kind,source_namespace,source_id,source_version,relation_id,ordinal,declared_target_id,outcome,target_kind?,target_namespace?,target_id?,target_version?)\`. \`ordinal >= 0\`, with exact int excluding bool; \`outcome="PINNED"\` requires all target members, while \`outcome="OPTIONAL_ABSENT"\` requires every target member null and relation exactly \`skill.optional_tools\` or \`workflow.optional_tools\`. Each source field list index (including duplicate IDs) is a distinct occurrence; a source scalar has ordinal 0. Every declared occurrence has exactly one decision record. The underlying resolved edge, if \`PINNED\`, still projects to upstream \`(source_kind,source_namespace,source_id,source_version,relation,target_kind,target_namespace,target_id,target_version)\` without changing the upstream binding schema. Extra/duplicate/ambiguous/unmatched occurrence records are invalid.
+
+**Cycle policy:** All directed cycles among the supported typed relations are rejected, including the common-looking \`action.required_capability → capability.skills → skill.supported_actions → action\` loop. The draft deliberately selects a conservative resolver that **will refuse such packages**; it is not an assertion that every such business composition is unsafe. A future supported-cyclic profile requires explicit versioning and different graph semantics, not implicit cycle tolerance. Test a noncyclic legitimate Action→Capability→Skill→Tool graph and the 3-edge returning-to-Action cycle; shared DAG joins without a back edge are allowed. \`graph_completeness\` does not mean every operational dependency outside the supported field inventory was checked.
+
+### 13.4 RR-04 — Closed resource accounting and deterministic traversal
+
+**Frozen candidate C0 limits (subject to independent review):** source D1 refs ≤256; distinct nodes ≤256; edge occurrences ≤1024; traversal depth ≤32 (seed node at depth 0, neighbor depth = parent+1); list items ≤256 per field; UTF-8 canonical definition bytes ≤10,240 each; total copied canonical input and all canonical evidence envelope bytes ≤2,097,152. The total limit is intentionally tighter than 256×10,240 bytes; a graph within individual limits may still be rejected by the total limit. “Total copied canonical input” includes owned definition JSON bytes and encoded edge/catalog declaration JSON; each logical buffer counts once, with no reliance on allocation size. “Evidence envelope bytes” includes final normalized edge and closure inputs, each once; temporary implementation allocations are bounded separately by requiring *incremental* preallocation checks and refusing before materializing over-limit output. This is **not** a wall-clock or exact Python heap ceiling.
+
+Deterministic work: strict validation and counting before graph traversal, reject a 257th node or 1025th edge atomically, sorted root keys and sorted edge occurrence keys, DFS \`UNSEEN/ACTIVE/DONE\`, depth-first sorted neighbors; self-loop and ACTIVE back-edge reject, DONE shared node passes. Check resource-limit priority before cycle evaluation if both faults independently exist. Cases exactly at vs exceeding each limit and randomized declaration order must be in the physical test matrix; invalid oversized values must not cause serialization of unknown objects.
+
+### 13.5 RR-06 — Exact digest envelope schemas and reproducible vectors
+
+**Same strict JSON encoding as §13.1.** Separate D2-C evidence digests have domain-separated bytes \`SHA256(UTF8(profile)+b"\\x00"+canonical_JSON_UTF8)\`, where \`b"\\x00"\` denotes the **single NUL byte** (0x00), not printable backslash characters. The profile is also a required exact \`profile\` string field inside each envelope; this is intentional. Each envelope has **exactly the listed root keys**, no extension fields or unknown nested keys. The following synthetic empty catalog/closure are serialization fixtures only and **not admitted as operationally ready**.
+
+**E01 Edge catalog.** Root keys EXACTLY: \`profile,host_catalog_generation,edges\`; edges array contains zero or more \`DiagnosticEdgeOccurrenceV1\` records, sorted by source key/relation/ordinal. Each nonempty edge has precisely §13.3 fields and null target members only in the optional-absent union. Reference canonical JSON:
+
+~~~json
+{"edges":[],"host_catalog_generation":"diagnostic-g1","profile":"GA02-D2C-EDGES-1"}
+~~~
+\`edge_digest = df28640283682cbc5ce71f51e2581ded513ede5223aa335e89b55e615c8ff1ef\`.
+
+**E02 Catalog envelope.** Root keys EXACTLY: \`adapter_entries,approved_core_schema_keys,domain_id,domain_version,edge_digest,host_catalog_generation,host_policy_generation,host_policy_id,manifest_sha256,profile,publisher_generation,registry_entries,runtime_profile\`. Schema for \`approved_core_schema_keys\`: sorted \`[{"id":S,"version":S}]\`; \`registry_entries\`: sorted \`[{"registry_kind":S,"namespace":S,"id":S,"version":S,"definition_type":S,"definition_sha256":hex64,"record_enabled":B,"intrinsic_enabled":B?}]\`; \`adapter_entries\`: sorted \`[{"registry_kind":S,"namespace":S,"id":S,"version":S,"status":E(NOT_REQUIRED_BY_DIAGNOSTIC_PROFILE,ABSENT_UNVERIFIED,DECLARED_NON_AUTHORITATIVE),"adapter_key":S?,"adapter_generation":S?,"tenant_scope_allowlist_id":S?,"domain_scope":S?,"host_registration_digest":hex64?}]\`. Exact union rules in §13.6. Catalog digest **excludes its own digest field**; it is not a root key in hashed JSON. Reference canonical JSON:
+
+~~~json
+{"adapter_entries":[],"approved_core_schema_keys":[],"domain_id":"inventory.reconcile","domain_version":"1.0.0","edge_digest":"df28640283682cbc5ce71f51e2581ded513ede5223aa335e89b55e615c8ff1ef","host_catalog_generation":"diagnostic-g1","host_policy_generation":"diagnostic-p1","host_policy_id":"diagnostic-policy","manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profile":"GA02-D2C-CATALOG-1","publisher_generation":"package-g1","registry_entries":[],"runtime_profile":"GA02-D1-1"}
+~~~
+\`host_catalog_digest = ecfc18f4e025d898c74865e60e5b2199df10584bb1ece0b2b84e4d0d03bf45cc\`.
+
+**E03 Diagnostic closure.** Root keys EXACTLY: \`adapter_evidence,definition_hashes,dependency_keys,edges,graph_completeness,host_catalog_generation,manifest_sha256,operational_readiness,profile,seed_keys\`. Keys \`seed_keys\` and \`dependency_keys\`: sorted \`[{"registry_kind":S,"namespace":S,"id":S,"version":S}]\`; \`definition_hashes\`: sorted \`[{"registry_kind":S,"namespace":S,"id":S,"version":S,"definition_sha256":hex64}]\`; \`edges\`: sorted nonempty occurrence objects as in E01; \`adapter_evidence\`: sorted adapter entries as in E02. \`graph_completeness="SUPPORTED_RELATIONS_ONLY"\`; \`operational_readiness="NOT_ASSESSED"\`; this hashed envelope excludes the \`closure_digest\` itself. Reference canonical JSON:
+
+~~~json
+{"adapter_evidence":[],"definition_hashes":[],"dependency_keys":[],"edges":[],"graph_completeness":"SUPPORTED_RELATIONS_ONLY","host_catalog_generation":"diagnostic-g1","manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","operational_readiness":"NOT_ASSESSED","profile":"GA02-D2C-CLOSURE-1","seed_keys":[]}
+~~~
+\`closure_digest = 342f90ec3f8526f957d103f9677b778635ab9c9195c46b9f1bd00c83556d0eca\`.
+
+**Provenance warning:** These calculated fixture values are reproducible arithmetic and **not independently verified** against a second implementation yet. The C0 review must check all 13 displayed vectors, verify the five upstream D2-D §11.7 binding fingerprint values independently, and check a nonempty DAG vector before code authorization. E01–E03 empty vectors are a normalization baseline, **not evidence of closure correctness or a production Host catalog**.
+
+### 13.6 RR-05 — Adapter status tagged union and operational non-authority
+
+\`DiagnosticAdapterStatusV1\` root keys EXACTLY match E02 adapter object. The \`status\` discriminator is mandatory and only the three values below are allowed. All five adapter/attestation fields \`adapter_key,adapter_generation,tenant_scope_allowlist_id,domain_scope,host_registration_digest\` are **present in JSON even when null**.
+
+| Status | Field contract | C0 interpretation |
+|---|---|---|
+| \`NOT_REQUIRED_BY_DIAGNOSTIC_PROFILE\` | all five fields exactly null | diagnostic-only assertion of non-requirement; not Host operational policy |
+| \`ABSENT_UNVERIFIED\` | all five fields exactly null | no claimed adapter; no implied permission |
+| \`DECLARED_NON_AUTHORITATIVE\` | all five fields exact nonempty strings, \`host_registration_digest\` hex64 | caller-declared metadata only; does not authenticate registration |
+
+Contradictory nonnull fields, missing key, unknown tag, invalid digest, duplicate exact adapter key or inconsistent catalog generation → \`D2C_HOST_ADAPTER_MISMATCH\` or \`D2C_EDGE_CATALOG_INVALID\` per §13.7 precedence. A C0 diagnostic has **no trusted operational profile** and cannot reject the graph merely because a particular tool/action might eventually need an adapter; always report \`operational_readiness=NOT_ASSESSED\`. A future C1/D2-D Host profile, owned outside this resolver, must define adapter requirements and authority checks independently. Never dereference \`RegistryRecord.implementation_ref\`.
+
+### 13.7 RR-07 — Fixed diagnostic API, error precedence and negative oracle
+
+**Exactly one internal C0 entry proposed:** \`_resolve_untrusted_catalog_observation(input: DiagnosticCatalogInputV1) -> DiagnosticResolutionSnapshotV1\`. There is **no** \`mode="C1"\`, \`trusted\` bool, issuer or producer-authentication parameter. An external request for C1 does not reach this function; a separately gated external adapter must reject it with \`D2C_UNTRUSTED_CATALOG_SOURCE\` *before* entry (that adapter is NOT implemented/authorized). Unexpected/malformed fields on a C0 input always fail typed validation; never create a trusted result.
+
+Ordering (first failure wins for simultaneously invalid diagnostic inputs, based on a fixed pass order rather than collection iteration):
+
+1. Input exact type/shape/ownership, unsupported field/unknown mode/forged trusted annotation, generation, policy/scope incoherence and catalog envelope missing/duplicate keys → \`D2C_CATALOG_GENERATION_MISMATCH\` for exact generation disagreement; otherwise \`D2C_RESOLUTION_UNSTABLE\` (malformed non-generation diagnostic envelope). Never call an untrusted object's methods.
+2. Aggregate/per-field canonical byte bounds and known count limits → \`D2C_RESOURCE_LIMIT\`.
+3. Fixed ten-class canonical manifest, nested types, exact enumeration, NFC, unknown/missing keys → \`D2C_CANONICAL_DEFINITION_INVALID\`; then exact pinned \`definition_sha256\` comparison → \`D2C_DEFINITION_HASH_MISMATCH\`.
+4. Edge catalog cardinality/duplicate/extra occurrence, union fields, source declaration mismatch and ambiguity → \`D2C_EDGE_CATALOG_INVALID\`.
+5. Missing exact allowed target and cross-domain/CORE violation → \`D2C_EXACT_DEPENDENCY_MISSING\`; disabled required record → \`D2C_DEPENDENCY_DISABLED\`; adapter status contradictions → \`D2C_HOST_ADAPTER_MISMATCH\`.
+6. Deterministic \`ACTIVE\` back-edge → \`D2C_DEPENDENCY_CYCLE\`.
+7. Unexpected ordinary runtime exception during **pure** processing → \`D2C_RESOLUTION_UNSTABLE\` with public \`str(error)==code.value\`. Never catch process-fatal \`BaseException\`; never include caller objects, filenames, raw bytes or implementation references in error messages.
+
+No partial result, success-with-warning, retry of mismatched generations, fallback to namespace None/latest, or C1 escalation. Validation failure never invokes Tool/LLM/StateStore, opens package files or changes Registries. Deterministic adversarial oracle: malformed envelope + oversized payload → malformed-envelope code; valid envelope + oversized payload + cycle → resource-limit code; valid in-bound malformed definition + edge fault → definition-invalid code; exact missing dependency + graph cycle → missing-dependency code; adapter contradiction + cycle → adapter-mismatch code. Request-shape and error-order tests must be independently reviewed.
+
+### 13.8 Verification plan / authorization ledger
+
+**Required exact file and fixture scope before any C0 implementation approval:** \`agent_core/domain_catalog_resolution.py\`, \`tests/test_ga02_d2c_catalog_resolution.py\` only, pending separate scope authorization. Candidate source must not modify \`runtime/registries/base.py\`, D2-A, D2-B, D2-D, the Agent Loop or production composition. Physical test vectors: D01–D10; E01–E03; all five upstream binding fixtures; nonempty valid DAG and explicit Action→Capability→Skill→Action cycle; two domains with same ID/version; schema-only CORE; malformed/null/unknown field; duplicate ordinal edge; optional absent; adapter status and mutable aliased source; boundary/over-limit resource tests. All four engineering gates and GA-01C compatibility required.
+
+| RR | Normative disposition from this remediation | Closure still required |
+|---|---|---|
+| RR-01 | Definition digest restored to upstream §11.7 | Independent exact-byte/hash check |
+| RR-02 | Ten class field/type manifest + D01–D10 reference inputs/hashes specified | Independent test vectors, ownership invariants |
+| RR-03 | Supported-only completeness, occurrence extension, conservative cycles | DAG/cycle oracle and upstream edge projection re-review |
+| RR-04 | Numeric bounds, byte accounting and DFS order specified | Adequacy/boundary fixtures |
+| RR-05 | Tagged status union with exact nullability | Negative contradiction fixtures |
+| RR-06 | Exact edge/catalog/closure JSON envelopes and E01–E03 computed vectors | Second recomputation and nonempty graph vector |
+| RR-07 | One C0 API and ordered denial matrix | Physical adversarial fixtures |
+
+**Formal status: \`RR-01..07 FINAL NORMATIVE CONTRACT REMEDIATION = SUBMITTED\`; \`INDEPENDENT EXACT-HEAD RE-REVIEW = PENDING\`; \`C0 IMPLEMENTATION AUTHORIZATION = NOT ISSUED\`; \`C1 HOST PROVENANCE/ATOMIC PUBLICATION = HARD HOLD\`; \`PR #114 MERGE = NOT AUTHORIZED\`.** No new Runtime trusted issuer or physical concurrency guarantee is implied by the presence of these design vectors.

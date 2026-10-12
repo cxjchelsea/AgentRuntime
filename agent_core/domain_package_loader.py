@@ -10,11 +10,13 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
+import threading
+from contextlib import contextmanager
 import stat
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import Final, Self
+from typing import Callable, Final, Iterator, Self
 
 from agent_core.domain_descriptor import (
     MAX_ASSETS,
@@ -125,7 +127,7 @@ def _directory(info: os.stat_result, root_device: int) -> None:
 class TrustedPackageRootLease:
     """Opaque FD lifetime; only HostPackageRootIssuer can mint a live lease."""
 
-    __slots__ = ("_active", "_closed", "_fd", "_identity", "_owner")
+    __slots__ = ("_active", "_borrowing", "_closed", "_fd", "_identity", "_issuance", "_lock", "_owner")
 
     def __init__(
         self,
@@ -133,41 +135,77 @@ class TrustedPackageRootLease:
         fd: int,
         identity: TrustedPackageIdentity,
         owner: object,
+        issuance: object,
     ) -> None:
         if token is not _LEASE_TOKEN:
             raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
         self._fd = fd
         self._identity = identity
         self._owner = owner
+        self._issuance = issuance
+        self._lock = threading.RLock()
+        self._borrowing = False
         self._closed = False
         self._active = False
 
     def __enter__(self) -> Self:
-        if self._closed or self._active:
-            raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
-        self._active = True
+        with self._lock:
+            if self._closed or self._active:
+                raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
+            self._active = True
         return self
 
     def __exit__(self, _type: object, _value: object, _trace: object) -> None:
         self.close()
 
+    @contextmanager
+    def borrow(
+        self, issuer: HostPackageRootIssuer, expected: TrustedPackageIdentity
+    ) -> Iterator[int]:
+        # Serializes close and load; a closed/reassigned integer FD is never borrowed.
+        with self._lock:
+            if self._borrowing:
+                raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
+            root_dev, _ = issuer._check(self, expected)
+            self._borrowing = True
+            try:
+                yield root_dev
+            finally:
+                self._borrowing = False
+
     def close(self) -> None:
-        if not self._closed:
+        with self._lock:
+            if self._borrowing:
+                raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
+            if self._closed:
+                return
             self._closed = True
             self._active = False
             if isinstance(self._owner, HostPackageRootIssuer):
-                self._owner._live.pop(self._fd, None)
-            os.close(self._fd)
+                self._owner._release(self._issuance)
+            try:
+                os.close(self._fd)
+            except OSError as exc:
+                raise PackageLoadError(PackageLoadCode.PACKAGE_IO_FAILURE) from None
 
 
 class HostPackageRootIssuer:
-    """Trusted application bootstrap interface; no package-controlled input.
+    """Host-injected issuer; a deployment verifier is MANDATORY.
 
-    'sealed' is an assertion by the host publisher and must be independently
-    enforced by deployment. This class does not implement a publisher.
+    The verifier is an application-owned, independently sourced trust decision.
+    A caller-controlled lambda is NOT a security boundary. Production callers
+    must supply a verifier backed by their immutable publisher/allowlist.
     """
 
-    def __init__(self, generations: tuple[HostPublishedGeneration, ...]) -> None:
+    def __init__(
+        self,
+        generations: tuple[HostPublishedGeneration, ...],
+        *,
+        publication_verifier: Callable[[HostPublishedGeneration], bool],
+    ) -> None:
+        if not callable(publication_verifier):
+            raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
+        self._verifier = publication_verifier
         self._catalog: dict[str, HostPublishedGeneration] = {}
         for generation in generations:
             ident = generation.identity
@@ -186,27 +224,76 @@ class HostPackageRootIssuer:
             ):
                 raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
             self._catalog[ident.generation_id] = generation
-        self._live: dict[int, tuple[int, int]] = {}
+        self._live: dict[object, tuple[int, int, int]] = {}
+        self._lock = threading.RLock()
+
+    def _published(self, record: HostPublishedGeneration) -> bool:
+        if record.sealed is not True:
+            return False
+        try:
+            return self._verifier(record) is True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _open_trusted_absolute_root(path: str) -> int:
+        """No-follow *each* parent, not only the final generation directory.
+
+        The host must independently control the path allowlist and mount
+        namespace; a privileged mount attack is outside this contract.
+        """
+        _linux()
+        parts = path.split("/")
+        if not path.startswith("/") or any(p in {".", ".."} for p in parts):
+            raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
+        current = os.open(
+            "/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        )
+        try:
+            for name in (p for p in parts if p):
+                child = os.open(
+                    name,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    dir_fd=current,
+                )
+                os.close(current)
+                current = child
+            return current
+        except BaseException:
+            os.close(current)
+            raise
 
     def issue(self, generation_id: str) -> TrustedPackageRootLease:
         _linux()
         record = self._catalog.get(generation_id)
-        if record is None or record.sealed is not True:
+        if record is None or not self._published(record):
             raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
         fd = -1
+        transferred = False
+        issuance = object()
         try:
-            fd = os.open(
-                record.absolute_root,
-                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
-            )
+            fd = self._open_trusted_absolute_root(record.absolute_root)
             info = os.fstat(fd)
             _directory(info, info.st_dev)
-            self._live[fd] = (info.st_dev, info.st_ino)
-            return TrustedPackageRootLease(_LEASE_TOKEN, fd, record.identity, self)
-        except OSError as exc:
-            if fd >= 0:
-                os.close(fd)
-            raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE) from exc
+            with self._lock:
+                self._live[issuance] = (fd, info.st_dev, info.st_ino)
+            lease = TrustedPackageRootLease(
+                _LEASE_TOKEN, fd, record.identity, self, issuance
+            )
+            transferred = True
+            return lease
+        except OSError:
+            raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE) from None
+        finally:
+            if not transferred:
+                with self._lock:
+                    self._live.pop(issuance, None)
+                if fd >= 0:
+                    os.close(fd)
+
+    def _release(self, issuance: object) -> None:
+        with self._lock:
+            self._live.pop(issuance, None)
 
     def _check(
         self, lease: TrustedPackageRootLease, expected: TrustedPackageIdentity
@@ -220,17 +307,19 @@ class HostPackageRootIssuer:
         ):
             raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
         actual = self._catalog.get(expected.generation_id)
-        if actual is None or actual.sealed is not True or actual.identity != expected:
+        if actual is None or not self._published(actual) or actual.identity != expected:
             raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
+        with self._lock:
+            pinned = self._live.get(lease._issuance)
+        if pinned is None or pinned[0] != lease._fd:
+            raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
         try:
             info = os.fstat(lease._fd)
-        except OSError as exc:
-            raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE) from exc
-        pinned = self._live.get(lease._fd)
-        if pinned is None or pinned != (info.st_dev, info.st_ino):
+        except OSError:
+            raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE) from None
+        if (info.st_dev, info.st_ino) != pinned[1:]:
             raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
-        return pinned
-
+        return info.st_dev, info.st_ino
 
 def _read_open_fd(fd: int, max_bytes: int) -> bytes:
     before = os.fstat(fd)
@@ -305,75 +394,75 @@ class LocalPackageLoader:
         owner = lease._owner
         if not isinstance(owner, HostPackageRootIssuer):
             raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
-        root_dev, _ = owner._check(lease, expected)
-        descriptor_fd = -1
-        try:
-            descriptor_fd = os.open(
-                "package.json",
-                os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
-                dir_fd=lease._fd,
-            )
-            if os.fstat(descriptor_fd).st_dev != root_dev:
-                raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
-            raw = _read_open_fd(descriptor_fd, MAX_BYTES)
-        except OSError as exc:
-            raise _safe_os_error(exc, asset=False) from exc
-        finally:
-            if descriptor_fd >= 0:
-                os.close(descriptor_fd)
-        try:
-            descriptor = parse_package_descriptor(
-                raw, supported_profile=expected.runtime_profile
-            )
-        except PackageDescriptorError as exc:
-            raise PackageLoadError(PackageLoadCode.PACKAGE_DESCRIPTOR_INVALID) from exc
-        if (
-            descriptor.domain_id != expected.domain_id
-            or descriptor.domain_version != expected.domain_version
-        ):
-            raise PackageLoadError(PackageLoadCode.PACKAGE_DESCRIPTOR_INVALID)
-        if descriptor.runtime_compatibility != PROFILE:
-            raise PackageLoadError(PackageLoadCode.PACKAGE_PROFILE_MISMATCH)
-        if not descriptor.enabled:
-            raise PackageLoadError(PackageLoadCode.PACKAGE_DISABLED)
-        if descriptor.manifest_digest != expected.expected_manifest_digest:
-            raise PackageLoadError(PackageLoadCode.PACKAGE_DESCRIPTOR_DIGEST_MISMATCH)
-        if len(descriptor.asset_refs) > MAX_ASSETS:
-            raise PackageLoadError(PackageLoadCode.PACKAGE_RESOURCE_LIMIT)
-        assets: list[VerifiedAssetV1] = []
-        paths: set[str] = set()
-        inodes: set[tuple[int, int]] = set()
-        total = 0
-        for ref in descriptor.asset_refs:
-            if ref.relative_path in paths:
-                raise PackageLoadError(PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE)
-            paths.add(ref.relative_path)
-            opened: list[int] = []
+        with lease.borrow(owner, expected) as root_dev:
+            descriptor_fd = -1
             try:
-                asset_fd, opened = _open_asset(lease._fd, ref.relative_path, root_dev)
-                info = os.fstat(asset_fd)
-                identity = (info.st_dev, info.st_ino)
-                if identity in inodes:
-                    raise PackageLoadError(
-                        PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE
-                    )
-                inodes.add(identity)
-                content = _read_open_fd(asset_fd, min(_MAX_ASSET, _MAX_TOTAL - total))
-                if hashlib.sha256(content).hexdigest() != ref.sha256:
-                    raise PackageLoadError(
-                        PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE
-                    )
-                total += len(content)
-                assets.append(VerifiedAssetV1(ref, content))
+                descriptor_fd = os.open(
+                    "package.json",
+                    os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
+                    dir_fd=lease._fd,
+                )
+                if os.fstat(descriptor_fd).st_dev != root_dev:
+                    raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
+                raw = _read_open_fd(descriptor_fd, MAX_BYTES)
             except OSError as exc:
-                raise _safe_os_error(exc, asset=True) from exc
+                raise _safe_os_error(exc, asset=False) from exc
             finally:
-                for fd in reversed(opened):
-                    os.close(fd)
-        return VerifiedPackageSnapshotV1(
-            descriptor,
-            raw,
-            tuple(assets),
-            expected.generation_id,
-            expected.expected_manifest_digest,
-        )
+                if descriptor_fd >= 0:
+                    os.close(descriptor_fd)
+            try:
+                descriptor = parse_package_descriptor(
+                    raw, supported_profile=expected.runtime_profile
+                )
+            except PackageDescriptorError as exc:
+                raise PackageLoadError(PackageLoadCode.PACKAGE_DESCRIPTOR_INVALID) from exc
+            if (
+                descriptor.domain_id != expected.domain_id
+                or descriptor.domain_version != expected.domain_version
+            ):
+                raise PackageLoadError(PackageLoadCode.PACKAGE_DESCRIPTOR_INVALID)
+            if descriptor.runtime_compatibility != PROFILE:
+                raise PackageLoadError(PackageLoadCode.PACKAGE_PROFILE_MISMATCH)
+            if not descriptor.enabled:
+                raise PackageLoadError(PackageLoadCode.PACKAGE_DISABLED)
+            if descriptor.manifest_digest != expected.expected_manifest_digest:
+                raise PackageLoadError(PackageLoadCode.PACKAGE_DESCRIPTOR_DIGEST_MISMATCH)
+            if len(descriptor.asset_refs) > MAX_ASSETS:
+                raise PackageLoadError(PackageLoadCode.PACKAGE_RESOURCE_LIMIT)
+            assets: list[VerifiedAssetV1] = []
+            paths: set[str] = set()
+            inodes: set[tuple[int, int]] = set()
+            total = 0
+            for ref in descriptor.asset_refs:
+                if ref.relative_path in paths:
+                    raise PackageLoadError(PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE)
+                paths.add(ref.relative_path)
+                opened: list[int] = []
+                try:
+                    asset_fd, opened = _open_asset(lease._fd, ref.relative_path, root_dev)
+                    info = os.fstat(asset_fd)
+                    identity = (info.st_dev, info.st_ino)
+                    if identity in inodes:
+                        raise PackageLoadError(
+                            PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE
+                        )
+                    inodes.add(identity)
+                    content = _read_open_fd(asset_fd, min(_MAX_ASSET, _MAX_TOTAL - total))
+                    if hashlib.sha256(content).hexdigest() != ref.sha256:
+                        raise PackageLoadError(
+                            PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE
+                        )
+                    total += len(content)
+                    assets.append(VerifiedAssetV1(ref, content))
+                except OSError as exc:
+                    raise _safe_os_error(exc, asset=True) from exc
+                finally:
+                    for fd in reversed(opened):
+                        os.close(fd)
+            return VerifiedPackageSnapshotV1(
+                descriptor,
+                raw,
+                tuple(assets),
+                expected.generation_id,
+                expected.expected_manifest_digest,
+            )

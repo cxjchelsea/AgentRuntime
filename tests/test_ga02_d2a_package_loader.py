@@ -214,10 +214,13 @@ def test_descriptor_is_not_a_tool_or_registry(tmp_path: Path) -> None:
     assert not hasattr(snapshot, "register")
     assert not hasattr(snapshot, "binding_fingerprint")
 
+
 def test_missing_asset_is_integrity_failure(tmp_path: Path) -> None:
     issuer, identity = prepare(tmp_path)
     (tmp_path / "actions/a.txt").unlink()
-    expect(PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE, lambda: load(issuer, identity))
+    expect(
+        PackageLoadCode.PACKAGE_ASSET_INTEGRITY_FAILURE, lambda: load(issuer, identity)
+    )
 
 
 def test_symlink_descriptor_is_denied(tmp_path: Path) -> None:

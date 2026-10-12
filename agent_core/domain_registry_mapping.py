@@ -45,7 +45,9 @@ _TYPES: dict[str, tuple[str, type[Any], str, bool]] = {
 _INERT = frozenset({"knowledge", "state", "eval"})
 _SHA = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
 _ID = re.compile(r"[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*\Z", re.ASCII)
-_VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z", re.ASCII)
+_VERSION = re.compile(
+    r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z", re.ASCII
+)
 
 
 class D2BCode(str, Enum):
@@ -142,18 +144,32 @@ class RegistryKindMappingSnapshotV1:
 
 
 def _valid_policy(policy: object, snapshot: object, registries: object) -> bool:
-    if type(policy) is not KindMappingPolicyV1 or type(snapshot) is not VerifiedPackageSnapshotV1 or type(registries) is not RegistryCatalogViewV1:
+    if (
+        type(policy) is not KindMappingPolicyV1
+        or type(snapshot) is not VerifiedPackageSnapshotV1
+        or type(registries) is not RegistryCatalogViewV1
+    ):
         return False
     p = policy
     d = snapshot.descriptor
     if type(p.approved_core_schema_keys) is not frozenset or not all(
-        type(x) is tuple and len(x) == 2
-        and type(x[0]) is str and bool(_ID.fullmatch(x[0]))
-        and type(x[1]) is str and bool(_VERSION.fullmatch(x[1]))
+        type(x) is tuple
+        and len(x) == 2
+        and type(x[0]) is str
+        and bool(_ID.fullmatch(x[0]))
+        and type(x[1]) is str
+        and bool(_VERSION.fullmatch(x[1]))
         for x in p.approved_core_schema_keys
     ):
         return False
-    if not all(type(v) is str and bool(v) for v in (p.host_policy_id, p.host_policy_generation, p.expected_publication_generation_id)):
+    if not all(
+        type(v) is str and bool(v)
+        for v in (
+            p.host_policy_id,
+            p.host_policy_generation,
+            p.expected_publication_generation_id,
+        )
+    ):
         return False
     return (
         p.profile == "GA02-D2B-KIND-1"
@@ -167,7 +183,9 @@ def _valid_policy(policy: object, snapshot: object, registries: object) -> bool:
         and p.admitted_domain_id == d.domain_id
         and p.admitted_domain_version == d.domain_version
         and p.runtime_profile == d.runtime_compatibility
-        and p.expected_manifest_digest == d.manifest_digest == snapshot.expected_manifest_digest
+        and p.expected_manifest_digest
+        == d.manifest_digest
+        == snapshot.expected_manifest_digest
         and p.expected_publication_generation_id == snapshot.generation_id
     )
 
@@ -185,16 +203,34 @@ def _read(registry: Any, item: str, version: str, namespace: str) -> Any:
         raise D2BMappingError(D2BCode.D2B_REGISTRY_OBSERVATION_UNSTABLE) from None
 
 
-def _check_record(record: Any, item: str, version: str, namespace: str, definition_type: type[Any], id_field: str, intrinsic: bool) -> tuple[bool, bool | None]:
+def _check_record(
+    record: Any,
+    item: str,
+    version: str,
+    namespace: str,
+    definition_type: type[Any],
+    id_field: str,
+    intrinsic: bool,
+) -> tuple[bool, bool | None]:
     try:
         key, definition = record.key, record.definition
-        if type(key) is not RegistryKey or (key.item_id, key.version, key.namespace) != (item, version, namespace):
+        if type(key) is not RegistryKey or (
+            key.item_id,
+            key.version,
+            key.namespace,
+        ) != (item, version, namespace):
             _deny(D2BCode.D2B_REGISTRY_DEFINITION_MISMATCH)
-        if type(definition) is not definition_type or getattr(definition, id_field) != item or definition.version != version:
+        if (
+            type(definition) is not definition_type
+            or getattr(definition, id_field) != item
+            or definition.version != version
+        ):
             _deny(D2BCode.D2B_REGISTRY_DEFINITION_MISMATCH)
         enabled = record.enabled
         intrinsic_enabled = definition.enabled if intrinsic else None
-        if type(enabled) is not bool or (intrinsic and type(intrinsic_enabled) is not bool):
+        if type(enabled) is not bool or (
+            intrinsic and type(intrinsic_enabled) is not bool
+        ):
             _deny(D2BCode.D2B_REGISTRY_OBSERVATION_UNSTABLE)
         if enabled is not True or (intrinsic and intrinsic_enabled is not True):
             _deny(D2BCode.D2B_REGISTRY_DISABLED)
@@ -217,7 +253,10 @@ def _map_untrusted_observation(
     try:
         descriptor_to_domain_manifest(snapshot.descriptor)
         d = snapshot.descriptor
-        if type(snapshot.assets) is not tuple or tuple(a.ref for a in snapshot.assets) != d.asset_refs:
+        if (
+            type(snapshot.assets) is not tuple
+            or tuple(a.ref for a in snapshot.assets) != d.asset_refs
+        ):
             _deny(D2BCode.D2B_TRUSTED_CATALOG_INVALID)
     except (PackageDescriptorError, AttributeError, TypeError, ValueError):
         _deny(D2BCode.D2B_TRUSTED_CATALOG_INVALID)
@@ -225,8 +264,18 @@ def _map_untrusted_observation(
     if policy.admission_mode == "REGISTRY_MAPPING":
         if d.enabled is not True:
             _deny(D2BCode.D2B_REGISTRY_DISABLED)
-        domain_rec = _read(registries.domain, d.domain_id, d.domain_version, d.domain_id)
-        _check_record(domain_rec, d.domain_id, d.domain_version, d.domain_id, DomainManifest, "domain_id", True)
+        domain_rec = _read(
+            registries.domain, d.domain_id, d.domain_version, d.domain_id
+        )
+        _check_record(
+            domain_rec,
+            d.domain_id,
+            d.domain_version,
+            d.domain_id,
+            DomainManifest,
+            "domain_id",
+            True,
+        )
         try:
             if domain_rec.definition.runtime_compatibility != d.runtime_compatibility:
                 _deny(D2BCode.D2B_REGISTRY_DEFINITION_MISMATCH)
@@ -243,20 +292,38 @@ def _map_untrusted_observation(
         ns = asset_ref.namespace
         if ns != d.domain_id and not (kind == "schema" and ns == "CORE"):
             _deny(D2BCode.D2B_EXACT_NAMESPACE_MISMATCH)
-        if ns == "CORE" and (asset_ref.id, asset_ref.version) not in policy.approved_core_schema_keys:
+        if (
+            ns == "CORE"
+            and (asset_ref.id, asset_ref.version) not in policy.approved_core_schema_keys
+        ):
             _deny(D2BCode.D2B_EXACT_NAMESPACE_MISMATCH)
         inactive = (
-            policy.admission_mode == "INERT_INSPECTION" or kind in _INERT
+            policy.admission_mode == "INERT_INSPECTION"
+            or kind in _INERT
             or (kind == "prompt" and policy.prompt_mode == "INERT_ONLY")
             or (kind == "rule" and policy.rule_mode == "INERT_ONLY")
         )
-        classification = AssetClassificationV1(kind, ns, asset_ref.id, asset_ref.version, "INERT_ONLY" if inactive else "REGISTRY_EXACT")
+        classification = AssetClassificationV1(
+            kind,
+            ns,
+            asset_ref.id,
+            asset_ref.version,
+            "INERT_ONLY" if inactive else "REGISTRY_EXACT",
+        )
         if inactive:
-            output.append(InertAssetEvidenceV1(classification, asset_ref.sha256, asset_ref.relative_path))
+            output.append(
+                InertAssetEvidenceV1(
+                    classification, asset_ref.sha256, asset_ref.relative_path
+                )
+            )
             continue
         registry_name, expected, id_field, intrinsic = _TYPES[kind]
-        record = _read(getattr(registries, registry_name), asset_ref.id, asset_ref.version, ns)
-        enabled, definition_enabled = _check_record(record, asset_ref.id, asset_ref.version, ns, expected, id_field, intrinsic)
+        record = _read(
+            getattr(registries, registry_name), asset_ref.id, asset_ref.version, ns
+        )
+        enabled, definition_enabled = _check_record(
+            record, asset_ref.id, asset_ref.version, ns, expected, id_field, intrinsic
+        )
         if kind == "schema":
             try:
                 definition = record.definition
@@ -267,10 +334,29 @@ def _map_untrusted_observation(
                 raise
             except Exception:  # noqa: BLE001 - untrusted Registry read must fail closed
                 raise D2BMappingError(D2BCode.D2B_REGISTRY_OBSERVATION_UNSTABLE) from None
-        output.append(RegistryMatchEvidenceV1(classification, registry_name, asset_ref.id, asset_ref.version, ns, expected.__name__, enabled, definition_enabled))
+        output.append(
+            RegistryMatchEvidenceV1(
+                classification,
+                registry_name,
+                asset_ref.id,
+                asset_ref.version,
+                ns,
+                expected.__name__,
+                enabled,
+                definition_enabled,
+            )
+        )
     return RegistryKindMappingSnapshotV1(
-        policy.host_policy_id, policy.host_policy_generation, d.domain_id,
-        d.domain_version, snapshot.generation_id, policy.admission_mode,
-        "INERT_INSPECTION_ONLY" if policy.admission_mode == "INERT_INSPECTION" else "NON_AUTHORITATIVE_AT_READ",
+        policy.host_policy_id,
+        policy.host_policy_generation,
+        d.domain_id,
+        d.domain_version,
+        snapshot.generation_id,
+        policy.admission_mode,
+        (
+            "INERT_INSPECTION_ONLY"
+            if policy.admission_mode == "INERT_INSPECTION"
+            else "NON_AUTHORITATIVE_AT_READ"
+        ),
         tuple(output),
     )

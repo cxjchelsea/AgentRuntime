@@ -1029,13 +1029,20 @@ def test_missing_d1_precedes_cycle_and_adapter_precedes_cycle() -> None:
         edge_occurrences=f.edge_occurrences
         + (
             edge(
-                "skill", "stock.skill", "skill.supported_actions", "action", "stock.count"
+                "skill",
+                "stock.skill",
+                "skill.supported_actions",
+                "action",
+                "stock.count",
             ),
         ),
     )
     expect_code(
         c.D2CCode.D2C_EXACT_DEPENDENCY_MISSING,
-        replace(cyclic, asset_refs=tuple(ref for ref in cyclic.asset_refs if ref.kind != "tool")),
+        replace(
+            cyclic,
+            asset_refs=tuple(ref for ref in cyclic.asset_refs if ref.kind != "tool"),
+        ),
     )
     bad_adapter = c.DiagnosticAdapterEntryV1(
         "tool",
@@ -1073,7 +1080,7 @@ def test_depth_13_and_foreign_dict_type_rejected_without_callbacks() -> None:
     )
 
     class DangerousDict(dict[str, object]):
-        def items(self) -> object:
+        def items(self) -> Any:
             raise AssertionError("custom items must not be invoked")
 
     rows[1] = replace(rows[1], fields=DangerousDict(action))
@@ -1087,7 +1094,7 @@ def test_noncanonical_key_and_unpaired_unicode_rejected() -> None:
     f = fixture()
     rows = list(f.registry_entries)
     malformed = dict(rows[1].fields)
-    malformed["bad\u0301"] = "unexpected"
+    malformed["cafe\u0301"] = "unexpected"
     rows[1] = replace(rows[1], fields=malformed)
     expect_code(
         c.D2CCode.D2C_RESOLUTION_UNSTABLE,

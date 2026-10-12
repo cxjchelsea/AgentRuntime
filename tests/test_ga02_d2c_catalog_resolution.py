@@ -727,4 +727,6 @@ def test_external_list_overflow_and_unsupported_type() -> None:
     skill["optional_tools"] = ["stock.tool"] * 257
     rows[3] = entry("SkillDefinition", "stock.skill", skill)
     expect_code(c.D2CCode.D2C_RESOURCE_LIMIT, replace(f, registry_entries=tuple(rows)))
-    expect_code(c.D2CCode.D2C_RESOLUTION_UNSTABLE, replace(f, prompt_mode=cast(Any, 123)))
+    expect_code(
+        c.D2CCode.D2C_RESOLUTION_UNSTABLE, replace(f, prompt_mode=cast(Any, 123))
+    )

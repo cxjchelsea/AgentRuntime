@@ -382,3 +382,69 @@ Tests must run kernel-backed Linux filesystem cases (not only mocked open behavi
 
 
 **Formal status:** A-01/A-02/A-03 TARGETED READINESS REMEDIATION SUBMITTED. D2-A IMPLEMENTATION NOT YET AUTHORIZED. PR #110 remains Draft. Next is a *focused independent D2-A implementation-readiness re-review* with an explicit AUTHORIZE/READY_WITH_FIXES decision; no automatic D2-B/C/D/E or D3/D4 authorization.
+
+---
+
+## 13. Final Normative Design Closure Amendment — D2-CLOSE-01..05 (2026-10-12)
+
+> **Amendment scope and authority.** This is a documentation-only closure amendment for PR #110. It does **not** authorize merging PR #110 or #111, execution of a domain package, D2-B/C/D/E implementation, D3/D4 integration, or production admission. Only a later exact-HEAD independent amendment review may approve the normative-document closure; each GitHub merge requires a separately recorded authorization. The design was written in incremental stages, so older `PROPOSED` and `IMPLEMENTATION NOT AUTHORIZED` statements are retained as historical, *time-of-authorship* declarations rather than erased or retroactively reinterpreted.
+
+### 13.1 D2-CLOSE-01 — Current status ledger and evidence provenance
+
+| Object / boundary | Current evidence and status | Not implied |
+|---|---|---|
+| D2 v0.1 original proposal (§§1–10) | Historical starting design, subsequently amended; **NOT** standalone final normative authority | Original provisional mappings or unfrozen fingerprint superseding §11 |
+| D2 v0.2 targeted normative remedies (§11) | Independently reviewed for source compatibility, with implementation-specific gates remaining; see [PR #110 review](https://github.com/cxjchelsea/AgentRuntime/pull/110#issuecomment-6116347634) | D2-B/C/D/E implementations being finished, physically validated or merge-authorized |
+| D2-A readiness contract (§12) | A-01/A-02/A-03 **DESIGN READINESS PASS** at exact design HEAD `6e9d0eec22b4f1bd4161cb71f7c6e6ec20730e5e`; see [independent readiness review](https://github.com/cxjchelsea/AgentRuntime/pull/110#issuecomment-6116433556) | Host production publication authenticity already implemented |
+| D2-A isolated source implementation | PR #111 exact HEAD `b7db087eeaee9d385b1f916761755a6570c7b088`; **isolated code verification CLOSED** within the Linux trusted-host, read-only Loader scope; see [closure assessment](https://github.com/cxjchelsea/AgentRuntime/pull/111#issuecomment-6117128866) and [FD independent review](https://github.com/cxjchelsea/AgentRuntime/pull/111#issuecomment-6117065966) | PR #111 merged, executable DomainBinding, Registry/Tool permission granted |
+| D2-A exact-head verification | [Test Gates #38198537524](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38198537524): **1327 passed, 7 skipped**; mypy, Ruff lint and Ruff format PASS. [GA-01C final gate #38198537506](https://github.com/cxjchelsea/AgentRuntime/actions/runs/38198537506): integration and real Qwen2.5 3B E2E PASS, three trials totaling **36/36 tasks and 54/54 correct choices** | GA-02 dual-domain active-use E2E or all possible filesystem attacks proved |
+| Design PR #110 and implementation PR #111 | Both **DRAFT, UNMERGED** as verified against main `0fa2f7bbb745100171cbbea621b23708649c539c` at this amendment's preparation | A GitHub `mergeable` flag or passing CI grants merge authority |
+| This final normative appendix (§13) | **CLOSURE AMENDMENT SUBMITTED; INDEPENDENT EXACT-HEAD REVIEW PENDING** | Full design automatically frozen or merged |
+
+**Version rule:** The file name retains `v0.1` for stable repository history. The effective proposed normative design consists of its source-compatible v0.2 amendments and this status/gate appendix; this is **not** a claim that the entire D2 design has completed its independent final freeze.
+
+### 13.2 D2-CLOSE-02/03 — Single precedence and historical authorization semantics
+
+The following precedence is authoritative *for interpreting the proposed design at PR #110 HEAD after this amendment*:
+
+1. **D1 parser and existing Runtime/Registry public contracts** remain the physical source of truth. Neither this document nor §13 changes D1 parsing, canonical contracts, or actual Runtime interfaces.
+2. **§12 supersedes §11.3 specifically for D2-A** trusted publisher/issuer contract, lease lifecycle, Linux-only FD traversal, resource caps, immutable captured-byte snapshot, typed denial and adversarial test profile.
+3. **§11 supersedes conflicting v0.1 §§3–9** for D2-B/C/D/E physical Registry-kind mapping, namespace normalization, trusted catalog/adapter generations, versioned transitive edges, deterministic digest/fingerprint evidence, run-correlation and active-use revocation prerequisites.
+4. **§13 governs current status, evidence provenance, precedence, and nonauthorization boundaries only.** It introduces **no additional physical execution authority** and does not silently turn provisional D2-B/C/D/E interfaces into completed implementations.
+5. v0.1 §§1–10 remain useful design rationale when consistent with D1, §11 and §12. All old `PROPOSED`, `unfrozen`, `NOT AUTHORIZED`, and `Next:` statements in §§1–12 are **historical gate snapshots**, not claims that D2-A implementation authorization or review is still pending. They must not be quoted as current status without this ledger.
+
+**Fingerprint clarification:** The previously unfrozen v0.1 fingerprint proposal is replaced by the normative proposal in §11.7, including five independently recomputed reference vectors recorded in [PR #110 review](https://github.com/cxjchelsea/AgentRuntime/pull/110#issuecomment-6116347634). Literal design vectors are reference calculations, **not** proof of a working D2-D encoder; D2-D still requires independent physical implementation tests and fresh golden-vector reproduction.
+
+**Loader clarification:** The approved D2-A physical implementation may use the named `HostPackageRootIssuer`, `TrustedPackageRootLease`, `LocalPackageLoader` and `VerifiedPackageSnapshotV1` rather than the original generic function spelling in §3. It must remain source-compatible with the frozen D1 `parse_package_descriptor` and `AssetReferenceV1`. Read-only validation is not runnable-domain admission.
+
+### 13.3 D2-CLOSE-04 — Distinct later-slice implementation gates
+
+| Slice | Normative design scope / required independent physical evidence | Authority at document closure |
+|---|---|---|
+| D2-A — Trusted local Loader | Inert read-only byte capture, trusted host issuer port, exact descriptor/asset digest validation and snapshot; D2-A isolated code tests and FD security review recorded above | **Isolated code CLOSED; merge separately authorized; production admission denied** |
+| D2-B — Asset kinds / mapping | Exact source-grounded Registry-kind adapters, namespace normalization and unsupported-kind typed denials. Physical constructors / fields must be independently verified at the implementation HEAD | **IMPLEMENTATION NOT AUTHORIZED** |
+| D2-C — Exact dependency resolver | Typed Registry exact-key lookups; source-compatible trusted VersionedEdgeCatalog / adapter snapshots, immutable definition hashing, cycle and missing-edge refusal, snapshot consistency; no mutable RegistryRecord escape | **IMPLEMENTATION NOT AUTHORIZED** |
+| D2-D — DomainBinding/fingerprint | Immutable typed binding without permissions; exact canonical-byte encoder, independently reproduced §11.7 golden vectors, cross-process stability and mutation-negative cases | **IMPLEMENTATION NOT AUTHORIZED** |
+| D2-E — Run-sidecar correlation | Physical `AgentRunBinding` signature and identity-domain correlation verified independently, pure fail-closed sidecar; no StepPort or inference/action integration | **IMPLEMENTATION NOT AUTHORIZED** |
+| D2-F — Aggregate verification | Independent combined security, determinism and regression tests over completed D2-A–E, including rollback/fail-closed and source-aligned authority boundaries | **NOT STARTED / NO CLOSURE** |
+| D3/D4 — Active-use / runtime wiring | Re-check live Registry/adapter/edge generations at decision and dispatch boundaries; trusted admission epoch or protected critical section; full real two-domain E2E and downstream execution review | **NOT AUTHORIZED BY D2 DESIGN OR CODE CLOSURE** |
+
+Every later slice requires its own exact-HEAD readiness review, explicit implementation authorization, CI and independent implementation review. A green D2-A CI cannot authorize D2-B/C/D/E, nor can this document grant tools/knowledge/StateStore/model authority by implication.
+
+### 13.4 D2-CLOSE-05 — Production trusted publication / immutable-generation deployment gate
+
+The production trust chain is **separate** from this inert Loader's code-verification gate:
+
+`trusted independent host publisher + allowlisted generation / independently pinned descriptor digest + immutable SEALED publication evidence + host publication_verifier + pinned Linux root FD → D2-A verified inert snapshot`.
+
+The current test issuer and injected `publication_verifier` demonstrate fail-closed behavior only: a caller-supplied callable or `sealed=True` field **does not** establish origin authenticity, an immutable filesystem generation, protection from privileged mount changes, or post-publication write exclusion. Production admission must remain **NOT AUTHORIZED** until the actual host owner independently validates an immutable publisher generation, identity scope, catalog provenance, permissions/mount threat model, protected expected digest source and nonmutation for the full lease lifetime. Do not allow packages, LLM output or users to supply these trusted values.
+
+A successful `fstat` pre/post check may detect ordinary races but **cannot** guarantee detection of invisible in-place writes. Any FD close reporting an uncertain outcome cannot justify retrying an integer that may have been recycled; expose an operational diagnostic while preserving fail-closed semantics. These limitations do not invalidate isolated code closure within the declared trusted-host threat model and cannot be silently waived for production.
+
+### 13.5 Closure and exact-main merge gate
+
+**Current intended design state:** `D2-A DESIGN READINESS PASS`; `D2-A ISOLATED CODE VERIFICATION CLOSED`; `D2-B/C/D/E PHYSICAL IMPLEMENTATIONS NOT AUTHORIZED`; `PRODUCTION PACKAGE ADMISSION NOT AUTHORIZED`; `PR #110 FINAL DOCUMENT FREEZE REVIEW PENDING`; `PR #110/#111 MERGE NOT AUTHORIZED`.
+
+Before authorizing **PR #110** merge, independently review this **exact new document HEAD** for internal status consistency, §11/§12 precedence, D1 source alignment, provenance URLs and later-stage scope isolation; re-check exact HEAD/base and one-file diff. A successful design-only review may authorize a **separate** standard merge commit for #110 on explicit instruction; it cannot merge #111 automatically.
+
+After #110 merges (only if separately authorized), recheck the **current main** and PR #111 exact main-target difference and CI, including the main/design dependency relationship; require **independent, separately explicit** #111 merge authorization. Neither merge activates packages in production.

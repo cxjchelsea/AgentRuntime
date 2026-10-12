@@ -27,7 +27,6 @@ from agent_core.domain_registry_mapping import (
 from runtime.contracts.enums import PlanningMode
 from runtime.registries.action import ActionRegistry
 from runtime.registries.base import RegistryKey
-from runtime.registries.domain import DomainRegistry
 from runtime.registries.definitions import (
     ActionDefinition,
     DomainManifest,
@@ -35,6 +34,7 @@ from runtime.registries.definitions import (
     SchemaDefinition,
     SchemaScope,
 )
+from runtime.registries.domain import DomainRegistry
 from runtime.registries.errors import RegistryError, RegistryItemNotFoundError
 from runtime.registries.schema import SchemaRegistry
 

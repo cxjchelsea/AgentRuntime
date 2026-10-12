@@ -65,7 +65,11 @@ def _snapshot(tmp_path: Path, items):
     refs = sorted(
         (ref for ref, _ in items),
         key=lambda a: (
-            a["kind"], a["namespace"], a["id"], a["version"], a["relative_path"]
+            a["kind"],
+            a["namespace"],
+            a["id"],
+            a["version"],
+            a["relative_path"],
         ),
     )
     for ref, data in items:
@@ -92,8 +96,9 @@ def _snapshot(tmp_path: Path, items):
     identity = TrustedPackageIdentity("generation-1", DOMAIN, VERSION, PROFILE, digest)
     issuer = HostPackageRootIssuer(
         (HostPublishedGeneration(identity, str(tmp_path), True),),
-        publication_verifier=lambda record: record.sealed is True
-        and record.absolute_root == str(tmp_path),
+        publication_verifier=lambda record: (
+            record.sealed is True and record.absolute_root == str(tmp_path)
+        ),
     )  # Test-only; not a production trust root.
     with issuer.issue("generation-1") as lease:
         return LocalPackageLoader().load(lease, identity)
@@ -201,6 +206,7 @@ def test_d2b_p04_inspection_never_reads_registry(tmp_path):
     s = _snapshot(
         tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
     )
+
     class Trap:
         def get(self, *args, **kwargs):
             raise AssertionError("registry must not be read")
@@ -483,22 +489,10 @@ def test_d2b_n15_no_registry_lookup_for_inert_inspection(tmp_path):
     )
     spy = _FakeRegistry(error=RuntimeError("must not call"))
     output = _map_untrusted_observation(
-        s, policy=_policy(s, mode="INERT_INSPECTION"),
+        s,
+        policy=_policy(s, mode="INERT_INSPECTION"),
         registries=RegistryCatalogViewV1(domain=spy, action=spy),
     )
     assert spy.get_calls == 0
     assert all(isinstance(e, InertAssetEvidenceV1) for e in output.evidence)
 
-
-# Temporary diagnostic only: removed after reviewing the exact formatter diff.
-def test_d2b_temporary_formatter_diff_diagnostic():
-    import subprocess
-
-    result = subprocess.run(
-        [sys.executable, "-m", "ruff", "format", "--diff",
-         "agent_core/domain_registry_mapping.py", "tests/test_ga02_d2b_registry_mapping.py"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr

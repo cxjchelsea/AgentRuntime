@@ -1,4 +1,5 @@
 """GA-02 D2-B: isolated metadata-only tests, never a trusted publisher."""
+
 from __future__ import annotations
 
 import hashlib
@@ -162,7 +163,8 @@ def test_d2b_p01_exact_action_non_authoritative(tmp_path):
 
 def test_d2b_p02_core_schema_allowlist(tmp_path):
     s = _snapshot(
-        tmp_path, [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")]
+        tmp_path,
+        [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")],
     )
     d, _ = _registries()
     schema = SchemaRegistry()
@@ -185,7 +187,8 @@ def test_d2b_p02_core_schema_allowlist(tmp_path):
 
 def test_d2b_p03_inert_knowledge(tmp_path):
     s = _snapshot(
-        tmp_path, [_asset("knowledge", "catalog.notes", "knowledge/notes.txt", b"notes")]
+        tmp_path,
+        [_asset("knowledge", "catalog.notes", "knowledge/notes.txt", b"notes")],
     )
     d, _ = _registries()
     result = _map_untrusted_observation(
@@ -201,6 +204,7 @@ def test_d2b_p04_inspection_never_reads_registry(tmp_path):
     class Trap:
         def get(self, *args, **kwargs):
             raise AssertionError("registry must not be read")
+
     result = _map_untrusted_observation(
         s,
         policy=_policy(s, mode="INERT_INSPECTION"),
@@ -239,7 +243,8 @@ def test_d2b_n02_wrong_generation_before_read(tmp_path):
 
 def test_d2b_n03_core_schema_needs_allowlist(tmp_path):
     s = _snapshot(
-        tmp_path, [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")]
+        tmp_path,
+        [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")],
     )
     d, _ = _registries()
     with pytest.raises(D2BMappingError) as exc:
@@ -412,14 +417,18 @@ def test_d2b_n10_hostile_implementation_is_not_touched(tmp_path):
 
 
 def test_d2b_n11_no_partial_output_on_late_failure(tmp_path):
-    s = _snapshot(tmp_path, [
-        _asset("action", "stock.count", "actions/count.txt", b"count"),
-        _asset("schema", "stock.schema", "schemas/stock.json", b"{}"),
-    ])
+    s = _snapshot(
+        tmp_path,
+        [
+            _asset("action", "stock.count", "actions/count.txt", b"count"),
+            _asset("schema", "stock.schema", "schemas/stock.json", b"{}"),
+        ],
+    )
     d, a = _registries()
     with pytest.raises(D2BMappingError) as exc:
         _map_untrusted_observation(
-            s, policy=_policy(s),
+            s,
+            policy=_policy(s),
             registries=RegistryCatalogViewV1(
                 domain=d, action=a, schema=SchemaRegistry()
             ),
@@ -429,18 +438,24 @@ def test_d2b_n11_no_partial_output_on_late_failure(tmp_path):
 
 def test_d2b_n12_schema_namespace_and_scope_are_strict(tmp_path):
     s = _snapshot(
-        tmp_path, [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")]
+        tmp_path,
+        [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")],
     )
     d, _ = _registries()
     schema = SchemaRegistry()
     schema.register(
-        SchemaDefinition(schema_id="shared.schema", version=VERSION,
-                         scope=SchemaScope.DOMAIN, namespace="CORE"),
+        SchemaDefinition(
+            schema_id="shared.schema",
+            version=VERSION,
+            scope=SchemaScope.DOMAIN,
+            namespace="CORE",
+        ),
         namespace="CORE",
     )
     with pytest.raises(D2BMappingError) as exc:
         _map_untrusted_observation(
-            s, policy=_policy(s, approved=frozenset({("shared.schema", VERSION)})),
+            s,
+            policy=_policy(s, approved=frozenset({("shared.schema", VERSION)})),
             registries=RegistryCatalogViewV1(domain=d, schema=schema),
         )
     assert exc.value.code is D2BCode.D2B_EXACT_NAMESPACE_MISMATCH

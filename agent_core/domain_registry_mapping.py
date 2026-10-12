@@ -9,15 +9,27 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from agent_core.domain_descriptor import PROFILE, PackageDescriptorError, descriptor_to_domain_manifest
+from agent_core.domain_descriptor import (
+    PROFILE,
+    PackageDescriptorError,
+    descriptor_to_domain_manifest,
+)
 from agent_core.domain_package_loader import VerifiedPackageSnapshotV1
-from runtime.registries.errors import RegistryError, RegistryItemNotFoundError
 from runtime.registries.base import RegistryKey
 from runtime.registries.definitions import (
-    ActionDefinition, StrategyDefinition, SkillDefinition, ToolDefinition,
-    WorkflowDefinition, CapabilityDefinition, PromptDefinition,
-    PolicyDefinition, SchemaDefinition, DomainManifest, SchemaScope,
+    ActionDefinition,
+    CapabilityDefinition,
+    DomainManifest,
+    PolicyDefinition,
+    PromptDefinition,
+    SchemaDefinition,
+    SchemaScope,
+    SkillDefinition,
+    StrategyDefinition,
+    ToolDefinition,
+    WorkflowDefinition,
 )
+from runtime.registries.errors import RegistryError, RegistryItemNotFoundError
 
 _TYPES: dict[str, tuple[str, type[Any], str, bool]] = {
     "action": ("action", ActionDefinition, "action_id", True),
@@ -169,7 +181,7 @@ def _read(registry: Any, item: str, version: str, namespace: str) -> Any:
         raise D2BMappingError(D2BCode.D2B_EXACT_DEPENDENCY_NOT_FOUND) from None
     except RegistryError:
         raise D2BMappingError(D2BCode.D2B_REGISTRY_OBSERVATION_UNSTABLE) from None
-    except Exception:
+    except Exception:  # noqa: BLE001 - untrusted Registry read must fail closed
         raise D2BMappingError(D2BCode.D2B_REGISTRY_OBSERVATION_UNSTABLE) from None
 
 
@@ -189,7 +201,7 @@ def _check_record(record: Any, item: str, version: str, namespace: str, definiti
         return True, intrinsic_enabled
     except D2BMappingError:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001 - untrusted Registry read must fail closed
         raise D2BMappingError(D2BCode.D2B_REGISTRY_OBSERVATION_UNSTABLE) from None
 
 
@@ -220,7 +232,7 @@ def _map_untrusted_observation(
                 _deny(D2BCode.D2B_REGISTRY_DEFINITION_MISMATCH)
         except D2BMappingError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001 - untrusted Registry read must fail closed
             raise D2BMappingError(D2BCode.D2B_REGISTRY_OBSERVATION_UNSTABLE) from None
 
     output: list[RegistryMatchEvidenceV1 | InertAssetEvidenceV1] = []
@@ -253,7 +265,7 @@ def _map_untrusted_observation(
                     _deny(D2BCode.D2B_EXACT_NAMESPACE_MISMATCH)
             except D2BMappingError:
                 raise
-            except Exception:
+            except Exception:  # noqa: BLE001 - untrusted Registry read must fail closed
                 raise D2BMappingError(D2BCode.D2B_REGISTRY_OBSERVATION_UNSTABLE) from None
         output.append(RegistryMatchEvidenceV1(classification, registry_name, asset_ref.id, asset_ref.version, ns, expected.__name__, enabled, definition_enabled))
     return RegistryKindMappingSnapshotV1(

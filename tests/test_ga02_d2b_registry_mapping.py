@@ -145,7 +145,9 @@ def _registries():
 
 
 def test_d2b_p01_exact_action_non_authoritative(tmp_path):
-    s = _snapshot(tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")])
+    s = _snapshot(
+        tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
+    )
     d, a = _registries()
     result = _map_untrusted_observation(
         s, policy=_policy(s), registries=RegistryCatalogViewV1(domain=d, action=a)
@@ -159,7 +161,9 @@ def test_d2b_p01_exact_action_non_authoritative(tmp_path):
 
 
 def test_d2b_p02_core_schema_allowlist(tmp_path):
-    s = _snapshot(tmp_path, [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")])
+    s = _snapshot(
+        tmp_path, [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")]
+    )
     d, _ = _registries()
     schema = SchemaRegistry()
     schema.register(
@@ -180,7 +184,9 @@ def test_d2b_p02_core_schema_allowlist(tmp_path):
 
 
 def test_d2b_p03_inert_knowledge(tmp_path):
-    s = _snapshot(tmp_path, [_asset("knowledge", "catalog.notes", "knowledge/notes.txt", b"notes")])
+    s = _snapshot(
+        tmp_path, [_asset("knowledge", "catalog.notes", "knowledge/notes.txt", b"notes")]
+    )
     d, _ = _registries()
     result = _map_untrusted_observation(
         s, policy=_policy(s), registries=RegistryCatalogViewV1(domain=d)
@@ -189,7 +195,9 @@ def test_d2b_p03_inert_knowledge(tmp_path):
 
 
 def test_d2b_p04_inspection_never_reads_registry(tmp_path):
-    s = _snapshot(tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")])
+    s = _snapshot(
+        tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
+    )
     class Trap:
         def get(self, *args, **kwargs):
             raise AssertionError("registry must not be read")
@@ -203,17 +211,23 @@ def test_d2b_p04_inspection_never_reads_registry(tmp_path):
 
 
 def test_d2b_n01_missing_domain_is_atomic(tmp_path):
-    s = _snapshot(tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")])
+    s = _snapshot(
+        tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
+    )
     with pytest.raises(D2BMappingError) as exc:
         _map_untrusted_observation(
-            s, policy=_policy(s), registries=RegistryCatalogViewV1(domain=DomainRegistry())
+            s,
+            policy=_policy(s),
+            registries=RegistryCatalogViewV1(domain=DomainRegistry()),
         )
     assert exc.value.code is D2BCode.D2B_EXACT_DEPENDENCY_NOT_FOUND
     assert str(exc.value) == exc.value.code.value
 
 
 def test_d2b_n02_wrong_generation_before_read(tmp_path):
-    s = _snapshot(tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")])
+    s = _snapshot(
+        tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
+    )
     with pytest.raises(D2BMappingError) as exc:
         _map_untrusted_observation(
             s,
@@ -224,7 +238,9 @@ def test_d2b_n02_wrong_generation_before_read(tmp_path):
 
 
 def test_d2b_n03_core_schema_needs_allowlist(tmp_path):
-    s = _snapshot(tmp_path, [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")])
+    s = _snapshot(
+        tmp_path, [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")]
+    )
     d, _ = _registries()
     with pytest.raises(D2BMappingError) as exc:
         _map_untrusted_observation(
@@ -234,10 +250,14 @@ def test_d2b_n03_core_schema_needs_allowlist(tmp_path):
 
 
 def test_d2b_n04_missing_registry_slot_fails_closed(tmp_path):
-    s = _snapshot(tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")])
+    s = _snapshot(
+        tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
+    )
     d, _ = _registries()
     with pytest.raises(D2BMappingError) as exc:
-        _map_untrusted_observation(s, policy=_policy(s), registries=RegistryCatalogViewV1(domain=d))
+        _map_untrusted_observation(
+            s, policy=_policy(s), registries=RegistryCatalogViewV1(domain=d)
+        )
     assert exc.value.code is D2BCode.D2B_TRUSTED_CATALOG_INVALID
 
 
@@ -269,7 +289,9 @@ def _action_record():
 
 
 def _call_action(tmp_path, *, action=None, domain=None, policy_change=None):
-    s = _snapshot(tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")])
+    s = _snapshot(
+        tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
+    )
     d, a = _registries()
     if action is not None:
         a = action
@@ -398,13 +420,17 @@ def test_d2b_n11_no_partial_output_on_late_failure(tmp_path):
     with pytest.raises(D2BMappingError) as exc:
         _map_untrusted_observation(
             s, policy=_policy(s),
-            registries=RegistryCatalogViewV1(domain=d, action=a, schema=SchemaRegistry()),
+            registries=RegistryCatalogViewV1(
+                domain=d, action=a, schema=SchemaRegistry()
+            ),
         )
     assert exc.value.code is D2BCode.D2B_EXACT_DEPENDENCY_NOT_FOUND
 
 
 def test_d2b_n12_schema_namespace_and_scope_are_strict(tmp_path):
-    s = _snapshot(tmp_path, [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")])
+    s = _snapshot(
+        tmp_path, [_asset("schema", "shared.schema", "schemas/shared.json", b"{}", "CORE")]
+    )
     d, _ = _registries()
     schema = SchemaRegistry()
     schema.register(
@@ -437,7 +463,9 @@ def test_d2b_n14_missing_newer_version_does_not_fallback(tmp_path):
 
 
 def test_d2b_n15_no_registry_lookup_for_inert_inspection(tmp_path):
-    s = _snapshot(tmp_path, [_asset("knowledge", "catalog.notes", "knowledge/n.txt", b"notes")])
+    s = _snapshot(
+        tmp_path, [_asset("knowledge", "catalog.notes", "knowledge/n.txt", b"notes")]
+    )
     spy = _FakeRegistry(error=RuntimeError("must not call"))
     output = _map_untrusted_observation(
         s, policy=_policy(s, mode="INERT_INSPECTION"),

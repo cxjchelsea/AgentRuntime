@@ -1105,3 +1105,171 @@ def test_noncanonical_key_and_unpaired_unicode_rejected() -> None:
         c.D2CCode.D2C_RESOLUTION_UNSTABLE,
         replace(f, asset_refs=(surrogate,) + f.asset_refs[1:]),
     )
+
+
+def _utf8_scalar_of_exact_size(size: int) -> str:
+    """1..4096 byte NFC Unicode value with at most 1024 scalars."""
+    assert 1 <= size <= 4096
+    characters = (size + 3) // 4
+    reduction = 4 * characters - size
+    return "𠜎" * (characters - 1) + ("𠜎", "€", "é", "x")[reduction]
+
+
+def _adapter_pressure_input(
+    count: int, *, astral: bool = False
+) -> c.DiagnosticCatalogInputV1:
+    f = fixture()
+    large = ("𠜎" if astral else "x") * 1024
+    adapters = tuple(
+        c.DiagnosticAdapterEntryV1(
+            "tool",
+            "inventory.reconcile",
+            f"stock.tool.extra.{i}",
+            "1.0.0",
+            "DECLARED_NON_AUTHORITATIVE",
+            large,
+            large,
+            large,
+            large,
+            "a" * 64,
+        )
+        for i in range(count)
+    )
+    return replace(f, adapter_entries=adapters)
+
+
+def _precise_input_boundary(over: int) -> c.DiagnosticCatalogInputV1:
+    """Construct canonical 2MiB or 2MiB+1 inputs without >4096 slots."""
+    target = 2097152 + over
+    for count in range(110, 140):
+        full = _adapter_pressure_input(count, astral=True)
+        small = tuple(
+            c.DiagnosticAdapterEntryV1(
+                "tool", "inventory.reconcile", f"filler.{i}", "1.0.0",
+                "DECLARED_NON_AUTHORITATIVE",
+                "x", "x", "x", "x", "a" * 64,
+            )
+            for i in range(2)
+        )
+        candidate = replace(full, adapter_entries=full.adapter_entries + small)
+        delta = target - c._input_canonical_size(candidate)
+        if not 0 <= delta <= 8 * 4095:
+            continue
+        updated = list(candidate.adapter_entries)
+        for i in range(2):
+            record = updated[count + i]
+            sizes = []
+            for _ in range(4):
+                added = min(4095, delta)
+                sizes.append(_utf8_scalar_of_exact_size(1 + added))
+                delta -= added
+            updated[count + i] = replace(
+                record,
+                adapter_key=sizes[0],
+                adapter_generation=sizes[1],
+                tenant_scope_allowlist_id=sizes[2],
+                domain_scope=sizes[3],
+            )
+        assert delta == 0
+        result = replace(candidate, adapter_entries=tuple(updated))
+        assert c._input_canonical_size(result) == target
+        return result
+    pytest.fail("2MiB UTF-8 admission boundary fixture is not constructible")
+
+
+def test_exact_2mib_and_one_over_rejected_during_input_copy() -> None:
+    at_limit = _precise_input_boundary(0)
+    owned = c._admit_and_copy_diagnostic_input(at_limit)
+    assert owned.canonical_input_bytes == 2097152
+    assert owned.primitive_element_count <= 4096
+    over = _precise_input_boundary(1)
+    expect_code(c.D2CCode.D2C_RESOURCE_LIMIT, over)
+
+
+def test_projected_evidence_limit_precedes_cycle_and_adapter_semantics() -> None:
+    pressure = _adapter_pressure_input(190)
+    assert c._input_canonical_size(pressure) < 2097152
+    expect_code(c.D2CCode.D2C_RESOURCE_LIMIT, pressure)
+
+    rows = list(pressure.registry_entries)
+    skill = dict(rows[3].fields)
+    skill["supported_actions"] = ["stock.count"]
+    rows[3] = entry("SkillDefinition", "stock.skill", skill)
+    cycle = replace(
+        pressure, registry_entries=tuple(rows),
+        edge_occurrences=pressure.edge_occurrences
+        + (
+            edge("skill", "stock.skill", "skill.supported_actions", "action", "stock.count"),
+        ),
+    )
+    expect_code(c.D2CCode.D2C_RESOURCE_LIMIT, cycle)
+    malformed = list(pressure.registry_entries)
+    action = dict(malformed[1].fields)
+    action["requires_confirmation"] = "false"
+    malformed[1] = entry("ActionDefinition", "stock.count", action)
+    expect_code(
+        c.D2CCode.D2C_RESOURCE_LIMIT,
+        replace(pressure, registry_entries=tuple(malformed)),
+    )
+    expect_code(
+        c.D2CCode.D2C_HOST_ADAPTER_MISMATCH,
+        replace(pressure, adapter_entries=pressure.adapter_entries[:1]),
+    )
+
+
+def test_a10_cross_domain_and_a12_disabled_dependencies() -> None:
+    f = fixture()
+    bad_edge = replace(f.edge_occurrences[0], target_namespace="wrong.domain")
+    expect_code(
+        c.D2CCode.D2C_EXACT_DEPENDENCY_MISSING,
+        replace(f, edge_occurrences=(bad_edge,) + f.edge_occurrences[1:]),
+    )
+    rows = list(f.registry_entries)
+    rows[4] = replace(rows[4], record_enabled=False)
+    expect_code(
+        c.D2CCode.D2C_DEPENDENCY_DISABLED,
+        replace(f, registry_entries=tuple(rows)),
+    )
+
+
+def test_a19_unexpected_internal_exception_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected(_: object) -> None:
+        raise RuntimeError("SECRET-DETAIL-MUST-NOT-LEAK")
+
+    monkeypatch.setattr(c, "_resolve_owned_diagnostic_graph", unexpected)
+    expect_code(c.D2CCode.D2C_RESOLUTION_UNSTABLE, fixture())
+
+
+def test_a01_a20_named_adversarial_evidence_inventory() -> None:
+    """A17 is outside C0; checked as not implemented, never faked as runnable."""
+    cases = {
+        "A01": "test_external_list_overflow_and_unsupported_type",
+        "A02": "test_generation_error_precedes_corrupt_definition",
+        "A03": "test_defensive_copy_and_hostile_input_no_methods",
+        "A04": "test_depth_13_and_foreign_dict_type_rejected_without_callbacks",
+        "A05": "test_projected_evidence_limit_precedes_cycle_and_adapter_semantics",
+        "A06": "test_invalid_definition_precedes_invalid_edge",
+        "A07": "test_orphan_priority",
+        "A08": "test_duplicate_ordinal_and_missing_target",
+        "A09": "test_orphan_priority",
+        "A10": "test_a10_cross_domain_and_a12_disabled_dependencies",
+        "A11": "test_core_schema_requires_matching_scope_and_allowlist",
+        "A12": "test_a10_cross_domain_and_a12_disabled_dependencies",
+        "A13": "test_missing_d1_precedes_cycle_and_adapter_precedes_cycle",
+        "A14": "test_cycle_rejected",
+        "A15": "test_nonempty_dag_and_exact_reference_vectors",
+        "A16": "test_optional_absence_is_explicit_and_keeps_four_nodes",
+        "A17": "C1_ONLY_OUTER_BOUNDARY_UNIMPLEMENTED",
+        "A18": "test_core_schema_requires_matching_scope_and_allowlist",
+        "A19": "test_a19_unexpected_internal_exception_is_sanitized",
+        "A20": "test_adapter_union_refuses_nonnull_absent",
+    }
+    assert set(cases) == {f"A{i:02d}" for i in range(1, 21)}
+    for id_, test_name in cases.items():
+        if id_ == "A17":
+            assert test_name == "C1_ONLY_OUTER_BOUNDARY_UNIMPLEMENTED"
+            assert not hasattr(c, "resolve_verified_domain")
+        else:
+            assert callable(globals()[test_name])

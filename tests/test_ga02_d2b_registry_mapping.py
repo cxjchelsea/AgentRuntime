@@ -495,4 +495,3 @@ def test_d2b_n15_no_registry_lookup_for_inert_inspection(tmp_path):
     )
     assert spy.get_calls == 0
     assert all(isinstance(e, InertAssetEvidenceV1) for e in output.evidence)
-

@@ -189,6 +189,7 @@ class TrustedPackageRootLease:
                 raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
             if self._closed:
                 return
+            # Revoke first; an uncertain os.close outcome must not allow reuse.
             self._closed = True
             self._active = False
             if isinstance(self._owner, HostPackageRootIssuer):
@@ -196,6 +197,7 @@ class TrustedPackageRootLease:
             try:
                 os.close(self._fd)
             except OSError:
+                # The FD may already have closed: never retry this integer.
                 raise PackageLoadError(PackageLoadCode.PACKAGE_IO_FAILURE) from None
 
 
@@ -234,7 +236,7 @@ class HostPackageRootIssuer:
             ):
                 raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
             self._catalog[ident.generation_id] = generation
-        self._live: dict[object, tuple[int, int, int]] = {}
+        self._live: dict[object, tuple[int, int, int, TrustedPackageRootLease]] = {}
         self._lock = threading.RLock()
 
     def _published(self, record: HostPublishedGeneration) -> bool:
@@ -266,11 +268,18 @@ class HostPackageRootIssuer:
                     os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
                     dir_fd=current,
                 )
-                os.close(current)
+                try:
+                    os.close(current)
+                except OSError:
+                    os.close(child)
+                    raise
                 current = child
             return current
         except BaseException:
-            os.close(current)
+            try:
+                os.close(current)
+            except OSError:
+                pass  # noqa: S110  # Preserve the primary open failure.
             raise
 
     def issue(self, generation_id: str) -> TrustedPackageRootLease:
@@ -285,11 +294,11 @@ class HostPackageRootIssuer:
             fd = self._open_trusted_absolute_root(record.absolute_root)
             info = os.fstat(fd)
             _directory(info, info.st_dev)
-            with self._lock:
-                self._live[issuance] = (fd, info.st_dev, info.st_ino)
             lease = TrustedPackageRootLease(
                 _LEASE_TOKEN, fd, record.identity, self, issuance
             )
+            with self._lock:
+                self._live[issuance] = (fd, info.st_dev, info.st_ino, lease)
             transferred = True
             return lease
         except OSError:
@@ -299,7 +308,10 @@ class HostPackageRootIssuer:
                 with self._lock:
                     self._live.pop(issuance, None)
                 if fd >= 0:
-                    os.close(fd)
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass  # noqa: S110  # Never mask issuance failure.
 
     def _release(self, issuance: object) -> None:
         with self._lock:
@@ -321,13 +333,13 @@ class HostPackageRootIssuer:
             raise PackageLoadError(PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE)
         with self._lock:
             pinned = self._live.get(lease._issuance)
-        if pinned is None or pinned[0] != lease._fd:
+        if pinned is None or pinned[0] != lease._fd or pinned[3] is not lease:
             raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
         try:
             info = os.fstat(lease._fd)
         except OSError:
             raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE) from None
-        if (info.st_dev, info.st_ino) != pinned[1:]:
+        if (info.st_dev, info.st_ino) != pinned[1:3]:
             raise PackageLoadError(PackageLoadCode.PACKAGE_ROOT_UNSAFE)
         return info.st_dev, info.st_ino
 

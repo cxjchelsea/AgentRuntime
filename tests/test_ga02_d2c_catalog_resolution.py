@@ -986,3 +986,115 @@ def test_graph_diamond_shared_dag_and_alias_copy() -> None:
     owned = c._admit_and_copy_diagnostic_input(owned_input)
     common.append("new.tool")
     assert len(c._resolve_owned_diagnostic_graph(owned).edge_occurrences) == 6
+
+
+def test_generation_error_precedes_corrupt_definition() -> None:
+    f = fixture()
+    rows = list(f.registry_entries)
+    manifest = dict(rows[0].fields)
+    manifest["runtime_compatibility"] = "wrong-profile"
+    rows[0] = entry("DomainManifest", "inventory.reconcile", manifest)
+    rows[1] = replace(rows[1], definition_sha256="f" * 64)
+    expect_code(
+        c.D2CCode.D2C_CATALOG_GENERATION_MISMATCH,
+        replace(f, registry_entries=tuple(rows)),
+    )
+
+
+def test_invalid_definition_precedes_invalid_edge() -> None:
+    f = fixture()
+    rows = list(f.registry_entries)
+    action = dict(rows[1].fields)
+    action["requires_confirmation"] = "no"
+    rows[1] = entry("ActionDefinition", "stock.count", action)
+    expect_code(
+        c.D2CCode.D2C_CANONICAL_DEFINITION_INVALID,
+        replace(
+            f,
+            registry_entries=tuple(rows),
+            edge_occurrences=f.edge_occurrences + f.edge_occurrences[:1],
+        ),
+    )
+
+
+def test_missing_d1_precedes_cycle_and_adapter_precedes_cycle() -> None:
+    f = fixture()
+    rows = list(f.registry_entries)
+    skill = dict(rows[3].fields)
+    skill["supported_actions"] = ["stock.count"]
+    rows[3] = entry("SkillDefinition", "stock.skill", skill)
+    cyclic = replace(
+        f,
+        registry_entries=tuple(rows),
+        edge_occurrences=f.edge_occurrences
+        + (
+            edge(
+                "skill", "stock.skill", "skill.supported_actions", "action", "stock.count"
+            ),
+        ),
+    )
+    expect_code(
+        c.D2CCode.D2C_EXACT_DEPENDENCY_MISSING,
+        replace(cyclic, asset_refs=tuple(ref for ref in cyclic.asset_refs if ref.kind != "tool")),
+    )
+    bad_adapter = c.DiagnosticAdapterEntryV1(
+        "tool",
+        "inventory.reconcile",
+        "stock.tool",
+        "1.0.0",
+        "ABSENT_UNVERIFIED",
+        None,
+        "forged",
+        None,
+        None,
+        None,
+    )
+    expect_code(
+        c.D2CCode.D2C_HOST_ADAPTER_MISMATCH,
+        replace(cyclic, adapter_entries=(bad_adapter,)),
+    )
+
+
+def test_depth_13_and_foreign_dict_type_rejected_without_callbacks() -> None:
+    f = fixture()
+    rows = list(f.registry_entries)
+    action = dict(rows[1].fields)
+    nested: list[object] = []
+    pointer = nested
+    for _ in range(13):
+        child: list[object] = []
+        pointer.append(child)
+        pointer = child
+    action["description"] = nested
+    rows[1] = replace(rows[1], fields=action)
+    expect_code(
+        c.D2CCode.D2C_RESOURCE_LIMIT,
+        replace(f, registry_entries=tuple(rows)),
+    )
+
+    class DangerousDict(dict[str, object]):
+        def items(self) -> object:
+            raise AssertionError("custom items must not be invoked")
+
+    rows[1] = replace(rows[1], fields=DangerousDict(action))
+    expect_code(
+        c.D2CCode.D2C_RESOLUTION_UNSTABLE,
+        replace(f, registry_entries=tuple(rows)),
+    )
+
+
+def test_noncanonical_key_and_unpaired_unicode_rejected() -> None:
+    f = fixture()
+    rows = list(f.registry_entries)
+    malformed = dict(rows[1].fields)
+    malformed["bad\u0301"] = "unexpected"
+    rows[1] = replace(rows[1], fields=malformed)
+    expect_code(
+        c.D2CCode.D2C_RESOLUTION_UNSTABLE,
+        replace(f, registry_entries=tuple(rows)),
+    )
+    surrogate = replace(f.asset_refs[0], relative_path="test/\ud800.json")
+    expect_code(
+        c.D2CCode.D2C_RESOLUTION_UNSTABLE,
+        replace(f, asset_refs=(surrogate,) + f.asset_refs[1:]),
+    )

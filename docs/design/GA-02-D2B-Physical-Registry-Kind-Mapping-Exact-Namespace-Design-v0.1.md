@@ -227,3 +227,102 @@ If later authorized, implementation is confined to new agent_core/domain_registr
 | R5 / B-D2B-05/07 | Physical fixture and scope gates §9.5 | PENDING INDEPENDENT RE-REVIEW |
 
 **Formal status:** R1–R5 DESIGN REMEDIATION SUBMITTED; EXACT-HEAD SOURCE-COMPATIBILITY RE-REVIEW PENDING; D2-B IMPLEMENTATION NOT AUTHORIZED; PR #112 MERGE NOT AUTHORIZED; PRODUCTION PACKAGE ADMISSION NOT AUTHORIZED. Next: GA-02 D2-B — R1–R5 Targeted Independent Design Re-Review + Implementation Readiness Gap Assessment.
+
+---
+
+## 10. IR-01..03 Physical Implementation Readiness Contract Amendment v0.3
+
+**Status: READINESS AMENDMENT SUBMITTED / INDEPENDENT EXACT-HEAD RE-REVIEW REQUIRED.** This appendix freezes only an *isolated, inert* D2-B implementation target and its physical test obligations. D2-B source implementation, PR #112 merge, D2-C/D/E, D3/D4 runtime activation and production host publication remain NOT AUTHORIZED. Main baseline: `6ad660511a6ceb1f385ac1dced20337608fd3660`. Scope is the source-grounded D1/D2-A/Registry interfaces pinned below.
+
+**Precedence:** actual D1/D2-A/Registry APIs and merged D2 §§11/13 > §10 physical-readiness details > §9 normative R1–R5 remediation > compatible earlier §§1–8. §10 does not change existing exported contracts or allow previously rejected legacy namespace behavior.
+
+### 10.1 IR-01 — Trust-source ownership, API and implementation isolation
+
+**Physical existing entry points (verified):** `agent_core.domain_package_loader.HostPackageRootIssuer(generations: tuple[HostPublishedGeneration,...], *, publication_verifier: Callable[[HostPublishedGeneration], bool])`; `HostPackageRootIssuer.issue(generation_id)` yields `TrustedPackageRootLease`, and `LocalPackageLoader().load(lease, expected: TrustedPackageIdentity)` returns `VerifiedPackageSnapshotV1(descriptor, descriptor_bytes, assets, generation_id, expected_manifest_digest)`. `TrustedPackageIdentity` contains `(generation_id, domain_id, domain_version, runtime_profile, expected_manifest_digest)`. The existing Host issuer accepts an injected verifier; **it does not prove an actual production publisher or authentic downstream origin when a frozen snapshot is passed independently**.
+
+**Explicit separation of trust planes:**
+
+| Plane | Physical owner / representation | Allowed this slice | Not proved |
+|---|---|---|---|
+| Publisher/deployment | Existing D2-A trusted-host `HostPackageRootIssuer`, `TrustedPackageIdentity`, immutable SEALED generation policy | Test-only issuer in isolated verification, existing Loader without changes | Independently managed production immutable publication or authenticity |
+| D2-B host mapping policy | New `KindMappingPolicyV1`, fixed typed value issued/configured *inside the Application composition root* | Host-owned policy *data* with exact validation; isolated test-only construction | A new authenticated/persistent production policy issuer |
+| D2-B source admission | New host-owned `D2BMappingRequestV1(snapshot, policy, registry_view, origin_evidence)` passed by composition root | Test-only verified-by-fixture caller profile for metadata mapping; never public untrusted API | Authenticity of an arbitrary Python instance or caller-supplied origin marker |
+| Later durable coherence | D2-C verified host catalog/registry epoch and D3 runtime revalidation | None | Atomic Registry snapshot, registration authority, executable domain binding |
+
+**Implementation API (proposed, exact method shape for readiness):**
+
+```python
+def map_verified_package(
+    snapshot: VerifiedPackageSnapshotV1,
+    *,
+    policy: KindMappingPolicyV1,
+    registries: RegistryCatalogViewV1,
+    admission: D2BTrustedAdmissionV1,
+) -> RegistryKindMappingSnapshotV1: ...
+```
+
+`KindMappingPolicyV1` has precisely the required fields/types in §9.1. `RegistryCatalogViewV1` is a fixed, typed, trusted-host composition of `DomainRegistry` and the nine existing concrete per-kind Registries (Action, Strategy, Skill, Tool, Workflow, Capability, Prompt, Policy, Schema), without dictionary-selected class names from package assets. Registry slots can be deliberately absent for inert-only kinds; any required backed kind missing its typed slot fails closed. Never perform `register`, `list`, `enable`, `disable` or `clear`.
+
+`D2BTrustedAdmissionV1` is **not a user-constructible permission token** and cannot be authenticated by type, equality, hidden string, `sealed=True`, a caller-provided lambda or dataclass `frozen=True`. It represents an *already validated trusted host call-boundary decision*. First isolated implementation may provide a private, test-only issuer/factory strictly reachable in test composition; it MUST have no production constructor or public API that accepts arbitrary `snapshot`/`policy`/`admission` and upgrades them to trusted. No security decision may derive solely from the supplied admission object's fields. For non-test untrusted integrations the public entry denies `D2B_TRUSTED_CATALOG_INVALID` until a separate production Host publication/issuer design+implementation+verification has been approved. If this call boundary cannot be enforced without a non-test bypass, implementation readiness = HOLD. This is a gating design requirement, **not** a claim the real Application already implements this issuer.
+
+**Trusted test flow (bounded):** tests create temporary fixture bytes + independent expected digest; invoke existing D2-A issuer/lease/Loader under its injected **test-only** verifier; the same dedicated isolated test harness carries the resulting `snapshot`, source identity and host policy into the D2-B mapper. Negative cases call the ordinary boundary with forged or mismatched objects and must be denied *before any Registry.get*. Synthetic production trust assertions are explicitly prohibited. Trusted source coherence compares exact `(descriptor.domain_id, descriptor.domain_version, descriptor.runtime_compatibility, manifest_digest, generation_id)` against the independently supplied test host identity/policy (including D2-A `expected_manifest_digest`); for Registry mapping require `descriptor.enabled is True`. D2-B does not reopen the source tree or retain a file descriptor.
+
+**Data-only limitation:** `INERT_INSPECTION` returns `INERT_INSPECTION_ONLY` for all kinds with zero Registry calls, even if D1 asset kind normally maps to a Registry. The function may decline unsigned inspection as a trusted snapshot; externally supplied data may be described as *untrusted diagnostic* by a separately typed API only, never fed to D2-C. `REGISTRY_MAPPING` requires explicit exact `DomainRegistry.get(domain_id,version,namespace=domain_id)` and checks DomainManifest `runtime_compatibility == descriptor.runtime_compatibility`, domain ID/version and both enabled values. Zero assets are never runnable.
+
+### 10.2 IR-02 — Concrete error boundary and no-partial-result verification
+
+**Actual exception classes:** `runtime.registries.errors.RegistryError`, `RegistryItemNotFoundError(RegistryError)`, `InvalidRegistryItemError(RegistryError)`; D2-A has distinct `PackageLoadError(PackageLoadCode)` and the D1 parser has `PackageDescriptorError(ValueError)`. Do not leak their raw messages into D2-B errors, and do not retrofit D2-A error enums.
+
+**New error shape:** `D2BCode(str, Enum)` with exactly the eight `D2B_*` values in §5/§9.3; `D2BMappingError(ValueError)` exposes immutable `code: D2BCode` and `str(error) == error.code.value`, with sanitized `raise ... from None` for captured unsafe Registry/host failures. No diagnostic path includes `__repr__`/`__str__` of a record, implementation reference or foreign exception.
+
+| Specific Python failure | Required output / ordering |
+|---|---|
+| Invalid profile/policy shape or missing trusted admission, wrong snapshot generation/digest | `D2B_TRUSTED_CATALOG_INVALID` (before any Registry.get) |
+| Unsupported kind/profile with otherwise valid host context | `D2B_UNKNOWN_KIND_OR_POLICY` |
+| D1 ref wrong namespace / CORE not allowlisted / Schema scope-or-metadata mismatch | `D2B_EXACT_NAMESPACE_MISMATCH` |
+| Attempt to request active use of inert-only classification | `D2B_UNSUPPORTED_ACTIVE_KIND` |
+| Exact `RegistryItemNotFoundError` from required `get` | `D2B_EXACT_DEPENDENCY_NOT_FOUND`; catch more specific subclass first |
+| Wrong exact `RegistryKey`, Python definition class, ID/version or domain metadata | `D2B_REGISTRY_DEFINITION_MISMATCH` |
+| `record.enabled is not True` or actual intrinsic `.enabled is not True` | `D2B_REGISTRY_DISABLED`; no fictitious enabled field on Prompt/Capability/Schema |
+| Other `RegistryError`, `InvalidRegistryItemError`, mutated/broken record access, unexpected ordinary `Exception` from trusted read | `D2B_REGISTRY_OBSERVATION_UNSTABLE`, redacted |
+
+**Atomic return rule:** accumulate only private, primitive, bounded evidence; any denial discards the whole accumulated result; publish no generator/callback/partial tuple before completing all verifications. Error paths do not call Registry `list()`, mutate Registry, serialize exception cause/trace to public response, re-open filesystem assets or retry a different namespace/version. `KeyboardInterrupt`, `SystemExit`, `GeneratorExit` and genuine cancellation/base process termination must propagate; do not catch `BaseException` as a blanket data-denial. Ordinary `Exception` from a Registry read is sanitized and denied. An unstable observation is an alert on visible inconsistency, not proof every race was detected.
+
+**Adversarial fixture:** inject `RegistryRecord.implementation_ref` object whose `__repr__`, `__str__`, `__call__` raise if invoked; assert none executes even on errors. Simulate a Registry `get()` returning a wrong-key record, throwing `RegistryItemNotFoundError`, generic `RegistryError`, and ordinary `RuntimeError` whose message includes a fake secret; each must map to stable public code with no leak. Inject a record.enabled flip detectable between reads; deny if actually observed, but never claim synchronized cross-Registry atomicity.
+
+### 10.3 IR-03 — Source-accurate fixture constructors and test naming
+
+**D1/D2-A fixture:** reuse the structure from `tests/test_ga02_d2a_package_loader.py`: `package_bytes(assets, enabled=True)` creates canonical JSON including exact `package_schema_version='1'`, `domain_id='inventory.reconcile'`, `domain_version='1.0.0'`, `runtime_compatibility='GA02-D1-1'`, `name`, and sorted D1 `asset_refs` with `kind, namespace, id, version, sha256, relative_path`. Digest is SHA-256 of canonical no-manifest-digest JSON (sort keys, compact separators, ensure_ascii=False). Existing D2-A helper `prepare(tmp_path, assets)` publishes `package.json` and assets, constructs `TrustedPackageIdentity('generation-1',domain,version,profile,digest)`, then `HostPackageRootIssuer((HostPublishedGeneration(identity,str(tmp_path),True),), publication_verifier=TEST_ONLY_LAMBDA)`; `with issuer.issue(...) as lease: snapshot=LocalPackageLoader().load(lease,identity)`.
+
+**Fixture caution:** D2-A `ref()` currently creates `kind='action'` for all its helper asset names, including a prompt-like filename; D2-B tests MUST generate each desired D1 kind explicitly and recalculate digest, rather than mistaking a filename for a declared kind. `AssetReferenceV1`, `PackageDescriptorV1`, `VerifiedPackageSnapshotV1` are frozen dataclasses but are constructible by callers; negative tests must forge them and assert denial at the trusted boundary.
+
+| Fixture type | Exact source-grounded constructor fields |
+|---|---|
+| DomainManifest | `DomainManifest(domain_id='inventory.reconcile',name='Inventory Reconciliation',version='1.0.0',enabled=True,runtime_compatibility='GA02-D1-1')` |
+| DomainRegistry | `DomainRegistry().register(manifest, namespace='inventory.reconcile')`; legacy negative uses `namespace=None`; `get(domain_id,version,namespace=domain_id)` |
+| ActionDefinition | `ActionDefinition(action_id='stock.count',version='1.0.0',category='inventory',description='count',intrusiveness_level=IntrusivenessLevel.LOW,requires_confirmation=False,required_capability=None,allowed_planning_modes=[PlanningMode.<VALID_MEMBER>])` — choose actual existing enum member by inspecting `runtime.contracts.enums` before coding |
+| StrategyDefinition | `StrategyDefinition(strategy_id='stock.strategy',version='1.0.0',description='...',preferred_goals=[],preferred_needs=[],compatible_emotions=[],required_conditions=[],avoid_conditions=[],default_actions=[],intrusiveness_level=IntrusivenessLevel.LOW)` |
+| SkillDefinition | `SkillDefinition(skill_id='stock.skill',version='1.0.0')` |
+| ToolDefinition | `ToolDefinition(tool_id='stock.tool',version='1.0.0')` |
+| WorkflowDefinition | `WorkflowDefinition(workflow_id='stock.workflow',version='1.0.0')` |
+| CapabilityDefinition | `CapabilityDefinition(capability_id='stock.capability',version='1.0.0',domain='inventory.reconcile')`; **no intrinsic enabled** |
+| PromptDefinition | `PromptDefinition(prompt_id='stock.prompt',version='1.0.0',layer=PromptLayer.DOMAIN,domain='inventory.reconcile')`; **no intrinsic enabled** |
+| PolicyDefinition | `PolicyDefinition(rule_id='stock.rule',version='1.0.0',priority=1,scope='inventory.reconcile')` |
+| SchemaDefinition CORE | `SchemaDefinition(schema_id='shared.schema',version='1.0.0',scope=SchemaScope.CORE,namespace='CORE')`; register with exact `namespace='CORE'` and exact host allowlist |
+| SchemaDefinition DOMAIN | `SchemaDefinition(schema_id='stock.schema',version='1.0.0',scope=SchemaScope.DOMAIN,namespace='inventory.reconcile')` |
+
+Actual concrete Registry `register` functions for Action/Strategy/Skill/Tool/Workflow/Capability/Prompt/Policy all accept `(definition, *, namespace: str|None=None, implementation_ref=None)`; `SchemaRegistry.register` uses `namespace or definition.namespace`. Build one typed `RegistryCatalogViewV1` from instances, not a dictionary of strings/classes controlled by package input. The tests should assert `get(id,version,namespace=domain)` and exact returned `RegistryRecord.key` and intrinsic definition identity, not infer namespace from optional definition.domain.
+
+**Test modules/names after approval:** new `tests/test_ga02_d2b_registry_mapping.py` with `test_d2b_p01_*` through `test_d2b_p04_*` and `test_d2b_n01_*` through `test_d2b_n12_*`; `pytest` full and targeted, `python -m mypy agent_core runtime tests` (or repository-pinned full command), `python -m ruff check agent_core runtime tests`, `python -m ruff format --check agent_core runtime tests`, plus GA-01C compatibility workflows. Source review must resolve `PlanningMode.<VALID_MEMBER>` to an actual member before frozen fixture execution; no placeholder enum may remain in implementation.
+
+### 10.4 Readiness authorization limits and evidence ledger
+
+| Item | Current contractual readiness | Still required before isolated implementation authorization |
+|---|---|---|
+| IR-01 | Host-owned test-only call boundary and provenance expectations specified | Exact test-only issuer integration and non-test fail-closed entry must be independently reviewed; real publisher remains separate |
+| IR-02 | Finite Python exception/error/atomicity handling specified | Independent test fixture map and implementation boundaries checked |
+| IR-03 | Physical constructors and fixture setup mapped against current modules | Actual PlanningMode enum choice, true run-tested fixture validity, exact HEAD readiness signoff |
+
+**Formal state:** `IR-01..03 READINESS AMENDMENT = SUBMITTED`; `D2-B READINESS INDEPENDENT EXACT-HEAD REVIEW = PENDING`; `D2-B IMPLEMENTATION AUTHORIZATION = NOT ISSUED`; `PR #112 MERGE = NOT AUTHORIZED`; `PRODUCTION HOST ISSUER / IMMUTABLE SEALED PUBLICATION = NOT PROVEN`; `D2-C/D/E/D3 ACTIVATION = NOT AUTHORIZED`.
+
+**Next:** GA-02 D2-B — IR-01..03 Targeted Independent Implementation Readiness Re-Review. On PASS, separately authorize **isolated, test-only metadata mapping** without production entry; on any host provenance bypass or physical constructor mismatch, HOLD.

@@ -279,7 +279,7 @@ class HostPackageRootIssuer:
             try:
                 os.close(current)
             except OSError:
-                pass  # noqa: S110  # Preserve the primary open failure.
+                pass  # Preserve the primary open failure.
             raise
 
     def issue(self, generation_id: str) -> TrustedPackageRootLease:
@@ -311,7 +311,7 @@ class HostPackageRootIssuer:
                     try:
                         os.close(fd)
                     except OSError:
-                        pass  # noqa: S110  # Never mask issuance failure.
+                        pass  # Never mask issuance failure.
 
     def _release(self, issuance: object) -> None:
         with self._lock:

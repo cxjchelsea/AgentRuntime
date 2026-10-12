@@ -541,3 +541,141 @@ All public D2-C errors remain code-only with exact \`str(error)==code.value\`, a
 | IRR-C0-04 | D1-seed closed world with schema-only CORE; no untrusted external same-domain target | SUBMITTED — upstream exact-closure equivalence review pending |
 
 **Final amendment status:** \`IRR-C0-01..04 DESIGN FIXTURE REMEDIATION = SUBMITTED\`; \`EXACT-HEAD INDEPENDENT C0 READINESS REVIEW = PENDING\`; \`C0 IMPLEMENTATION AUTHORIZATION = NOT ISSUED\`; \`C1 TRUSTED HOST CATALOG = HARD HOLD\`; \`PR #114 MERGE AUTHORIZATION = NOT ISSUED\`. No production trust or executable domain binding is implied by this appendix.
+
+
+---
+
+## 15. C0-R3-01..03 Final Executable Input Schema + Reachable Boundary Fixture Amendment v0.5
+
+**Status:** DESIGN CONTRACT AMENDMENT SUBMITTED / NEW EXACT-HEAD INDEPENDENT READINESS RE-REVIEW REQUIRED. **No C0 implementation, merge, trusted host publication or execution authority is authorized.** This §15 takes priority over conflicting C0 input-shape / resource-test wording in §§12–14. The physical source, merged parent D2 §11.4/11.7, strict D1 namespace/asset rules, and all previously verified E04/E05 literal JSON/digests remain unchanged. In particular, E04/E05 describe **derived evidence** and are not untrusted input envelopes.
+
+### 15.1 C0-R3-01 — The one admitted input type and exact schema
+
+The only proposed non-public entry remains:
+
+\`\`\`python
+def _resolve_untrusted_catalog_observation(
+    input: DiagnosticCatalogInputV1,
+) -> DiagnosticResolutionSnapshotV1: ...
+\`\`\`
+
+\`DiagnosticCatalogInputV1\` is a **frozen/slotted structural container only**. Its concrete fields are fixed and mandatory, with **no defaults**; its class and field values do NOT grant Host authenticity. The proposed exact Python-level field shape (all instances still defensively validated before use) is:
+
+\`\`\`python
+@dataclass(frozen=True, slots=True)
+class DiagnosticCatalogInputV1:
+    profile: str                   # exactly GA02-D2C-C0-INPUT-1
+    domain_id: str
+    domain_version: str
+    runtime_profile: str           # exactly GA02-D1-1
+    manifest_sha256: str           # 64 lowercase hex
+    source_generation: str         # diagnostic-only literal identity
+    host_catalog_generation: str   # diagnostic-only literal identity
+    host_policy_id: str            # diagnostic-only literal identity
+    host_policy_generation: str    # diagnostic-only literal identity
+    prompt_mode: str               # REGISTRY_EXACT | INERT_ONLY
+    rule_mode: str                 # REGISTRY_EXACT | INERT_ONLY
+    asset_refs: tuple[DiagnosticAssetRefV1, ...]
+    approved_core_schema_keys: tuple[DiagnosticCoreSchemaKeyV1, ...]
+    registry_entries: tuple[DiagnosticRegistryEntryV1, ...]
+    edge_occurrences: tuple[DiagnosticEdgeOccurrenceV1, ...]
+    adapter_entries: tuple[DiagnosticAdapterEntryV1, ...]
+\`\`\`
+
+The nested named \`Diagnostic*V1\` structures are **typed, frozen/slotted value carriers**, not JSON objects to trust by \`isinstance\` alone; they must have exact builtin field values. For the **preflight representation**, \`tuple\` is permitted only at the *declared tuple field boundaries above* and inside an already owned normalized projection. Within each Definition \`fields\` payload, the caller may supply only built-in \`dict/list/str/bool/int/None\` with strict recursive copy, per §14.3. Thus §14.3's "builtin dict/list" restriction concerns the **Definition payload**, not the typed top-level tuple slots. User-defined subclasses, list-instead-of-tuple at a declared tuple slot, or fake dataclasses are rejected. Do not invoke field/object accessors on an unknown type before confirming the exact type at every container boundary.
+
+Exact nested carriers (their attributes are required and have **no implicit default**) are:
+
+| Type | Exact fields and accepted shapes |
+|---|---|
+| \`DiagnosticAssetRefV1\` | \`kind:str, namespace:str, id:str, version:str, sha256:str, relative_path:str\` |
+| \`DiagnosticCoreSchemaKeyV1\` | \`id:str, version:str\` |
+| \`DiagnosticRegistryEntryV1\` | \`registry_kind:str, namespace:str, id:str, version:str, definition_type:str, fields:dict[str, validated primitive], definition_sha256:str, record_enabled:bool, intrinsic_enabled:bool\\|None\` |
+| \`DiagnosticEdgeOccurrenceV1\` | \`source_kind:str, source_namespace:str, source_id:str, source_version:str, relation_id:str, ordinal:int, declared_target_id:str, outcome:str, target_kind:str\\|None, target_namespace:str\\|None, target_id:str\\|None, target_version:str\\|None\` |
+| \`DiagnosticAdapterEntryV1\` | \`registry_kind:str, namespace:str, id:str, version:str, status:str, adapter_key:str\\|None, adapter_generation:str\\|None, tenant_scope_allowlist_id:str\\|None, domain_scope:str\\|None, host_registration_digest:str\\|None\` |
+
+\`definition_type\` is exactly the pinned class name corresponding to the fixed D2-B mapping: \`action=ActionDefinition, strategy=StrategyDefinition, skill=SkillDefinition, tool=ToolDefinition, workflow=WorkflowDefinition, capability=CapabilityDefinition, prompt=PromptDefinition, rule=PolicyDefinition, schema=SchemaDefinition\`. Additionally a DomainManifest is required as a **separate** \`DiagnosticRegistryEntryV1\` whose \`registry_kind="domain"\`, \`definition_type="DomainManifest"\`, namespace/domain key exactly equals \`domain_id/domain_version\`; this is bootstrap *evidence data only*, not a Registry query. It is included in \`registry_entries\` and hashed as any Definition, but is **not a D1 asset graph node**. \`fields\` contain exactly the §13.2 mandatory canonical manifest fields and nulls, no arbitrary nested objects.
+
+**Exact linkage and cardinality rules:**
+
+1. \`asset_refs\` represent diagnostic D1-validated reference metadata **only**. Require canonical D1 identity, lowercase hex digest, safe relative path and strict ordering/uniqueness; domain namespaces equal \`domain_id\` except schema-only \`CORE\`. A package with 0 assets is diagnostic-only. A \`knowledge/state/eval\` or host-policy inert \`prompt/rule\` ref is allowed as an inert asset but is not a Registry graph seed.
+2. Every Registry-backed active \`asset_ref\` must have **exactly one** matching \`registry_entry\` by \`(registry_kind,namespace,id,version)\`, including strict \`definition_type\` and enabled semantics. No extra asset-kind Registry entry is allowed except the required DomainManifest; extra catalog entries cannot become implicit visibility. CORE Schema must additionally appear in \`approved_core_schema_keys\`; that allowlist must have sorted unique exact pairs. Host policy-like values remain untrusted declarations; \`prompt_mode/rule_mode\` control diagnostic classification only.
+3. Exactly one DomainManifest record is present. Its definition fields must have \`domain_id,version,runtime_compatibility,enabled\` matching the diagnostic input and true-enabled rule, but this **does not** prove a production DomainRegistry enrollment.
+4. Every active supported relation occurrence extracted from the *already defensively copied* Definition fields has **exactly one** matching \`edge_occurrence\` with source exact key, source field relation, zero-based ordinal and exact declared target ID. No extra/duplicate edge; \`PINNED\` requires a D1-listed active registry-backed target with exact same-domain namespace, except an exact D1-listed allowlisted CORE Schema. \`OPTIONAL_ABSENT\` remains valid only for the two §13.3 optional-tool relations.
+5. \`adapter_entries\` is zero or one per exact active graph key; it is optional **as C0 declaration data**. Missing entry means \`ABSENT_UNVERIFIED\`, not that an adapter is present, required, safe or authorized. An explicitly supplied entry must follow §13.6 tagged-union contract; orphan entries (not among active graph keys) or duplicates deny. Neither optional adapter omission nor a \`NOT_REQUIRED_BY_DIAGNOSTIC_PROFILE\` declaration implies Host operational admission.
+6. Raw input has **no** \`trusted\`, \`issuer\`, \`host_catalog_digest\`, \`edge_digest\`, \`closure_digest\` or \`DomainBinding\` field. Missing/unknown top-level class slot cannot be accepted by a duck-typed mapping. Full host-catalog/edge/closure JSON structures in §13.5 are **derived deterministic output/reference encodings** from these validated fields, not alternate input APIs. Diagnostic \`source_generation\` is used as package-generation comparison data only; it is not a cryptographically proven D2-A lease.
+
+**Output contract:** \`DiagnosticResolutionSnapshotV1\` holds immutable \`observation_role="UNTRUSTED_DIAGNOSTIC_ONLY"\`, \`graph_completeness="SUPPORTED_RELATIONS_ONLY"\`, \`operational_readiness="NOT_ASSESSED"\`, sorted \`seed_keys\`, \`dependency_keys\`, \`edge_occurrences\`, \`definition_hashes\`, \`adapter_evidence\` and scalar derived \`edge_digest/host_catalog_digest/closure_digest\`. Derived digest envelope field sets stay exactly §13.5; \`source_generation\` and the four diagnostic host-policy fields appear only in the derived catalog envelope where §13.5 lists them, and never gain issuer authority. The protected D2-D binding fingerprint format is untouched. The output may report \`UNRESOLVED_NON_GRAPH_METADATA\` separately, not as a verified dependency.
+
+### 15.2 C0-R3-02 — Two explicitly separate budgets, no production bypass
+
+There are **two private processing stages**, but only the first is an admitted caller entry:
+
+\`\`\`python
+def _admit_and_copy_diagnostic_input(
+    input: DiagnosticCatalogInputV1,
+) -> _OwnedDiagnosticInputV1: ...
+
+def _resolve_owned_diagnostic_graph(
+    owned: _OwnedDiagnosticInputV1,
+) -> DiagnosticResolutionSnapshotV1: ...
+\`\`\`
+
+\`_resolve_untrusted_catalog_observation\` is the **only composition entry**; it always calls \`_admit_and_copy_diagnostic_input\` and then \`_resolve_owned_diagnostic_graph\` on owned values. \`_OwnedDiagnosticInputV1\` is an internal, non-authoritative, immutable output of bounded normalization; the second function is not an admission API. It MUST NOT be exported or referenced from Application, Domain Package or Runtime wiring, nor may it accept arbitrary dicts/callables or grant trust. Tests can invoke it directly with a self-contained **test-only fixture builder**, and must never present those internal injections as public input coverage.
+
+**External admission preflight limits:** D1 assets ≤256, copy graph *input nodes* (typed carriers, primitive leaf values and array/list items) ≤4096, nested primitive \`fields\` container depth ≤12, field list ≤256, Unicode characters ≤1024 per string, per canonical Definition JSON UTF-8 ≤10,240 bytes, total copied **canonical input plus output evidence envelope** bytes ≤2,097,152. Count each logical root field, typed carrier field and primitive nested element once; a tuple/list element counts as an element and its contained primitive leaves count separately. Use a bounded iterative stack; guard counts *before* pushing/allocating more children and reject cycles/hostile classes without invoking user-defined functions. The 4096-element count is an **external ingestion guard**, deliberately stricter than the graph algorithm's independent upper limits. Alias copies cost separately per occurrence.
+
+**Owned-graph algorithm limits:** distinct active nodes ≤256, complete edge occurrence count ≤1024, DFS path depth ≤32 (seed 0), per-Definition JSON bytes ≤10,240 and derived output envelope aggregate ≤2,097,152. These are tested both by the public entry for **reachable small graphs** and by direct, explicitly labeled **internal-only normalized graph fixtures** for otherwise unreachable 1024/1025-edge conditions. The internal helper must still enforce its graph limits on every call; it never bypasses the **same** graph safety checks. No path can skip preflight and then call an internal function to obtain a trusted/production-usable result: all paths return the same \`UNTRUSTED_DIAGNOSTIC_ONLY\`.
+
+**Boundary fixture matrix (reachability class is part of test name and evidence):**
+
+| ID | Test entry / isolated mutation | Expected result |
+|---|---|---|
+| EX-01 | Public C0 entry, valid fixture with 4096 counted elements (other limits satisfied) | accepted by **ingestion cap**; remaining semantics decide success |
+| EX-02 | Public C0 entry, same fixture plus one additional counted primitive occurrence = 4097 | \`D2C_RESOURCE_LIMIT\` at ingestion, before graph |
+| EX-03 | Public C0 entry, valid 4-node E04/E05 DAG | success, diagnostic only |
+| EX-04 | Public C0 entry, cycles/self references/13-level nested \`fields\` | \`D2C_RESOLUTION_UNSTABLE\` for cycles; \`D2C_RESOURCE_LIMIT\` for depth |
+| NG-01 | **Internal-only** normalized graph test builder, 1024 valid ordered occurrences with ≤256 nodes and the relation/schema constraints otherwise satisfied | graph edge cap accepted; output bytes budget may independently deny if exceeded (isolate edge-cap oracle) |
+| NG-02 | **Internal-only** normalized graph test builder, 1025 valid occurrences with no earlier independent fault | \`D2C_RESOURCE_LIMIT\` from **graph** cap |
+| NG-03 | **Internal-only** normalized graph test builder, 256-node compatible acyclic graph | graph node cap accepted |
+| NG-04 | **Internal-only** normalized graph test builder, 257 nodes (only if the input graph class can represent them without violating source D1 cap; otherwise an explicitly labeled synthetic structural test) | \`D2C_RESOURCE_LIMIT\` at graph cap, not claimed public reachable |
+| NG-05 | Private owned graph direct test, depths 32 and 33 with otherwise valid DAG | 32 accepted, 33 \`D2C_RESOURCE_LIMIT\` |
+
+**Test construction caveat (mandatory):** EX-01 and NG-01 are *target conditions*, not claims that a concrete valid fixture already exists. Exact fixture builders must prove each candidate actually reaches the claimed count **without** earlier field/list/aggregate/graph/closure faults; if infeasible under this schema, downgrade that row to an explicit infeasibility assertion and amend the limit contract **before** implementation authorization. Do not use a fake “PASS” for a test that failed for the wrong reason. No new \`test_mode\`, \`PYTEST_CURRENT_TEST\`, environment sentinel or production bypass flag is allowed.
+
+### 15.3 C0-R3-03 — Executable adversarial fixture builders and typed oracle
+
+The next authorized code slice must create fixture builders in \`tests/test_ga02_d2c_catalog_resolution.py\` only. Candidate builders are private and produce *untrusted diagnostic data*:
+
+| Builder (proposed) | Mandatory construction and assertion |
+|---|---|
+| \`_fixture_nonempty_dag()\` | Four exact D1 asset refs + DomainManifest + four exact Registry entries; typed edges Action→Capability→Skill→Tool; verify D01/D03/D10 overridden hashes, E04/E05 digests, sorted graph keys, no adapter or runnable grants |
+| \`_fixture_optional_absent()\` | Base DAG, change \`Skill.optional_tools\` to \`["stock.optional"]\` and recompute Skill hash, add ordinal 0 \`OPTIONAL_ABSENT\` with all targets null; no new dependency key |
+| \`_fixture_cycle()\` | Base DAG, set \`Skill.supported_actions=["stock.count"]\`, recompute Skill hash, add exact fourth edge; \`D2C_DEPENDENCY_CYCLE\` |
+| \`_fixture_duplicate_ordinal()\` | Clone one occurrence with same exact source/relation/ordinal, even if identical values; \`D2C_EDGE_CATALOG_INVALID\` |
+| \`_fixture_omitted_d1_target()\` | Remove target asset ref but retain its catalog definition; \`D2C_EXACT_DEPENDENCY_MISSING\` (the extra catalog item must not mask the exact D1 missing-target denial; see precedence below) |
+| \`_fixture_wrong_core()\` | Replace target namespace with CORE for a non-schema kind; \`D2C_EXACT_DEPENDENCY_MISSING\`; also test valid CORE Schema with D1 + allowlist and wrong SchemaScope |
+| \`_fixture_adapter_contradiction()\` | \`ABSENT_UNVERIFIED\` with non-null adapter generation; \`D2C_HOST_ADAPTER_MISMATCH\`; malicious implementation_ref cannot enter typed payload |
+| \`_fixture_bad_definition()\` | Replace a required Definition enum/priority/nullable field with invalid primitive; \`D2C_CANONICAL_DEFINITION_INVALID\` before edge traversal |
+| \`_fixture_hostile_input()\` | Self-/mutual-cycle dict/list; builtin subclass with overridden iterator/equality; object with side-effect \`__repr__/__str__/__hash__/__iter__\`; counters **all zero**; reject with sanitized typed denial and no result |
+| \`_fixture_mutation_after_copy()\` | Snapshot privately owned primitive data, mutate original list/dict between \`_admit_and_copy_diagnostic_input\` and \`_resolve_owned_diagnostic_graph\`; E04/E05 result unchanged, no alias retained; this is NOT a simultaneous writer coherence proof |
+| \`_fixture_conflicting_faults()\` | A01–A20 from §14.4 plus simultaneous cases: generation mismatch+malformed Definition, size overflow+graph cycle, bad definition+bad edge, missing target+cycle, adapter contradiction+cycle; assert fixed first code |
+
+**Deterministic error staging refinement:** For C0, preflight rejects invalid *shape/type/cycle* before reading any generation value; when shape is valid, generation mismatch is checked before canonical-definition/edge checks. Within an otherwise-valid structural input, enforce byte/count resource limits before semantic Definition validation; Definition schema/hash before edge occurrence matching; and **validate declared edges against their source occurrences before checking each PINNED target against the D1 closed world**. After edge shape matching, a missing D1 target is \`D2C_EXACT_DEPENDENCY_MISSING\` **even when an extra matching catalog Definition entry exists**. Extra Registry catalog entries without corresponding D1 asset are a separate catalog-shape error \`D2C_RESOLUTION_UNSTABLE\` only when there is no earlier *referenced missing-D1 target*, avoiding the §15.3 fixture shadowing its intended oracle. Enabled checks precede adapter union contradictions, which precede cycle detection. This first-error ordering supersedes conflicting §14.4 wording.
+
+**Concrete A01–A20 linking:** A01/A03/A04/A05 use hostile/oversized builders; A02 generation mismatch; A06/A07 bad-definition builder; A08 duplicate ordinal; A09 omitted D1; A10/A11/A18 wrong namespace/CORE; A12 disabled exact record; A13/A20 adapter contradiction; A14 cycle; A15 DAG; A16 optional absent; A17 external C1 request rejected by a separately **unimplemented** outer boundary, not a C0 test/API; A19 a test-local monkeypatch of a pure internal helper raising a normal exception, sanitized to \`D2C_RESOLUTION_UNSTABLE\`. No callback is added to the production API for test fault injection.
+
+The test suite must assert \`str(error)==error.code.value\`, deterministic behavior under shuffled declaration insertion order, zero partial response, zero Registry/Tool/LLM/StateStore/filesystem side effects and no trusted admission/upcast symbol. No process-fatal \`BaseException\` swallowing. Code authorization stays a **separate future decision**, and C1 Host authority remains blocked.
+
+### 15.4 Explicit test-profile honesty and remaining gate
+
+**Diagnostic C0-only:** The only public-facing result in this candidate phase is a type-safe non-authoritative metadata snapshot. \`_OwnedDiagnosticInputV1\` / \`_resolve_owned_diagnostic_graph\` direct tests prove graph invariants, *not the external admission path*. No live mutable Registry read, package reopen, source publisher authenticity, Host policy issuer, active adapter authorization, D2-D immutable DomainBinding or D3 effect-time revocation is added.
+
+| Item | v0.5 amendment evidence | Authorization |
+|---|---|---|
+| C0-R3-01 | §15.1 exact root/nested typed input + D1/Definition/domain/edge/adapter association | SUBMITTED; independent design review pending |
+| C0-R3-02 | §15.2 external ingestion vs internal graph budgets, no bypass and reachability labeling | SUBMITTED; exact fixture feasibility pending |
+| C0-R3-03 | §15.3 named fixture builders, A01–A20 wiring, stage priority and side-effect checks | SUBMITTED; independent test-spec review pending |
+| C1 physical issuer/write fence | Unimplemented, unchanged | HARD HOLD |
+
+**Formal state:** \`C0-R3-01..03 FINAL EXECUTABLE INPUT SCHEMA AND BOUNDARY FIXTURE REMEDIATION = SUBMITTED\`; \`PR #114 EXACT-HEAD INDEPENDENT C0 READINESS RE-REVIEW = PENDING\`; \`C0 CODE IMPLEMENTATION AUTHORIZATION = NOT ISSUED\`; \`PR #114 MERGE = NOT AUTHORIZED\`; \`C1 PRODUCTION TRUST = HARD HOLD\`. Next bounded gate: **GA-02 D2-C — PR #114 C0-R3-01..03 Exact-HEAD Independent Physical Fixture Feasibility + Implementation Readiness Re-Review**.

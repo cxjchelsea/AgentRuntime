@@ -246,7 +246,7 @@ def test_lease_cannot_be_reused_after_close(tmp_path: Path) -> None:
     issuer, identity = prepare(tmp_path)
     with issuer.issue(identity.generation_id) as lease:
         assert LocalPackageLoader().load(lease, identity).assets
-    assert lease._fd not in issuer._live
+    assert lease._issuance not in issuer._live
     expect(
         PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
         lambda: LocalPackageLoader().load(lease, identity),
@@ -462,3 +462,86 @@ def test_unsupported_profile_is_typed(tmp_path: Path) -> None:
         PackageLoadCode.PACKAGE_PROFILE_MISMATCH,
         lambda: load(issuer, unsupported),
     )
+
+def test_issuer_checks_lease_object_identity(tmp_path: Path) -> None:
+    issuer, identity = prepare(tmp_path)
+    with issuer.issue(identity.generation_id) as lease:
+        original = lease._issuance
+        lease._issuance = object()
+        expect(
+            PackageLoadCode.PACKAGE_ROOT_UNSAFE,
+            lambda: LocalPackageLoader().load(lease, identity),
+        )
+        lease._issuance = original
+        assert LocalPackageLoader().load(lease, identity).assets
+
+
+def test_publisher_verification_revoked_during_lease(tmp_path: Path) -> None:
+    _issuer, identity = prepare(tmp_path)
+    allowed = [True]
+    issuer = HostPackageRootIssuer(
+        (HostPublishedGeneration(identity, str(tmp_path), True),),
+        publication_verifier=lambda _entry: allowed[0],
+    )
+    with issuer.issue(identity.generation_id) as lease:
+        allowed[0] = False
+        expect(
+            PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
+            lambda: LocalPackageLoader().load(lease, identity),
+        )
+
+
+def test_file_stat_change_denied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    issuer, identity = prepare(tmp_path)
+    real_fstat = loader_mod.os.fstat
+    calls = 0
+
+    def altered(fd: int) -> os.stat_result:
+        nonlocal calls
+        info = real_fstat(fd)
+        if info.st_size == 5:
+            calls += 1
+            if calls == 3:
+                values = list(info)
+                values[6] += 1
+                return os.stat_result(values)
+        return info
+
+    monkeypatch.setattr(loader_mod.os, "fstat", altered)
+    expect(
+        PackageLoadCode.PACKAGE_READ_UNSTABLE,
+        lambda: load(issuer, identity),
+    )
+
+
+def test_close_os_failure_revokes_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    issuer, identity = prepare(tmp_path)
+    lease = issuer.issue(identity.generation_id)
+    real_close = loader_mod.os.close
+
+    def close_then_fail(fd: int) -> None:
+        real_close(fd)
+        if fd == lease._fd:
+            raise OSError("simulated uncertain close outcome")
+
+    monkeypatch.setattr(loader_mod.os, "close", close_then_fail)
+    expect(PackageLoadCode.PACKAGE_IO_FAILURE, lease.close)
+    assert lease._closed
+    assert lease._issuance not in issuer._live
+    expect(
+        PackageLoadCode.UNTRUSTED_PACKAGE_SOURCE,
+        lambda: LocalPackageLoader().load(lease, identity),
+    )
+
+
+def test_root_generation_rename_does_not_change_pinned_fd(tmp_path: Path) -> None:
+    generation = tmp_path / "generation"
+    generation.mkdir()
+    issuer, identity = prepare(generation)
+    with issuer.issue(identity.generation_id) as lease:
+        generation.rename(tmp_path / "renamed")
+        assert LocalPackageLoader().load(lease, identity).assets

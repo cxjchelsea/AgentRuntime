@@ -730,3 +730,115 @@ def test_external_list_overflow_and_unsupported_type() -> None:
     expect_code(
         c.D2CCode.D2C_RESOLUTION_UNSTABLE, replace(f, prompt_mode=cast(Any, 123))
     )
+
+
+def test_e01_e02_e03_historical_empty_evidence_vectors() -> None:
+    edge_catalog = {
+        "edges": [],
+        "host_catalog_generation": "diagnostic-g1",
+        "profile": "GA02-D2C-EDGES-1",
+    }
+    expected_edge = (
+        "df28640283682cbc5ce71f51e2581ded513ede5223aa335e89b55e615c8ff1ef"
+    )
+    assert c._digest("GA02-D2C-EDGES-1", edge_catalog) == expected_edge
+
+    historical_catalog = {
+        "adapter_entries": [],
+        "approved_core_schema_keys": [],
+        "domain_id": "inventory.reconcile",
+        "domain_version": "1.0.0",
+        "edge_digest": expected_edge,
+        "host_catalog_generation": "diagnostic-g1",
+        "host_policy_generation": "diagnostic-p1",
+        "host_policy_id": "diagnostic-policy",
+        "manifest_sha256": "a" * 64,
+        "profile": "GA02-D2C-CATALOG-1",
+        "publisher_generation": "package-g1",
+        "registry_entries": [],
+        "runtime_profile": "GA02-D1-1",
+    }
+    assert c._digest("GA02-D2C-CATALOG-1", historical_catalog) == (
+        "ecfc18f4e025d898c74865e60e5b2199df10584bb1ece0b2b84e4d0d03bf45cc"
+    )
+
+    historical_closure = {
+        "adapter_evidence": [],
+        "definition_hashes": [],
+        "dependency_keys": [],
+        "edges": [],
+        "graph_completeness": "SUPPORTED_RELATIONS_ONLY",
+        "host_catalog_generation": "diagnostic-g1",
+        "manifest_sha256": "a" * 64,
+        "operational_readiness": "NOT_ASSESSED",
+        "profile": "GA02-D2C-CLOSURE-1",
+        "seed_keys": [],
+    }
+    assert c._digest("GA02-D2C-CLOSURE-1", historical_closure) == (
+        "342f90ec3f8526f957d103f9677b778635ab9c9195c46b9f1bd00c83556d0eca"
+    )
+
+
+def test_upstream_d2d_binding_five_golden_vectors_unchanged() -> None:
+    # Independent input construction: these are serialized reference cases,
+    # not a C0 issuer, trusted binding or runnable admission.
+    base: dict[str, object] = {
+        "assets": [],
+        "binding_profile": "GA02-D2-BINDING-1",
+        "dependencies": [],
+        "domain_id": "inventory.reconcile",
+        "domain_version": "1.0.0",
+        "host_catalog_generation": "host-v1",
+        "manifest_sha256": (
+            "c757e6506fb0e8d7741c9abf5abc2880221655f506afd597dd7817edce195a3f"
+        ),
+        "runtime_profile": "GA02-D1-1",
+    }
+    assert c._digest("GA02-D2-BINDING-1", base) == (
+        "8342fd5a5d645e8ab907cd3cbdab4e78cf5a7375a4da554f903184b8809be859"
+    )
+
+    one_asset = {
+        "id": "stock.count",
+        "kind": "action",
+        "namespace": "inventory.reconcile",
+        "relative_path": "actions/count.json",
+        "sha256": "a" * 64,
+        "version": "1.0.0",
+    }
+    one_dependency = {
+        "definition_sha256": "b" * 64,
+        "enabled_at_resolution": True,
+        "host_adapter_generation": None,
+        "host_adapter_key": None,
+        "id": "stock.count",
+        "namespace": "inventory.reconcile",
+        "registry_kind": "action",
+        "version": "1.0.0",
+    }
+    payload: dict[str, object] = {
+        **base,
+        "assets": [one_asset],
+        "dependencies": [one_dependency],
+    }
+    assert c._digest("GA02-D2-BINDING-1", payload) == (
+        "649c58d4aa6fb132e807a5b96c2969e354fc942568371e7a8087a2d984855bfd"
+    )
+    changed_definition: dict[str, object] = {
+        **payload,
+        "dependencies": [{**one_dependency, "definition_sha256": "c" * 64}],
+    }
+    assert c._digest("GA02-D2-BINDING-1", changed_definition) == (
+        "2121d12f19c3e7cdf0e67f6d1d2942b03760cb4d11393046d68ded40e81e10b8"
+    )
+    changed_generation = {**payload, "host_catalog_generation": "host-v2"}
+    assert c._digest("GA02-D2-BINDING-1", changed_generation) == (
+        "3a5aecc673eb889b351f39c92282c7a6f211e4cb020d08a0137c5c6535f89692"
+    )
+    changed_asset = {
+        **payload,
+        "assets": [{**one_asset, "sha256": "d" * 64}],
+    }
+    assert c._digest("GA02-D2-BINDING-1", changed_asset) == (
+        "3e19d5c7c5b8a71fd1dad2d991d42e240264cdf911bc97aa7b02fffbb259d125"
+    )

@@ -11,13 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from agent_core.domain_descriptor import PackageDescriptorV1
 from agent_core.domain_package_loader import (
     HostPackageRootIssuer,
     HostPublishedGeneration,
     LocalPackageLoader,
     TrustedPackageIdentity,
-    VerifiedPackageSnapshotV1,
 )
 from agent_core.domain_registry_mapping import (
     D2BCode,

@@ -398,3 +398,259 @@ def test_no_trusted_api_or_runtime_export() -> None:
         "BoundRunDomainV1",
     ):
         assert not hasattr(c, name)
+
+
+# Extended deterministic reference, boundary and security evidence.
+
+
+@pytest.mark.parametrize(
+    ("kind", "item", "expected"),
+    [
+        ("ActionDefinition", "stock.count", "991e6b213af25e38fb6482b8e0f4f52f201fff26c157ac1953b169013063ffbf"),
+        ("StrategyDefinition", "stock.strategy", "5ca6bcd39d3e3899e0e43c33c9a7f2e055905795646aa95af3bcf879fc7fe389"),
+        ("SkillDefinition", "stock.skill", "07dd4a06978f8fe8665edb5587826e3de36fe5acae6808d0576b150ec86d8ef2"),
+        ("WorkflowDefinition", "stock.workflow", "4fc3bad08bbaa5bcedb90bd1f5eade2bd39bb0aa45ea7b32e00084704b62e98a"),
+        ("ToolDefinition", "stock.tool", "0c3f922fe6b16cac6ce54235d5938a4ac14f225487417bd92cafd49a0ac4f55a"),
+        ("PolicyDefinition", "stock.rule", "7181937a3b97dc8ee345e59db9b2332cb56b8192c6a34fe1da6cedc2bd5ce2d8"),
+        ("PromptDefinition", "stock.prompt", "1693c258ac856f25af1ca1cc5679513e2bb2595b0cf8f4ca6509591f98249e05"),
+        ("DomainManifest", "inventory.reconcile", "3d0a395c4760745a913247eb2ff0e0a65fd84fe7b0733d2e9c25a8152f083f56"),
+        ("SchemaDefinition", "stock.schema", "fc7cd1e466d3bc4b8b0a2ab6eba0843789282e96482710ae0646bd0b37a90591"),
+        ("CapabilityDefinition", "stock.capability", "5c16c2c9f1d09a357bf856d56745f561b6ad63685e15db1fdf7b0ab7c9ac7be0"),
+    ],
+)
+def test_ten_definition_golden_vectors(kind: str, item: str, expected: str) -> None:
+    assert hashlib.sha256(c._canonical_definition(entry(kind, item))).hexdigest() == expected
+
+
+def test_c06_c07_catalog_two_mode_vectors() -> None:
+    data: dict[str, object] = {
+        "adapter_entries": [],
+        "approved_core_schema_keys": [],
+        "domain_id": "inventory.reconcile",
+        "domain_version": "1.0.0",
+        "edge_digest": "df28640283682cbc5ce71f51e2581ded513ede5223aa335e89b55e615c8ff1ef",
+        "host_catalog_generation": "diagnostic-g1",
+        "host_policy_generation": "diagnostic-p1",
+        "host_policy_id": "diagnostic-policy",
+        "manifest_sha256": "a" * 64,
+        "profile": "GA02-D2C-CATALOG-2",
+        "prompt_mode": "REGISTRY_EXACT",
+        "publisher_generation": "package-g1",
+        "registry_entries": [],
+        "rule_mode": "INERT_ONLY",
+        "runtime_profile": "GA02-D1-1",
+    }
+    assert c._digest("GA02-D2C-CATALOG-2", data) == (
+        "2c1388a320cbb4752e2aae0e2d777c560781d742bfdedf49d8773d1b0ae1f02d"
+    )
+    data["prompt_mode"] = "INERT_ONLY"
+    assert c._digest("GA02-D2C-CATALOG-2", data) == (
+        "776576af1529d2e63326fe10dcc778cfe3fc7d0de38fdb801fbd444ef148ee64"
+    )
+    data["rule_mode"] = "REGISTRY_EXACT"
+    assert c._digest("GA02-D2C-CATALOG-2", data) not in {
+        "2c1388a320cbb4752e2aae0e2d777c560781d742bfdedf49d8773d1b0ae1f02d",
+        "776576af1529d2e63326fe10dcc778cfe3fc7d0de38fdb801fbd444ef148ee64",
+    }
+
+
+def _eight_capabilities() -> c.DiagnosticCatalogInputV1:
+    base = fixture()
+    caps = [f"stock.capability.{n}" for n in range(8)]
+    return replace(
+        base,
+        asset_refs=tuple(asset("capability", item) for item in caps),
+        registry_entries=(entry("DomainManifest", "inventory.reconcile"),)
+        + tuple(entry("CapabilityDefinition", item) for item in caps),
+        edge_occurrences=(),
+    )
+
+
+def _ex_boundary(extra: int = 0) -> c.DiagnosticCatalogInputV1:
+    base = _eight_capabilities()
+    assert c._admit_and_copy_diagnostic_input(base).primitive_element_count == 316
+    slots = 3780 + extra
+    records = list(base.registry_entries)
+    for i in range(1, 9):
+        item = f"stock.capability.{i-1}"
+        fields_copy = dict(records[i].fields)
+        for field in ("intents", "entities", "needs"):
+            amount = min(256, slots)
+            if amount:
+                fields_copy[field] = ["x"] * amount
+                slots -= amount
+        records[i] = entry("CapabilityDefinition", item, fields_copy)
+    assert slots == 0
+    return replace(base, registry_entries=tuple(records))
+
+
+def test_ex_4096_and_4097_exact_external_preflight() -> None:
+    at_limit = _ex_boundary()
+    owned = c._admit_and_copy_diagnostic_input(at_limit)
+    assert owned.primitive_element_count == 4096
+    snap = c._resolve_untrusted_catalog_observation(at_limit)
+    assert len(snap.seed_keys) == 8
+    assert snap.operational_readiness == "NOT_ASSESSED"
+    expect_code(c.D2CCode.D2C_RESOURCE_LIMIT, _ex_boundary(extra=1))
+
+
+def _ng_boundary(extra: bool = False) -> c.DiagnosticCatalogInputV1:
+    f = fixture()
+    name_list = ["stock.skill.a", "stock.skill.b", "stock.skill.c", "stock.skill.d"]
+    if extra:
+        name_list.append("stock.skill.e")
+    refs = [asset("skill", item) for item in name_list] + [asset("tool", "stock.tool")]
+    records = [entry("DomainManifest", "inventory.reconcile")]
+    occurrences: list[c.DiagnosticEdgeOccurrenceV1] = []
+    for index, item in enumerate(name_list):
+        count = 1 if index == 4 else 256
+        data = definition("SkillDefinition", item)
+        data["optional_tools"] = ["stock.tool"] * count
+        records.append(entry("SkillDefinition", item, data))
+        for ordinal in range(count):
+            occurrences.append(
+                edge("skill", item, "skill.optional_tools", "tool", "stock.tool", ordinal)
+            )
+    records.append(entry("ToolDefinition", "stock.tool"))
+    return replace(
+        f,
+        asset_refs=tuple(refs),
+        registry_entries=tuple(records),
+        edge_occurrences=tuple(occurrences),
+    )
+
+
+def test_ng_1024_and_1025_internal_only_budget() -> None:
+    at_limit = _ng_boundary()
+    result = c._resolve_owned_diagnostic_graph(c._OwnedDiagnosticInputV1(at_limit, 0))
+    assert len(result.edge_occurrences) == 1024
+    assert len(result.seed_keys) == 5
+    with pytest.raises(c.D2CResolutionError) as exc:
+        c._resolve_owned_diagnostic_graph(
+            c._OwnedDiagnosticInputV1(_ng_boundary(extra=True), 0)
+        )
+    assert exc.value.code == c.D2CCode.D2C_RESOURCE_LIMIT
+    assert exc.value.code.value == str(exc.value)
+
+
+def test_or03_included_target_is_diagnostic_success() -> None:
+    source = definition("ActionDefinition", "stock.count")
+    source["required_capability"] = "stock.capability"
+    input_value = replace(
+        fixture(),
+        asset_refs=(asset("action", "stock.count"), asset("capability", "stock.capability")),
+        registry_entries=(
+            entry("DomainManifest", "inventory.reconcile"),
+            entry("ActionDefinition", "stock.count", source),
+            entry("CapabilityDefinition", "stock.capability"),
+        ),
+        edge_occurrences=(
+            edge("action", "stock.count", "action.required_capability", "capability", "stock.capability"),
+        ),
+    )
+    result = c._resolve_untrusted_catalog_observation(input_value)
+    assert result.observation_role == "UNTRUSTED_DIAGNOSTIC_ONLY"
+    assert len(result.seed_keys) == 2
+
+
+def test_core_schema_requires_matching_scope_and_allowlist() -> None:
+    f = fixture()
+    schema = definition("SchemaDefinition", "stock.schema")
+    schema["scope"] = "CORE"
+    schema["namespace"] = "CORE"
+    schema_ref = replace(asset("schema", "stock.schema"), namespace="CORE")
+    schema_entry = replace(entry("SchemaDefinition", "stock.schema", schema), namespace="CORE")
+    full = replace(
+        f,
+        asset_refs=f.asset_refs + (schema_ref,),
+        registry_entries=f.registry_entries + (schema_entry,),
+        approved_core_schema_keys=(c.DiagnosticCoreSchemaKeyV1("stock.schema", "1.0.0"),),
+    )
+    assert len(c._resolve_untrusted_catalog_observation(full).seed_keys) == 5
+    bad = dict(schema)
+    bad["scope"] = "DOMAIN"
+    bad_entry = replace(entry("SchemaDefinition", "stock.schema", bad), namespace="CORE")
+    expect_code(
+        c.D2CCode.D2C_EXACT_DEPENDENCY_MISSING,
+        replace(full, registry_entries=f.registry_entries + (bad_entry,)),
+    )
+    expect_code(
+        c.D2CCode.D2C_EXACT_DEPENDENCY_MISSING,
+        replace(full, approved_core_schema_keys=()),
+    )
+
+
+def test_adapter_union_refuses_nonnull_absent() -> None:
+    f = fixture()
+    bad = c.DiagnosticAdapterEntryV1(
+        "tool", "inventory.reconcile", "stock.tool", "1.0.0",
+        "ABSENT_UNVERIFIED", None, "rogue", None, None, None,
+    )
+    expect_code(c.D2CCode.D2C_HOST_ADAPTER_MISMATCH, replace(f, adapter_entries=(bad,)))
+    good = replace(bad, adapter_generation=None)
+    assert c._resolve_untrusted_catalog_observation(
+        replace(f, adapter_entries=(good,))
+    ).operational_readiness == "NOT_ASSESSED"
+
+
+def test_copy_owns_nested_definition_lists() -> None:
+    f = fixture()
+    source = f.registry_entries[3].fields
+    owned = c._admit_and_copy_diagnostic_input(f)
+    reference = c._resolve_owned_diagnostic_graph(owned)
+    original = source["required_tools"]
+    source["required_tools"] = ["not.the.tool"]
+    try:
+        after = c._resolve_owned_diagnostic_graph(owned)
+    finally:
+        source["required_tools"] = original
+    assert after.closure_digest == reference.closure_digest
+
+
+def test_prompt_mode_switch_requires_exact_registry_entry() -> None:
+    f = fixture()
+    prompt_ref = asset("prompt", "stock.prompt")
+    inert = replace(f, asset_refs=f.asset_refs + (prompt_ref,))
+    assert len(c._resolve_untrusted_catalog_observation(inert).seed_keys) == 4
+    expect_code(
+        c.D2CCode.D2C_EXACT_DEPENDENCY_MISSING,
+        replace(inert, prompt_mode="REGISTRY_EXACT"),
+    )
+    prompt = entry("PromptDefinition", "stock.prompt")
+    active = replace(
+        inert, prompt_mode="REGISTRY_EXACT",
+        registry_entries=f.registry_entries + (prompt,),
+    )
+    result = c._resolve_untrusted_catalog_observation(active)
+    assert len(result.seed_keys) == 5
+    assert result.operational_readiness == "NOT_ASSESSED"
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    [
+        ("intrusiveness_level", "UNRECOGNIZED"),
+        ("requires_confirmation", "false"),
+        ("allowed_planning_modes", ["not-a-mode"]),
+    ],
+)
+def test_invalid_definition_fields_fail_closed(field: str, invalid: object) -> None:
+    f = fixture()
+    rows = list(f.registry_entries)
+    action = dict(rows[1].fields)
+    action[field] = invalid
+    rows[1] = entry("ActionDefinition", "stock.count", action)
+    expect_code(
+        c.D2CCode.D2C_CANONICAL_DEFINITION_INVALID,
+        replace(f, registry_entries=tuple(rows)),
+    )
+
+
+def test_external_list_overflow_and_unsupported_type() -> None:
+    f = fixture()
+    rows = list(f.registry_entries)
+    skill = dict(rows[3].fields)
+    skill["optional_tools"] = ["stock.tool"] * 257
+    rows[3] = entry("SkillDefinition", "stock.skill", skill)
+    expect_code(c.D2CCode.D2C_RESOURCE_LIMIT, replace(f, registry_entries=tuple(rows)))
+    expect_code(c.D2CCode.D2C_RESOLUTION_UNSTABLE, replace(f, prompt_mode=123))

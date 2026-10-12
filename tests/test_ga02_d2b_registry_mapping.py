@@ -6,15 +6,18 @@ import hashlib
 import json
 import sys
 from dataclasses import FrozenInstanceError, replace
+from types import MethodType
 from pathlib import Path
 
 import pytest
 
+from agent_core.domain_descriptor import PackageDescriptorV1
 from agent_core.domain_package_loader import (
     HostPackageRootIssuer,
     HostPublishedGeneration,
     LocalPackageLoader,
     TrustedPackageIdentity,
+    VerifiedPackageSnapshotV1,
 )
 from agent_core.domain_registry_mapping import (
     D2BCode,
@@ -27,13 +30,28 @@ from agent_core.domain_registry_mapping import (
 )
 from runtime.contracts.enums import PlanningMode
 from runtime.registries.action import ActionRegistry
+from runtime.registries.capability import CapabilityRegistry
 from runtime.registries.base import RegistryKey
+from runtime.registries.policy import PolicyRegistry
+from runtime.registries.prompt import PromptRegistry
+from runtime.registries.skill import SkillRegistry
+from runtime.registries.strategy import StrategyRegistry
+from runtime.registries.tool import ToolRegistry
+from runtime.registries.workflow import WorkflowRegistry
 from runtime.registries.definitions import (
     ActionDefinition,
+    CapabilityDefinition,
     DomainManifest,
     IntrusivenessLevel,
+    PolicyDefinition,
+    PromptDefinition,
+    PromptLayer,
     SchemaDefinition,
     SchemaScope,
+    SkillDefinition,
+    StrategyDefinition,
+    ToolDefinition,
+    WorkflowDefinition,
 )
 from runtime.registries.domain import DomainRegistry
 from runtime.registries.errors import RegistryError, RegistryItemNotFoundError
@@ -279,19 +297,19 @@ def test_d2b_n05_no_public_trusted_entry():
     assert not hasattr(module, "D2BTrustedAdmissionV1")
 
 
-class _FakeRegistry:
-    """Test-only hostile exact-read adapter. Never used in production."""
+def _FakeRegistry(value=None, error=None):
+    """Adversarial read on a *concrete* ActionRegistry; no dummy Catalog slots."""
+    registry = ActionRegistry()
+    registry.get_calls = 0
 
-    def __init__(self, value=None, error=None):
-        self.value = value
-        self.error = error
-        self.get_calls = 0
-
-    def get(self, item, version, *, namespace):
+    def hostile_get(self, item, version, *, namespace):
         self.get_calls += 1
-        if self.error is not None:
-            raise self.error
-        return self.value
+        if error is not None:
+            raise error
+        return value
+
+    registry.get = MethodType(hostile_get, registry)
+    return registry
 
 
 def _action_record():
@@ -495,3 +513,200 @@ def test_d2b_n15_no_registry_lookup_for_inert_inspection(tmp_path):
     )
     assert spy.get_calls == 0
     assert all(isinstance(e, InertAssetEvidenceV1) for e in output.evidence)
+
+
+# IR-01: frozen dataclasses are constructible with deliberately malformed fields.
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        None,
+        "not-a-descriptor",
+        {},
+    ],
+)
+def test_d2b_ir01_forged_descriptor_is_typed_denial(tmp_path, invalid):
+    snapshot = _snapshot(
+        tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
+    )
+    trap = _FakeRegistry(error=AssertionError("Registry read before admission"))
+    forged = replace(snapshot, descriptor=invalid)
+    with pytest.raises(D2BMappingError) as exc:
+        _map_untrusted_observation(
+            forged,
+            policy=_policy(snapshot),
+            registries=RegistryCatalogViewV1(domain=trap, action=trap),
+        )
+    assert exc.value.code is D2BCode.D2B_TRUSTED_CATALOG_INVALID
+    assert trap.get_calls == 0
+
+
+@pytest.mark.parametrize("field", ["prompt_mode", "rule_mode", "admission_mode"])
+def test_d2b_ir01_unhashable_mode_fails_typed_without_reads(tmp_path, field):
+    snapshot = _snapshot(
+        tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
+    )
+    policy = replace(_policy(snapshot), **{field: []})
+    trap = _FakeRegistry(error=AssertionError("read"))
+    with pytest.raises(D2BMappingError) as exc:
+        _map_untrusted_observation(
+            snapshot,
+            policy=policy,
+            registries=RegistryCatalogViewV1(domain=trap, action=trap),
+        )
+    assert exc.value.code is D2BCode.D2B_TRUSTED_CATALOG_INVALID
+    assert trap.get_calls == 0
+
+
+@pytest.mark.parametrize("changed", [
+    {"assets": "not-assets"},
+    {"descriptor_bytes": None},
+    {"generation_id": []},
+    {"assets": (object(),)},
+])
+def test_d2b_ir01_forged_snapshot_payload_is_typed_denial(tmp_path, changed):
+    snapshot = _snapshot(
+        tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
+    )
+    forged = replace(snapshot, **changed)
+    with pytest.raises(D2BMappingError) as exc:
+        _map_untrusted_observation(
+            forged, policy=_policy(snapshot), registries=RegistryCatalogViewV1()
+        )
+    assert exc.value.code is D2BCode.D2B_TRUSTED_CATALOG_INVALID
+
+
+def test_d2b_ir02_wrong_typed_catalog_before_any_read(tmp_path):
+    snapshot = _snapshot(
+        tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
+    )
+    domain = DomainRegistry()
+    manifest = DomainManifest(
+        domain_id=DOMAIN, name="Inventory", version=VERSION,
+        runtime_compatibility=PROFILE
+    )
+    domain.register(manifest, namespace=DOMAIN)
+    with pytest.raises(D2BMappingError) as exc:
+        _map_untrusted_observation(
+            snapshot,
+            policy=_policy(snapshot),
+            registries=RegistryCatalogViewV1(domain=domain, action=DomainRegistry()),
+        )
+    assert exc.value.code is D2BCode.D2B_TRUSTED_CATALOG_INVALID
+    assert domain.get(DOMAIN, VERSION, namespace=DOMAIN).definition is manifest
+
+
+_KIND_CASES = (
+    ("action", "stock.count", ActionRegistry, ActionDefinition, "action_id"),
+    ("strategy", "stock.strategy", StrategyRegistry, StrategyDefinition, "strategy_id"),
+    ("skill", "stock.skill", SkillRegistry, SkillDefinition, "skill_id"),
+    ("tool", "stock.tool", ToolRegistry, ToolDefinition, "tool_id"),
+    ("workflow", "stock.workflow", WorkflowRegistry, WorkflowDefinition, "workflow_id"),
+    ("capability", "stock.capability", CapabilityRegistry, CapabilityDefinition, "capability_id"),
+    ("prompt", "stock.prompt", PromptRegistry, PromptDefinition, "prompt_id"),
+    ("rule", "stock.rule", PolicyRegistry, PolicyDefinition, "rule_id"),
+    ("schema", "stock.schema", SchemaRegistry, SchemaDefinition, "schema_id"),
+)
+
+
+def _case_definition(kind, ident):
+    fields = {"version": VERSION}
+    if kind == "action":
+        return ActionDefinition(
+            action_id=ident, version=VERSION, category="inventory",
+            description="count", intrusiveness_level=IntrusivenessLevel.LOW,
+            requires_confirmation=False, required_capability=None,
+            allowed_planning_modes=[PlanningMode.DETERMINISTIC],
+        )
+    if kind == "strategy":
+        return StrategyDefinition(
+            strategy_id=ident, version=VERSION, description="strategy",
+            preferred_goals=[], preferred_needs=[], compatible_emotions=[],
+            required_conditions=[], avoid_conditions=[], default_actions=[],
+            intrusiveness_level=IntrusivenessLevel.LOW,
+        )
+    if kind == "skill":
+        return SkillDefinition(skill_id=ident, **fields)
+    if kind == "tool":
+        return ToolDefinition(tool_id=ident, **fields)
+    if kind == "workflow":
+        return WorkflowDefinition(workflow_id=ident, **fields)
+    if kind == "capability":
+        return CapabilityDefinition(capability_id=ident, domain=DOMAIN, **fields)
+    if kind == "prompt":
+        return PromptDefinition(prompt_id=ident, layer=PromptLayer.DOMAIN, domain=DOMAIN, **fields)
+    if kind == "rule":
+        return PolicyDefinition(rule_id=ident, priority=1, scope=DOMAIN, **fields)
+    return SchemaDefinition(
+        schema_id=ident, scope=SchemaScope.DOMAIN, namespace=DOMAIN, **fields
+    )
+
+
+@pytest.mark.parametrize("kind, ident, cls, definition_type, field", _KIND_CASES)
+def test_d2b_ir03_all_nine_registry_backed_kind_cases(
+    tmp_path, kind, ident, cls, definition_type, field
+):
+    snapshot = _snapshot(
+        tmp_path, [_asset(kind, ident, "assets/item.txt", b"item")]
+    )
+    domain, _ = _registries()
+    registry = cls()
+    definition = _case_definition(kind, ident)
+    assert type(definition) is definition_type
+    assert getattr(definition, field) == ident
+    registry.register(definition, namespace=DOMAIN)
+    slots = {"policy" if kind == "rule" else kind: registry}
+    view = RegistryCatalogViewV1(domain=domain, **slots)
+    policy = replace(
+        _policy(snapshot),
+        prompt_mode="REGISTRY_EXACT",
+        rule_mode="REGISTRY_EXACT",
+    )
+    result = _map_untrusted_observation(snapshot, policy=policy, registries=view)
+    evidence = result.evidence[0]
+    assert isinstance(evidence, RegistryMatchEvidenceV1)
+    assert evidence.observed_namespace == DOMAIN
+    assert evidence.definition_type == definition_type.__name__
+    if kind in {"capability", "prompt", "schema"}:
+        assert evidence.definition_enabled is None
+    else:
+        assert evidence.definition_enabled is True
+
+
+@pytest.mark.parametrize("kind", ["prompt", "rule", "knowledge", "state", "eval"])
+def test_d2b_ir03_inert_cases_never_read_asset_registry(tmp_path, kind):
+    snapshot = _snapshot(
+        tmp_path, [_asset(kind, "stock.note", "assets/notes.txt", b"notes")]
+    )
+    domain, _ = _registries()
+    result = _map_untrusted_observation(
+        snapshot, policy=_policy(snapshot),
+        registries=RegistryCatalogViewV1(domain=domain),
+    )
+    assert isinstance(result.evidence[0], InertAssetEvidenceV1)
+    assert result.evidence[0].asset.classification == "INERT_ONLY"
+
+
+def test_d2b_ir03_wrong_domain_profile_is_definition_mismatch(tmp_path):
+    snapshot = _snapshot(
+        tmp_path, [_asset("knowledge", "stock.note", "assets/notes.txt", b"notes")]
+    )
+    domain = DomainRegistry()
+    domain.register(
+        DomainManifest(domain_id=DOMAIN, name="Inventory", version=VERSION,
+                       runtime_compatibility="OTHER"),
+        namespace=DOMAIN,
+    )
+    with pytest.raises(D2BMappingError) as exc:
+        _map_untrusted_observation(
+            snapshot, policy=_policy(snapshot),
+            registries=RegistryCatalogViewV1(domain=domain),
+        )
+    assert exc.value.code is D2BCode.D2B_REGISTRY_DEFINITION_MISMATCH
+
+
+def test_d2b_ir03_unsupported_active_code_reserved_not_an_execution_api():
+    assert D2BCode.D2B_UNSUPPORTED_ACTIVE_KIND.value == "D2B_UNSUPPORTED_ACTIVE_KIND"
+    import agent_core.domain_registry_mapping as mapping
+
+    assert not hasattr(mapping, "activate_asset")
+    assert not hasattr(mapping, "map_verified_package")

@@ -463,6 +463,7 @@ def test_unsupported_profile_is_typed(tmp_path: Path) -> None:
         lambda: load(issuer, unsupported),
     )
 
+
 def test_issuer_checks_lease_object_identity(tmp_path: Path) -> None:
     issuer, identity = prepare(tmp_path)
     with issuer.issue(identity.generation_id) as lease:

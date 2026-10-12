@@ -13,22 +13,13 @@ from typing import Any
 from agent_core.domain_descriptor import (
     PROFILE,
     AssetReferenceV1,
-    PackageDescriptorError,
     PackageDescriptorV1,
     descriptor_to_domain_manifest,
 )
 from agent_core.domain_package_loader import VerifiedAssetV1, VerifiedPackageSnapshotV1
 from runtime.registries.action import ActionRegistry
-from runtime.registries.capability import CapabilityRegistry
-from runtime.registries.domain import DomainRegistry
-from runtime.registries.policy import PolicyRegistry
-from runtime.registries.prompt import PromptRegistry
-from runtime.registries.schema import SchemaRegistry
-from runtime.registries.skill import SkillRegistry
-from runtime.registries.strategy import StrategyRegistry
-from runtime.registries.tool import ToolRegistry
-from runtime.registries.workflow import WorkflowRegistry
 from runtime.registries.base import RegistryKey
+from runtime.registries.capability import CapabilityRegistry
 from runtime.registries.definitions import (
     ActionDefinition,
     CapabilityDefinition,
@@ -42,7 +33,15 @@ from runtime.registries.definitions import (
     ToolDefinition,
     WorkflowDefinition,
 )
+from runtime.registries.domain import DomainRegistry
 from runtime.registries.errors import RegistryError, RegistryItemNotFoundError
+from runtime.registries.policy import PolicyRegistry
+from runtime.registries.prompt import PromptRegistry
+from runtime.registries.schema import SchemaRegistry
+from runtime.registries.skill import SkillRegistry
+from runtime.registries.strategy import StrategyRegistry
+from runtime.registries.tool import ToolRegistry
+from runtime.registries.workflow import WorkflowRegistry
 
 _TYPES: dict[str, tuple[str, type[Any], str, bool]] = {
     "action": ("action", ActionDefinition, "action_id", True),

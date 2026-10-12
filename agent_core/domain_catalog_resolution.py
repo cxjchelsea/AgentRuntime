@@ -12,7 +12,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, fields
 from enum import Enum
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 _ID = re.compile(r"[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*\Z", re.ASCII)
 _VER = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\Z", re.ASCII)
@@ -109,7 +109,7 @@ class D2CResolutionError(ValueError):
         super().__init__(code.value)
 
 
-def _deny(code: D2CCode) -> None:
+def _deny(code: D2CCode) -> NoReturn:
     raise D2CResolutionError(code)
 
 
@@ -410,7 +410,9 @@ def _canonical_definition(entry: DiagnosticRegistryEntryV1) -> bytes:
     return payload
 
 
-def _key(kind: str | None, ns: str | None, item: str | None, version: str | None) -> _KEY:
+def _key(
+    kind: str | None, ns: str | None, item: str | None, version: str | None
+) -> _KEY:
     if not all(type(value) is str for value in (kind, ns, item, version)):
         _deny(D2CCode.D2C_EDGE_CATALOG_INVALID)
     return cast(str, kind), cast(str, ns), cast(str, item), cast(str, version)
@@ -461,7 +463,10 @@ def _resolve_owned_diagnostic_graph(
     for asset_ref in x.asset_refs:
         if (
             asset_ref.kind not in _KIND
-            or not (_string(asset_ref.id, identifier=True) and _string(asset_ref.version, version=True))
+            or not (
+                _string(asset_ref.id, identifier=True)
+                and _string(asset_ref.version, version=True)
+            )
             or not _SHA.fullmatch(asset_ref.sha256)
         ):
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
@@ -469,7 +474,12 @@ def _resolve_owned_diagnostic_graph(
             asset_ref.kind == "schema" and asset_ref.namespace == "CORE"
         ):
             _deny(D2CCode.D2C_EXACT_DEPENDENCY_MISSING)
-        if (asset_ref.kind, asset_ref.namespace, asset_ref.id, asset_ref.version) in seen_assets:
+        if (
+            asset_ref.kind,
+            asset_ref.namespace,
+            asset_ref.id,
+            asset_ref.version,
+        ) in seen_assets:
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
         if (
             not asset_ref.relative_path
@@ -478,7 +488,9 @@ def _resolve_owned_diagnostic_graph(
             or asset_ref.relative_path.startswith("/")
         ):
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
-        seen_assets.add((asset_ref.kind, asset_ref.namespace, asset_ref.id, asset_ref.version))
+        seen_assets.add(
+            (asset_ref.kind, asset_ref.namespace, asset_ref.id, asset_ref.version)
+        )
         kind = _asset_kind(asset_ref.kind, x.prompt_mode, x.rule_mode)
         if kind is not None:
             k = _key(kind, asset_ref.namespace, asset_ref.id, asset_ref.version)
@@ -489,14 +501,21 @@ def _resolve_owned_diagnostic_graph(
             ):
                 _deny(D2CCode.D2C_EXACT_DEPENDENCY_MISSING)
             active.add(k)
-        assetkeys.add(_key(asset_ref.kind, asset_ref.namespace, asset_ref.id, asset_ref.version))
+        assetkeys.add(
+            _key(asset_ref.kind, asset_ref.namespace, asset_ref.id, asset_ref.version)
+        )
     if len(active) > 256:
         _deny(D2CCode.D2C_RESOURCE_LIMIT)
     records: dict[_KEY, DiagnosticRegistryEntryV1] = {}
     definition_hashes: dict[_KEY, str] = {}
     domain_key = _key("domain", x.domain_id, x.domain_id, x.domain_version)
     for registry_entry in x.registry_entries:
-        k = _key(registry_entry.registry_kind, registry_entry.namespace, registry_entry.id, registry_entry.version)
+        k = _key(
+            registry_entry.registry_kind,
+            registry_entry.namespace,
+            registry_entry.id,
+            registry_entry.version,
+        )
         if k in records or registry_entry.registry_kind not in _TYPES:
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
         cls, id_field, intrinsic = _TYPES[registry_entry.registry_kind]
@@ -508,9 +527,14 @@ def _resolve_owned_diagnostic_graph(
             _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
         raw = _canonical_definition(registry_entry)
         actual = hashlib.sha256(raw).hexdigest()
-        if type(registry_entry.definition_sha256) is not str or actual != registry_entry.definition_sha256:
+        if (
+            type(registry_entry.definition_sha256) is not str
+            or actual != registry_entry.definition_sha256
+        ):
             _deny(D2CCode.D2C_DEFINITION_HASH_MISMATCH)
-        if type(registry_entry.record_enabled) is not bool or type(registry_entry.intrinsic_enabled) not in (
+        if type(registry_entry.record_enabled) is not bool or type(
+            registry_entry.intrinsic_enabled
+        ) not in (
             bool,
             type(None),
         ):
@@ -519,7 +543,10 @@ def _resolve_owned_diagnostic_graph(
             _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
         if not intrinsic and registry_entry.intrinsic_enabled is not None:
             _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
-        if intrinsic and registry_entry.fields["enabled"] != registry_entry.intrinsic_enabled:
+        if (
+            intrinsic
+            and registry_entry.fields["enabled"] != registry_entry.intrinsic_enabled
+        ):
             _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
         records[k] = registry_entry
         definition_hashes[k] = actual

@@ -247,7 +247,7 @@ def _record(value: object, klass: type[Any], counter: list[int]) -> dict[str, An
     if type(value) is not klass:
         _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
     result: dict[str, Any] = {}
-    for field in fields(klass):
+    for field in fields(cast(Any, klass)):
         counter[0] += 1
         if counter[0] > 4096:
             _deny(D2CCode.D2C_RESOURCE_LIMIT)

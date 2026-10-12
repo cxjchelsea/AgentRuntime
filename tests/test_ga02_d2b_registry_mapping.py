@@ -273,7 +273,9 @@ def test_d2b_n03_core_schema_needs_allowlist(tmp_path):
     d, _ = _registries()
     with pytest.raises(D2BMappingError) as exc:
         _map_untrusted_observation(
-            s, policy=_policy(s), registries=RegistryCatalogViewV1(domain=d, schema=SchemaRegistry())
+            s,
+            policy=_policy(s),
+            registries=RegistryCatalogViewV1(domain=d, schema=SchemaRegistry()),
         )
     assert exc.value.code is D2BCode.D2B_EXACT_NAMESPACE_MISMATCH
 
@@ -557,12 +559,15 @@ def test_d2b_ir01_unhashable_mode_fails_typed_without_reads(tmp_path, field):
     assert trap.get_calls == 0
 
 
-@pytest.mark.parametrize("changed", [
-    {"assets": "not-assets"},
-    {"descriptor_bytes": None},
-    {"generation_id": []},
-    {"assets": (object(),)},
-])
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"assets": "not-assets"},
+        {"descriptor_bytes": None},
+        {"generation_id": []},
+        {"assets": (object(),)},
+    ],
+)
 def test_d2b_ir01_forged_snapshot_payload_is_typed_denial(tmp_path, changed):
     snapshot = _snapshot(
         tmp_path, [_asset("action", "stock.count", "actions/count.txt", b"count")]
@@ -581,8 +586,10 @@ def test_d2b_ir02_wrong_typed_catalog_before_any_read(tmp_path):
     )
     domain = DomainRegistry()
     manifest = DomainManifest(
-        domain_id=DOMAIN, name="Inventory", version=VERSION,
-        runtime_compatibility=PROFILE
+        domain_id=DOMAIN,
+        name="Inventory",
+        version=VERSION,
+        runtime_compatibility=PROFILE,
     )
     domain.register(manifest, namespace=DOMAIN)
     with pytest.raises(D2BMappingError) as exc:
@@ -601,7 +608,13 @@ _KIND_CASES = (
     ("skill", "stock.skill", SkillRegistry, SkillDefinition, "skill_id"),
     ("tool", "stock.tool", ToolRegistry, ToolDefinition, "tool_id"),
     ("workflow", "stock.workflow", WorkflowRegistry, WorkflowDefinition, "workflow_id"),
-    ("capability", "stock.capability", CapabilityRegistry, CapabilityDefinition, "capability_id"),
+    (
+        "capability",
+        "stock.capability",
+        CapabilityRegistry,
+        CapabilityDefinition,
+        "capability_id",
+    ),
     ("prompt", "stock.prompt", PromptRegistry, PromptDefinition, "prompt_id"),
     ("rule", "stock.rule", PolicyRegistry, PolicyDefinition, "rule_id"),
     ("schema", "stock.schema", SchemaRegistry, SchemaDefinition, "schema_id"),
@@ -612,16 +625,26 @@ def _case_definition(kind, ident):
     fields = {"version": VERSION}
     if kind == "action":
         return ActionDefinition(
-            action_id=ident, version=VERSION, category="inventory",
-            description="count", intrusiveness_level=IntrusivenessLevel.LOW,
-            requires_confirmation=False, required_capability=None,
+            action_id=ident,
+            version=VERSION,
+            category="inventory",
+            description="count",
+            intrusiveness_level=IntrusivenessLevel.LOW,
+            requires_confirmation=False,
+            required_capability=None,
             allowed_planning_modes=[PlanningMode.DETERMINISTIC],
         )
     if kind == "strategy":
         return StrategyDefinition(
-            strategy_id=ident, version=VERSION, description="strategy",
-            preferred_goals=[], preferred_needs=[], compatible_emotions=[],
-            required_conditions=[], avoid_conditions=[], default_actions=[],
+            strategy_id=ident,
+            version=VERSION,
+            description="strategy",
+            preferred_goals=[],
+            preferred_needs=[],
+            compatible_emotions=[],
+            required_conditions=[],
+            avoid_conditions=[],
+            default_actions=[],
             intrusiveness_level=IntrusivenessLevel.LOW,
         )
     if kind == "skill":
@@ -633,7 +656,9 @@ def _case_definition(kind, ident):
     if kind == "capability":
         return CapabilityDefinition(capability_id=ident, domain=DOMAIN, **fields)
     if kind == "prompt":
-        return PromptDefinition(prompt_id=ident, layer=PromptLayer.DOMAIN, domain=DOMAIN, **fields)
+        return PromptDefinition(
+            prompt_id=ident, layer=PromptLayer.DOMAIN, domain=DOMAIN, **fields
+        )
     if kind == "rule":
         return PolicyDefinition(rule_id=ident, priority=1, scope=DOMAIN, **fields)
     return SchemaDefinition(
@@ -645,9 +670,7 @@ def _case_definition(kind, ident):
 def test_d2b_ir03_all_nine_registry_backed_kind_cases(
     tmp_path, kind, ident, cls, definition_type, field
 ):
-    snapshot = _snapshot(
-        tmp_path, [_asset(kind, ident, "assets/item.txt", b"item")]
-    )
+    snapshot = _snapshot(tmp_path, [_asset(kind, ident, "assets/item.txt", b"item")])
     domain, _ = _registries()
     registry = cls()
     definition = _case_definition(kind, ident)
@@ -679,7 +702,8 @@ def test_d2b_ir03_inert_cases_never_read_asset_registry(tmp_path, kind):
     )
     domain, _ = _registries()
     result = _map_untrusted_observation(
-        snapshot, policy=_policy(snapshot),
+        snapshot,
+        policy=_policy(snapshot),
         registries=RegistryCatalogViewV1(domain=domain),
     )
     assert isinstance(result.evidence[0], InertAssetEvidenceV1)
@@ -692,13 +716,18 @@ def test_d2b_ir03_wrong_domain_profile_is_definition_mismatch(tmp_path):
     )
     domain = DomainRegistry()
     domain.register(
-        DomainManifest(domain_id=DOMAIN, name="Inventory", version=VERSION,
-                       runtime_compatibility="OTHER"),
+        DomainManifest(
+            domain_id=DOMAIN,
+            name="Inventory",
+            version=VERSION,
+            runtime_compatibility="OTHER",
+        ),
         namespace=DOMAIN,
     )
     with pytest.raises(D2BMappingError) as exc:
         _map_untrusted_observation(
-            snapshot, policy=_policy(snapshot),
+            snapshot,
+            policy=_policy(snapshot),
             registries=RegistryCatalogViewV1(domain=domain),
         )
     assert exc.value.code is D2BCode.D2B_REGISTRY_DEFINITION_MISMATCH

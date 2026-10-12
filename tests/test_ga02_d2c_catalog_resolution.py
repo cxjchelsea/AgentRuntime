@@ -738,9 +738,7 @@ def test_e01_e02_e03_historical_empty_evidence_vectors() -> None:
         "host_catalog_generation": "diagnostic-g1",
         "profile": "GA02-D2C-EDGES-1",
     }
-    expected_edge = (
-        "df28640283682cbc5ce71f51e2581ded513ede5223aa335e89b55e615c8ff1ef"
-    )
+    expected_edge = "df28640283682cbc5ce71f51e2581ded513ede5223aa335e89b55e615c8ff1ef"
     assert c._digest("GA02-D2C-EDGES-1", edge_catalog) == expected_edge
 
     historical_catalog = {

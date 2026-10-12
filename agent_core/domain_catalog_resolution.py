@@ -212,6 +212,7 @@ class DiagnosticResolutionSnapshotV1:
 class _OwnedDiagnosticInputV1:
     value: DiagnosticCatalogInputV1
     primitive_element_count: int
+    canonical_input_bytes: int = 0
 
 
 def _string(value: object, *, identifier: bool = False, version: bool = False) -> bool:
@@ -255,6 +256,8 @@ def _record(value: object, klass: type[Any], counter: list[int]) -> dict[str, An
         if field.name == "fields":
             result[field.name] = _copy_fields(v, counter)
         elif type(v) in (str, bool, int, type(None)):
+            if type(v) is str and not _string(v):
+                _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
             result[field.name] = v
         else:
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
@@ -280,7 +283,7 @@ def _copy_fields(value: object, counter: list[int]) -> dict[str, Any]:
         ancestors = ancestors | {id(node)}
         if type(node) is dict:
             for k, v in node.items():
-                if type(k) is not str:
+                if not _string(k):
                     _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
                 counter[0] += 1
                 if counter[0] > 4096:
@@ -366,7 +369,31 @@ def _admit_and_copy_diagnostic_input(
         and bool(_SHA.fullmatch(owned.manifest_sha256))
     ):
         _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
-    return _OwnedDiagnosticInputV1(owned, count[0])
+    canonical_size = _input_canonical_size(owned)
+    if canonical_size > 2097152:
+        _deny(D2CCode.D2C_RESOURCE_LIMIT)
+    return _OwnedDiagnosticInputV1(owned, count[0], canonical_size)
+
+
+def _input_canonical_size(value: DiagnosticCatalogInputV1) -> int:
+    """Count exact copied canonical input bytes, not only derived evidence.
+
+    All fields have already been defensively copied to primitive owned values.
+    """
+    payload: dict[str, Any] = {}
+    for field in fields(DiagnosticCatalogInputV1):
+        item = object.__getattribute__(value, field.name)
+        if field.name in _CARRIERS:
+            payload[field.name] = [
+                {
+                    part.name: object.__getattribute__(record, part.name)
+                    for part in fields(_CARRIERS[field.name])
+                }
+                for record in item
+            ]
+        else:
+            payload[field.name] = item
+    return len(_json(payload))
 
 
 def _canonical_definition(entry: DiagnosticRegistryEntryV1) -> bytes:
@@ -462,7 +489,10 @@ def _resolve_owned_diagnostic_graph(
     seen_assets: set[tuple[str, str, str, str]] = set()
     for asset_ref in x.asset_refs:
         if (
-            asset_ref.kind not in _KIND
+            not _string(asset_ref.kind)
+            or not _string(asset_ref.namespace)
+            or not _string(asset_ref.sha256)
+            or asset_ref.kind not in _KIND
             or not (
                 _string(asset_ref.id, identifier=True)
                 and _string(asset_ref.version, version=True)
@@ -482,7 +512,8 @@ def _resolve_owned_diagnostic_graph(
         ) in seen_assets:
             _deny(D2CCode.D2C_RESOLUTION_UNSTABLE)
         if (
-            not asset_ref.relative_path
+            not _string(asset_ref.relative_path)
+            or len(asset_ref.relative_path.encode("utf-8")) > 512
             or any(p in {"", ".", ".."} for p in asset_ref.relative_path.split("/"))
             or any(c in asset_ref.relative_path for c in ("\\", ":", "%"))
             or asset_ref.relative_path.startswith("/")
@@ -670,29 +701,38 @@ def _resolve_owned_diagnostic_graph(
         if not valid:
             _deny(D2CCode.D2C_HOST_ADAPTER_MISMATCH)
         adapter_objects.append(_adapter_obj(a))
-    visited: set[_KEY] = set()
+    # One color-marked DFS for cycle detection, then longest DAG path from
+    # every seed. Global DONE never masks a long path through a shared node.
+    completed: set[_KEY] = set()
+    longest_depth: dict[_KEY, int] = {}
     for root in sorted(active):
-        stack: list[tuple[_KEY, int, bool]] = [(root, 0, False)]
+        if root in completed:
+            continue
+        stack: list[tuple[_KEY, bool]] = [(root, False)]
         visiting: set[_KEY] = set()
         while stack:
-            node, depth, finished = stack.pop()
+            node, finished = stack.pop()
             if finished:
                 visiting.discard(node)
-                visited.add(node)
-                continue
-            if node in visited:
+                longest_depth[node] = max(
+                    (longest_depth[child] + 1 for child in set(adjacency[node])),
+                    default=0,
+                )
+                completed.add(node)
                 continue
             if node in visiting:
                 _deny(D2CCode.D2C_DEPENDENCY_CYCLE)
-            if depth > 32:
-                _deny(D2CCode.D2C_RESOURCE_LIMIT)
+            if node in completed:
+                continue
             visiting.add(node)
-            stack.append((node, depth, True))
+            stack.append((node, True))
             for child in sorted(set(adjacency[node]), reverse=True):
                 if child in visiting:
                     _deny(D2CCode.D2C_DEPENDENCY_CYCLE)
-                if child not in visited:
-                    stack.append((child, depth + 1, False))
+                if child not in completed:
+                    stack.append((child, False))
+    if longest_depth and max(longest_depth.values()) > 32:
+        _deny(D2CCode.D2C_RESOURCE_LIMIT)
     sorted_keys = sorted(active)
     edgeobjs = [
         _edge_obj(e)
@@ -772,7 +812,11 @@ def _resolve_owned_diagnostic_graph(
         "definition_hashes": hashes,
         "adapter_evidence": adapter_objects,
     }
-    if sum(len(_json(v)) for v in (edge_envelope, catalog, closure)) > 2097152:
+    if (
+        owned.canonical_input_bytes
+        + sum(len(_json(v)) for v in (edge_envelope, catalog, closure))
+        > 2097152
+    ):
         _deny(D2CCode.D2C_RESOURCE_LIMIT)
     closure_digest = _digest("GA02-D2C-CLOSURE-1", closure)
     return DiagnosticResolutionSnapshotV1(

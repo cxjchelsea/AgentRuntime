@@ -10,13 +10,14 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
-import threading
-from contextlib import contextmanager
 import stat
 import sys
+import threading
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Final, Iterator, Self
+from typing import Final, Self
 
 from agent_core.domain_descriptor import (
     MAX_ASSETS,
@@ -185,7 +186,7 @@ class TrustedPackageRootLease:
                 self._owner._release(self._issuance)
             try:
                 os.close(self._fd)
-            except OSError as exc:
+            except OSError:
                 raise PackageLoadError(PackageLoadCode.PACKAGE_IO_FAILURE) from None
 
 
@@ -232,7 +233,7 @@ class HostPackageRootIssuer:
             return False
         try:
             return self._verifier(record) is True
-        except Exception:
+        except Exception:  # noqa: BLE001  # Trusted verifier failed; deny admission.
             return False
 
     @staticmethod
@@ -410,12 +411,19 @@ class LocalPackageLoader:
             finally:
                 if descriptor_fd >= 0:
                     os.close(descriptor_fd)
+            if expected.runtime_profile != PROFILE:
+                raise PackageLoadError(PackageLoadCode.PACKAGE_PROFILE_MISMATCH)
             try:
                 descriptor = parse_package_descriptor(
                     raw, supported_profile=expected.runtime_profile
                 )
             except PackageDescriptorError as exc:
-                raise PackageLoadError(PackageLoadCode.PACKAGE_DESCRIPTOR_INVALID) from exc
+                code = (
+                    PackageLoadCode.PACKAGE_PROFILE_MISMATCH
+                    if str(exc) == "incompatible runtime"
+                    else PackageLoadCode.PACKAGE_DESCRIPTOR_INVALID
+                )
+                raise PackageLoadError(code) from None
             if (
                 descriptor.domain_id != expected.domain_id
                 or descriptor.domain_version != expected.domain_version

@@ -414,3 +414,109 @@ The matrix below **removes alternative outcomes by fixing the fixture**, rather 
 - \`C1 PRODUCTION_TRUST_EVIDENCE / DOMAINBINDING / D3_PERMISSIONS = HARD_HOLD\`.
 
 **Next:** \`GA-02 D2-C C1 — PR #116 Final R2/R4/R5 Exact-HEAD Independent Security Re-Review + C1-SRC-A Sealed-Source/Issuer Test-Only Prototype Readiness\`. Do not convert draft test vectors or a mock CAS into proof of a deployed Host Catalog publisher.
+
+---
+
+## 14. F1–F3 Final Targeted Normative Amendment v0.4 + C1-SRC-A Isolated Test-Only Prototype Contract Freeze
+
+**Authority level:** proposed **test-only normative contract**, subject to a NEW exact-HEAD independent security re-review. Sections here narrow conflicting details in §§12–13; they do not confer Host Catalog production authenticity, freeze the implementation of a real storage service or authorize code changes. Main source baseline remains \`01d6865d540c3dd0547ebcdd19508e71e38efddc\`. No production C1 issuer exists.
+
+### 14.1 F1 — Host-approved explicit optional-edge absence (not silent omission)
+
+Merged upstream D2-C §5(4) controls precedence: **every declared optional relation must resolve to either one exact versioned edge, or one Host-approved, catalog-pinned explicit absence decision**. An absent decision is an error regardless of the optional label. “Optional” means Host can explicitly authorize absence, never that an untrusted caller or resolver may silently omit an edge.
+
+**Candidate typed \`HostOptionalAbsenceV1\`:**
+
+| Field | Invariant and authority |
+|---|---|
+| \`source_key\` | Exact canonical \`kind, namespace, id, version\` of source Registry definition, pinned within Host-owned sealed candidate |
+| \`relation\` | Exact declared optional relation field (e.g. \`optional_tools\`); any required relation is ineligible |
+| \`target_kind, target_id\` | Exact declared target type/name from source Definition, no wildcard and no arbitrary text substitution |
+| \`host_policy_generation\` | Exact independently issuer-authenticated policy generation, not package or user supplied |
+| \`reason\` | Fixed \`HOST_APPROVED_OMISSION\`, evidence-only; a reason string does not authenticate permission |
+| \`absence_digest\` | SHA-256 over \`GA02-D2C-C1-OPTIONAL-ABSENCE-1\` + \`00\` + canonical primitive JSON of the above five content fields |
+| \`issuer_provenance\` | Private Host publisher's admitted candidate/transition reference and authenticated allowlist decision; **not** a forged string or signature-looking field |
+
+This typed record is included in the immutable candidate image/edge-catalog closure digest, lane policy pin and eventual C1 evidence; it is never created by the graph resolver as a fallback. Exact source/target/relation + policy generation must match the captured Definition. An exact edge AND explicit absence for the same occurrence is contradictory and denies; duplicate or contradictory decisions deny. Multiple occurrences of an identical optional name must follow the same frozen occurrence identity and duplicate precedence as the upstream C0 edge policy—no implicit deduplication to evade validation. An independently Host-admitted absence permits **no target** and records the absence in closure; it does **not** approve Tool execution.
+
+**Specific fail-closed fixture outcomes:**
+
+| Case | Trusted sealed-source fixture | Expected resolution |
+|---|---|---|
+| F1-A | Declared optional \`tool-a\`; exact Host-authorized absence record current policy \`p1\` | Accept **absence as metadata only**, no fabricated edge |
+| F1-B | Same declared optional name; neither edge nor absence record | \`C1_DEPENDENCY_INVALID\`; no issuance |
+| F1-C | Caller-supplied fake approval text, missing Host-owned provenance | \`C1_ISSUER_UNVERIFIED\` / untrusted-source denial **before** graph success |
+| F1-D | Absence record from previous policy generation | \`C1_LANE_SCOPE_MISMATCH\` / stale policy denial |
+| F1-E | Both exact edge and explicit absence | \`C1_DEPENDENCY_INVALID\` |
+| F1-F | Required edge replaced with optional absence record | \`C1_DEPENDENCY_INVALID\` |
+| F1-G | Declared optional edge exists but target is invalid/foreign tenant | \`C1_DEPENDENCY_INVALID\`; may not silently prefer absence |
+
+**Normative precedence correction:** §13.4 T16-B “policy explicitly permits omission” means *exact issuer-authenticated absence record admitted into current catalog* and nothing weaker. If earlier D2-C implementation has not specified a compatible occurrence identity/duplicate-error precedence for absences, that specific test case remains **HOLD_FOR_UPSTREAM_ALIGNMENT**, not an invented C0 compatibility claim.
+
+### 14.2 F2 — Historical issuance retrieval never bypasses issuer authentication
+
+**Distinguish NEW issuance from EXISTING historical evidence retrieval.** Both cross the issuer principal/authenticated tenant/lane boundary; only NEW issuance requires current non-revoked publication and live \`SINGLE_ISSUANCE\` lease. An existing committed request may be retrieved after revoke/expiry **solely** as a non-runnable history item, never as newly trusted/current authority.
+
+**Single durable issuance transaction / retrieval gate:**
+
+1. Authenticate the active request principal and issuer facility **before** any ledger lookup; derive \`environment, tenant, lane, policy\` from Host-owned verified context, not client claims.
+2. Derive trusted-scoped \`issuance_request_id\`, \`request_fingerprint\`, \`caller_principal\` and \`original_lease_id\`. A caller-supplied identical request ID is not enough to own prior evidence; scope resolution precedes ledger visibility.
+3. On existing \`(lane, issuance_request_id)\`, compare **constant-time where secret-bearing**, the original principal/tenant/lane/policy/package/source pins, exact canonical fingerprint and committed evidence ID/digest. Read from a tamper-protected, transactional ledger with authenticated issuer identity. Missing/corrupt/foreign-ledger record => typed denial and no evidence. Same ID with different fingerprint => \`C1_ISSUANCE_CONFLICT\`; foreign identity => \`C1_ISSUER_UNVERIFIED\` or \`C1_LANE_SCOPE_MISMATCH\`, never a record-leak existence oracle.
+4. On matching COMMITTED record, return its immutable historical **\`NON_PRODUCTION_SIMULATION\`** representation in test-only prototypes; in a future real C1 service, always mark the original **\`TRUSTED_PINNED_NON_RUNNABLE\`** evidence as historical. No fresh issuance, no new success ledger row, no lease re-consumption, no version/epoch refresh and no D3 permission.
+5. On absent ledger entry, validate a genuinely issuer-created **ACTIVE, single-use, not expired, not revoked** lease; transactionally check canonical pinned publication/current epoch/policy/source/revocation/Host issued principal and sealed blob, then consume lease + insert exactly one durable evidence row **within the same transaction**. If any predicate fails, deny with no evidence and no spent lease.
+6. On concurrent duplicates, unique \`(lane, issuance_request_id)\` ensures at most one committed issuance. Winning request's immutable evidence ID is returned to exactly matching retriers; loser with different fingerprint denies. A crash after COMMIT before ACK never re-runs issuance.
+7. Retain issued evidence bytes/hash, authenticated lineage and cross-process durable ledger until defined retention expiration; if expired/GCed, deny with a stable history-unavailable code, not fresh issuance.
+8. If issuer identity provider/ledger is unavailable, fail closed; do not reconstruct a “trusted” record from an old C0 diagnostic, a signed-looking string or a cached runtime context.
+
+**Required adversarial fixtures:** F2-A successful issuance → ACK loss → same principal identical replay ⇒ one ledger/evidence/lease-consumption, historical retrievable; F2-B same ID different fingerprint ⇒ conflict; F2-C foreign tenant/principal same ID ⇒ deny without leaking row existence; F2-D revoke between issuance and return ⇒ original historical item only; F2-E expired/consumed lease with new request ID ⇒ deny; F2-F restart and ledger corruption ⇒ deny without fallback; F2-G two workers racing same request ⇒ one commit, one identical retrieval/denial by fingerprint; F2-H lease expiration racing final CAS ⇒ serializable order, no stale fresh success.
+
+**Physical dependency:** no such authenticated Host issuer, persisted lease store, private ledger, selected DB isolation or recovery proof currently exists. The above is only a frozen **reference-model target**, not B01/B02/B06/B07 closure.
+
+### 14.3 F3 — Independently computed literal canonical vectors and error/limit compatibility
+
+**Common encoding candidate:** NFC strings, canonical compact JSON with lexicographically sorted keys, \`ensure_ascii=False\`, \`allow_nan=False\`, exact UTF-8 without trailing newline; digest input = ASCII profile prefix + one literal NUL byte + canonical JSON bytes. For JSON from external bytes, reject duplicate object keys, invalid Unicode/surrogates and noncanonical input; do not silently normalize caller bytes into authenticated evidence. Values in an issuer-owned primitive image may be canonicalized only as part of the separately authenticated Host publication admission. Domain version and key profiles still follow exact upstream D1/C0 validators.
+
+**Literal positive/hash-only reference vectors independently calculated from specified bytes (all profiles are C1 design candidates):**
+
+| Vector | Profile + canonical JSON (no trailing LF) | UTF-8 bytes | SHA-256(prefix + \`00\` + bytes) |
+|---|---|---:|---|
+| V-ABS-01 | \`GA02-D2C-C1-OPTIONAL-ABSENCE-1\` + \`{"host_policy_generation":"p1","reason":"HOST_APPROVED_OMISSION","relation":"optional_tools","source_key":{"id":"helper","kind":"skill","namespace":"demo","version":"1.0.0"},"target_id":"tool-a","target_kind":"tool"}\` | 216 | \`44d1052aafdb430e715230e5eb6cc8ea626253b2a10a13d9625d573138ab5c6a\` |
+| V-DEF-01 | \`GA02-D2C-C1-DEFINITION-1\` + \`{"enabled":true,"name":"café","tags":["alpha","beta"],"version":"1.0.0"}\` | 73 | \`a49961937c2704edcf37631248eed8525efec1e77d61a4923882ee3607b95e41\` |
+| V-IMAGE-02 | \`GA02-D2C-C1-IMAGE-1\` + \`{"adapter_attestations":[{"adapter_generation":"a1","adapter_key":"lookup","registry_kind":"tool"}],"core_schema_allowlist":[],"epoch":2,"exact_edges":[{"relation":"required_tools","source":"skill-a","target":"tool-a"}],"generation_id":"gen-b","lane":{"domain_id":"demo","domain_version":"1.0.0","environment_id":"test","host_policy_id":"policy","namespace":"demo","tenant_scope_id":"tenant-a"},"policy_generation":"policy-gen-a","profile":"GA02-D2C-C1-IMAGE-1","registry_definitions":[{"id":"tool-a","kind":"tool","version":"1.0.0"}],"source_package_generation":"pkg-b","verified_manifest_sha256":"1111111111111111111111111111111111111111111111111111111111111111"}\` | 665 | \`0c65de29a2298b52010538ba8a2806783eb0f6e5065a41bb69db02466e9d3599\` |
+
+These exercise nonempty relations and UTF-8 \`é\` (two UTF-8 bytes, one Python code point). **V-DEF-01 is a generic canonical JSON example, NOT a physically admitted Registry Definition type; V-IMAGE-02 is synthetic and deliberately lacks deployment/issuer evidence. Neither can be treated as a positive trusted Catalog admission or D2-D fingerprint proof.** V-LANE-01 and V-IMAGE-01 in §13.3 remain distinct previous candidate byte/hash examples. Independent cross-implementation recheck is a future review gate, not an already-executed C1 test.
+
+**Mandatory negative vectors/oracles (targeted reference-model tests, NOT executed here):**
+
+| ID | Mutation | Required observable |
+|---|---|---|
+| V-NEG-NFC | Replace NFC \`café\` with decomposed \`cafe\\u0301\` | reject externally supplied noncanonical bytes, not silently treat them as authenticated |
+| V-NEG-ORDER | Reorder JSON object keys without changing semantic primitive content | canonical re-serialization yields identical digest only **after** independently verified admission, raw external noncanonical bytes rejected when canonical-wire required |
+| V-NEG-DUP | \`{"a":1,"a":2}\` | duplicate field key rejected before digest |
+| V-NEG-UNICODE | unpaired surrogate or invalid UTF-8 | strict decoding/canonical error, zero trusted evidence |
+| V-NEG-TYPE | float, NaN, bool-as-int/subclass where strictly typed integer required | typed canonical denial |
+| V-NEG-SCOPE | same image + foreign tenant/policy/lane | fail Host authority check before considering self-consistent hash |
+| V-NEG-ABSENCE | valid absence digest but no authenticated Host policy approval / stale generation | deny; hash does not mint permission |
+| V-NEG-2FAULT | forged issuer + 2 MiB overflow; foreign tenant + definition corruption; revoked publication + missing required edge | \`ISSUER_UNVERIFIED\` first; \`LANE_SCOPE_MISMATCH\` first; \`PUBLICATION_REVOKED\` first respectively (subject to exact immutable error taxonomy review) |
+
+**C0 physical consistency boundaries:** \`agent_core/domain_catalog_resolution.py\` at merged main: \`_string\` uses Python \`len(str) <= 1024\`, NFC equality and rejects categories \`Cc/Cs\`; version <=32/id <=80 with regex where applicable. \`_json\` sorts keys, compact separators and emits UTF-8; \`_digest\` does profile + NUL + canonical JSON. Definition payload <=10,240 UTF-8 bytes, combined canonical evidence <=2,097,152 UTF-8 bytes, active node bound <=256, edges <=1024. A 1025-code-point string in C0 normally fails **admission/shape**; C1 reference model may choose \`C1_RESOURCE_LIMIT\` for a specific byte-budget gate, but MUST NOT describe that as an exact C0 error-code match. Under §5 upstream, depth 32 is only a **proposed** independent Host bound, not an already implemented C0 hard limit. All exact sizes/counts require isolated 1-under / boundary / 1-over tests.
+
+**D2-D separation:** these C1 sample digests are neither the \`GA02-D2-BINDING-1\` fingerprint nor permission evidence. A dedicated future compatibility matrix must map exactly \`lane + generation + source/policy + closure hashes\` to the frozen D2-D binding contract, and validate every field under an independently authenticated composition root. C1 tests MUST assert no DomainBinding creation, run binding, Agent/Tool invocation, Registry write, or StateStore effects.
+
+### 14.4 C1-SRC-A test-only prototype freeze (design scope, not implementation authorization)
+
+| Dimension | Frozen **simulation-only** rule |
+|---|---|
+| Placement | New isolated test/reference-model module(s) and tests **only on a separately authorized branch**, without imports in production \`runtime/\`, \`agent_core/runner.py\`, package loader or Registry |
+| Input | Synthetic Host candidate with owned immutable canonical primitive bytes; **never** a real Registry/Host publisher token, mutable live record, file-root lease or customer/tenant credential |
+| Principal / issuer | Deliberately fake test-scoped issuer with clearly labeled \`SIMULATED\` context and explicit lane allowlist; impossible to feed into production trust checks |
+| Storage | Deterministic in-memory transactional state machine implementing publication/issuance CAS, issuance ledger, lease consumption/revoke, writer fencing and lost-ACK replay **for simulation**, not proof of durable DB or cross-process restart |
+| Output | \`NON_PRODUCTION_SIMULATION\` only; no \`TRUSTED_PINNED_NON_RUNNABLE\` production role, \`DomainBinding\`, active-use permission or trusted \`CatalogResolutionEvidenceC1V1\` instance |
+| Fault tests | Barrier-scheduled T01–T22 + F1-A..G / F2-A..H / canonical vectors; explicitly distinguish simulated crash/restart from real durable-store failover |
+| Boundaries | No new production exports, adapter binding, Tool/Skill/Workflow, network/real filesystem access, Registry writes, patient data, privilege elevation or Host secret |
+| Validation | Exact-HEAD independent contract review first; after separate implementation authorization require pytest/mypy/Ruff lint/format, source import boundary review, deterministic race replay and explicit scope/merge reviews |
+| Production promotion | **Forbidden** without a separate C1 physical implementation project resolving B01–B07 and real-store/issuer evidence, plus D2-D/D3 gates for any execution |
+
+**Authorization ledger:** \`F1_EXPLICIT_ABSENCE_SCHEMA = SUBMITTED\`; \`F2_ISSUANCE_IDENTITY_AND_IDEMPOTENCY = SUBMITTED\`; \`F3_VECTOR_AND_ERROR_BOUNDARY = SUBMITTED\`; \`C1-SRC-A_TEST_ONLY_CONTRACT = PROPOSED_FOR_FREEZE\`; \`INDEPENDENT_EXACT_HEAD_RE_REVIEW = PENDING\`; \`TEST_ONLY_CODE_AUTHORIZATION = NOT_ISSUED\`; \`PR116_MERGE_AUTHORIZATION = NOT_ISSUED\`; \`C1_PRODUCTION_AUTHORITY = HOLD_B01..B07\`.
+
+**Next gate:** \`GA-02 D2-C C1 — PR #116 F1–F3 Exact-HEAD Independent Final Design Re-Review + Test-Only Prototype Authorization Readiness\`. Independently recompute golden vectors, verify upstream optional absence and C0 limits, challenge issuer retrieval authentication and zero-authority simulation guardrails. No C1 code or PR merge without explicit separate authorization.

@@ -205,8 +205,10 @@ def _planner(domain: SandboxM4Domain, model: StructuredStrategyTransportAdapter)
     validator = RuntimePlanValidatorAdapter(
         validator=PlanValidator(),
         validation_context=PlanValidationContext(
-            action_registry=domain.actions, strategy_registry=domain.strategies,
-            skill_registry=domain.skills, workflow_registry=workflows,
+            action_registry=domain.actions,
+            strategy_registry=domain.strategies,
+            skill_registry=domain.skills,
+            workflow_registry=workflows,
             tool_registry=tools,
             knowledge_capabilities=knowledge,
         ),
@@ -309,7 +311,9 @@ def test_rejects_cross_domain_strategy_reference(tmp_path: Path) -> None:
     original = next(a for a in domain.binding.assets if a.kind == "strategy")
     from dataclasses import replace
 
-    tampered = replace(original, content_bytes=b'{"role":"collect","action_id":"foreign"}')
+    tampered = replace(
+        original, content_bytes=b'{"role":"collect","action_id":"foreign"}'
+    )
     altered = replace(
         domain.binding,
         assets=tuple(tampered if a is original else a for a in domain.binding.assets),

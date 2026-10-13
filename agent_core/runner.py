@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
+from collections.abc import Callable
 from typing import Protocol
 
 from agent_core.iteration import AgentRunBinding, IterationRef
@@ -96,9 +97,16 @@ class AgentRunCoordinator:
     successful or safe to replay. This is NOT a production Composition Root.
     """
 
-    def __init__(self, step: StepPort, budget: LoopBudget) -> None:
+    def __init__(
+        self,
+        step: StepPort,
+        budget: LoopBudget,
+        *,
+        completion_check: Callable[[str, tuple[ObservedFact, ...]], bool] | None = None,
+    ) -> None:
         self._step = step
         self._budget = budget
+        self._completion_check = completion_check
 
     async def run(
         self, original_input: RuntimeInput, binding: AgentRunBinding
@@ -134,6 +142,10 @@ class AgentRunCoordinator:
                     )
                 ):
                     raise RunBoundaryError("unsupported completion claim")
+                if self._completion_check is not None and not self._completion_check(
+                    binding.run_id, tuple(observations)
+                ):
+                    raise RunBoundaryError("domain completion contract not satisfied")
                 return RunOutcome(
                     binding.run_id,
                     RunKind.FINISH,

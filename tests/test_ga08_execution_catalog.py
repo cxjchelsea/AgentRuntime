@@ -12,7 +12,10 @@ from typing import Any
 import pytest
 
 from agent_core.domain_application import bootstrap_domain_application
-from agent_core.domain_execution_catalog import assemble_execution_catalog
+from agent_core.domain_execution_catalog import (
+    WorkflowStepEvidence,
+    assemble_execution_catalog,
+)
 from agent_core.domain_extension import DomainExtensionError
 from agent_core.domain_package_loader import (
     HostPackageRootIssuer,
@@ -120,13 +123,16 @@ def test_distinct_domain_execution_catalogs_and_ordered_completion(
         for tool_id in catalog.tool_ids
     )
     evidence = tuple(
-        ObservedFact(
-            "run-1",
-            "request-1",
-            f"plan-{number}",
+        WorkflowStepEvidence(
             step.step_id,
-            catalog.binding_fingerprint,
-            (step.completion_fact,),
+            ObservedFact(
+                "run-1",
+                "request-1",
+                f"plan-{number}",
+                f"execution-{number}",
+                catalog.binding_fingerprint,
+                (step.completion_fact,),
+            ),
         )
         for number, step in enumerate(catalog.workflow.steps, 1)
     )
@@ -145,7 +151,19 @@ def test_distinct_domain_execution_catalogs_and_ordered_completion(
         run_id="run-1",
         observations=(
             *evidence[:-1],
-            replace(evidence[-1], domain_fingerprint="0" * 64),
+            replace(
+                evidence[-1],
+                observation=replace(
+                    evidence[-1].observation, domain_fingerprint="0" * 64
+                ),
+            ),
+        ),
+    )
+    assert not catalog.completion_from_observations(
+        run_id="run-1",
+        observations=(
+            *evidence[:-1],
+            replace(evidence[-1], step_id="wrong-step"),
         ),
     )
 

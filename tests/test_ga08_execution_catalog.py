@@ -48,6 +48,7 @@ def _snapshot(root: Path, *, steps: int = 1):
         {
             "step_id": f"step-{number}",
             "tool_id": tool_id,
+            "action_id": ("collect-" if number == 1 else "verify-") + noun,
             "completion_fact": "FACT_" + str(number),
         }
         for number, tool_id in enumerate(tool_names, 1)

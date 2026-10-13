@@ -98,9 +98,7 @@ def test_unified_workflow_package_retrieval_model_m4_sandbox(
                 {"choices": [{"message": {"content": json.dumps(answer)}}]}
             ).encode()
 
-        monkeypatch.setattr(
-            unified.model_transport._transport, "_send_once", respond
-        )
+        monkeypatch.setattr(unified.model_transport._transport, "_send_once", respond)
         initial = build_runtime_input(text="domain workflow task")
 
         class UnifiedTurn(ModelDrivenSandboxTurn):
@@ -114,6 +112,7 @@ def test_unified_workflow_package_retrieval_model_m4_sandbox(
             async def execute_and_observe(self, decision: Decision) -> ObservedFact:
                 assert decision.approved is not None
                 index = self.actions
+                assert catalog is not None
                 step = catalog.workflow.steps[index]
                 self.selected_actions.append(decision.approved.steps[0].action)
                 self.facts = (step.completion_fact,)

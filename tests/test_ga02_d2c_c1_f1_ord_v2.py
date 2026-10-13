@@ -1,6 +1,7 @@
 """F1/ORD isolated V2 contract fixtures, no production publisher or DB."""
 
 from dataclasses import replace
+from typing import cast
 
 import pytest
 
@@ -108,10 +109,14 @@ def test_ord_01_missing_second_occurrence() -> None:
 
 def test_ord_02_two_approvals_are_distinct_and_ordered() -> None:
     fixture, principal = setup()
-    a0, a1 = fixture.approve(principal, ordinal=0), fixture.approve(principal, ordinal=1)
+    a0 = fixture.approve(principal, ordinal=0)
+    a1 = fixture.approve(principal, ordinal=1)
     assert a0 is not a1
     assert a0.digest != a1.digest
-    assert fixture.check(principal, targets=("tool-a", "tool-a"), approvals=(a1, a0)) == ((0, "tool-a"), (1, "tool-a"))
+    result = fixture.check(
+        principal, targets=("tool-a", "tool-a"), approvals=(a1, a0)
+    )
+    assert result == ((0, "tool-a"), (1, "tool-a"))
     assert_no_effects(fixture)
 
 
@@ -126,7 +131,7 @@ def test_ord_03_digest_or_approval_transfer_rejected() -> None:
 @pytest.mark.parametrize("ordinal", [2, -1, True, 1.0])
 def test_ord_04_invalid_ordinal(ordinal: object) -> None:
     fixture, principal = setup()
-    denied("C1_DEPENDENCY_INVALID", fixture.approve, principal=principal, ordinal=ordinal)
+    denied("C1_DEPENDENCY_INVALID", fixture.approve, principal=principal, ordinal=cast(int, ordinal))
     assert_no_effects(fixture)
 
 
@@ -138,7 +143,11 @@ def test_ord_04_duplicate_edge_ordinal() -> None:
 
 def test_ord_05_legacy_v1_handle_cannot_promote() -> None:
     fixture, principal = setup()
-    legacy = Approval(b"legacy", "44d1052aafdb430e715230e5eb6cc8ea626253b2a10a13d9625d573138ab5c6a", 0)
+    legacy = Approval(
+        b"legacy",
+        "44d1052aafdb430e715230e5eb6cc8ea626253b2a10a13d9625d573138ab5c6a",
+        0,
+    )
     denied("C1_ISSUER_UNVERIFIED", fixture.check, principal=principal, approvals=(legacy,))
     assert_no_effects(fixture)
 

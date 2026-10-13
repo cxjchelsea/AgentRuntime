@@ -12,6 +12,7 @@ import pytest
 from agent_core.domain_knowledge import (
     DomainKnowledgeCapability,
     DomainScope,
+    KnowledgeAdmission,
     KnowledgeContractError,
     KnowledgeDocument,
     build_domain_model_messages,
@@ -188,3 +189,25 @@ def test_invalid_port_return_fails_closed(tmp_path: Path) -> None:
     outcome = capability.retrieve_and_admit("stock threshold")
     assert not outcome.accepted
     assert outcome.reason == "UNVERIFIED_EVIDENCE"
+
+
+def test_public_admission_cannot_override_rejection_or_duplicate_document() -> None:
+    text = "stock threshold count 7"
+    document = KnowledgeDocument(
+        "inventory.reconcile",
+        "a" * 64,
+        "stock-1",
+        "sandbox://fixture",
+        hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        text,
+    )
+    for forged in (
+        KnowledgeAdmission((document,), "NO_EVIDENCE"),
+        KnowledgeAdmission((document, document), "ADMITTED"),
+    ):
+        with pytest.raises(KnowledgeContractError, match="preconditions|duplicate"):
+            build_domain_model_messages(
+                system_instruction="Use only legal candidate strategy and action IDs.",
+                task_payload={"legal_strategy_ids": ["collect"]},
+                admission=forged,
+            )

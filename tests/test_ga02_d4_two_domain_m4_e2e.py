@@ -318,5 +318,20 @@ def test_rejects_cross_domain_strategy_reference(tmp_path: Path) -> None:
         domain.binding,
         assets=tuple(tampered if a is original else a for a in domain.binding.assets),
     )
-    with pytest.raises(SandboxAssemblyError, match="foreign action"):
+    with pytest.raises(SandboxAssemblyError, match="digest mismatch"):
         assemble_sandbox_m4(altered)
+
+    # Even a synthetic caller that spoofs the asset checksum cannot introduce
+    # a foreign action through the separately enforced strategy reference rule.
+    # This is NOT a production-authenticated Host/issuer scenario.
+    checksum_spoofed = replace(
+        tampered, sha256=hashlib.sha256(tampered.content_bytes).hexdigest()
+    )
+    spoofed_binding = replace(
+        domain.binding,
+        assets=tuple(
+            checksum_spoofed if a is original else a for a in domain.binding.assets
+        ),
+    )
+    with pytest.raises(SandboxAssemblyError, match="foreign action"):
+        assemble_sandbox_m4(spoofed_binding)

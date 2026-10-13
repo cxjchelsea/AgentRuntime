@@ -358,3 +358,27 @@ P0-09 的 **逻辑代码对照子门禁** 达到 `VERIFIED_TESTED_SCOPE`，但�
 | `D2-D/D3` | `HARD_HOLD` |
 
 本 §15 的下一 Gate 是与 PR #116 §18.5 共同进行 Exact-HEAD Independent Targeted Re-Review，而不是自动合并或提升生产信任。
+
+
+---
+
+## 16. R1–R4 P0-09 Evidence Provenance + Draft Authority Closure v0.5
+
+**历史章节优先级（R4）：** P0-09 的代码/测试执行状态以本 §16 和 §15 为准，旧 §14.2–14.3 的 `SECOND_VERIFIER_PENDING`、`SPECIFIED_NOT_EXECUTED` 仅是 PR #119 合并以前的历史结论；**物理实施准入** 仍以 §12 P0 全量真实证据退出条款为准，不得被 §15–16 测试子门禁覆盖。
+
+**R1——不得混淆的三种证据：** `V2_EXECUTABLE_TEST_ORACLE=VERIFIED_TESTED_SCOPE`；`REAL_C0_DIAGNOSTIC_ORDINAL_PARITY=VERIFIED_TESTED_SCOPE`；`FORMAL_INDEPENDENT_SECOND_VERIFIER=NOT_ESTABLISHED`。PR #119 只包含一个非生产 V2 Fixture 和独立真实 C0 诊断解析调用；Golden 双 Digest 测试可校验内容一致性，不能证明已经完成一个独立实现交付或真实 Host 的私有批准记录。单元测试 PASS 不构成 `P0_09_PHYSICAL_AUTHORITY_VERIFIED`。
+
+**R2——上下游权威：** PR #116 §18.5 所记录限定 logical freeze 是未合并 Draft 的 `APPROVED_WITH_EXCLUSIONS` 设计审查决定；本 PR 不应称其已在 main 生产规范冻结。当前 main 仅具有 #119 测试代码的 `NON_PRODUCTION_SIMULATION` 状态。本 PR 是 `DESIGN_ONLY_PHYSICAL_READINESS_DRAFT`，不能产生可信 C1 Evidence、权限或合同自动授权。未来 #116 的 main 设计基线必须先形成，再重新评估 #118 的实际目标差异。
+
+**R3——真实阻塞不变：** 双故障 issuer-first 优先级和真实 Host source seal/issuer provenance 仍 `HOLD`；P0-01～07、P0-10 外部部署证据缺失，P0-08/09 尚不足以退出 P0；B01–B07、P2 DB、P3 Issuer、D2-D/D3 为 `HARD_HOLD`。不得把 test-double 的 `publication_count=0` 等同物理 side-effect safety。
+
+| Gate | 本次文档结论 |
+|---|---|
+| `R1_SECOND_VERIFIER_PROVENANCE` | `CLOSED_WITH_FORMAL_VERIFIER_HOLD` |
+| `R2_UNMERGED_DRAFT_AUTHORITY` | `CLOSED_NO_TRUST_PROMOTION` |
+| `R3_GLOBAL_C1_PRIORITY` | `HOLD` |
+| `R4_OLD_STATUS_DISAMBIGUATION` | `CLOSED` |
+| `PR118_DESIGN_MERGE_READINESS` | `DEPENDENT_ON_PR116_MAIN_ALIGNMENT` |
+| `PR118_MERGE_AUTHORIZATION` | `NOT_ISSUED` |
+| `P0_EXIT / P1_PHYSICAL_FREEZE` | `HOLD` |
+| `B01–B07 / PRODUCTION_C1 / D2-D / D3` | `HARD_HOLD` |

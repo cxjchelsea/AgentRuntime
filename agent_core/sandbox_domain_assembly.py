@@ -15,6 +15,7 @@ from agent_core.domain_descriptor import (
     AssetReferenceV1,
     PackageDescriptorError,
     descriptor_to_domain_manifest,
+    parse_package_descriptor,
 )
 from agent_core.domain_package_loader import (
     VerifiedAssetV1,
@@ -76,6 +77,8 @@ def assemble_sandbox_domain(snapshot: VerifiedPackageSnapshotV1) -> SandboxDomai
     descriptor = snapshot.descriptor
     try:
         descriptor_to_domain_manifest(descriptor)
+        if parse_package_descriptor(snapshot.descriptor_bytes) != descriptor:
+            raise SandboxAssemblyError("descriptor wire does not match snapshot")
     except (PackageDescriptorError, TypeError, ValueError) as exc:
         raise SandboxAssemblyError("invalid package descriptor") from exc
     if (
@@ -89,8 +92,9 @@ def assemble_sandbox_domain(snapshot: VerifiedPackageSnapshotV1) -> SandboxDomai
         raise SandboxAssemblyError("invalid package snapshot metadata")
     if len(snapshot.assets) != len(descriptor.asset_refs):
         raise SandboxAssemblyError("incomplete package assets")
-    if tuple(a.ref for a in snapshot.assets if type(a) is VerifiedAssetV1) != (
-        descriptor.asset_refs
+    if (
+        any(type(a) is not VerifiedAssetV1 for a in snapshot.assets)
+        or tuple(a.ref for a in snapshot.assets) != descriptor.asset_refs
     ):
         raise SandboxAssemblyError("asset order or reference mismatch")
 

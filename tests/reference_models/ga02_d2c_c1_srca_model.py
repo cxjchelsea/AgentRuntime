@@ -218,9 +218,7 @@ class PublicationResult(tuple[int, int]):
 
     historical: bool
 
-    def __new__(
-        cls, revision: int, epoch: int, *, historical: bool = False
-    ) -> Self:
+    def __new__(cls, revision: int, epoch: int, *, historical: bool = False) -> Self:
         receipt = tuple.__new__(cls, (revision, epoch))
         receipt.historical = historical
         return receipt

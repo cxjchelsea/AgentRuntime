@@ -77,7 +77,10 @@ def test_two_domains_use_same_capability_with_actual_fts_index(tmp_path: Path) -
         assert other.reason == "NO_EVIDENCE"
         messages = build_domain_model_messages(
             system_instruction="Use only the legal action identifiers given in TASK_JSON.",
-            task_payload={"legal_strategy_ids": ["strategy-a"], "last_agent_action": None},
+            task_payload={
+                "legal_strategy_ids": ["strategy-a"],
+                "last_agent_action": None,
+            },
             admission=admitted,
         )
         assert tuple(m["role"] for m in messages) == ("system", "user", "user")
@@ -114,14 +117,16 @@ def test_mismatched_digest_or_scope_fails_closed(tmp_path: Path) -> None:
         hashlib.sha256(source[3].encode("utf-8")).hexdigest(),
         source[3],
     )
-    scope = DomainScope(domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint)
+    scope = DomainScope(
+        domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint
+    )
     for corrupt in (
         replace(legitimate, content_sha256="0" * 64),
         replace(legitimate, binding_fingerprint="0" * 64),
         replace(legitimate, content="tampered"),
     ):
         result = DomainKnowledgeCapability(
-            scope, lambda _scope, _query, _limit: (corrupt,)
+            scope, lambda _scope, _query, _limit, item=corrupt: (item,)
         ).retrieve_and_admit("stock threshold")
         assert not result.accepted
         assert result.reason == "UNVERIFIED_EVIDENCE"
@@ -139,7 +144,9 @@ def test_known_injection_markers_do_not_enter_context(
     tmp_path: Path, attack: str
 ) -> None:
     domain = _domain(tmp_path, 0)
-    scope = DomainScope(domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint)
+    scope = DomainScope(
+        domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint
+    )
     forged = KnowledgeDocument(
         scope.domain_id,
         scope.binding_fingerprint,
@@ -157,9 +164,11 @@ def test_known_injection_markers_do_not_enter_context(
 
 def test_invalid_port_return_fails_closed(tmp_path: Path) -> None:
     domain = _domain(tmp_path, 0)
-    scope = DomainScope(domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint)
+    scope = DomainScope(
+        domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint
+    )
     capability = DomainKnowledgeCapability(
-        scope, lambda _scope, _query, _limit: ["wrong-type"]
+        scope, lambda _scope, _query, _limit: ("wrong-type",)  # type: ignore[return-value]
     )
     with pytest.raises(KnowledgeContractError, match="provider output"):
         capability.retrieve_and_admit("stock threshold")

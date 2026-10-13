@@ -166,6 +166,26 @@ def test_unified_no_retrieval_waits_without_model_or_tool(
     assert turn.mock_calls == 0
 
 
+def test_unified_rejects_same_binding_with_foreign_m4_before_decision(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(tmp_path / "inventory", _CASES[0])
+    unified = _assembled(snapshot, SandboxFTSIndex(), _QUERIES[0])
+    initial = build_runtime_input(text="synthetic stock threshold")
+    turn = _UnifiedSandboxTurn(initial, _legacy_content(snapshot), unified)
+    turn._planner = object()  # Same run identity, but wrong decision authority.
+    with pytest.raises(DomainExtensionError, match="M4 binding mismatch"):
+        asyncio.run(
+            unified.run(
+                initial,
+                run_id="sandbox-inventory.reconcile",
+                step=turn,
+                budget=LoopBudget(),
+            )
+        )
+    assert turn.mock_calls == 0
+
+
 def test_unified_rule_knowledge_mismatch_rejected(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path / "inventory", _CASES[0])
     rule = next(a for a in snapshot.assets if a.ref.kind == "rule")

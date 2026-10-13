@@ -1369,7 +1369,7 @@ def test_exact_string_1024_1025_external_boundary() -> None:
     values["description"] = "x" * 1025
     rows[1] = entry("ActionDefinition", "stock.count", values)
     expect_code(
-        c.D2CCode.D2C_RESOLUTION_UNSTABLE,
+        c.D2CCode.D2C_RESOURCE_LIMIT,
         replace(f, registry_entries=tuple(rows)),
     )
 
@@ -1412,12 +1412,9 @@ def test_canonical_definition_exact_10240_10241_byte_limit() -> None:
 
 def test_internal_only_256_257_active_nodes() -> None:
     f = _eight_capabilities()
-    refs = tuple(
-        asset("capability", f"cap.node.{index:03d}") for index in range(257)
-    )
+    refs = tuple(asset("capability", f"cap.node.{index:03d}") for index in range(257))
     entries = (entry("DomainManifest", "inventory.reconcile"),) + tuple(
-        entry("CapabilityDefinition", f"cap.node.{index:03d}")
-        for index in range(257)
+        entry("CapabilityDefinition", f"cap.node.{index:03d}") for index in range(257)
     )
     for count in (256, 257):
         sample = replace(
@@ -1430,9 +1427,7 @@ def test_internal_only_256_257_active_nodes() -> None:
             assert len(result.seed_keys) == 256
         else:
             with pytest.raises(c.D2CResolutionError) as exc:
-                c._resolve_owned_diagnostic_graph(
-                    c._OwnedDiagnosticInputV1(sample, 0)
-                )
+                c._resolve_owned_diagnostic_graph(c._OwnedDiagnosticInputV1(sample, 0))
             assert exc.value.code == c.D2CCode.D2C_RESOURCE_LIMIT
 
 
@@ -1479,7 +1474,5 @@ def test_a01_a20_executable_oracle_contract(
 
 
 def test_a01_a20_inventory_is_complete_and_unique() -> None:
-    assert {key for key, _ in _A_ORACLES} == {
-        f"A{i:02d}" for i in range(1, 21)
-    }
+    assert {key for key, _ in _A_ORACLES} == {f"A{i:02d}" for i in range(1, 21)}
     assert len({key for key, _ in _A_ORACLES}) == 20

@@ -382,3 +382,48 @@ P0-09 的 **逻辑代码对照子门禁** 达到 `VERIFIED_TESTED_SCOPE`，但�
 | `PR118_MERGE_AUTHORIZATION` | `NOT_ISSUED` |
 | `P0_EXIT / P1_PHYSICAL_FREEZE` | `HOLD` |
 | `B01–B07 / PRODUCTION_C1 / D2-D / D3` | `HARD_HOLD` |
+
+
+
+---
+
+## 17. Post-PR-#116 Exact-Main Physical Design Alignment v0.6（2026-10-13）
+
+**精确新基线**：`main@ef2695622b611a6de5b9b4d3ea2125d79c2b0359`；PR #116 已使用 Standard Merge Commit 正式合入，仅为设计 Markdown，设计文件 blob `c3252fd5f4e0d04241696af34b602e1f71ee6654`。本 §17 覆盖本文件旧 §1、§10–14 与 §16 中“#116 仍为未合并 Draft / #116 尚未进入 main”的**历史状态**，但不追认任何真实 Host 生产事实。本节只确认逻辑合同、P0 物理要求与并入主线后的设计对齐，不更改 §12 的退出准则。
+
+### 17.1 与 main §116 规范边界对齐
+
+| 合同 | main 内 #116 设计范围 | 本物理设计要求 | 对齐结论 |
+|---|---|---|---|
+| 第一版候选来源 | `C1-SRC-A` 仅由 Host-owned sealed canonical source 进入 | 不得从 live Registry/D2-B/C0 Diagnostic 推导受信来源 | `ALIGNED_DESIGN_ONLY` |
+| F1 occurrence | `(source_key.kind,namespace,id,version; full relation_id; strict builtin int ordinal)`；不可按同名 target 去重 | Host 认证 sealed Definition 声明顺序，逐项发行 issuer-private provenance | `ALIGNED_LOGICAL / PHYSICAL_HOLD` |
+| V2 absence canonical | `GA02-D2C-C1-OPTIONAL-ABSENCE-OCC-2`，七键、234-byte ordinal 0/1 digest Golden | 已执行 test-only Golden/C0 parity；DB 持久批准必须独立证明 owner/image/transition/policy | `ALIGNED_TESTED_SCOPE` |
+| V1/旧 approval | hash-only 或外部对象身份不得升级为 Host V2 权限 | 从真实 Host ledger 读取 exact current approval，禁止旧 policy/generation 重放 | `ALIGNED_REQUIREMENT_ONLY` |
+| Optional/Required | optional 每个 occurrence 正好一个 pinned edge 或真实 Host-approved absence；required 不允许 absent | 在同一 sealed image 校验，不能仅依据 test fixture synthetic principal | `ALIGNED_REQUIREMENT_ONLY` |
+| Issuance/历史回执 | C1 不执行，不授予 D2-D/D3/Tool 权限 | 完整 Host 鉴权、单一事务权威、Lease/Issuance、撤销和旧写者 fence | `ALIGNED_DESIGN_ONLY / B01–B07_HARD_HOLD` |
+| 全局 first-denial | 明确未冻结 `issuer-first` 复合故障全序 | 须以真实 Host/DB 同快照、跨源故障测试最终定型 | `GLOBAL_PRIORITY_HOLD` |
+
+### 17.2 P0 证据权威与既有工作状态
+
+- **当前 main 现有的有效内容**：#116 的设计文档（仅限定逻辑规范与明确排除）、#117/#119 的 `NON_PRODUCTION_SIMULATION` 测试与真实 C0 诊断对照。main 中有设计资料 **不等于**生产 Host/DB 方案已经部署或能够签发可信证据。
+- **P0-09 Code-only 子证据**：#119 源分支精确 HEAD `de5b786237fc64bea5c73cbf2be1fab964a8d45a` 的 Actions `38349863938`、`38349863914` 成功；其中 Golden 是可执行测试 Oracle，正式独立第二实现验收 `NOT_ESTABLISHED`。不得将其写成 main push CI 或 Host provenance PASS。
+- **真实 P0 Intake 未完成**：P0-01～07、P0-10 外部 Host/DB/Owner/Deployment 证据缺失；P0-08 Writer/alias 完整审计尚未通过；P0-09 真实 issuer、同源 image/transition 和全局双故障优先级尚未通过。仍然遵守 §12。
+- **物理身份、存储与环境选择未冻结**：Host deployment identity、应用 Composition Root、DB engine/version/isolation、真实二进程 CAS、持久 Lane/Writer/Transition/Lease/Issuance、GC/Recovery、审计 Owner 均不因 #116 设计合并而自动通过。
+
+### 17.3 Exact-Main Merge Readiness 与顺序约束
+
+本 PR 是一份新增物理设计 Markdown，无生产代码、数据库迁移、可信 Evidence 或 Registry 变更。它**可以作为 Design-Only 物理就绪评估资料**接受独立合并准备审查；不意味着授权 P2/P3 或取消 B01–B07。已合并上游 #116 后，旧“先合并 #116 才能评估 #118”的依赖已满足；但实际合并必须在**当前** GitHub PR 上核验 `head_sha`、main `base_sha`、GitHub `draft/mergeable`、required checks、branch protection、单文件 diff 和用户显式授权。当前分支与 main 历史 diverged，不得未经检查就对旧 SHA 宣称合并通过。
+
+| Gate | Decision |
+|---|---|
+| `POST_116_MAIN_NORMATIVE_DESIGN_ALIGNMENT` | `ALIGNED_SCOPED_WITH_EXCLUSIONS` |
+| `P0_09_CODE_ONLY_EVIDENCE` | `VERIFIED_TESTED_SCOPE` |
+| `INDEPENDENT_SECOND_HOST_VERIFIER` | `NOT_ESTABLISHED` |
+| `GLOBAL_C1_FIRST_DENIAL` | `HOLD` |
+| `P0_EXIT / P1_PHYSICAL_FREEZE` | `HOLD` |
+| `B01–B07 / P2_DB / P3_ISSUER / PRODUCTION_C1` | `HARD_HOLD` |
+| `PR118_DESIGN_MERGE_READINESS` | `READY_FOR_NEW_EXACT_HEAD_INDEPENDENT_RE_REVIEW` |
+| `PR118_MERGE_AUTHORIZATION` | `NOT_ISSUED` |
+| `D2-D / D3` | `HARD_HOLD` |
+
+**后续 Gate：** PR #118 §17 Exact-HEAD Independent Design Re-Review + Final Exact-Main Merge Authorization Assessment。若获用户明确授权且完成实时 GitHub 合并前提核验，仅允许 Standard Merge #118，不得捆绑生产实现或其他 PR。

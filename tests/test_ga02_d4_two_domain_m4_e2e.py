@@ -24,7 +24,7 @@ from agent_core.domain_package_loader import (
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import AgentRunCoordinator, Decision, LoopBudget, ObservedFact, RunKind
 from agent_core.sandbox_domain_assembly import SandboxAssemblyError, assemble_sandbox_domain
-from agent_core.sandbox_domain_planning import SandboxM4Domain, assemble_sandbox_m4
+from tests.ga02_d4_domain_m4_assembly import SandboxM4Domain, assemble_sandbox_m4
 from runtime.planning import (
     ActionPlanDraftAssembler,
     CapabilityIdResolver,

@@ -168,20 +168,17 @@ def test_distinct_domain_execution_catalogs_and_ordered_completion(
             replace(evidence[-1], step_id="wrong-step"),
         ),
     )
-    for mutation in (
-        {"workflow_step_id": "wrong-step"},
-        {"tool_id": "wrong-tool"},
-        {"tool_id": None},
-        {"workflow_step_id": None},
-    ):
-        altered = replace(
-            evidence[-1],
-            observation=replace(evidence[-1].observation, **mutation),
-        )
+    invalid_observations = (
+        replace(evidence[-1].observation, workflow_step_id="wrong-step"),
+        replace(evidence[-1].observation, tool_id="wrong-tool"),
+        replace(evidence[-1].observation, tool_id=None),
+        replace(evidence[-1].observation, workflow_step_id=None),
+    )
+    for invalid_observation in invalid_observations:
+        altered = replace(evidence[-1], observation=invalid_observation)
         assert not catalog.completion_from_observations(
             run_id="run-1", observations=(*evidence[:-1], altered)
         )
-
 
 def test_cross_package_catalog_cannot_consume_foreign_snapshot(tmp_path: Path) -> None:
     first = _snapshot(tmp_path / "stock", steps=1)

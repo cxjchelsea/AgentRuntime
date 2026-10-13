@@ -1256,34 +1256,230 @@ def test_a19_unexpected_internal_exception_is_sanitized(
     expect_code(c.D2CCode.D2C_RESOLUTION_UNSTABLE, fixture())
 
 
-def test_a01_a20_named_adversarial_evidence_inventory() -> None:
-    """A17 is outside C0; checked as not implemented, never faked as runnable."""
-    cases = {
-        "A01": "test_external_list_overflow_and_unsupported_type",
-        "A02": "test_generation_error_precedes_corrupt_definition",
-        "A03": "test_defensive_copy_and_hostile_input_no_methods",
-        "A04": "test_depth_13_and_foreign_dict_type_rejected_without_callbacks",
-        "A05": "test_projected_evidence_limit_precedes_cycle_and_adapter_semantics",
-        "A06": "test_invalid_definition_precedes_invalid_edge",
-        "A07": "test_orphan_priority",
-        "A08": "test_duplicate_ordinal_and_missing_target",
-        "A09": "test_orphan_priority",
-        "A10": "test_a10_cross_domain_and_a12_disabled_dependencies",
-        "A11": "test_core_schema_requires_matching_scope_and_allowlist",
-        "A12": "test_a10_cross_domain_and_a12_disabled_dependencies",
-        "A13": "test_missing_d1_precedes_cycle_and_adapter_precedes_cycle",
-        "A14": "test_cycle_rejected",
-        "A15": "test_nonempty_dag_and_exact_reference_vectors",
-        "A16": "test_optional_absence_is_explicit_and_keeps_four_nodes",
-        "A17": "C1_ONLY_OUTER_BOUNDARY_UNIMPLEMENTED",
-        "A18": "test_core_schema_requires_matching_scope_and_allowlist",
-        "A19": "test_a19_unexpected_internal_exception_is_sanitized",
-        "A20": "test_adapter_union_refuses_nonnull_absent",
-    }
-    assert set(cases) == {f"A{i:02d}" for i in range(1, 21)}
-    for id_, test_name in cases.items():
-        if id_ == "A17":
-            assert test_name == "C1_ONLY_OUTER_BOUNDARY_UNIMPLEMENTED"
-            assert not hasattr(c, "resolve_verified_domain")
+def test_a01_rejects_forged_trust_and_missing_root_field() -> None:
+    from types import SimpleNamespace
+
+    f = fixture()
+    forged = SimpleNamespace(
+        **{
+            **{field: getattr(f, field) for field in f.__dataclass_fields__},
+            "trusted": True,
+        }
+    )
+    expect_code(c.D2CCode.D2C_RESOLUTION_UNSTABLE, cast(Any, forged))
+    incomplete = object.__new__(c.DiagnosticCatalogInputV1)
+    for name in f.__dataclass_fields__:
+        if name != "edge_occurrences":
+            object.__setattr__(incomplete, name, getattr(f, name))
+    expect_code(c.D2CCode.D2C_RESOLUTION_UNSTABLE, incomplete)
+
+
+def test_a03_self_cycle_plus_hostile_object_no_method_calls() -> None:
+    f = fixture()
+    counters = {"str": 0, "repr": 0, "hash": 0, "eq": 0, "iter": 0}
+
+    class Hostile:
+        def __str__(self) -> str:
+            counters["str"] += 1
+            raise AssertionError("hostile __str__")
+
+        def __repr__(self) -> str:
+            counters["repr"] += 1
+            raise AssertionError("hostile __repr__")
+
+        def __hash__(self) -> int:
+            counters["hash"] += 1
+            raise AssertionError("hostile __hash__")
+
+        def __eq__(self, other: object) -> bool:
+            counters["eq"] += 1
+            raise AssertionError("hostile __eq__")
+
+        def __iter__(self) -> Any:
+            counters["iter"] += 1
+            raise AssertionError("hostile __iter__")
+
+    cyclic: list[Any] = []
+    cyclic.append(cyclic)
+    cyclic.append(Hostile())
+    rows = list(f.registry_entries)
+    action = dict(rows[1].fields)
+    action["description"] = cyclic
+    rows[1] = replace(rows[1], fields=action)
+    expect_code(
+        c.D2CCode.D2C_RESOLUTION_UNSTABLE,
+        replace(f, registry_entries=tuple(rows)),
+    )
+    assert counters == dict.fromkeys(counters, 0)
+
+
+def test_a07_exact_valid_definition_wrong_digest() -> None:
+    f = fixture()
+    rows = list(f.registry_entries)
+    rows[1] = replace(rows[1], definition_sha256="f" * 64)
+    expect_code(
+        c.D2CCode.D2C_DEFINITION_HASH_MISMATCH,
+        replace(f, registry_entries=tuple(rows)),
+    )
+
+
+def test_a08_duplicate_wrong_ordinal_unmatched_edge() -> None:
+    f = fixture()
+    cases = (
+        f.edge_occurrences + f.edge_occurrences[:1],
+        (replace(f.edge_occurrences[0], ordinal=9),) + f.edge_occurrences[1:],
+        f.edge_occurrences
+        + (
+            edge(
+                "action",
+                "stock.count",
+                "action.unexpected",
+                "capability",
+                "stock.capability",
+            ),
+        ),
+    )
+    for occurrences in cases:
+        expect_code(
+            c.D2CCode.D2C_EDGE_CATALOG_INVALID,
+            replace(f, edge_occurrences=occurrences),
+        )
+
+
+def test_a11_non_schema_core_target_fails_closed() -> None:
+    f = fixture()
+    original = f.edge_occurrences[0]
+    foreign = replace(original, target_namespace="CORE")
+    expect_code(
+        c.D2CCode.D2C_EXACT_DEPENDENCY_MISSING,
+        replace(f, edge_occurrences=(foreign,) + f.edge_occurrences[1:]),
+    )
+
+
+def test_exact_string_1024_1025_external_boundary() -> None:
+    f = fixture()
+    rows = list(f.registry_entries)
+    values = dict(rows[1].fields)
+    values["description"] = "x" * 1024
+    rows[1] = entry("ActionDefinition", "stock.count", values)
+    result = c._resolve_untrusted_catalog_observation(
+        replace(f, registry_entries=tuple(rows))
+    )
+    assert len(result.seed_keys) == 4
+    values["description"] = "x" * 1025
+    rows[1] = entry("ActionDefinition", "stock.count", values)
+    expect_code(
+        c.D2CCode.D2C_RESOLUTION_UNSTABLE,
+        replace(f, registry_entries=tuple(rows)),
+    )
+
+
+def _definition_byte_boundary(size: int) -> dict[str, object]:
+    values = definition("CapabilityDefinition", "stock.capability")
+    values["intents"] = ["x" * 30] * 256
+    baseline = len(canonical(values))
+    assert baseline < size
+    extra = size - baseline
+    labels = list(cast(list[str], values["intents"]))
+    index = 0
+    while extra:
+        delta = min(994, extra)
+        labels[index] += "x" * delta
+        extra -= delta
+        index += 1
+    values["intents"] = labels
+    assert len(canonical(values)) == size
+    assert all(len(item) <= 1024 for item in labels)
+    return values
+
+
+def test_canonical_definition_exact_10240_10241_byte_limit() -> None:
+    accepted = entry(
+        "CapabilityDefinition",
+        "stock.capability",
+        _definition_byte_boundary(10240),
+    )
+    assert len(c._canonical_definition(accepted)) == 10240
+    oversized = entry(
+        "CapabilityDefinition",
+        "stock.capability",
+        _definition_byte_boundary(10241),
+    )
+    with pytest.raises(c.D2CResolutionError) as exc:
+        c._canonical_definition(oversized)
+    assert exc.value.code == c.D2CCode.D2C_RESOURCE_LIMIT
+
+
+def test_internal_only_256_257_active_nodes() -> None:
+    f = _eight_capabilities()
+    refs = tuple(
+        asset("capability", f"cap.node.{index:03d}") for index in range(257)
+    )
+    entries = (entry("DomainManifest", "inventory.reconcile"),) + tuple(
+        entry("CapabilityDefinition", f"cap.node.{index:03d}")
+        for index in range(257)
+    )
+    for count in (256, 257):
+        sample = replace(
+            f, asset_refs=refs[:count], registry_entries=entries[: count + 1]
+        )
+        if count == 256:
+            result = c._resolve_owned_diagnostic_graph(
+                c._OwnedDiagnosticInputV1(sample, 0)
+            )
+            assert len(result.seed_keys) == 256
         else:
-            assert callable(globals()[test_name])
+            with pytest.raises(c.D2CResolutionError) as exc:
+                c._resolve_owned_diagnostic_graph(
+                    c._OwnedDiagnosticInputV1(sample, 0)
+                )
+            assert exc.value.code == c.D2CCode.D2C_RESOURCE_LIMIT
+
+
+# Authoritative map of executable C0 oracles. A17 has no runnable C0 entry.
+_A_ORACLES = (
+    ("A01", "test_a01_rejects_forged_trust_and_missing_root_field"),
+    ("A02", "test_generation_error_precedes_corrupt_definition"),
+    ("A03", "test_a03_self_cycle_plus_hostile_object_no_method_calls"),
+    ("A04", "test_depth_13_and_foreign_dict_type_rejected_without_callbacks"),
+    ("A05", "test_projected_evidence_limit_precedes_cycle_and_adapter_semantics"),
+    ("A06", "test_invalid_definition_precedes_invalid_edge"),
+    ("A07", "test_a07_exact_valid_definition_wrong_digest"),
+    ("A08", "test_a08_duplicate_wrong_ordinal_unmatched_edge"),
+    ("A09", "test_orphan_priority"),
+    ("A10", "test_a10_cross_domain_and_a12_disabled_dependencies"),
+    ("A11", "test_a11_non_schema_core_target_fails_closed"),
+    ("A12", "test_a10_cross_domain_and_a12_disabled_dependencies"),
+    ("A13", "test_missing_d1_precedes_cycle_and_adapter_precedes_cycle"),
+    ("A14", "test_cycle_rejected"),
+    ("A15", "test_nonempty_dag_and_exact_reference_vectors"),
+    ("A16", "test_optional_absence_is_explicit_and_keeps_four_nodes"),
+    ("A17", "C1_ONLY_OUTER_BOUNDARY_UNIMPLEMENTED"),
+    ("A18", "test_core_schema_requires_matching_scope_and_allowlist"),
+    ("A19", "test_a19_unexpected_internal_exception_is_sanitized"),
+    ("A20", "test_adapter_union_refuses_nonnull_absent"),
+)
+
+
+@pytest.mark.parametrize(("case_id", "oracle"), _A_ORACLES)
+def test_a01_a20_executable_oracle_contract(
+    case_id: str, oracle: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Actually execute the prescribed C0 oracle, not only test symbol presence."""
+    if case_id == "A17":
+        assert oracle == "C1_ONLY_OUTER_BOUNDARY_UNIMPLEMENTED"
+        assert not hasattr(c, "resolve_verified_domain")
+        return
+    runner = globals()[oracle]
+    assert callable(runner)
+    if case_id == "A19":
+        runner(monkeypatch)
+    else:
+        runner()
+
+
+def test_a01_a20_inventory_is_complete_and_unique() -> None:
+    assert {key for key, _ in _A_ORACLES} == {
+        f"A{i:02d}" for i in range(1, 21)
+    }
+    assert len({key for key, _ in _A_ORACLES}) == 20

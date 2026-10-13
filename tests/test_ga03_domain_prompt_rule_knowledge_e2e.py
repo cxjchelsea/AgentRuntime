@@ -149,9 +149,11 @@ class DomainKnowledgeTransport:
         self.content = content
         self.evidence = evidence
         self.calls: list[dict[str, Any]] = []
+        self.projections: list[tuple[str, tuple[str, ...]]] = []
 
     async def __call__(self, payload: dict[str, Any]) -> dict[str, object]:
         self.calls.append(payload)
+        self.projections.append((self.content.prompt_focus, self.evidence))
         if not self.evidence:
             raise AssertionError("knowledge gate must stop model calls")
         is_second = payload["last_agent_action"] == "MOCK_FOUND_NEEDS_VERIFICATION"
@@ -242,6 +244,9 @@ def test_ga03_two_domains_have_distinct_evidence_rules_and_task_paths(
                 *([domain.m4.verify_action] if expected == 2 else []),
             ]
             assert len(turn.ga03_transport.calls) == expected
+            assert turn.ga03_transport.projections == [
+                (domain.prompt_focus, (domain.knowledge_fact,))
+            ] * expected
             assert domain.prompt_focus == case[2]
             assert turn.evidence == (case[4],)
             assert all(
@@ -310,9 +315,7 @@ def test_ga03_rule_must_match_knowledge_even_with_spoofed_checksum(
     )
     altered = replace(
         domain.m4.binding,
-        assets=tuple(
-            forged if a is original else a for a in domain.m4.binding.assets
-        ),
+        assets=tuple(forged if a is original else a for a in domain.m4.binding.assets),
     )
     with pytest.raises(SandboxAssemblyError, match="rule/knowledge mismatch"):
         assemble_ga03_domain(altered)

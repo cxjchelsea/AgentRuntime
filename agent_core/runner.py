@@ -7,9 +7,9 @@ This module does not import SandboxObservation, M6 Grant or any Tool adapter.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from collections.abc import Callable
 from typing import Protocol
 
 from agent_core.iteration import AgentRunBinding, IterationRef
@@ -53,6 +53,8 @@ class ObservedFact:
     execution_id: str
     domain_fingerprint: str
     facts: tuple[str, ...]
+    workflow_step_id: str | None = None
+    tool_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -41,7 +41,9 @@ class V2Fixture:
 
     def __init__(self) -> None:
         self._principals: set[FixturePrincipal] = set()
-        self._approvals: dict[Approval, tuple[FixturePrincipal, str, str, str, int]] = {}
+        self._approvals: dict[
+            Approval, tuple[FixturePrincipal, str, str, str, int]
+        ] = {}
         self.publication_count = 0
         self.issuance_count = 0
         self.external_side_effect_count = 0
@@ -87,7 +89,12 @@ class V2Fixture:
         edge_targets_valid: bool = True,
     ) -> tuple[tuple[int, str], ...]:
         self._authenticate(principal)  # first-denial tier 1
-        if principal.lane != lane or policy != "p1" or image != "image-a" or transition != "transition-a":
+        if (
+            principal.lane != lane
+            or policy != "p1"
+            or image != "image-a"
+            or transition != "transition-a"
+        ):
             raise FixtureDenial("C1_LANE_SCOPE_MISMATCH")  # tier 2
         expected = set(range(len(targets)))
         if (
@@ -100,7 +107,9 @@ class V2Fixture:
         for approval in approvals:
             if type(approval) is not Approval or approval not in self._approvals:
                 raise FixtureDenial("C1_ISSUER_UNVERIFIED")  # forged handle
-            owner, saved_policy, saved_image, saved_transition, saved_ordinal = self._approvals[approval]
+            (owner, saved_policy, saved_image, saved_transition, saved_ordinal) = (
+                self._approvals[approval]
+            )
             if (
                 owner is not principal
                 or saved_policy != policy
@@ -124,7 +133,12 @@ class V2Fixture:
         for approval in approvals:
             if (
                 approval.role != ROLE
-                or approval.raw != canonical_bytes(approval.ordinal, policy=policy, target_id=targets[approval.ordinal])
+                or approval.raw
+                != canonical_bytes(
+                    approval.ordinal,
+                    policy=policy,
+                    target_id=targets[approval.ordinal],
+                )
                 or approval.digest != hash_bytes(approval.raw)
             ):
                 raise FixtureDenial("C1_DEPENDENCY_INVALID")  # tier 5
@@ -154,7 +168,11 @@ def canonical_bytes(
         "target_id": target_id,
     }
     return json.dumps(
-        value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+        value,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
     ).encode("utf-8")
 
 

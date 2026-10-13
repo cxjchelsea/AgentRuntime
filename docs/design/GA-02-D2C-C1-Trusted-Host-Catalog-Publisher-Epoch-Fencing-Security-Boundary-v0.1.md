@@ -310,3 +310,107 @@ Every test must specify \`fixture\`, \`schedule\`, \`expected first code\`, \`du
 - \`PR116 MERGE AUTHORIZATION = NOT ISSUED\`
 
 **Next:** GA-02 D2-C C1 — PR #116 R1–R5 Exact-HEAD Independent Normative Security Re-Review + Durable Store/Writer Boundary Readiness Gap Decision. Re-review real transaction semantics, exact precedence, and every B01–B07 unresolved physical dependency; do not silently convert a normative design into an authorized issuer.
+
+---
+
+## 13. R2 / R4 / R5 Final Narrow Normative Contract Amendment v0.3 — C1 Sealed-Source Ingestion Decision
+
+**Gate:** TARGETED REMEDIATION SUBMITTED; requires a NEW exact-HEAD independent review. This §13 supersedes conflicting option-language in §§4, 7, 12.2–12.5. No physical Host issuer, durable store or trusted evidence is implemented. Test vectors below are **candidate design-oracle values**, not results of C1 execution.
+
+### 13.1 First-slice exclusive source decision (R3 linkage; B03/B04 unchanged)
+
+**SELECT C1-SRC-A:** only an Application/Host-owned **sealed immutable canonical candidate image** may enter the first C1 publisher. A Registry-derived candidate is NOT eligible unless later re-authorized by a separate exhaustive writer-fencing review; first slice MUST fail closed rather than attempting to capture any live \`BaseRegistry.get/list\`, \`RegistryRecord\`, mutable Pydantic alias, \`implementation_ref\`, mapper output, or C0 \`DiagnosticCatalogInputV1\` as issuer proof.
+
+C1-SRC-A admission is an authenticated Host operation: exact principal/tenant/lane/policy and D2-A package generation pins → bounded primitive bytes captured once from an immutable deployment-controlled staging source → canonical Definition/edge/adapter validation → sealed digest and authoritative publisher transaction. Source data submitted by a domain/package/agent user, arbitrary lambda, in-memory frozen dataclass, test fixture, or unsigned path **never** constitutes an authenticated Host candidate. File immutability and object ownership are to be proved by an independently reviewed physical application boundary; absent proof, \`C1_ISSUER_UNVERIFIED\` or \`C1_REGISTRY_MUTATION_UNGUARDED\`, with no Catalog publication.
+
+**Rotation rule:** any admitted change to exact Definition body, enabled state, namespace/tenant policy, referenced package version/digest, adapter version/identity, edge catalog, CORE schema allowlist, or revocation advances an authoritative lane transition; changes never rewrite a sealed previously published image. Revocation is not \`enabled=false\` inside an existing image. New publication has a **fresh** generation and ordered epoch. Previously admitted images are immutable history.
+
+**Scope:** the matrix in §12.3 inventories source-level Registry write primitives, **not every deployment caller**. No evidence has been obtained yet that any actual Application sealed-source publisher exists. B01/B03/B04/B05 therefore remain BLOCKED for real C1.
+
+### 13.2 R2 — Separate durable publication and issuance transaction contracts
+
+**Required first-slice durability authority:** one linearizable transactional store for the per-lane current pointer, unique transitions, writer terms, revocation revisions, \`catalog_tx\` and \`catalog_issuance\`. A blob store may be separate **only if** the immutable blob is durably committed, checksum-verified and readable **before** the pointer CAS. No pointer-to-PREPARED / no out-of-band future commit assumption. The specific database, SQL isolation, locking scheme and deployment topology remain B02/B07 open until independently verified.
+
+Add these logical records and uniqueness rules to §12.2:
+
+| Record | Required unique key / invariant |
+|---|---|
+| \`catalog_writer_term\` | unique \`lane_key\`, \`term\` strictly increases on exclusive Host writer lease takeover/recovery; issued ONLY by the durable authority; no caller-supplied \`term\` upgrade |
+| \`catalog_lane\` | unique \`lane_key\`; current \`lane_revision\`, \`epoch\`, \`generation_id\`, \`revocation_revision\`, \`writer_term\`, \`status\`, verified image digest and exact source/policy pins |
+| \`catalog_transition\` | unique \`(lane_key,lane_revision)\`, unique \`(lane_key,generation_id)\`; monotonic committed transition log; no epoch/generation reuse |
+| \`catalog_tx\` | unique \`(lane_key,publisher_tx_id)\`; immutable canonical request fingerprint; \`PENDING/COMMITTED/ABORTED\` disposition; same-key/different-fingerprint MUST deny |
+| \`catalog_issuance\` | unique \`(lane_key,issuance_request_id)\`; unique \`evidence_id\`; exact issuance fingerprint, issuer-side lease ID/principal, pinned generation/epoch/revision/revocation, \`COMMITTED\` timestamp/audit outcome; **issued evidence is persisted or deterministically retrievable without replaying conditional issuance** |
+| \`catalog_lease\` | unique issuer-created unguessable lease ID bound to authenticated principal, lane, fixed publication pin, expiry, usage mode and \`ACTIVE/CLOSED/REVOKED/EXPIRED\` status; process restart invalidates unpersisted leases |
+
+**Publisher term acquisition:** the durable Host authority atomically increases \`writer_term\` for one lane as part of documented ownership takeover; that transition fences old writers immediately. The publisher CAS must compare \`writer_term\`, \`lane_revision\`, \`revocation_revision\`, current source/policy pins, expected current generation and image digest. If the store cannot guarantee atomic reads of these fields at the same serialization point, issuance/publishing are forbidden. Epoch arithmetic must not overflow or wrap: exhausted 64-bit counter / unsupported recovery point => \`UNAVAILABLE\` fail-closed, with explicit audited repair (never reset to 0). Caller timestamps are not authority.
+
+**Publication transaction:** (P1) authenticate issuer/source, ensure durable immutable blob exists; (P2) validate canonical sealed image and expected transition; (P3) inside one durable atomic transaction check term + lane revision + revocation + source/policy + expected generation and uniqueness; mark image pointer COMMITTED, advance lane revision/epoch/generation, write unique transition and exact \`catalog_tx\` disposition; (P4) acknowledge. If ACK lost, read \`catalog_tx\` by exact ID and fingerprint and return the prior decision; no repeat CAS, no double epoch increment. If crash before commit, no new pointer is visible; prepared images may be GC'd only after fencing/retention proof.
+
+**Conditional C1 issuance transaction:** (I1) read only a verified sealed image and issuer-minted lease; perform deterministic closure checks **outside** durable transaction; (I2) form request fingerprint over authenticated principal, lane, lease ID, exact image hash and closure, plus caller request id assigned/validated at a trusted boundary; (I3) in **one** durable serializable/linearizable transaction, first return an existing matching \`catalog_issuance\` decision for the same \`issuance_request_id\` without reassessing a newer generation; otherwise atomically validate lease \`ACTIVE\` and \`not expired\`, authenticated issuer/principal/lane, current exact lane revision/epoch/generation/revocation, policy/source pins, committed blob hash and non-revoked status, then insert a unique durable **non-runnable** evidence record. The insertion commit is \`CompleteReadAndIssue\` linearization. (I4) on lost ACK re-read by unique request key/fingerprint and return **that historical evidence** (if permitted by caller identity), marked non-runnable and original epoch. It MUST NOT be presented as fresh/current; later active-use rechecks independently. If same request ID has a different fingerprint, deny typed conflict. No two successful evidence IDs from the same request ID, including crash/restart.
+
+**Lease lifetime:** first-slice \`SINGLE_ISSUANCE\` only; lease creation/close/expiration/revocation and successful issuance consumption are issuer-side durable state updates. No caller-created expiry or caller-provided boolean is trusted. A lease may be used once to commit a NEW issuance; duplicate **same request id+fingerprint** may retrieve the pre-existing evidence from durable issuance ledger but MUST NOT consume lease a second time. Expiry measured with authoritative transactional store clock or monotonic lease deadline checked inside transaction; for restarts, persisted lease and expiry are authoritative, otherwise fail closed. Specific TTL numeric policy remains a deployment-owned B06 decision and must be fixed prior to any production claim.
+
+**Denial ordering within the conditional commit:** malformed/fake issuer/lease → tenant/lane/policy/package mismatch → already revoked → expired/consumed lease → stale epoch/revision/generation → immutable-image mismatch → issuance conflict/internal instability. A previously committed exact idempotent request may return its historical non-runnable record after revocation; this is **record retrieval**, not a new trusted assertion, and D2-D/D3 may never infer active authorization.
+
+**Storage crash/GC invariant:** a committed publication pointer references durable, checksum-verified bytes; committed issuance records persist enough canonical evidence fields or their immutable evidence blob until an independently specified retention deadline. GC cannot remove images referenced by current pointer, unexpired lease, or retained issued evidence/audit record. No GC race may delete while a transaction pins an image. The concrete retention scheme and storage SQL are NOT implemented or claimed verified.
+
+### 13.3 R4 — Exact authority/consumer schema and canonical examples
+
+**Field-to-authority matrix (no caller-controlled upgrading):**
+
+| Field family | Sole authoritative source | Consumer validation |
+|---|---|---|
+| \`principal, issuer capability, allowed environment/tenant, host policy\` | Application Composition Root / deployment-controlled identity | Privileged issuer lookup against independent deployment configuration; arbitrary strings fail |
+| \`writer_term, lane_revision, epoch, revocation_revision, publication state\` | durable store CAS owner | One transactional atomic comparison; never from request body |
+| \`source_package_generation, manifest digest, package publisher proof\` | independently authenticated D2-A Host publication | verify exact generation, domain/version and policy pin before C1 issuance |
+| \`registry definitions, edges, adapters, CORE schema allowlist\` | Host-owned sealed immutable candidate image | copied canonical values + exact domain/namespace and deterministic limits; no live Registry alias |
+| \`lease_id, expiry, principal, usage, issuance_request_id\` | issuer-controlled lease/issuance ledger | exact private lookup; no replayed fake metadata or cross-lane rebinding |
+| \`closure/digests and C1 non-runnable evidence\` | pinned image algorithm + issuer transaction | content consistency **and separately** issuer-side evidence ID verification; hash alone is not a capability |
+| \`DomainBinding, RunDomain, tool permissions\` | future D2-D/D3 separately approved authorities | **NOT ISSUED** from C1 |
+
+**Candidate canonical JSON profile:** UTF-8; NFC normalization applied to strings before hash and strict reject of ambiguous/noncanonical externally serialized representations; object keys lexicographically sorted; no spaces; arrays sorted by typed fully qualified key where semantically sets; no floats/NaN, subclass, duplicate JSON keys, unpaired surrogate or invalid Unicode; use canonical lowercase SHA-256 hex. Prefix = UTF-8 \`PROFILE\`, then exactly one zero byte \`00\`, then canonical JSON bytes; SHA-256 of that sequence. Canonical value copies cannot retain mutable source references. C0's actual \`_json\` and \`_digest\` must be independently checked for identical compatible primitives; this **candidate** encoding does not silently change C0's existing implementation.
+
+**Two independently computable literal candidate golden vectors** (ASCII, each JSON line contains zero trailing newline):
+- **V-LANE-01:** prefix \`GA02-D2C-C1-LANE-1\`; bytes (143 UTF-8 bytes): \`{"domain_id":"demo","domain_version":"1.0.0","environment_id":"test","host_policy_id":"policy","namespace":"demo","tenant_scope_id":"tenant-a"}\`; \`sha256(prefix + 00 + bytes) = 1cebde41a4f3de83facb63b7550511fd36a9b635b7486214bf1bc032881709f1\`.
+- **V-IMAGE-01:** prefix \`GA02-D2C-C1-IMAGE-1\`; bytes (479 UTF-8 bytes): \`{"adapter_attestations":[],"core_schema_allowlist":[],"epoch":1,"exact_edges":[],"generation_id":"gen-a","lane":{"domain_id":"demo","domain_version":"1.0.0","environment_id":"test","host_policy_id":"policy","namespace":"demo","tenant_scope_id":"tenant-a"},"policy_generation":"policy-gen-a","profile":"GA02-D2C-C1-IMAGE-1","registry_definitions":[],"source_package_generation":"pkg-a","verified_manifest_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}\`; \`sha256(prefix + 00 + bytes) = b8e5af60b8bbe61fcb6fb4003657873cfbfa8688fae0861e9e4d5c1411b8fdbe\`.
+
+**Vector limitations:** \`V-IMAGE-01\` is **hash-algorithm only**: zero referenced definitions, placeholder all-zero digest and no independently authenticated publisher render it INVALID as a real trusted Catalog publication. These are design candidates computed from the displayed byte strings, **not executed C1 tests**. Before normative freeze, re-compute with an independent implementation, add nonempty Definition/edge/adapter vectors, Unicode NFC, reordered-key, malformed and duplicate-key negative tests, source/authority-side attestation vector, and map exact D2-D \`GA02-D2-BINDING-1\` consumer fields. No public C1 trust API until those pass.
+
+**Typed error preliminary freeze for isolated mock tests only:** \`C1_ISSUER_UNVERIFIED\` for fake issuance source/lease, \`C1_LANE_SCOPE_MISMATCH\` for tenant/policy/lane mismatch, \`C1_SOURCE_PACKAGE_UNVERIFIED\` for D2-A mismatch, \`C1_PUBLICATION_REVOKED\` for same generation revoked before issuance, \`C1_EPOCH_STALE\` for supersede, \`C1_WRITER_FENCE_INVALID\` for stale writer term, \`C1_ISSUANCE_CONFLICT\` for request ID fingerprint mismatch, \`C1_LEASE_INVALID\` for expired/consumed/unrecognized lease, \`C1_PUBLICATION_DIGEST_MISMATCH\` for committed blob corruption, \`C1_RESOURCE_LIMIT\` for resource budget breach; remaining mapping must receive independent two-fault review. If multiple faults, \`issuer→scope/source→revocation/lease/epoch→resource→definition/edge/adapter→final transactional check\` governs, except a previously committed exact issuance ID is a protected historical-ledger lookup, NOT a new issuance.
+
+### 13.4 R5 — Exact deterministic adversarial oracle narrowing
+
+The matrix below **removes alternative outcomes by fixing the fixture**, rather than claiming all environmental schedules always produce one code:
+
+| ID | Fixed fixture/barrier schedule | Required first observable | Ledger / side effects |
+|---|---|---|---|
+| T05 | Admitted sealed image N, then mutate unrelated live Registry \`definition\` and attempt issue for N | Success only if image N unchanged and lease valid; historical non-runnable evidence; no source re-read | committed image digest unchanged; no Registry writes |
+| T06 | Attempt to submit *live* Registry \`get/list\` result as sealed candidate; call register/disable at barrier | \`C1_REGISTRY_MUTATION_UNGUARDED\`, never trust-upgrade | zero publication, zero issuance |
+| T07 | Swap \`implementation_ref\` on live record then attempt to admit as C1 source | \`C1_REGISTRY_MUTATION_UNGUARDED\` | zero publication, zero execution |
+| T08 | Two different publisher \`tx_id\` read revision N and same term; A CAS first; B CAS on N | A: one N+1 commit; B: \`C1_EPOCH_STALE\` (same term, stale revision), NOT \`C1_WRITER_FENCE_INVALID\` | exactly one catalog_transition, one winning tx |
+| T09 | Publisher term T replaced by T+1; old publisher attempts CAS with otherwise current revision | \`C1_WRITER_FENCE_INVALID\` | zero stale-writer transition |
+| T10-A | Open lease N → revoke N transaction commits → new issuance N | \`C1_PUBLICATION_REVOKED\` | no new issuance |
+| T10-B/T22 | Issuance N commits → revoke N commits → retry same request ID and fingerprint | exact historical non-runnable evidence ID retrieved; no fresh C1 issuance | one issuance, no runnable grant |
+| T16-A | Required edge missing | \`C1_DEPENDENCY_INVALID\` | no issuance |
+| T16-B | Optional edge absent **when policy explicitly permits omission** | Graph may remain valid with omission recorded, never invent target; issuer still must pass source and lease checks | zero fabricated dependency edges |
+| T16-C | Optional edge points to an **explicitly present but invalid** declaration | \`C1_DEPENDENCY_INVALID\`; optional does not excuse corrupted declared target | no issuance |
+| T17-A | C0-compatible diagnostic string is 1025 Unicode scalar values | \`C1_RESOURCE_LIMIT\` or separately frozen shape code; for first normative proposal choose \`C1_RESOURCE_LIMIT\` | no issuance |
+| T17-B | Combined canonical input/envelope/closure exceeds 2,097,152 UTF-8 bytes | \`C1_RESOURCE_LIMIT\` | no issuance |
+| T17-C | One canonical Registry Definition >10,240 UTF-8 bytes or collection >256 where C0 enforces it | \`C1_RESOURCE_LIMIT\` | no issuance |
+
+**Boundary precision:** Python \`len(str)\` counts code points, not grapheme clusters. The proposed C1 ceiling for general strings is therefore **1024 Python code points** (not “UTF-8 bytes”, not grapheme clusters); additional exact \`_string\` validator and field-specific lengths from C0 must be preserved where applicable. 2 MiB and 10 KiB are UTF-8 **byte** counts. Exact graph \`edges\` maximum is **1024** per C0; 1025 must deny. A collection-size assertion applies only to named C0 lists with that actual bound; avoid inventing a universal “max depth 256.” Invalid \`V-IMAGE-01\` need not be admitted just to test its SHA.
+
+**Remaining independent proof obligations:** T01–T22 have **not been executed** for C1; every first observable above is a normative expected oracle, not a reported test pass. Independently check C0 resource limits/normalization, error precedence on two-fault fixtures, optional-edge semantics against D2-C frozen design, exact store transactions, and authenticated Host issuer origin. If optional-edge policy in the frozen contract conflicts with T16-B, this amendment is **HOLD for that case** until explicit upstream compatibility amendment; do not override upstream silently.
+
+### 13.5 Readiness and next gate
+
+- \`C1-SRC-A HOST_SEALED_CANDIDATE_ONLY = SELECTED_FOR_REVIEW\`; all live Registry import paths for first C1 remain rejected.
+- \`R2 DURABLE PUBLICATION+ISSUANCE CAS / LOST-ACK = NORMATIVE_AMENDMENT_SUBMITTED\`, physical database and cross-worker proof **MISSING**.
+- \`R4 ISSUER/LEASE/ROLE + V-LANE-01 / V-IMAGE-01 CANDIDATE GOLDENS = SUBMITTED\`; deployment authenticator and nonempty vectors **MISSING**.
+- \`R5 T05–T10 / T16 / T17 DETERMINISTIC_ORACLES = SUBMITTED\`; C1 runnable test implementation **MISSING**.
+- \`B01..B07 C1_PRODUCTION_PHYSICAL_AUTHORITY = ALL_BLOCKED\`.
+- \`PR116 EXACT_HEAD_INDEPENDENT_NORMATIVE_RE_REVIEW = PENDING\`.
+- \`PR116 MERGE_AUTHORIZATION = NOT_ISSUED\`.
+- \`C1 PRODUCTION_TRUST_EVIDENCE / DOMAINBINDING / D3_PERMISSIONS = HARD_HOLD\`.
+
+**Next:** \`GA-02 D2-C C1 — PR #116 Final R2/R4/R5 Exact-HEAD Independent Security Re-Review + C1-SRC-A Sealed-Source/Issuer Test-Only Prototype Readiness\`. Do not convert draft test vectors or a mock CAS into proof of a deployed Host Catalog publisher.

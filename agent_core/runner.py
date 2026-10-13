@@ -105,10 +105,12 @@ class AgentRunCoordinator:
         budget: LoopBudget,
         *,
         completion_check: Callable[[str, tuple[ObservedFact, ...]], bool] | None = None,
+        execution_guard: Callable[[Decision, ObservedFact | None, int], bool] | None = None,
     ) -> None:
         self._step = step
         self._budget = budget
         self._completion_check = completion_check
+        self._execution_guard = execution_guard
 
     async def run(
         self, original_input: RuntimeInput, binding: AgentRunBinding
@@ -193,6 +195,10 @@ class AgentRunCoordinator:
                 or ctx.domain_extensions.domain_id != binding.domain_id
             ):
                 raise RunBoundaryError("context scope mismatch")
+            if self._execution_guard is not None and not self._execution_guard(
+                decision, None, executions
+            ):
+                raise RunBoundaryError("action is outside domain workflow")
             # Claim identity before any physical attempt; failed attempts must not replay.
             used_plan_ids.add(plan.plan_id)
             # Charge before await: timeout/cancel is UNKNOWN, never replay.
@@ -214,6 +220,10 @@ class AgentRunCoordinator:
                 or not observation.execution_id
             ):
                 raise RunBoundaryError("observation provenance mismatch")
+            if self._execution_guard is not None and not self._execution_guard(
+                decision, observation, executions - 1
+            ):
+                raise RunBoundaryError("observation does not match workflow execution")
             if not observation.facts:
                 return RunOutcome(
                     binding.run_id,

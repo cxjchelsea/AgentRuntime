@@ -276,7 +276,8 @@ def test_ga03_missing_knowledge_waits_without_model_or_execution(
         assert result.kind is RunKind.WAIT
         assert result.reason == "GA03_REQUIRED_KNOWLEDGE_MISSING"
         assert result.executions == 0
-        assert turn.transport.calls == []
+        assert turn.ga03_transport.calls == []
+        assert turn.ga03_transport.projections == []
         assert turn.mock_calls == 0
 
     asyncio.run(scenario())

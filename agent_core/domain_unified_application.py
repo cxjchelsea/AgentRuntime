@@ -91,7 +91,10 @@ def bootstrap_unified_domain_application(
     bundled fact is NOT silently taken as retrieval evidence.
     """
     app = bootstrap_domain_application(snapshot)
-    content = assemble_domain_content(snapshot, app.extension)
+    generalized = any(asset.ref.kind == "workflow" for asset in snapshot.assets)
+    content = assemble_domain_content(
+        snapshot, app.extension, generalized_workflow=generalized
+    )
     scope = DomainScope(
         app.extension.binding.domain_id,
         app.extension.binding.binding_fingerprint,
@@ -99,7 +102,7 @@ def bootstrap_unified_domain_application(
     knowledge = DomainKnowledgeCapability(scope, retriever)
     catalog = (
         assemble_execution_catalog(snapshot, app.extension)
-        if any(asset.ref.kind == "workflow" for asset in snapshot.assets)
+        if generalized
         else None
     )
     # Legacy GA-07 demo keeps the Collect/Verify profile unchanged.

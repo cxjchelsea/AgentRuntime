@@ -65,7 +65,9 @@ class SandboxDomainBinding:
         )
 
 
-def assemble_sandbox_domain(snapshot: VerifiedPackageSnapshotV1) -> SandboxDomainBinding:
+def assemble_sandbox_domain(
+    snapshot: VerifiedPackageSnapshotV1,
+) -> SandboxDomainBinding:
     """Pin a D2-A snapshot into a non-runnable, version-exact asset projection.
 
     D2-A must independently check the local package source before this call.
@@ -100,11 +102,17 @@ def assemble_sandbox_domain(snapshot: VerifiedPackageSnapshotV1) -> SandboxDomai
 
     projected: list[SandboxBoundAsset] = []
     for asset in snapshot.assets:
-        if type(asset) is not VerifiedAssetV1 or type(asset.ref) is not AssetReferenceV1:
+        if (
+            type(asset) is not VerifiedAssetV1
+            or type(asset.ref) is not AssetReferenceV1
+        ):
             raise SandboxAssemblyError("invalid asset structure")
         ref = asset.ref
         content = asset.content_bytes
-        if type(content) is not bytes or hashlib.sha256(content).hexdigest() != ref.sha256:
+        if (
+            type(content) is not bytes
+            or hashlib.sha256(content).hexdigest() != ref.sha256
+        ):
             raise SandboxAssemblyError("asset digest mismatch")
         projected.append(
             SandboxBoundAsset(

@@ -278,3 +278,44 @@ P2 独立 Gate 应单独验证：同 Revision 两进程 CAS 一胜一败、旧 t
 | P3/P4 C1 Trusted Issuer/Evidence | HARD_HOLD | B01–B07 未解除 |
 | D2-D/D3 | HARD_HOLD | 非执行证据不授权运行 |
 | PR #118 Merge | NOT_AUTHORIZED | 独立复审尚未完成 |
+
+
+---
+
+## 14. P0 Intake Cross-Alignment — F1-ORD-01 v0.3
+
+**依据：** PR #116 §16 候选 `HostOptionalAbsenceOccV2`，`main@d2d59ec4c97ed6a85a13a5f36551752ad2c0f067` 的 `agent_core/domain_catalog_resolution.py:759–812`；本节补充 §11.3 与 §12 P0-08/09 的审查义务，不宣称 #116 已冻结或生产 Host 被认证。
+
+### 14.1 物理来源与 Ordinal 准入
+
+- **Exact C0 key**：`(source_key=(kind,namespace,id,version), relation_id, ordinal)`；ordinal 从**经 Host 认证的 Sealed Definition** 的相关字段 `enumerate(vals)` 取得，不能由任意 edge/absence JSON 自行编码身份。完整 relation_id 如 `skill.optional_tools`，不接受只写字段名 `optional_tools` 的弱匹配。
+- **版本**：使用候选 `GA02-D2C-C1-OPTIONAL-ABSENCE-OCC-2`，将 `ordinal` 与 source/relation/target/policy/reason 一起进入 Canonical Bytes 和 Domain-Separated SHA256。旧 `V-ABS-01` 继续作为 hash-only 的历史向量，不接受它当作同名双声明的唯一有效 Host approval。
+- **证明与存储**：DB 私有 `issuer_provenance` 必须指向独立的 Host source admission、签发者身份、policy generation、exact image/transition、单个 occurrence 的授权记录；不得将可自构造的 digest 或 `NON_PRODUCTION_SIMULATION` handle 当作部署凭证。
+- **基数与故障**：每个已声明的 optional occurrence 恰好一个 exact edge 或一个已认证 V2 absence；一个审批不得覆盖两个 ordinal；同时存在 edge+absence、漏一个 ordinal、重复 ordinal、借用旧政策或外租户源都拒绝。先做 issuer/scope 审核，再执行图的 fail-closed 校验。
+- **同源快照规则**：Image Builder 提交的 Definition、relation edge、V2 absence、adapter、CORE allowlist 与 policy/package 证明属于一个不可变来源版本；不能读 live `RegistryRecord` 的局部字段再推断全局 consistent snapshot。P2/P3 不得引入尚未批准的 C1 正向发行者。
+
+### 14.2 P0 证据追加与演练
+
+| P0 ID | 新增精确证明义务 | 当前状态 |
+|---|---|---|
+| P0-05 / Host source | 审计真实 Host 的 `issuer_provenance` owner、被认证 package manifest/policy/image/transition 的来源与访问控制 | MISSING_EXTERNAL_EVIDENCE |
+| P0-08 / Writer alias | 证明源 Definition 顺序与 ordinal 在 Sealed Admission 后不可由 Registry writer/alias 重排，或出现变动就新的 generation 且旧批准无效 | PARTIAL_CODE_ONLY |
+| P0-09 / C0 parity | 对 `skill.optional_tools=["tool-a","tool-a"]` 在 C0 逐个计算 0/1 的 `expected` 键，校验 duplicate ordinal/relation/declared_target 原因；在 C1 对齐 V2 schema | PARTIAL_CODE_ONLY |
+| P0-09 / new golden | `V-ABS-OCC-00`: 234 UTF-8 bytes，摘要 `349e20e0dcf7af2d68c1a6dd5173188ba583346df92c9d37d2ad72094cf5000c`；`V-ABS-OCC-01`: 234 bytes，摘要 `ff2cf9ef7cea434720bf614d6d201d2be93d3b3d4eaefd343ad25b7a1cb2bf7b`；独立第二实现重算后才可 freeze | DESIGN_ONLY / SECOND_VERIFIER_PENDING |
+| P0-09 / threat fixtures | 对 PR #116 §16.4 F1-A..G + ORD-01..05，记录 `ordinal_key, raw/canonical profile, admitted approval IDs, issuer-policy pins, first denial, side-effect count`；不得沿用过时 mock 实测声称生产通过 | DESIGN_ONLY / EXECUTION_PENDING |
+
+**P0-09 退出条件新增：** 双 occurrence 与单缺省正负 fixture 明确采用 C0 的完整关系 ID 与真实 ordinal；新 Profile 的 0/1 摘要经第二独立实现核对；修订错误优先级与两个并发/篡改案例后再考虑 `P0-09 CODE_PARITY = VERIFIED`。这仍不替代 P0-01～07/10 的真实部署取证。
+
+### 14.3 对当前 Gate 的影响
+
+| Gate | Decision |
+|---|---|
+| F1-ORD-01 Physical Intake Alignment | DESIGN_SUBMITTED / REQUIRES_INDEPENDENT_REVIEW |
+| P0 Evidence Intake Contract | EXPANDED / NOT COMPLETE |
+| P0 Real Host / Database Facts | MISSING_EXTERNAL_EVIDENCE |
+| F1-A..G / ORD Fixtures | SPECIFIED_NOT_EXECUTED |
+| PR #116 F1 Versioned Contract | PROPOSED_NOT_FROZEN |
+| P2 Real DB / P3 Host Issuer | HOLD / HARD_HOLD |
+| PR #118 Merge Authorization | NOT ISSUED |
+
+**下一 Gate：** `GA-02 D2-C C1 — PR #116 F1-ORD-01 Exact-HEAD Independent Versioned Schema/Golden Re-Review + PR #118 P0 Cross-Alignment Verification`。C1 Production B01–B07 与 D2-D/D3 均继续 HARD HOLD。

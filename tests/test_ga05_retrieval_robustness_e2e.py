@@ -28,10 +28,18 @@ pytestmark = pytest.mark.skipif(
 )
 
 _DOCUMENTS = (
-    ("inventory.reconcile", "stock-ledger-01", "sandbox://stock/ledger/01",
-     "stock threshold count 7 available units in fictional warehouse"),
-    ("learning.plan", "notes-index-01", "sandbox://notes/index/01",
-     "linear algebra notes index contains vector space lesson"),
+    (
+        "inventory.reconcile",
+        "stock-ledger-01",
+        "sandbox://stock/ledger/01",
+        "stock threshold count 7 available units in fictional warehouse",
+    ),
+    (
+        "learning.plan",
+        "notes-index-01",
+        "sandbox://notes/index/01",
+        "linear algebra notes index contains vector space lesson",
+    ),
 )
 _QUERIES = ("stock threshold", "linear algebra")
 
@@ -75,7 +83,7 @@ def test_ga05_real_index_returns_scoped_citable_hits(
     assert evidence[0].snippet in instruction
     assert evidence[0].source_ref in instruction
     assert domains[number].knowledge_fact not in instruction
-    assert _DOCUMENTS[1-number][3] not in instruction
+    assert _DOCUMENTS[1 - number][3] not in instruction
 
 
 def test_ga05_foreign_domain_query_is_not_a_hit(tmp_path: Path) -> None:
@@ -128,7 +136,10 @@ def test_ga05_rejects_duplicate_doc_and_invalid_query(tmp_path: Path) -> None:
     index.add(domain.m4.binding, doc)
     with pytest.raises(SandboxAssemblyError, match="duplicate"):
         index.add(domain.m4.binding, doc)
-    assert index.retrieve(domain.m4.binding, 'stock" OR anything') == ()
+    assert tuple(
+        item.document_id
+        for item in index.retrieve(domain.m4.binding, 'stock" OR anything')
+    ) == ("stock-ledger-01",)
     with pytest.raises(SandboxAssemblyError, match="invalid retrieval"):
         index.retrieve(domain.m4.binding, "stock", limit=999)
 
@@ -171,8 +182,10 @@ def test_ga05_real_qwen_cross_domain_retrieval_e2e(tmp_path: Path) -> None:
                 result = await AgentRunCoordinator(
                     turn,
                     LoopBudget(
-                        max_iterations=4, max_executions=3,
-                        max_decision_seconds=65, max_execution_seconds=5,
+                        max_iterations=4,
+                        max_executions=3,
+                        max_decision_seconds=65,
+                        max_execution_seconds=5,
                     ),
                 ).run(initial, turn.binding)
                 expected = 2 if domain.completion_after == "verify" else 1

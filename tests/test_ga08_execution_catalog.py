@@ -25,7 +25,13 @@ from agent_core.domain_package_loader import (
     TrustedPackageIdentity,
 )
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
-from agent_core.runner import Decision, LoopBudget, ObservedFact, RunKind
+from agent_core.runner import (
+    Decision,
+    LoopBudget,
+    ObservedFact,
+    RunBoundaryError,
+    RunKind,
+)
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga01_slice1 import SandboxTurn
 from tests.test_ga01_slice2_loop import ModelDrivenSandboxTurn
@@ -290,5 +296,71 @@ def test_ga08_domain_workflow_real_m4_sandbox_loop(tmp_path: Path, steps: int) -
         assert turn.mock_calls == steps
         assert len(transport.calls) == steps
         assert len(outcome.observations) == steps
+
+    asyncio.run(scenario())
+
+@pytest.mark.parametrize("failure", ["wrong-action", "wrong-tool", "premature-finish"])
+def test_ga08_workflow_rejects_invalid_sandbox_execution(
+    tmp_path: Path, failure: str
+) -> None:
+    async def scenario() -> None:
+        snapshot = _snapshot(tmp_path / "workflow", steps=2)
+        app = bootstrap_domain_application(snapshot)
+        catalog = app.execution_catalog(snapshot)
+        initial = build_runtime_input(text="validate two-stage sandbox workflow")
+
+        async def select(payload: dict[str, Any]) -> dict[str, object]:
+            role = "verify" if (
+                failure == "wrong-action"
+                or payload["last_agent_action"] == "FACT_1"
+            ) else "collect"
+            return {
+                "strategy_id": role + "-strategy-notes",
+                "action_ids": [role + "-notes"],
+                "reason_code": "TEST_PACKAGE_SELECTION",
+            }
+
+        class InvalidTurn(ModelDrivenSandboxTurn):
+            def __post_init__(self) -> None:
+                super().__post_init__()
+                self.binding = app.prepare(self.initial, run_id="ga08-invalid")
+                self._planner, self._validator, self._rechecker = app.m4(
+                    StructuredStrategyTransportAdapter(select)
+                )
+
+            async def decide(self, current_input, iteration, observations):
+                if failure == "premature-finish" and observations:
+                    return Decision(
+                        iteration, "FINISH", reason="MODEL_SAID_DONE",
+                        completion_fact="FACT_1",
+                    )
+                return await super().decide(
+                    current_input, iteration, observations
+                )
+
+            async def execute_and_observe(self, decision: Decision) -> ObservedFact:
+                index = self.actions
+                step = catalog.workflow.steps[index]
+                self.facts = (step.completion_fact,)
+                result = await SandboxTurn.execute_and_observe(self, decision)
+                return replace(
+                    result,
+                    workflow_step_id=step.step_id,
+                    tool_id="incorrect-tool" if failure == "wrong-tool" else step.tool_id,
+                )
+
+        turn = InvalidTurn(initial)
+        with pytest.raises(
+            RunBoundaryError,
+            match="outside domain workflow|does not match workflow|completion contract",
+        ):
+            await app.run(
+                initial,
+                run_id="ga08-invalid",
+                step=turn,
+                budget=LoopBudget(max_iterations=4, max_executions=3),
+                execution_catalog=catalog,
+            )
+        assert turn.mock_calls == (0 if failure == "wrong-action" else 1)
 
     asyncio.run(scenario())

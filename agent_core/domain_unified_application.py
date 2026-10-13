@@ -101,9 +101,7 @@ def bootstrap_unified_domain_application(
     )
     knowledge = DomainKnowledgeCapability(scope, retriever)
     catalog = (
-        assemble_execution_catalog(snapshot, app.extension)
-        if generalized
-        else None
+        assemble_execution_catalog(snapshot, app.extension) if generalized else None
     )
     # Legacy GA-07 demo keeps the Collect/Verify profile unchanged.
     # GA-08 selects package-owned steps without interpreting business role names.

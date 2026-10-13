@@ -11,7 +11,10 @@ import json
 import re
 from dataclasses import dataclass
 
-from agent_core.sandbox_domain_assembly import SandboxAssemblyError, SandboxDomainBinding
+from agent_core.sandbox_domain_assembly import (
+    SandboxAssemblyError,
+    SandboxDomainBinding,
+)
 from tests.ga05_fts_retrieval import RetrievedEvidence
 
 _TERMS = re.compile(r"[a-z0-9_]+", re.ASCII)
@@ -66,8 +69,7 @@ def admit_evidence(
             or not hit.document_id
             or type(hit.snippet) is not str
             or len(hit.snippet) > 2048
-            or hashlib.sha256(hit.snippet.encode("utf-8")).hexdigest()
-            != hit.sha256
+            or hashlib.sha256(hit.snippet.encode("utf-8")).hexdigest() != hit.sha256
         ):
             return EvidenceAdmission((), "GA06_UNVERIFIED_EVIDENCE", terms)
         if _UNSAFE.search(hit.snippet):

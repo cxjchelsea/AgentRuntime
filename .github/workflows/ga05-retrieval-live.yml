@@ -1,0 +1,51 @@
+name: GA-05 Retrieval-Backed Qwen E2E
+
+on:
+  pull_request:
+    paths:
+      - "tests/ga05_fts_retrieval.py"
+      - "tests/ga05_retrieval_model_turn.py"
+      - "tests/test_ga05_retrieval_robustness_e2e.py"
+      - ".github/workflows/ga05-retrieval-live.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retrieval-qwen:
+    name: GA-05 SQLite FTS5 + Qwen2.5 3B cross-domain E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install isolated test dependencies
+        run: python -m pip install -e '.[test]'
+      - name: Boot loopback Qwen and pin model evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GA05_PR_HEAD_SHA=${{ github.event.pull_request.head.sha || github.sha }}"
+          docker run -d --name ga05-retrieval-qwen --cpus=2 --memory=5g -p 127.0.0.1:11434:11434 ollama/ollama:latest
+          for attempt in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null
+          docker exec ga05-retrieval-qwen ollama pull qwen2.5:3b
+          docker exec ga05-retrieval-qwen sha256sum /root/.ollama/models/manifests/registry.ollama.ai/library/qwen2.5/3b
+      - name: Execute six real model retrieval-driven tasks and negatives
+        env:
+          GA05_LIVE_OPT_IN: "1"
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: python -m pytest tests/test_ga05_retrieval_robustness_e2e.py -q -s -rs
+      - name: Diagnostics on failure
+        if: failure()
+        run: docker logs --tail 60 ga05-retrieval-qwen || true
+      - name: Shutdown isolated model
+        if: always()
+        run: docker rm -f ga05-retrieval-qwen || true

@@ -49,6 +49,7 @@ class KnowledgeBackedStrategyTransport:
     def _messages(self, payload: dict[str, Any]) -> tuple[dict[str, str], ...]:
         admission = self.capability.retrieve_and_admit(self._query)
         return build_domain_model_messages(
+            scope=self.capability.scope,
             system_instruction=self._instruction,
             task_payload=payload,
             admission=admission,

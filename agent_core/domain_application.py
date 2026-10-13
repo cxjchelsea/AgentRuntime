@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from agent_core.domain_execution_catalog import (
     DomainExecutionCatalog,
+    WorkflowStepEvidence,
     assemble_execution_catalog,
 )
 from agent_core.domain_extension import (
@@ -51,6 +52,7 @@ class DomainApplication:
         run_id: str,
         step: StepPort,
         budget: LoopBudget,
+        execution_catalog: DomainExecutionCatalog | None = None,
     ) -> RunOutcome:
         """Execute only an explicitly injected StepPort via the existing Loop.
 
@@ -68,7 +70,31 @@ class DomainApplication:
             raise DomainExtensionError("unbound application step")
         if step_binding != binding:
             raise DomainExtensionError("application step binding mismatch")
-        return await AgentRunCoordinator(step, budget).run(initial, binding)
+        completion_check = None
+        if execution_catalog is not None:
+            if (
+                type(execution_catalog) is not DomainExecutionCatalog
+                or execution_catalog.domain_id != binding.domain_id
+                or execution_catalog.binding_fingerprint != binding.binding_fingerprint
+            ):
+                raise DomainExtensionError("execution catalog binding mismatch")
+
+            def completion_check(run: str, observations: tuple) -> bool:
+                # Sandbox ordering is NOT a trusted tool-to-step attestation.
+                steps = execution_catalog.workflow.steps
+                if len(observations) != len(steps):
+                    return False
+                evidence = tuple(
+                    WorkflowStepEvidence(workflow_step.step_id, observed)
+                    for workflow_step, observed in zip(steps, observations, strict=True)
+                )
+                return execution_catalog.completion_from_observations(
+                    run_id=run, observations=evidence
+                )
+
+        return await AgentRunCoordinator(
+            step, budget, completion_check=completion_check
+        ).run(initial, binding)
 
 
 def bootstrap_domain_application(

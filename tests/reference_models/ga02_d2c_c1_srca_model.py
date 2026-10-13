@@ -216,6 +216,8 @@ def _evidence_digest(e: SimulatedEvidence) -> str:
 class PublicationResult(tuple[int, int]):
     """Tuple-compatible non-authorizing publication receipt."""
 
+    historical: bool
+
     def __new__(cls, revision: int, epoch: int, *, historical: bool = False) -> PublicationResult:
         receipt = tuple.__new__(cls, (revision, epoch))
         receipt.historical = historical
@@ -451,7 +453,7 @@ class TestOnlyCatalog:
         term: int,
         expected_revision: int,
         tx_id: str,
-    ) -> tuple[int, int]:
+    ) -> PublicationResult:
         self._auth(principal, principal.lane)
         if type(candidate) is not SealedCandidate or candidate not in self._candidates:
             _deny("C1_ISSUER_UNVERIFIED")

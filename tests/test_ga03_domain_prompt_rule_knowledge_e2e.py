@@ -244,9 +244,10 @@ def test_ga03_two_domains_have_distinct_evidence_rules_and_task_paths(
                 *([domain.m4.verify_action] if expected == 2 else []),
             ]
             assert len(turn.ga03_transport.calls) == expected
-            assert turn.ga03_transport.projections == [
-                (domain.prompt_focus, (domain.knowledge_fact,))
-            ] * expected
+            assert (
+                turn.ga03_transport.projections
+                == [(domain.prompt_focus, (domain.knowledge_fact,))] * expected
+            )
             assert domain.prompt_focus == case[2]
             assert turn.evidence == (case[4],)
             assert all(

@@ -698,10 +698,10 @@ Canonical JSON 内容键严格为 `host_policy_generation,ordinal,reason,relatio
 
 ### 17.1 Frozen identity and canonical input for fixture design
 
-1. A declaration occurrence is the immutable C0 triple \`(source_key=(kind, namespace, id, version), full_relation_id, builtin_int_ordinal)\` derived solely by enumerating the normalized sealed source Definition's actual relation list. \`bool\`, subclassed integers, negative, missing, duplicated and foreign relation ordinals are forbidden as incoming claims. Target kind/id must equal the selected \`expected\` declaration. No target-based deduplication.
-2. V2 content digests are computed only from the seven logical fields listed in §16.2 (one field is the \`source_key\` object). \`absence_digest\` and \`issuer_provenance\` are **not** part of the canonical hash input. Exact profile ASCII bytes + NUL + canonical UTF-8 JSON. The 234-byte V-ABS-OCC-00 and V-ABS-OCC-01 literals/digests in §16.3 are reference positives for hash correctness, **never authorization positives**.
+1. A declaration occurrence is the immutable C0 triple `(source_key=(kind, namespace, id, version), full_relation_id, builtin_int_ordinal)` derived solely by enumerating the normalized sealed source Definition's actual relation list. `bool`, subclassed integers, negative, missing, duplicated and foreign relation ordinals are forbidden as incoming claims. Target kind/id must equal the selected `expected` declaration. No target-based deduplication.
+2. V2 content digests are computed only from the seven logical fields listed in §16.2 (one field is the `source_key` object). `absence_digest` and `issuer_provenance` are **not** part of the canonical hash input. Exact profile ASCII bytes + NUL + canonical UTF-8 JSON. The 234-byte V-ABS-OCC-00 and V-ABS-OCC-01 literals/digests in §16.3 are reference positives for hash correctness, **never authorization positives**.
 3. A validated Host approval must separately bind the exact occurrence plus authenticated lane/tenant/policy generation, sealed definition or immutable image identity, publication generation/transition, issuer principal and approval record identity. A digest alone is not evidence of this provenance. Different ordinal values must have distinct approval records even where the content target repeats.
-4. Each optional declaration requires exactly one eligible \`PINNED\` edge **or** one eligible authenticated V2 omission. Required declarations require \`PINNED\`; no absence allowed. C0 diagnostic \`OPTIONAL_ABSENT\` is not a Host authorization grant. All successful F1 fixtures remain metadata-only and non-runnable.
+4. Each optional declaration requires exactly one eligible `PINNED` edge **or** one eligible authenticated V2 omission. Required declarations require `PINNED`; no absence allowed. C0 diagnostic `OPTIONAL_ABSENT` is not a Host authorization grant. All successful F1 fixtures remain metadata-only and non-runnable.
 5. Legacy V1/hash-only evidence is rejected as Host authorization in *all* V2-issued C1 closures, including the single-occurrence case; never auto-upgrade from V1 to V2. Historical V1 literal verification is permitted only in an explicitly non-authoritative test path.
 
 ### 17.2 Scoped deterministic first-denial oracle
@@ -710,45 +710,45 @@ Test harness shall model a **single pinned, immutable input snapshot** and recor
 
 | Priority | Scenario detected | First-denial class for fixture | No-side-effect assertion |
 |---|---|---|---|
-| 1 | Unauthenticated issuer or caller-minted approval; missing independent Host principal | \`C1_ISSUER_UNVERIFIED\` | zero trusted publication/issuance |
-| 2 | Authenticated principal not authorized for lane/tenant/policy or stale policy/image generation | \`C1_LANE_SCOPE_MISMATCH\` (fixture-local scoped oracle) | zero trusted publication/issuance |
-| 3 | Invalid occurrence input type/shape, unknown or repeated ordinal, wrong relation or declared target | \`C1_DEPENDENCY_INVALID\` (fixture-local, unless separately frozen typed shape rejection) | zero trusted publication/issuance |
-| 4 | Exactly-one edge/absence violation, required-as-absent, invalid edge target/tenant, duplicate approvals | \`C1_DEPENDENCY_INVALID\` | zero trusted publication/issuance |
-| 5 | Mismatched digest, approval record identity or provenance against an authenticated sealed source | \`C1_DEPENDENCY_INVALID\` after 1–4, if not already denied | zero trusted publication/issuance |
+| 1 | Unauthenticated issuer or caller-minted approval; missing independent Host principal | `C1_ISSUER_UNVERIFIED` | zero trusted publication/issuance |
+| 2 | Authenticated principal not authorized for lane/tenant/policy or stale policy/image generation | `C1_LANE_SCOPE_MISMATCH` (fixture-local scoped oracle) | zero trusted publication/issuance |
+| 3 | Invalid occurrence input type/shape, unknown or repeated ordinal, wrong relation or declared target | `C1_DEPENDENCY_INVALID` (fixture-local, unless separately frozen typed shape rejection) | zero trusted publication/issuance |
+| 4 | Exactly-one edge/absence violation, required-as-absent, invalid edge target/tenant, duplicate approvals | `C1_DEPENDENCY_INVALID` | zero trusted publication/issuance |
+| 5 | Mismatched digest, approval record identity or provenance against an authenticated sealed source | `C1_DEPENDENCY_INVALID` after 1–4, if not already denied | zero trusted publication/issuance |
 
 For paired faults, the harness shall explicitly assert issuer+malformed-ordinal → priority 1; foreign-tenant+missing-edge → priority 2; valid issuer/tenant+edge-and-absence → priority 4. A revoked publication, race with real issuer ledger, or DB failure is **outside this test-only fixture slice** and remains under the independent C1 transaction/revocation priority gate. A future implementation must not expose claimed C1 error strings as already implemented exports merely because they appear here.
 
 ### 17.3 Executable fixture data and assertions (authorization readiness, not execution)
 
-Create an **isolated test-only fixture module and tests**, reusing the already merged \`tests/reference_models/ga02_d2c_c1_srca_model.py\` only via explicit test imports. If its existing test-only API cannot represent V2 + multiple approvals unambiguously, introduce a separately named V2 fixture adapter inside \`tests/reference_models/\` rather than changing the legacy model's production meaning or silently rewriting V1 acceptance semantics. No \`agent_core/**\`, \`runtime/**\`, registry, migrations, production module or host issuer changes.
+Create an **isolated test-only fixture module and tests**, reusing the already merged `tests/reference_models/ga02_d2c_c1_srca_model.py` only via explicit test imports. If its existing test-only API cannot represent V2 + multiple approvals unambiguously, introduce a separately named V2 fixture adapter inside `tests/reference_models/` rather than changing the legacy model's production meaning or silently rewriting V1 acceptance semantics. No `agent_core/**`, `runtime/**`, registry, migrations, production module or host issuer changes.
 
 | ID | Minimal immutable setup / mutation | Mandatory assertions |
 |---|---|---|
-| F1-A | One optional occurrence; correct V2 digest + separately authenticated current Host approval | metadata-only eligible; \`publication_count=issuance_count=external_side_effects=0\` in test-only gate |
-| F1-B | Remove both matching edge and authenticated V2 omission | \`C1_DEPENDENCY_INVALID\` |
-| F1-C | Correct V2 JSON/digest but no independently authenticated issuer principal | \`C1_ISSUER_UNVERIFIED\`, even with additionally invalid edge |
-| F1-D | Valid approval bytes with stale policy/image or foreign lane | \`C1_LANE_SCOPE_MISMATCH\` |
-| F1-E | Same occurrence has edge + absence, or duplicate V2 approval records | \`C1_DEPENDENCY_INVALID\`; no last-write-wins |
-| F1-F | Required relation replaced by V2 absence | \`C1_DEPENDENCY_INVALID\` |
-| F1-G | Optional edge points to cross-tenant/non-allowlisted target; unrelated valid absence also present | \`C1_DEPENDENCY_INVALID\` |
-| ORD-01 | Source optional list \`["tool-a","tool-a"]\`; valid approval for ordinal 0 only | ordinal 1 remains unsatisfied; reject |
+| F1-A | One optional occurrence; correct V2 digest + separately authenticated current Host approval | metadata-only eligible; `publication_count=issuance_count=external_side_effects=0` in test-only gate |
+| F1-B | Remove both matching edge and authenticated V2 omission | `C1_DEPENDENCY_INVALID` |
+| F1-C | Correct V2 JSON/digest but no independently authenticated issuer principal | `C1_ISSUER_UNVERIFIED`, even with additionally invalid edge |
+| F1-D | Valid approval bytes with stale policy/image or foreign lane | `C1_LANE_SCOPE_MISMATCH` |
+| F1-E | Same occurrence has edge + absence, or duplicate V2 approval records | `C1_DEPENDENCY_INVALID`; no last-write-wins |
+| F1-F | Required relation replaced by V2 absence | `C1_DEPENDENCY_INVALID` |
+| F1-G | Optional edge points to cross-tenant/non-allowlisted target; unrelated valid absence also present | `C1_DEPENDENCY_INVALID` |
+| ORD-01 | Source optional list `["tool-a","tool-a"]`; valid approval for ordinal 0 only | ordinal 1 remains unsatisfied; reject |
 | ORD-02 | Same list; separate issuer-private approvals for ordinals 0 and 1 | two omission metadata records preserved in order; distinct 234-byte digests; no fabricated edges |
 | ORD-03 | Change ordinal 0→1 but reuse ordinal-0 digest or approval identity | reject stale digest/provenance; no approval transfer |
 | ORD-04a | Ordinal 2 when expected only 0/1 | reject nonexistent declaration |
-| ORD-04b | \`-1\`, \`true\`, \`1.0\`, or an integer subclass | reject wrong ordinal type/negative |
+| ORD-04b | `-1`, `true`, `1.0`, or an integer subclass | reject wrong ordinal type/negative |
 | ORD-04c | Duplicate ordinal 0 approval/edge | reject duplicate |
-| ORD-05 | Present legacy V1 \`V-ABS-01\` digest against single or duplicated target declaration in V2-issued path | reject legacy-to-V2 trust promotion |
+| ORD-05 | Present legacy V1 `V-ABS-01` digest against single or duplicated target declaration in V2-issued path | reject legacy-to-V2 trust promotion |
 | NEG-PAIR-01 | Forged issuer + malformed ordinal | priority 1 first |
 | NEG-PAIR-02 | Foreign tenant + missing edge | priority 2 first |
 | NEG-PAIR-03 | Authenticated current scope + same occurrence edge/absence conflict | priority 4 first |
 
-Each executable fixture must record \`source_definition_hash, expected_occurrence_keys, actual_edge_keys, approval_ids, issuer_principal_binding, lane/policy/image/transition pins, raw_and_canonical_profile, first_denial, publication_count, issuance_count, external_side_effect_count\`. The side-effect counters are **test-double counters** only, not proof about a real service. At least one assertion must call the **real C0 diagnostic resolver** using equivalent normalized source/edge declarations to verify that duplicated target names remain separate ordinal 0/1 occurrences; this C0 oracle must not infer Host approval from \`OPTIONAL_ABSENT\`.
+Each executable fixture must record `source_definition_hash, expected_occurrence_keys, actual_edge_keys, approval_ids, issuer_principal_binding, lane/policy/image/transition pins, raw_and_canonical_profile, first_denial, publication_count, issuance_count, external_side_effect_count`. The side-effect counters are **test-double counters** only, not proof about a real service. At least one assertion must call the **real C0 diagnostic resolver** using equivalent normalized source/edge declarations to verify that duplicated target names remain separate ordinal 0/1 occurrences; this C0 oracle must not infer Host approval from `OPTIONAL_ABSENT`.
 
 ### 17.4 Test isolation, adversarial guard and gate conditions
 
 - Run negative and positive fixtures in separate resettable instances; never share mutable approvals across cases. Run order reversal and repeated execution to identify accidental state leakage. Test-only imports must not expose a trusted issuer or non-runnable production evidence.
-- Include canonical JSON byte equality and byte-length/digest verification for both V2 vectors; assert different digests for ordinals 0 and 1; assert old \`GA02-D2C-C1-OPTIONAL-ABSENCE-1\` is distinct and never substituted.
-- Required explicit commands after test code exists: \`python -m pytest tests -q\`, \`python -m mypy runtime tests\`, \`python -m ruff check runtime tests\`, \`python -m ruff format --check runtime tests\`. Also run focused new F1/ORD fixtures and source-import/changed-file-scope audit. No green status is claimed in this design amendment.
+- Include canonical JSON byte equality and byte-length/digest verification for both V2 vectors; assert different digests for ordinals 0 and 1; assert old `GA02-D2C-C1-OPTIONAL-ABSENCE-1` is distinct and never substituted.
+- Required explicit commands after test code exists: `python -m pytest tests -q`, `python -m mypy runtime tests`, `python -m ruff check runtime tests`, `python -m ruff format --check runtime tests`. Also run focused new F1/ORD fixtures and source-import/changed-file-scope audit. No green status is claimed in this design amendment.
 - Evidence output must include exact test branch HEAD, source baseline, collected-test count, all commands and exit status, failure artifacts, deterministic rerun logs, SHA-256 vector results, and reviewed diff. Failures block readiness; skipped real DB or Host tests **must not** be relabeled as physical PASS.
 - No production issuer, database, external secrets, real customers, D2-D binding, Tool/Skill/Workflow invocation, Registry mutation or trusted C1 evidence in this scope. Actual Host provenance remains **synthetic only**.
 
@@ -756,13 +756,13 @@ Each executable fixture must record \`source_definition_hash, expected_occurrenc
 
 | Gate | Decision |
 |---|---|
-| \`F1-ORD-01 OCCURRENCE/PROFILE DESIGN\` | \`CONTRACT_CLOSED_FOR_TEST_DESIGN\` |
-| \`V-ABS-OCC-00/01 CONTENT GOLDEN\` | \`LITERAL_RECOMPUTATION_MATCHED / CROSS-IMPLEMENTATION_RUN_PENDING\` |
-| \`F1/ORD NEGATIVE PRECEDENCE\` | \`FIXTURE_LOCAL_ORACLE_SPECIFIED / GLOBAL_PRODUCTION_TAXONOMY_HOLD\` |
-| \`F1-A..G/ORD-01..05 IMPLEMENTATION READINESS\` | \`READY_FOR_SEPARATE_LIMITED_TEST_ONLY_AUTHORIZATION\` |
-| \`F1-A..G/ORD-01..05 EXECUTION\` | \`NOT_IMPLEMENTED_OR_EXECUTED_BY_THIS_AMENDMENT\` |
-| \`HOST APPROVAL / P0 / REAL ISSUER / DURABLE CAS\` | \`HARD_HOLD / NO_AUTHORITY\` |
-| \`PR #116 NORMATIVE FREEZE / MERGE\` | \`PENDING_EXACT_HEAD_INDEPENDENT_RE_REVIEW / NOT_AUTHORIZED\` |
-| \`D2-D/D3\` | \`HARD_HOLD\` |
+| `F1-ORD-01 OCCURRENCE/PROFILE DESIGN` | `CONTRACT_CLOSED_FOR_TEST_DESIGN` |
+| `V-ABS-OCC-00/01 CONTENT GOLDEN` | `LITERAL_RECOMPUTATION_MATCHED / CROSS-IMPLEMENTATION_RUN_PENDING` |
+| `F1/ORD NEGATIVE PRECEDENCE` | `FIXTURE_LOCAL_ORACLE_SPECIFIED / GLOBAL_PRODUCTION_TAXONOMY_HOLD` |
+| `F1-A..G/ORD-01..05 IMPLEMENTATION READINESS` | `READY_FOR_SEPARATE_LIMITED_TEST_ONLY_AUTHORIZATION` |
+| `F1-A..G/ORD-01..05 EXECUTION` | `NOT_IMPLEMENTED_OR_EXECUTED_BY_THIS_AMENDMENT` |
+| `HOST APPROVAL / P0 / REAL ISSUER / DURABLE CAS` | `HARD_HOLD / NO_AUTHORITY` |
+| `PR #116 NORMATIVE FREEZE / MERGE` | `PENDING_EXACT_HEAD_INDEPENDENT_RE_REVIEW / NOT_AUTHORIZED` |
+| `D2-D/D3` | `HARD_HOLD` |
 
 **Next gate:** exact-head independent design re-review of §17 and separate scoped test-only implementation authorization decision. A PASS at this gate does not close P0, B01–B07 or production trust.

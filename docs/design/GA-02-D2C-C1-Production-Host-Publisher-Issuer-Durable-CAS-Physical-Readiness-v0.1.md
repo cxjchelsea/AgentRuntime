@@ -427,3 +427,73 @@ P0-09 的 **逻辑代码对照子门禁** 达到 `VERIFIED_TESTED_SCOPE`，但�
 | `D2-D / D3` | `HARD_HOLD` |
 
 **后续 Gate：** PR #118 §17 Exact-HEAD Independent Design Re-Review + Final Exact-Main Merge Authorization Assessment。若获用户明确授权且完成实时 GitHub 合并前提核验，仅允许 Standard Merge #118，不得捆绑生产实现或其他 PR。
+
+
+---
+
+## 18. P0 Real Host / DB Deployment Evidence Inventory — Source-Only Intake v0.1（2026-10-13）
+
+> **Scope and authority:** This is a read-only GitHub **source evidence intake** against exact `main@4e27e755c683737d3f957e55426c9c684a6b2ee9` (merged #116, #118 and #119). It does NOT imply runtime deployment inspection, authenticated Host ownership, production DB availability, CI re-execution, or P0 exit. Exact source-file blob identities and actionable evidence gaps are preserved below. Missing environmental evidence must stay MISSING, not PASS. Earlier §§12–17 P0 safety conditions remain binding.
+
+### 18.1 源码证据登记（非环境证据）
+
+| Evidence ID | 固定来源 / Blob SHA | 已直接证明 | 明确不能证明 |
+|---|---|---|---|
+| `P0-SRC-001` | `pyproject.toml` @ `8983e35df19267531c94cf226970d4955f395f09` | 核心生产依赖仅 `pydantic>=2.0,<3`；test extra 包含 pytest | 外部 Host 是否另有 DB 驱动、数据库服务、Migration 或凭据 |
+| `P0-SRC-002` | `runtime/registries/base.py` @ `e41d49367338aa40908ac9fbe5d2ee14b4a03400` | `RegistryRecord` 是可变 dataclass；`get/list` 返回内部引用；存在 `register/_store/unregister/enable/disable/clear` 等写入口；`_records` 为实例内 dict | 多进程 Writer Fencing、Host-owned Sealed Admission、别名可变对象的完整调用方清单 |
+| `P0-SRC-003` | `agent_core/domain_package_loader.py` @ `057690c4672ca7247ba2d4981f6e4418ba784b57` | `HostPackageRootIssuer` 注入 callable `publication_verifier`；FD-backed Root Lease；Linux-only 源路径保护和包根资源约束 | Verifier 的实际 Application Owner、可信部署配置与生产 Policy/Generation 来源；此处不是 Catalog Issuer |
+| `P0-SRC-004` | `agent_core/domain_registry_mapping.py` @ `cc44d52249a018cff2c92b1eeac1fb21f4d97ad8` | 模块标识为 `isolated, non-authoritative registry metadata observation`，且无 Production Consumer/Host Admission | 将 D2-B Metadata 自行提升为 Trusted Catalog 出版者 |
+| `P0-SRC-005` | `agent_core/domain_catalog_resolution.py` @ `90bacb4e8034956998892438d649108be97eacec` | C0 声明 `NON-AUTHORITATIVE catalog diagnostics`；完整 `skill.optional_tools` 关系标识及 ordinal 语义存在 | C0 Hash 对独立 Host 身份的认证、C1 Evidence 的生产签发 |
+| `P0-SRC-006` | `agent_core/runner.py` @ `558a24ddfe1cd518da737af4c562eb31ab625df6` | `AgentRunCoordinator` 明确为 sandbox-only，`StepPort` 限定 test harness 装配 | 真实生产 Application Composition Root、部署主体、Service Account |
+| `P0-SRC-007` | `tests/reference_models/ga02_d2c_c1_srca_model.py` @ `9a35d533c04ef57011956d24116c28e284c568f7` | C1-SRC-A 明确 `NON_PRODUCTION_SIMULATION`，使用模拟时间/线程锁，不具 durable CAS | 可复用为真实数据库发行权威 |
+| `P0-SRC-008` | `docs/design/GA-02-D2C-C1-Trusted-Host-Catalog-Publisher-Epoch-Fencing-Security-Boundary-v0.1.md` @ `c3252fd5f4e0d04241696af34b602e1f71ee6654` | 设计规范已经通过 PR #116 纳入 main；Scoped F1 Logical Freeze 带明确排除条件 | 实际 deployed implementation 或正式 Host/Security owner 签字 |
+
+**检索限制：**本轮仓库 Code Search 针对若干关键词未返回索引匹配，因此“未搜索到外部部署证据”不应表述为“已经证明不存在”。本次结论仅基于逐一直接读取的上述文件和已合并设计合同，不能替代全仓库所有入口/写者枚举或用户真实应用仓库核查。
+
+### 18.2 P0-01～P0-10 Evidence Intake Matrix
+
+| P0 | Code-only finding | 当前 Gate | 必须从真实环境补齐的证据和最小验证动作 |
+|---|---|---|---|
+| `P0-01` Application Root / Catalog Issuer | `runner.py` 为隔离 Loop；未取得实际应用服务代码 | `MISSING_EXTERNAL_EVIDENCE` | 应用仓库、确切 commit、服务入口/Composition Root、Issuer Port 实际装配和无权限 Caller 负例 |
+| `P0-02` Host Deployment Identity / Tenant | PackageRootIssuer 有接口而非实际账户身份 | `MISSING_EXTERNAL_EVIDENCE` | 经脱敏的 Service Account/证书主体类型、策略来源、tenant/lane allowlist、越权拒绝日志、Host/Security Owner |
+| `P0-03` Durable DB Engine | `pyproject.toml` 未声明生产 DB 驱动 | `MISSING_EXTERNAL_EVIDENCE` | 真实 DB engine/server version、driver、事务隔离与权限元数据；不上传 DSN/密码 |
+| `P0-04` Multi-Worker Topology | 当前 sandbox runner 不是部署拓扑 | `MISSING_EXTERNAL_EVIDENCE` | 已脱敏的 Worker 进程/实例数量、切主、跨进程 fence 轨迹及批准 Owner |
+| `P0-05` D2-A Publication Provenance | `HostPackageRootIssuer` 与注入 verifier 是代码事实 | `PARTIAL_CODE_ONLY` | 真实部署侧 verifier Owner、确切 manifest/generation、不可变发布记录与身份来源 |
+| `P0-06` Blob Durability/GC | 仅有候选设计 | `MISSING_EXTERNAL_EVIDENCE` | 存储产品/路径类别、持久化读回摘要、保留与 GC 责任人、失败注入 |
+| `P0-07` Migration/Backup/Restore | 未获得真实 DB 与迁移资料 | `MISSING_EXTERNAL_EVIDENCE` | Schema migration owner、rollback/restore/HA 策略和防 ABA 演练 |
+| `P0-08` Registry Writers/Aliasing | BaseRegistry live records 与变更入口已见 | `PARTIAL_CODE_ONLY` | 全仓消费者/派生 Registry/writer 清单、嵌套引用重排负例、封存边界证明 |
+| `P0-09` C0 Canonical / F1 V2 | Real C0 diagnostic & merged F1/ORD test-only golden/cases 可核对 | `PARTIAL_CODE_ONLY` | 独立第二实现正式门禁、Host-approved absence provenance、全局双故障优先级、同源真实 Image/Transition pins |
+| `P0-10` Ops/Incident/Revocation | 仅有设计候选 | `MISSING_EXTERNAL_EVIDENCE` | 运行监测、撤销/停机操作、审计日志脱敏、运维与安全 Owner、事故处置 runbook |
+
+**不可接受的证据替代：** README 或设计稿中的技术名称、Python dataclass、mock principal、内容 Hash、在沙盒成功的 pytest、单进程 `RLock`、外部用户自行提交的“Issuer 身份字段”，均不得解除 P0-01～07/10 的物理证据门禁。除非实际环境 Owner 取得并批准准确证据，否则状态不能从 `MISSING_EXTERNAL_EVIDENCE` 改为 `VERIFIED`。
+
+### 18.3 B01–B07 物理 Readiness 与阻塞归属
+
+| Blocker | 来源与部分核验 | 当前 | 下一个可执行的受控动作 |
+|---|---|---|---|
+| `B01` Host owner / authenticated issuer | P0-01/02 缺实际应用根与部署主体 | `BLOCKED` | 收集只读 App/Deploy exact SHA 与脱敏身份权限、Owner |
+| `B02` Durable writer CAS | P0-03/04 无真实事务型 DB/双 Worker | `BLOCKED` | DB Product/Isolation/Driver/Tx Contract Intake；不可假造连接 |
+| `B03` Trusted source writers | P0-SRC-002 已见 mutable Registry | `PARTIAL / BLOCKED` | 全入口/alias/writer 审计，证明隔离 SRC-A |
+| `B04` Coherent sealed image | 逻辑合同存在，生产来源未见 | `BLOCKED` | Host-owned 同代际 Definition+Edge+Adapter+CORE 不变快照证据 |
+| `B05` D2-A provenance | P0-SRC-003 package root 代码存在 | `PARTIAL / BLOCKED` | 真实发布者/manifest/policy/tenant 权限链 |
+| `B06` Lease / issuance ledger | 只有设计/模拟，尚无真实服务数据 | `BLOCKED` | DB 同事务原子单次发行、失 ACK 后历史回读实验设计 |
+| `B07` Recovery, backup, GC | DB/Blob/Operator 未确定 | `BLOCKED` | 恢复/RPO/GC/ABA fence 负责人及隔离故障演练方案 |
+
+### 18.4 P0 evidence admission & decision
+
+真实环境证据登记必须包含：`evidence_id`、`source_type`、`stable_ref`、`exact_revision_or_version`、`observed_at`、`environment_scope`、`owner_role`、`what_it_proves`、`reviewer`、`decision`。不采集真实患者/租户标识、密钥、密码、token 或生产 DSN。仅批准只读证据调查，不发放生产写权限。
+
+| Gate | Decision |
+|---|---|
+| `P0_SOURCE_EVIDENCE_INVENTORY` | `COLLECTED_PARTIAL_CODE_ONLY` |
+| `P0_REAL_HOST_OWNER_AND_IDENTITY` | `MISSING_EXTERNAL_EVIDENCE` |
+| `P0_REAL_DB_AND_TWO_WORKER` | `MISSING_EXTERNAL_EVIDENCE` |
+| `P0_08_WRITER_ALIAS_AUDIT` | `PARTIAL_CODE_ONLY` |
+| `P0_09_C0_F1_TEST_ORACLE` | `VERIFIED_TESTED_SCOPE_ONLY` |
+| `P0_INTAKE_EXIT` | `HOLD` |
+| `B01–B07_PHYSICAL_READINESS` | `BLOCKED` |
+| `P1_PHYSICAL_CONTRACT_FREEZE / P2_REAL_DB_CAS` | `HOLD` |
+| `P3_C1_TRUSTED_ISSUER / D2-D / D3` | `HARD_HOLD` |
+| `PRODUCTION_C1_IMPLEMENTATION_AUTHORIZATION` | `NOT_ISSUED` |
+
+**下一个关口**：`GA-02 D2-C C1 — P0-01/02/03/04 Real Deployment Evidence Owner Intake + P0-08 Registry Writer/Alias Source Audit`。如真实应用与 DB 元数据不可取得，应该只提交缺口与责任人待定表，**不得**自行推断部署事实、创建生产 Issuer 或宣布 P0 已关闭。本节是可复审的候选 Intake 台账，不是独立审批或 Merge Authorization。

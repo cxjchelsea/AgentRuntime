@@ -258,3 +258,174 @@ def test_no_cross_fixture_handle_reuse() -> None:
     denied("C1_ISSUER_UNVERIFIED", b.check, principal=other, approvals=(approved,))
     assert_no_effects(a)
     assert_no_effects(b)
+
+
+# Real C0 cross-layer oracle: no mock resolver is used in these cases.
+# C0 returns diagnostic data only; it has no authority to approve omissions.
+def _c0_duplicate_catalog(
+    edge_ordinals: tuple[object, ...] = (0, 1),
+) -> object:
+    import hashlib
+    import json
+
+    from agent_core.domain_catalog_resolution import (
+        DiagnosticAdapterEntryV1,
+        DiagnosticAssetRefV1,
+        DiagnosticCatalogInputV1,
+        DiagnosticEdgeOccurrenceV1,
+        DiagnosticRegistryEntryV1,
+    )
+
+    def definition_hash(fields: dict[str, object]) -> str:
+        return hashlib.sha256(
+            json.dumps(
+                fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode("utf-8")
+        ).hexdigest()
+
+    manifest_fields: dict[str, object] = {
+        "domain_id": "demo",
+        "name": "Demo",
+        "version": "1.0.0",
+        "enabled": True,
+        "runtime_compatibility": "GA02-D1-1",
+        "required_core_schemas": [],
+        "registered_schemas": [],
+        "registered_intents": [],
+        "registered_workflows": [],
+        "registered_capabilities": [],
+        "registered_skills": ["helper"],
+        "registered_tools": [],
+        "knowledge_domains": [],
+        "prompt_packages": [],
+        "state_schema": None,
+        "eval_packages": [],
+        "feature_flags": [],
+    }
+    skill_fields: dict[str, object] = {
+        "skill_id": "helper",
+        "version": "1.0.0",
+        "enabled": True,
+        "supported_actions": None,
+        "required_tools": None,
+        "optional_tools": ["tool-a", "tool-a"],
+        "allowed_states": None,
+        "input_schema": None,
+        "output_schema": None,
+        "timeout_policy": None,
+        "retry_policy": None,
+        "idempotency_policy": None,
+        "side_effect_level": None,
+    }
+    entries = (
+        DiagnosticRegistryEntryV1(
+            "domain", "demo", "demo", "1.0.0", "DomainManifest",
+            manifest_fields, definition_hash(manifest_fields), True, True,
+        ),
+        DiagnosticRegistryEntryV1(
+            "skill", "demo", "helper", "1.0.0", "SkillDefinition",
+            skill_fields, definition_hash(skill_fields), True, True,
+        ),
+    )
+    edges = tuple(
+        DiagnosticEdgeOccurrenceV1(
+            "skill", "demo", "helper", "1.0.0",
+            "skill.optional_tools", cast(int, ordinal),
+            "tool-a", "OPTIONAL_ABSENT", None, None, None, None,
+        )
+        for ordinal in edge_ordinals
+    )
+    return DiagnosticCatalogInputV1(
+        profile="GA02-D2C-C0-INPUT-1",
+        domain_id="demo",
+        domain_version="1.0.0",
+        runtime_profile="GA02-D1-1",
+        manifest_sha256="a" * 64,
+        source_generation="source-a",
+        host_catalog_generation="catalog-a",
+        host_policy_id="policy-a",
+        host_policy_generation="p1",
+        prompt_mode="INERT_ONLY",
+        rule_mode="INERT_ONLY",
+        asset_refs=(
+            DiagnosticAssetRefV1(
+                "skill", "demo", "helper", "1.0.0", "b" * 64,
+                "skills/helper.json",
+            ),
+        ),
+        approved_core_schema_keys=(),
+        registry_entries=entries,
+        edge_occurrences=edges,
+        adapter_entries=(
+            DiagnosticAdapterEntryV1(
+                "skill", "demo", "helper", "1.0.0",
+                "ABSENT_UNVERIFIED", None, None, None, None, None,
+            ),
+        ),
+    )
+
+
+def test_real_c0_distinguishes_duplicate_target_ordinals() -> None:
+    from agent_core.domain_catalog_resolution import (
+        _resolve_untrusted_catalog_observation,
+    )
+
+    snapshot = _resolve_untrusted_catalog_observation(_c0_duplicate_catalog())
+    assert snapshot.observation_role == "UNTRUSTED_DIAGNOSTIC_ONLY"
+    rows = [dict(item) for item in snapshot.edge_occurrences]
+    assert len(rows) == 2
+    assert [(row["relation_id"], row["ordinal"]) for row in rows] == [
+        ("skill.optional_tools", 0),
+        ("skill.optional_tools", 1),
+    ]
+    assert all(row["outcome"] == "OPTIONAL_ABSENT" for row in rows)
+
+    fixture, principal = setup()
+    a0 = fixture.approve(principal, ordinal=0)
+    a1 = fixture.approve(principal, ordinal=1)
+    assert fixture.check(
+        principal, targets=("tool-a", "tool-a"), approvals=(a0, a1)
+    ) == ((0, "tool-a"), (1, "tool-a"))
+    assert_no_effects(fixture)
+
+
+@pytest.mark.parametrize(
+    "ordinals",
+    [
+        (0,),
+        (0, 0),
+        (0, 2),
+        (0, -1),
+        (0, True),
+        (0, 1.0),
+    ],
+)
+def test_real_c0_rejects_missing_duplicate_or_bad_ordinal(
+    ordinals: tuple[object, ...],
+) -> None:
+    from agent_core.domain_catalog_resolution import (
+        D2CCode,
+        D2CResolutionError,
+        _resolve_untrusted_catalog_observation,
+    )
+
+    with pytest.raises(D2CResolutionError) as failure:
+        _resolve_untrusted_catalog_observation(_c0_duplicate_catalog(ordinals))
+    assert failure.value.code == D2CCode.D2C_EDGE_CATALOG_INVALID
+
+
+def test_c0_diagnostic_absence_is_not_host_approval() -> None:
+    from agent_core.domain_catalog_resolution import (
+        _resolve_untrusted_catalog_observation,
+    )
+
+    snapshot = _resolve_untrusted_catalog_observation(_c0_duplicate_catalog())
+    assert snapshot.observation_role == "UNTRUSTED_DIAGNOSTIC_ONLY"
+    fixture, principal = setup()
+    denied(
+        "C1_DEPENDENCY_INVALID",
+        fixture.check,
+        principal=principal,
+        targets=("tool-a", "tool-a"),
+    )
+    assert_no_effects(fixture)

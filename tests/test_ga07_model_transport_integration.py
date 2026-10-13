@@ -107,7 +107,9 @@ async def test_live_transport_sends_three_roles_without_promoting_evidence() -> 
 
     def fake_send(request: Request, timeout: float) -> bytes:
         del timeout
-        captured.append(json.loads(bytes(request.data or b"{}")))
+        raw = request.data
+        assert isinstance(raw, (bytes, bytearray))
+        captured.append(json.loads(raw))
         return json.dumps(
             {
                 "choices": [

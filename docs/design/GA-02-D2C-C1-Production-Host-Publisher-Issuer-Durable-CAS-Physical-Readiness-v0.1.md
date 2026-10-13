@@ -172,3 +172,109 @@ Application Composition Root  [B01 owner: TBD]
 **下一建议 Gate：** `GA-02 D2-C C1 — P0 Host/DB Deployment Evidence Inventory + PR #116 Physical Contract Alignment Independent Design Review`。先拿到实际环境与身份/数据库证据，并独立复核 #116 与本物理设计的一致性；如果缺少应用/DB owner，只能继续 READINESS HOLD，不得创建生产 Trusted Issuer。
 
 **最终授权声明：本设计文档仅用于独立审查，不构成生产实施、权限发行、合并 #116 或 D2-D/D3 准入授权。**
+
+
+---
+
+## 11. A1–A6 Targeted Physical Design Amendment v0.2（2026-10-13）
+
+**Normative precedence / freeze boundary:** 此补遗只规范本 PR 的候选设计与 P0 取证格式；其安全语义不得覆盖未合并 PR #116 的有效条款或已合并 C0 的行为。冲突先形成显式上游修订，再独立复审。尤其不能将以下“拟定物理路径”理解为已选定 DB、已认证 Host、已实现发行能力。
+
+### 11.1 A1 — Host / Issuer 的身份、作用域与实际运行装配
+
+`HostPackageRootIssuer` 仅签发 D2-A 文件根租约，不构成 Catalog 发行者。真实 Catalog Issuer 的实例权威来自**独立部署配置和 Application Composition Root 认证**，而非类构造能力、Agent 提示词、用户 JSON、包内参数、Hash 或测试 `mint_principal`。
+
+| 待冻结合同 | 正式要求 | P0 必要佐证（不得提供密钥明文） |
+|---|---|---|
+| Host 实例身份 | 稳定 `issuer_principal_id` 与实例 ID、运行主体、授权环境；应用根唯一装配 | 服务/应用仓库路径与确切修订、部署清单、主体类型和权限审查 |
+| Lane / tenant | 六维 `environment,tenant,domain_id,domain_version,host_policy_id,namespace` 由 Host 上下文推导 | 不含真实客户 ID 的脱敏策略样例及授权负责人 |
+| D2-A Package | `source_package_generation, manifest_sha256, verified_publisher` 与策略代际绑定；失败拒绝 | D2-A verifier 调用路径、已核验发布事件/证据结构（只存摘要） |
+| Issuer 容器边界 | 私有发行 Port/写凭证不得导出至 Agent、Domain、Plugin、Tool、LLM | 实际 DI 装配、进程权限、模块导入与访问拒绝测试 |
+| Writer 接管 | 真实租约/Owner 由持久化服务保有；旧 Writer 不能自行增长 term | owner takeover 的原子化记录与旧主体拒绝日志 |
+
+**A1 决定：HOLD_FOR_REAL_HOST_OWNER.** 不知道真正部署的服务与鉴权提供方时，不准写入 `TRUSTED_PINNED_NON_RUNNABLE` 生产发行代码。
+
+### 11.2 A2 — CAS / Isolation / SQL 合同必须先以真实 DB 锁定
+
+**不选数据库产品的逻辑事务说明：**
+
+- `WriterClaim(lane)`：由持久化权威以原子行锁/条件修改持有当前唯一 Writer Claim，递增 `writer_term`，同一事务写入 claim 轨迹。身份授权在 DB 事务边界复核；term 永不接受调用方提交的“更高值”。
+- `Publish(lane, tx_id)`：首先在身份隔离下按 `(lane,tx_id)` 查询既有 **COMMITTED** 事务（相同 owner/fingerprint 可只返回 historical receipt）；新提交须以 `revision+term+revocation_revision+generation+source_policy_hash` 条件更新 Lane，写 Transition、Tx 与不可变 Image 指针。所有行受同一 DB 提交边界保护。
+- `Revoke(lane)`：同一 DB 事务增加 `revision`、`revocation_revision`；以前的 image/lease 不能重新成为 ACTIVE。
+- `OpenLease` / `CompleteReadAndIssue`：同一 DB Authority 发行不透明、单用途 Lease ID，使用服务端时钟；签发事务先鉴权读历史，再比较当前 Lane、Revocation、Lease 与已验证 Blob Fingerprint，原子消费 Lease 并插入唯一 Evidence。
+- `UniqueConstraint` 冲突不能都被笼统重试：同 ID 不同 fingerprint → 冲突；完全一致 → 安全历史检索；DB 不确定提交 → 查询持久 Tx/Issuance Ledger，不自动重新执行物理签发。
+
+**B02/B07 真实 DB 准入所需元数据：** DB engine/version、事务隔离、连接池与 Driver、锁顺序、migration id、唯一索引与 FK、候选 SQL、DB 时间接口、支持的故障恢复方式、独立的两个 Worker 进程。以上任一未证实，状态 `P2=HOLD`。不得拿内存 `RLock` 与模拟 Crash Hook 替代。
+
+### 11.3 A3 — F1 HostOptionalAbsence 的 exact occurrence 归属
+
+依 PR #116 §14.1 的正式候选字段，Host 侧证据必须至少绑定 `source_key=(kind,namespace,id,version)`、`relation`、`target_kind/id`、`host_policy_generation`、固定 `HOST_APPROVED_OMISSION`、规范化摘要及 **独立 issuer_provenance**。
+
+**冲突处理不新增平行 C0 标识规则：** 若同一 Definition 的可选依赖出现多次相同 `relation,target`，必须按上游 C0 声明 occurrence 与重复边优先级证明如何唯一定位；若现有 C0 无法表示该身份，则该 shape `HOLD_FOR_UPSTREAM_ALIGNMENT`，不可让 C1 自行以输入顺序/索引去重，也不能将两个证据缩成一个。Exact edge 与 Host-approved absence 同一 occurrence 不能共存；可选 relation 没有二者之一必须拒绝。详细冲突协议在 PR #116 §15 候选修订中处理，**本 PR 不宣布其已冻结**。
+
+### 11.4 A4 — 与 main C0 的准确资源限制及返回优先级
+
+校对基线为 `main@d2d59ec4...` 的 `agent_core/domain_catalog_resolution.py`，**各限制不是统一的 C1 模拟结构限制**：
+
+| 精确约束 | 真实 C0 校验位置 | 候选 C1 兼容要求 |
+|---|---|---|
+| 一般字符串最多 1024 Python code points | `_string` / `_copy_fields` | NFC/类别及形状优先级要映射，不能把 1025 直接一律叫 byte overflow |
+| 嵌套值的复制深度上限 12 | `_copy_fields` 的 `depth > 12` | 这与 graph depth 完全不同 |
+| Definition 的 canonical UTF-8 bytes ≤ 10240 | `_canonical_definition` | 前/等于/后一字节三点验证 |
+| 在对应受限的 list/asset_ref 和 active 集合 ≤256 | `_copy_fields`、admission、`_resolve_owned_diagnostic_graph` | 不能把 256 泛化为所有“graph node”或列表 |
+| Exact edges 数量 ≤1024 | `_resolve_owned_diagnostic_graph` | 重复定义的处理与数量规则一起复审 |
+| 图最长依赖路径深度 ≤32 | `longest_depth` 计算和边界检查 | **main C0 已物理实现**；旧文档“只为提议”须以上游补遗纠正 |
+| Combined envelope/closure UTF-8 budget ≤2,097,152 | `_preflight_evidence_budget` 及末端预算检查 | 统计口径须对齐实际组合输入/输出，不可只算原始文件大小 |
+
+详细错误码双故障优先级需要 **调用顺序 + 相同物理快照** 的 Test Oracle 证明；缺少证据不得宣称 `C1_... = C0_...` 完全等价。Canonical F3 的 Golden Vector 只是内容算法校验，独立 issuer 的 provenance 另证。
+
+### 11.5 A5 — P0 → P2 证据驱动与受控试验权限
+
+P0 收集真实部署事实；P1 做来源与合同冻结；只有**明确指定一个隔离 DB 试验环境和实验权限**才能进入 P2。P2 也只允许先做 `Lane / Writer / Tx` 最小真实 ACID 实验，不得注册生产 Issuer、发布可信 C1 Evidence、连接生产 Runtime 或患者/客户真实数据。
+
+P2 独立 Gate 应单独验证：同 Revision 两进程 CAS 一胜一败、旧 term Fencing、失 ACK 后精确 Tx 重放、重启后 revision/generation 不复用、事务时间源一致、PREPARED Blob 不可见。实际迁移/凭证/连接配置必须由 DB Owner 在可隔离权限的环境提供；本 PR 不提供密码、服务端连接或真实数据。
+
+### 11.6 A6 — Ops / TTL / Recovery / Blob 保留的具体决策责任
+
+| 决策项 | Owner（待实名确认） | 必须交付的可核验证据 |
+|---|---|---|
+| Lease TTL / 事务时钟 | Host + DB Owner | TTL 数值/单位、数据库时钟与隔离级别、边界竞争 |
+| WAL/事务恢复与 leader takeover | DB/Platform Owner | 故障恢复 runbook、旧 term/epoch 不可回退的 trace |
+| Blob durability / checksum / GC | Storage Owner | immutable lifecycle、指针/lease/历史 Ledger 引用保留规则 |
+| 备份恢复、主从切换 | DB/SRE Owner | 恢复点、fencing fence、rollback → UNAVAILABLE 及审计 |
+| Issuer 密钥/身份轮换 | Security + Host Owner | 最小权限和旧凭证撤销记录，不放明文密钥到仓库 |
+| 监测告警/可追踪性 | Runtime Operations Owner | audit correlation、typed denial、零敏感明文日志 |
+
+**以上 Owner 目前均未从 GitHub 仓库证实，不能用“推荐责任岗位”冒充已落实的人员。**
+
+## 12. P0 Deployment Evidence Intake Contract v0.1
+
+**规则：** 每条 P0 证据都需要 `evidence_id, owner_role, source_type, stable_ref, exact_revision_or_version, observed_at, environment_scope, what_it_proves, reviewer, decision`；敏感值只允许给出已经脱敏的元数据、文件路径和不可逆摘要。外部系统没有可访问证据时记录 `MISSING_EXTERNAL_EVIDENCE`，不得填占位假事实为 PASS。
+
+| ID | 必须交付的信息 | 最小验证动作 | 当前 |
+|---|---|---|---|
+| P0-01 | 真实 Host 服务名、app repo/path/revision、生产 Composition Root | 源代码 exact SHA 追踪私有 Issuer 的装配与不可导出 | MISSING_EXTERNAL_EVIDENCE |
+| P0-02 | 部署主体认证类型、Tenant/Environment/Policy Scope Owner | 验证服务账号及 allowlist 的非敏感配置快照、越权反例 | MISSING_EXTERNAL_EVIDENCE |
+| P0-03 | DB engine + server version +事务隔离及 driver | 带版本的 schema/DSN 元数据 + DB 服务端只读验证 | MISSING_EXTERNAL_EVIDENCE |
+| P0-04 | Worker 进程数、故障切换策略、抢占/接管方式 | 两独立进程/实例编号与部署拓扑追踪 | MISSING_EXTERNAL_EVIDENCE |
+| P0-05 | D2-A Host Package exact manifest/verifier 与已发布 generation | 对实际 verifier 入口和归属作只读取证 | PARTIAL_CODE_ONLY |
+| P0-06 | Blob durable location, checksum, retention, GC Owner | 存储服务类型、引用保留和 GC 策略元数据 | MISSING_EXTERNAL_EVIDENCE |
+| P0-07 | Migration Owner、Rollback/Backup/Restore 安全策略 | 无秘密的版本清单、恢复/防 ABA 设计 | MISSING_EXTERNAL_EVIDENCE |
+| P0-08 | Registry Writer 与 alias 全路径 | 枚举 BaseRegistry 所有写操作、嵌套 mutable Definition | PARTIAL_CODE_ONLY |
+| P0-09 | C0 Exact Canonical/Resource/Error Priority | 原始 C0 源码位置 + Golden Vector / bound 三点测试证据 | PARTIAL_CODE_ONLY |
+| P0-10 | 生产观察/审计与停机/撤销 Operator | runbook/ref、责任实体、后备人工流程 | MISSING_EXTERNAL_EVIDENCE |
+
+**P0 退出准则：** P0-01～P0-07、P0-10 的现实证据已被可独立核查的 owner 确认；P0-08/09 的代码证据已补齐物理调用链；外部敏感信息已处理；没有 `UNVERIFIED` / `MISSING` 被视为已通过。仅确认 DB 品牌但不能提供事务与 Worker 证明不能退出 P0。
+
+## 13. Amendment / Gate 决定（不得绕过）
+
+| Gate | Decision | 原因 |
+|---|---|---|
+| A1–A6 设计补遗 | SUBMITTED_FOR_INDEPENDENT_REVIEW | 细化了证据和物理合同，未证实环境 |
+| P0 Evidence Contract | DRAFT_COMPLETE / INTAKE_OPEN | 有字段、owner、校验动作，无真实外部证据 |
+| PR #116 F1–F3 Cross-Alignment | UPSTREAM_AMENDMENT_REQUIRED | C0 graph depth 32、F1 occurrence 与发行原子性需要上游一致 |
+| P1 Normative Freeze | HOLD_PENDING_PR116_INDEPENDENT_REVIEW | 两个 Draft 未合并 |
+| P2 Real DB Feasibility Implementation | HOLD | 尚无 DB 产品/环境/Owner/实施授权 |
+| P3/P4 C1 Trusted Issuer/Evidence | HARD_HOLD | B01–B07 未解除 |
+| D2-D/D3 | HARD_HOLD | 非执行证据不授权运行 |
+| PR #118 Merge | NOT_AUTHORIZED | 独立复审尚未完成 |

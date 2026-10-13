@@ -39,6 +39,14 @@ class DomainWorkflow:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowStepEvidence:
+    """Application-provided step correlation; no M6 execution authority."""
+
+    step_id: str
+    observation: ObservedFact
+
+
+@dataclass(frozen=True, slots=True)
 class DomainExecutionCatalog:
     domain_id: str
     binding_fingerprint: str
@@ -50,12 +58,12 @@ class DomainExecutionCatalog:
     capabilities: CapabilityRegistry
 
     def completion_from_observations(
-        self, *, run_id: str, observations: tuple[ObservedFact, ...]
+        self, *, run_id: str, observations: tuple[WorkflowStepEvidence, ...]
     ) -> bool:
-        """Require ordered, run-bound observations for all declared steps.
+        """Require ordered, run-bound and separately correlated step evidence.
 
-        This is a *demo* evidence gate, NOT production CompletionAuthority.
-        The physical source of each observation is not authenticated here.
+        Workflow step ID is NOT an execution-instance ID. No trusted execution
+        attestation or positive M6 grant is implied by this sandbox gate.
         """
         if (
             type(run_id) is not str
@@ -64,16 +72,30 @@ class DomainExecutionCatalog:
             or len(observations) != len(self.workflow.steps)
         ):
             return False
-        for step, observed in zip(self.workflow.steps, observations, strict=True):
+        request_ids: set[str] = set()
+        execution_ids: set[str] = set()
+        plan_ids: set[str] = set()
+        for step, evidence in zip(self.workflow.steps, observations, strict=True):
+            if type(evidence) is not WorkflowStepEvidence:
+                return False
+            observed = evidence.observation
             if (
-                type(observed) is not ObservedFact
+                evidence.step_id != step.step_id
+                or type(observed) is not ObservedFact
                 or observed.run_id != run_id
                 or observed.domain_fingerprint != self.binding_fingerprint
-                or observed.execution_id != step.step_id
+                or not observed.request_id
+                or not observed.execution_id
+                or not observed.plan_id
                 or step.completion_fact not in observed.facts
+                or observed.execution_id in execution_ids
+                or observed.plan_id in plan_ids
             ):
                 return False
-        return True
+            request_ids.add(observed.request_id)
+            execution_ids.add(observed.execution_id)
+            plan_ids.add(observed.plan_id)
+        return len(request_ids) == 1
 
 
 def _data(raw: bytes, *, keys: frozenset[str]) -> dict[str, Any]:

@@ -102,7 +102,10 @@ def test_low_relevance_does_not_raise_positive_admission(tmp_path: Path) -> None
     assert admitted.reason == "LOW_RELEVANCE"
     with pytest.raises(KnowledgeContractError, match="preconditions"):
         build_domain_model_messages(
-            scope=DomainScope(domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint),
+            scope=DomainScope(
+                domain.m4.binding.domain_id,
+                domain.m4.binding.binding_fingerprint,
+            ),
             system_instruction="Use only the legal candidate identifiers provided.",
             task_payload={},
             admission=admitted,
@@ -214,3 +217,24 @@ def test_public_admission_cannot_override_rejection_or_duplicate_document() -> N
                 task_payload={"legal_strategy_ids": ["collect"]},
                 admission=forged,
             )
+
+
+def test_forged_admission_from_other_domain_rejected_at_model_boundary() -> None:
+    content = "stock threshold count 7"
+    trusted = DomainScope("inventory.reconcile", "a" * 64)
+    foreign = KnowledgeDocument(
+        "learning.plan",
+        "b" * 64,
+        "notes-1",
+        "sandbox://notes/source",
+        hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        content,
+    )
+    forged = KnowledgeAdmission((foreign,), "ADMITTED")
+    with pytest.raises(KnowledgeContractError, match="foreign or mixed-domain"):
+        build_domain_model_messages(
+            scope=trusted,
+            system_instruction="Choose only the legal strategy and candidate action IDs.",
+            task_payload={"legal_strategy_ids": ["collect"]},
+            admission=forged,
+        )

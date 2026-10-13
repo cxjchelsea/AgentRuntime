@@ -89,6 +89,7 @@ class ChatCompletionsStrategyTransport:
         *,
         send_once: Callable[[Request, float], bytes] = _send_once,
         system_instruction: str | None = None,
+        message_builder: Callable[[dict[str, Any]], tuple[dict[str, str], ...]] | None = None,
     ) -> None:
         self._config = config
         self._send_once = send_once
@@ -97,6 +98,7 @@ class ChatCompletionsStrategyTransport:
         ):
             raise ValueError("system instruction length out of bounds")
         self._system_instruction = system_instruction
+        self._message_builder = message_builder
 
     async def __call__(self, payload: dict[str, Any]) -> Mapping[str, object]:
         # Only data from existing StrategyModelRequest allow-list is supplied.
@@ -120,15 +122,30 @@ class ChatCompletionsStrategyTransport:
             "DOMAIN_ACTION_B if available; otherwise choose DOMAIN_STRATEGY_A "
             "and DOMAIN_ACTION_A if available."
         )
+        messages = (
+            self._message_builder(payload)
+            if self._message_builder is not None
+            else (
+                {"role": "system", "content": self._system_instruction or system},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=True)},
+            )
+        )
+        if (
+            type(messages) is not tuple
+            or not 2 <= len(messages) <= 4
+            or any(
+                type(message) is not dict
+                or set(message) != {"role", "content"}
+                or message["role"] != ("system" if index == 0 else "user")
+                or type(message["content"]) is not str
+                or not 1 <= len(message["content"]) <= 4096
+                for index, message in enumerate(messages)
+            )
+        ):
+            raise LiveModelTransportError("invalid model message roles or size")
         body = {
             "model": self._config.model,
-            "messages": [
-                {"role": "system", "content": self._system_instruction or system},
-                {
-                    "role": "user",
-                    "content": json.dumps(payload, ensure_ascii=True),
-                },
-            ],
+            "messages": messages,
             "temperature": 0,
             "max_tokens": self._config.max_tokens,
             "response_format": {"type": "json_object"},

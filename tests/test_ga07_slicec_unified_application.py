@@ -173,7 +173,7 @@ def test_unified_rejects_same_binding_with_foreign_m4_before_decision(
     unified = _assembled(snapshot, SandboxFTSIndex(), _QUERIES[0])
     initial = build_runtime_input(text="synthetic stock threshold")
     turn = _UnifiedSandboxTurn(initial, _legacy_content(snapshot), unified)
-    turn._planner = object()  # Same run identity, but wrong decision authority.
+    setattr(turn, "_planner", object())  # Same binding, wrong planner.
     with pytest.raises(DomainExtensionError, match="M4 binding mismatch"):
         asyncio.run(
             unified.run(

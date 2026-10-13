@@ -51,8 +51,7 @@ def domain_system_instruction(domain: SandboxDomainKnowledge) -> str:
         "On the first step, choose collect_strategy and collect_action. "
         "Only when last_agent_action is MOCK_FOUND_NEEDS_VERIFICATION, "
         "choose verify_strategy and verify_action. "
-        "Keep reason_code short and nonempty. DOMAIN_CONTEXT_JSON="
-        + serialized
+        "Keep reason_code short and nonempty. DOMAIN_CONTEXT_JSON=" + serialized
     )
     if not 20 <= len(instruction) <= _MAX_SYSTEM:
         raise SandboxAssemblyError("domain instruction exceeds model bounds")

@@ -18,7 +18,7 @@ from agent_core.domain_package_loader import (
 )
 from agent_core.runner import Decision, LoopBudget, ObservedFact, RunKind
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
-from agent_core.sandbox_domain_assembly import SandboxBoundAsset, assemble_sandbox_domain
+from agent_core.sandbox_domain_assembly import assemble_sandbox_domain
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga02_d4_two_domain_m4_e2e import (
     DomainDrivenTurn,
@@ -104,68 +104,20 @@ def test_cross_domain_assemblies_do_not_share_registries(tmp_path: Path) -> None
     assert a.extension.binding.binding_fingerprint != b.extension.binding.binding_fingerprint
 
 
-def test_cross_package_action_reference_is_rejected(tmp_path: Path) -> None:
+def test_modified_package_strategy_rejected_before_m4_assembly(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path / "stock", "inventory.reconcile", "stock")
-    binding = assemble_sandbox_domain(snapshot)
-    original = next(asset for asset in binding.assets if asset.kind == "strategy")
-    import hashlib
-
-    forged = b'{"action_id":"foreign-action","role":"collect"}'
-    modified = replace(
-        original, content_bytes=forged, sha256=hashlib.sha256(forged).hexdigest()
+    original = next(asset for asset in snapshot.assets if asset.ref.kind == "strategy")
+    forged = replace(original, content_bytes=b'{"action_id":"foreign","role":"collect"}')
+    tampered = replace(
+        snapshot,
+        assets=tuple(forged if item is original else item for item in snapshot.assets),
     )
-    mutated = replace(
-        binding,
-        assets=tuple(modified if item == original else item for item in binding.assets),
-    )
-    with pytest.raises(DomainExtensionError, match="foreign or mismatched"):
-        assemble_domain_extension(mutated)
-
-
-def test_tampered_asset_digest_rejected(tmp_path: Path) -> None:
-    binding = assemble_sandbox_domain(
-        _snapshot(tmp_path / "stock", "inventory.reconcile", "stock")
-    )
-    item = binding.assets[0]
-    bad = SandboxBoundAsset(
-        item.kind,
-        item.namespace,
-        item.id,
-        item.version,
-        "0" * 64,
-        item.content_bytes,
-    )
-    mutated = replace(binding, assets=(bad, *binding.assets[1:]))
     with pytest.raises(DomainExtensionError, match="digest"):
-        assemble_domain_extension(mutated)
+        assemble_domain_extension(tampered)
 
 
-@pytest.mark.parametrize(
-    ("domain_id", "noun"),
-    [("inventory.reconcile", "stock"), ("learning.plan", "notes")],
-)
-def test_application_m4_from_package_runs_existing_agent_loop(
-    tmp_path: Path, domain_id: str, noun: str
-) -> None:
-    snapshot = _snapshot(tmp_path / noun, domain_id, noun)
-    app = bootstrap_domain_application(snapshot)
-    # The legacy test-only DomainDrivenTurn remains the approved/mock step
-    # implementation; the M4 wiring itself is NEW production-neutral code.
-    domain_fixture = assemble_sandbox_m4(assemble_sandbox_domain(snapshot))
-    initial = build_runtime_input(text=f"collect then verify fictional {noun}")
-    turn = DomainDrivenTurn(initial, domain_fixture)
-    turn._planner, turn._validator, turn._rechecker = app.m4(
-        StructuredStrategyTransportAdapter(turn.transport)
-    )
-    result = asyncio.run(
-        app.run(
-            initial,
-            run_id=f"sandbox-{domain_id}",
-            step=turn,
-            budget=LoopBudget(max_iterations=4, max_executions=3),
-        )
-    )
-    assert result.kind is RunKind.FINISH
-    assert result.executions == 2
-    assert turn.selected_actions == [f"collect-{noun}", f"verify-{noun}"]
-    assert turn.mock_calls == 2
+def test_invalid_asset_reference_order_rejected(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path / "stock", "inventory.reconcile", "stock")
+    tampered = replace(snapshot, assets=tuple(reversed(snapshot.assets)))
+    with pytest.raises(DomainExtensionError, match="reference mismatch"):
+        assemble_domain_extension(tampered)

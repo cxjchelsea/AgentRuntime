@@ -11,7 +11,10 @@ import json
 from dataclasses import dataclass
 
 from agent_core.chat_transport import ChatCompletionsConfig
-from agent_core.domain_application import DomainApplication, bootstrap_domain_application
+from agent_core.domain_application import (
+    DomainApplication,
+    bootstrap_domain_application,
+)
 from agent_core.domain_content import DomainContent, assemble_domain_content
 from agent_core.domain_extension import DomainExtensionError
 from agent_core.domain_knowledge import (
@@ -24,6 +27,11 @@ from agent_core.knowledge_model_transport import KnowledgeBackedStrategyTranspor
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import LoopBudget, RunOutcome, StepPort
 from runtime.contracts import RuntimeInput
+from runtime.planning import (
+    DefaultM4Planner,
+    RuntimePlanValidatorAdapter,
+    RuntimePolicyRecheckerAdapter,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,9 +40,9 @@ class UnifiedDomainApplication:
     content: DomainContent
     knowledge: DomainKnowledgeCapability
     model_transport: KnowledgeBackedStrategyTransport
-    planner: object
-    validator: object
-    rechecker: object
+    planner: DefaultM4Planner
+    validator: RuntimePlanValidatorAdapter
+    rechecker: RuntimePolicyRecheckerAdapter
 
     async def run(
         self,

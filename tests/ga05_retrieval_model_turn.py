@@ -119,7 +119,9 @@ class RetrievedDomainTurn(GA03Turn):
             )
 
     async def decide(
-        self, current_input: Any, iteration: Any,
+        self,
+        current_input: Any,
+        iteration: Any,
         observations: tuple[ObservedFact, ...],
     ) -> Decision:
         if not self.retrieved:

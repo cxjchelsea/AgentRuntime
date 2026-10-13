@@ -180,6 +180,7 @@ def test_distinct_domain_execution_catalogs_and_ordered_completion(
             run_id="run-1", observations=(*evidence[:-1], altered)
         )
 
+
 def test_cross_package_catalog_cannot_consume_foreign_snapshot(tmp_path: Path) -> None:
     first = _snapshot(tmp_path / "stock", steps=1)
     second = _snapshot(tmp_path / "notes", steps=2)

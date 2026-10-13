@@ -43,7 +43,10 @@ def _asset_object(raw: bytes, fields: frozenset[str]) -> dict[str, str]:
     if (
         type(data) is not dict
         or data.keys() != fields
-        or any(type(value) is not str or not 1 <= len(value) <= 256 for value in data.values())
+        or any(
+            type(value) is not str or not 1 <= len(value) <= 256
+            for value in data.values()
+        )
     ):
         raise DomainExtensionError("invalid domain content schema")
     return data
@@ -53,7 +56,10 @@ def assemble_domain_content(
     snapshot: VerifiedPackageSnapshotV1, extension: DomainExtension
 ) -> DomainContent:
     """Bind all three content assets to precisely one assembled package."""
-    if type(snapshot) is not VerifiedPackageSnapshotV1 or type(extension) is not DomainExtension:
+    if (
+        type(snapshot) is not VerifiedPackageSnapshotV1
+        or type(extension) is not DomainExtension
+    ):
         raise DomainExtensionError("invalid content assembly inputs")
     binding = extension.binding
     if (

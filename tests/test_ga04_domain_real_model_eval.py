@@ -24,8 +24,8 @@ from tests.ga04_domain_real_transport import (
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga02_d4_two_domain_m4_e2e import _planner
 from tests.test_ga03_domain_prompt_rule_knowledge_e2e import (
-    GA03Turn,
     _CASES,
+    GA03Turn,
     _load_case,
 )
 
@@ -133,6 +133,7 @@ def test_ga04_real_model_cross_domain_repeated_e2e(tmp_path: Path) -> None:
     First model action must be collect, second (inventory only) verify.
     Each of 3 rounds covers both domains; no fake structured model output.
     """
+
     async def evaluate() -> None:
         config = _config()
         for repeat in range(3):

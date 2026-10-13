@@ -107,7 +107,7 @@ def test_distinct_domain_execution_catalogs_and_ordered_completion(
 ) -> None:
     snapshot = _snapshot(tmp_path / "package", steps=steps)
     app = bootstrap_domain_application(snapshot)
-    catalog = assemble_execution_catalog(snapshot, app.extension)
+    catalog = app.execution_catalog(snapshot)
     assert catalog.domain_id == snapshot.descriptor.domain_id
     assert len(catalog.workflow.steps) == steps
     assert len(catalog.tool_ids) == steps

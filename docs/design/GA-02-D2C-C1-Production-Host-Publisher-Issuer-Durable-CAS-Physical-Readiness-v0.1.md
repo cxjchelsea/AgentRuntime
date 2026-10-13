@@ -319,3 +319,42 @@ P2 独立 Gate 应单独验证：同 Revision 两进程 CAS 一胜一败、旧 t
 | PR #118 Merge Authorization | NOT ISSUED |
 
 **下一 Gate：** `GA-02 D2-C C1 — PR #116 F1-ORD-01 Exact-HEAD Independent Versioned Schema/Golden Re-Review + PR #118 P0 Cross-Alignment Verification`。C1 Production B01–B07 与 D2-D/D3 均继续 HARD HOLD。
+
+
+---
+
+## 15. P0-09 Post-PR #119 Evidence Ledger Targeted Amendment v0.4（2026-10-13）
+
+**本节仅更新 §14.2–14.3 的历史证据状态，不改变 §12 P0 真实部署证据退出要求。** 对照 main `7fbd1e2f7c705d36a788ffa957b2078f018e827d`（Standard Merge PR #119）、PR #119 原 Head `de5b786237fc64bea5c73cbf2be1fab964a8d45a` 及 Actions 运行 `38349863938`（1547 passed / 7 skipped / 1 warning，mypy 与 Ruff lint/format PASS）、`38349863914`（全部 jobs SUCCESS）。代码证据来自 `tests/test_ga02_d2c_c1_f1_ord_v2.py`、`tests/reference_models/ga02_d2c_c1_f1_ord_v2_fixture.py` 与实际调用的 `agent_core.domain_catalog_resolution._resolve_untrusted_catalog_observation`。
+
+### 15.1 P0-09 代码对齐证据状态纠正
+
+| 子项 | §14 历史状态 | 本次更新 | 边界 |
+|---|---|---|---|
+| C0 同名 optional 的完整 relation_id、ordinal 0/1 | 待校验 | `REAL_C0_DIAGNOSTIC_PARITY_TESTED` | `OPTIONAL_ABSENT` 不产生 Host Authority |
+| V2 Profile、234-byte 0/1 canonical JSON 与不同 SHA-256 | `SECOND_VERIFIER_PENDING` | `EXECUTABLE_TEST_ORACLE_VERIFIED` | 已执行测试不等于真实独立 Host 签发者 |
+| F1-A..G / ORD-01..05 | `SPECIFIED_NOT_EXECUTED` | `TEST_ONLY_SIMULATION_EXECUTED` | Python 身份、批准 Handle 与零副作用计数器不是物理安全证据 |
+| C0 非法 ordinal 与错误优先级 | 待校验 | `C0_PHASE_SPECIFIC_TESTED` | float 在 C0 admission 阶段拒绝为 `D2C_RESOLUTION_UNSTABLE`；其余被测试 Edge 错误为 `D2C_EDGE_CATALOG_INVALID`，C1 全局优先级未冻结 |
+| Host Source/Issuer、tenant/lane、policy/image/transition、DB CAS | `MISSING_EXTERNAL_EVIDENCE` | `MISSING_EXTERNAL_EVIDENCE` | 真实认证与持久化未验证 |
+| main 合并后 CI | 无 | `MAIN_CONTENT_VERIFIED / MAIN_PUSH_CI_NOT_VERIFIED` | 不以 PR 源 Head 的 CI 冒充 Main Push CI |
+
+**对 §14.2 原始字句的解释：** `DESIGN_ONLY / EXECUTION_PENDING` 和 `SPECIFIED_NOT_EXECUTED` 是 PR #119 合并之前的历史记录，仅在上述代码/测试范围被本 §15 替代。旧字段中“独立第二实现”若指真实 Host Issuer，其物理独立性仍未获得证据，不能写作已通过。
+
+### 15.2 尚未解除的 P0 Gate
+
+P0-09 的 **逻辑代码对照子门禁** 达到 `VERIFIED_TESTED_SCOPE`，但整个 P0-09 的物理 Host provenance、完整两故障顺序及生产发行链路仍未通过；P0-01～07、P0-10 的实际部署 Owner、Host 身份、DB/Worker、存储与 Recovery 证据依旧缺失。P0-08 的 Writer/alias 与密封不可变性证明仍需补齐。Test-only SOURCE/RELATION 固定，targets 由 Fixture 注入，不是独立认证的 sealed Definition。没有新增真实 Issuer、SQL、迁移或凭据。
+
+### 15.3 受控决定
+
+| Gate | Decision |
+|---|---|
+| `P0_09_C0_ORDINAL_AND_V2_GOLDEN_CODE_PARITY` | `VERIFIED_TESTED_SCOPE` |
+| `P0_09_F1_ORD_SIMULATION` | `EXECUTED_NON_PRODUCTION_ONLY` |
+| `P0_09_PHYSICAL_HOST_PROVENANCE` | `MISSING_EXTERNAL_EVIDENCE` |
+| `P0_09_GLOBAL_C1_FIRST_DENIAL` | `HOLD` |
+| `P0_INTAKE_EXIT / P1_PHYSICAL_FREEZE` | `HOLD` |
+| `P2_DB / P3_ISSUER / B01–B07` | `HARD_HOLD` |
+| `PR118_MERGE_AUTHORIZATION` | `NOT_ISSUED` |
+| `D2-D/D3` | `HARD_HOLD` |
+
+本 §15 的下一 Gate 是与 PR #116 §18.5 共同进行 Exact-HEAD Independent Targeted Re-Review，而不是自动合并或提升生产信任。

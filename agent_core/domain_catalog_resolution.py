@@ -314,6 +314,8 @@ def _copy_fields(
                     target[k] = child
                     stack.append((v, child, depth + 1, ancestors))
                 elif type(v) in (str, bool, int, type(None)):
+                    if type(v) is str and len(v) > 1024:
+                        _deny(D2CCode.D2C_RESOURCE_LIMIT)
                     if type(v) is str and not _string(v):
                         _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
                     _add_canonical_bytes(budget, len(_json(v)))
@@ -334,6 +336,8 @@ def _copy_fields(
                     target.append(child)
                     stack.append((v, child, depth + 1, ancestors))
                 elif type(v) in (str, bool, int, type(None)):
+                    if type(v) is str and len(v) > 1024:
+                        _deny(D2CCode.D2C_RESOURCE_LIMIT)
                     if type(v) is str and not _string(v):
                         _deny(D2CCode.D2C_CANONICAL_DEFINITION_INVALID)
                     _add_canonical_bytes(budget, len(_json(v)))

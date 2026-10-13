@@ -299,6 +299,7 @@ def test_ga08_domain_workflow_real_m4_sandbox_loop(tmp_path: Path, steps: int) -
 
     asyncio.run(scenario())
 
+
 @pytest.mark.parametrize("failure", ["wrong-action", "wrong-tool", "premature-finish"])
 def test_ga08_workflow_rejects_invalid_sandbox_execution(
     tmp_path: Path, failure: str

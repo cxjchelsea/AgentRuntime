@@ -105,7 +105,8 @@ class AgentRunCoordinator:
         budget: LoopBudget,
         *,
         completion_check: Callable[[str, tuple[ObservedFact, ...]], bool] | None = None,
-        execution_guard: Callable[[Decision, ObservedFact | None, int], bool] | None = None,
+        execution_guard: Callable[[Decision, ObservedFact | None, int], bool]
+        | None = None,
     ) -> None:
         self._step = step
         self._budget = budget

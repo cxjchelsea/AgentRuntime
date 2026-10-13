@@ -105,7 +105,8 @@ def assemble_domain_extension(snapshot: VerifiedPackageSnapshotV1) -> DomainExte
         raise DomainExtensionError("invalid package descriptor") from exc
     if (
         any(type(asset) is not VerifiedAssetV1 for asset in snapshot.assets)
-        or tuple(asset.ref for asset in snapshot.assets) != snapshot.descriptor.asset_refs
+        or tuple(asset.ref for asset in snapshot.assets)
+        != snapshot.descriptor.asset_refs
     ):
         raise DomainExtensionError("package asset reference mismatch")
     identity_assets: list[dict[str, str]] = []
@@ -132,13 +133,17 @@ def assemble_domain_extension(snapshot: VerifiedPackageSnapshotV1) -> DomainExte
             }
         )
         if ref.kind == "action":
-            fields = _strict_object(asset.content_bytes, frozenset({"role", "description"}))
+            fields = _strict_object(
+                asset.content_bytes, frozenset({"role", "description"})
+            )
             if ref.id in action_seen:
                 raise DomainExtensionError("duplicate action identifier")
             action_seen.add(ref.id)
             action_records.append((ref.id, fields["description"], fields["role"]))
         elif ref.kind == "strategy":
-            fields = _strict_object(asset.content_bytes, frozenset({"role", "action_id"}))
+            fields = _strict_object(
+                asset.content_bytes, frozenset({"role", "action_id"})
+            )
             if ref.id in strategy_seen:
                 raise DomainExtensionError("duplicate strategy identifier")
             strategy_seen.add(ref.id)
@@ -154,7 +159,9 @@ def assemble_domain_extension(snapshot: VerifiedPackageSnapshotV1) -> DomainExte
         or len(strategy_records) > 32
     ):
         raise DomainExtensionError("incomplete domain action/strategy mapping")
-    by_action = {name: (description, role) for name, description, role in action_records}
+    by_action = {
+        name: (description, role) for name, description, role in action_records
+    }
     roles: set[str] = set()
     links: list[tuple[str, str]] = []
     for sid, action, role in strategy_records:

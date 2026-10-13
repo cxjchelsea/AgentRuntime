@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agent_core.domain_execution_catalog import (
+    DomainExecutionCatalog,
+    assemble_execution_catalog,
+)
 from agent_core.domain_extension import (
     DomainExtension,
     DomainExtensionError,
@@ -24,6 +28,12 @@ from runtime.contracts import RuntimeInput
 @dataclass(frozen=True, slots=True)
 class DomainApplication:
     extension: DomainExtension
+
+    def execution_catalog(
+        self, snapshot: VerifiedPackageSnapshotV1
+    ) -> DomainExecutionCatalog:
+        """Read inert workflow/tool/capability metadata, never grant execution."""
+        return assemble_execution_catalog(snapshot, self.extension)
 
     def m4(self, model: StructuredStrategyTransportAdapter):
         """Create the existing M4 planner/validator/rechecker for this package."""

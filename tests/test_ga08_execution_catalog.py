@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sys
@@ -23,8 +24,12 @@ from agent_core.domain_package_loader import (
     LocalPackageLoader,
     TrustedPackageIdentity,
 )
-from agent_core.runner import ObservedFact
+from agent_core.model_adapter import StructuredStrategyTransportAdapter
+from agent_core.runner import Decision, LoopBudget, ObservedFact, RunKind
 from tests.test_ga02_d4_two_domain_m4_e2e import _package
+from tests.test_ga01_slice1 import SandboxTurn
+from tests.test_ga01_slice2_loop import ModelDrivenSandboxTurn
+from tests.orchestration_stubs import build_runtime_input
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"),
@@ -218,3 +223,68 @@ def test_tool_asset_tamper_and_foreign_capability_reference_rejected(
             ),
             extension,
         )
+
+
+@pytest.mark.parametrize("steps", [1, 2])
+def test_ga08_domain_workflow_real_m4_sandbox_loop(tmp_path: Path, steps: int) -> None:
+    async def scenario() -> None:
+        snapshot = _snapshot(tmp_path / "workflow", steps=steps)
+        app = bootstrap_domain_application(snapshot)
+        catalog = app.execution_catalog(snapshot)
+        initial = build_runtime_input(text="complete the domain sandbox task")
+        noun = "stock" if steps == 1 else "notes"
+
+        class DomainTransport:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, Any]] = []
+
+            async def __call__(self, payload: dict[str, Any]) -> dict[str, object]:
+                self.calls.append(payload)
+                next_role = "verify" if payload["last_agent_action"] == "FACT_1" else "collect"
+                return {
+                    "strategy_id": next_role + "-strategy-" + noun,
+                    "action_ids": [next_role + "-" + noun],
+                    "reason_code": "PACKAGE_WORKFLOW_CHOICE",
+                }
+
+        transport = DomainTransport()
+
+        class WorkflowTurn(ModelDrivenSandboxTurn):
+            def __post_init__(self) -> None:
+                super().__post_init__()
+                self.binding = app.prepare(self.initial, run_id="ga08-run")
+                self._planner, self._validator, self._rechecker = app.m4(
+                    StructuredStrategyTransportAdapter(transport)
+                )
+
+            async def execute_and_observe(self, decision: Decision) -> ObservedFact:
+                assert decision.approved is not None
+                assert len(decision.approved.steps) == 1
+                index = self.actions
+                step = catalog.workflow.steps[index]
+                self.selected_actions.append(decision.approved.steps[0].action)
+                self.facts = (step.completion_fact,)
+                if index == steps - 1:
+                    self.facts += ("GOAL_SATISFIED",)
+                result = await SandboxTurn.execute_and_observe(self, decision)
+                return replace(
+                    result, workflow_step_id=step.step_id, tool_id=step.tool_id
+                )
+
+        turn = WorkflowTurn(initial)
+        outcome = await app.run(
+            initial,
+            run_id="ga08-run",
+            step=turn,
+            budget=LoopBudget(max_iterations=steps + 2, max_executions=steps + 1),
+            execution_catalog=catalog,
+        )
+        assert outcome.kind is RunKind.FINISH
+        assert outcome.executions == steps
+        assert outcome.iterations == steps + 1
+        assert turn.selected_actions == [step.action_id for step in catalog.workflow.steps]
+        assert turn.mock_calls == steps
+        assert len(transport.calls) == steps
+        assert len(outcome.observations) == steps
+
+    asyncio.run(scenario())

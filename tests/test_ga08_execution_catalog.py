@@ -43,7 +43,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _snapshot(root: Path, *, steps: int = 1):
+def _snapshot(root: Path, *, steps: int = 1, with_content: bool = False):
     root.mkdir()
     domain = "inventory.reconcile" if steps == 1 else "learning.plan"
     noun = "stock" if steps == 1 else "notes"
@@ -74,6 +74,21 @@ def _snapshot(root: Path, *, steps: int = 1):
             ),
         ]
     )
+    if with_content:
+        payloads.extend(
+            [
+                ("prompt", "topic", {"focus": noun + " domain"}),
+                (
+                    "rule",
+                    "rule",
+                    {
+                        "required_knowledge": "subject-key",
+                        "completion_after": "custom-domain-finish",
+                    },
+                ),
+                ("knowledge", "fact", {"key": "subject-key", "fact": noun}),
+            ]
+        )
     for kind, asset_id, payload in payloads:
         raw = json.dumps(payload, sort_keys=True).encode()
         relpath = kind + "/" + asset_id + ".json"

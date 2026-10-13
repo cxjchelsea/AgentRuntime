@@ -729,7 +729,9 @@ class TestOnlyCatalog:
 
 
 def validate_simulated_closure(
-    nodes: list[dict[str, Any]], edges: list[tuple[str, str]], *,
+    nodes: list[dict[str, Any]],
+    edges: list[tuple[str, str]],
+    *,
     core_namespace: str = "CORE",
 ) -> str:
     """A deliberately narrow test-only graph and byte budget oracle.

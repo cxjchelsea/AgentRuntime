@@ -1,0 +1,51 @@
+name: GA-07 Slice C Unified Domain Application Live E2E
+
+on:
+  pull_request:
+    paths:
+      - "agent_core/domain_content.py"
+      - "agent_core/domain_unified_application.py"
+      - "tests/test_ga07_slicec_unified_application.py"
+      - ".github/workflows/ga07c-unified-live.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unified-qwen:
+    name: GA-07C two domain packages through real Qwen Agent Loop
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install -e '.[test]'
+      - name: Start local Ollama Qwen2.5 3B
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GA07C_HEAD_SHA=${{ github.event.pull_request.head.sha || github.sha }}"
+          docker run -d --name ga07c-qwen --cpus=2 --memory=5g -p 127.0.0.1:11434:11434 ollama/ollama:latest
+          for attempt in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null
+          docker exec ga07c-qwen ollama pull qwen2.5:3b
+          docker exec ga07c-qwen sha256sum /root/.ollama/models/manifests/registry.ollama.ai/library/qwen2.5/3b
+      - name: Run six complete package-replacement real-model tasks
+        env:
+          GA07C_LIVE_OPT_IN: "1"
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: python -m pytest tests/test_ga07_slicec_unified_application.py -q -s -rs
+      - name: Diagnostics
+        if: failure()
+        run: docker logs --tail 70 ga07c-qwen || true
+      - name: Stop local model
+        if: always()
+        run: docker rm -f ga07c-qwen || true

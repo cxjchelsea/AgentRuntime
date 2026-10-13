@@ -16,15 +16,15 @@ from agent_core.domain_package_loader import (
     HostPublishedGeneration,
     LocalPackageLoader,
 )
-from agent_core.runner import Decision, LoopBudget, ObservedFact, RunKind
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
+from agent_core.runner import Decision, LoopBudget, ObservedFact, RunKind
 from agent_core.sandbox_domain_assembly import assemble_sandbox_domain
+from tests.ga02_d4_domain_m4_assembly import assemble_sandbox_m4
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga02_d4_two_domain_m4_e2e import (
     DomainDrivenTurn,
     _package,
 )
-from tests.ga02_d4_domain_m4_assembly import assemble_sandbox_m4
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"),
@@ -101,7 +101,10 @@ def test_cross_domain_assemblies_do_not_share_registries(tmp_path: Path) -> None
     assert a.extension.strategies is not b.extension.strategies
     assert a.extension.skills is not b.extension.skills
     assert not set(a.extension.action_ids) & set(b.extension.action_ids)
-    assert a.extension.binding.binding_fingerprint != b.extension.binding.binding_fingerprint
+    assert (
+        a.extension.binding.binding_fingerprint
+        != b.extension.binding.binding_fingerprint
+    )
 
 
 def test_modified_package_strategy_rejected_before_m4_assembly(tmp_path: Path) -> None:

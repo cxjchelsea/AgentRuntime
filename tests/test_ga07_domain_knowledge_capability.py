@@ -125,6 +125,7 @@ def test_mismatched_digest_or_scope_fails_closed(tmp_path: Path) -> None:
         replace(legitimate, binding_fingerprint="0" * 64),
         replace(legitimate, content="tampered"),
     ):
+
         def provider(
             _scope: DomainScope,
             _query: str,
@@ -175,6 +176,7 @@ def test_invalid_port_return_fails_closed(tmp_path: Path) -> None:
     scope = DomainScope(
         domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint
     )
+
     def malformed_provider(
         _scope: DomainScope, _query: str, _limit: int
     ) -> tuple[KnowledgeDocument, ...]:

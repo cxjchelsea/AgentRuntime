@@ -7,6 +7,7 @@ implicitly fabricated here. M4/M6 checks must be supplied by the application.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Callable
 
 from agent_core.domain_execution_catalog import (
     DomainExecutionCatalog,
@@ -22,7 +23,7 @@ from agent_core.domain_m4_assembly import assemble_domain_m4
 from agent_core.domain_package_loader import VerifiedPackageSnapshotV1
 from agent_core.iteration import AgentRunBinding
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
-from agent_core.runner import AgentRunCoordinator, LoopBudget, RunOutcome, StepPort
+from agent_core.runner import AgentRunCoordinator, LoopBudget, ObservedFact, RunOutcome, StepPort
 from runtime.contracts import RuntimeInput
 
 
@@ -70,7 +71,7 @@ class DomainApplication:
             raise DomainExtensionError("unbound application step")
         if step_binding != binding:
             raise DomainExtensionError("application step binding mismatch")
-        completion_check = None
+        completion_check: Callable[[str, tuple[ObservedFact, ...]], bool] | None = None
         if execution_catalog is not None:
             if (
                 type(execution_catalog) is not DomainExecutionCatalog
@@ -79,7 +80,9 @@ class DomainApplication:
             ):
                 raise DomainExtensionError("execution catalog binding mismatch")
 
-            def completion_check(run: str, observations: tuple) -> bool:
+            def evaluate_domain_completion(
+                run: str, observations: tuple[ObservedFact, ...]
+            ) -> bool:
                 # Sandbox ordering is NOT a trusted tool-to-step attestation.
                 steps = execution_catalog.workflow.steps
                 if len(observations) != len(steps):
@@ -91,6 +94,8 @@ class DomainApplication:
                 return execution_catalog.completion_from_observations(
                     run_id=run, observations=evidence
                 )
+
+            completion_check = evaluate_domain_completion
 
         return await AgentRunCoordinator(
             step, budget, completion_check=completion_check

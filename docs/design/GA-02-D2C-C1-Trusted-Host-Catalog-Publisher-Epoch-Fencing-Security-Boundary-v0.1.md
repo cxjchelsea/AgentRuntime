@@ -834,3 +834,33 @@ The valid C0 diagnostic error taxonomy is phase-sensitive: `float` ordinal is re
 | `D2-D / D3` | `HARD_HOLD` |
 
 **Recommended next gate:** PR #116 §18 **Exact-HEAD Independent Scoped Normative Freeze Review + PR #118 P0 Cross-Alignment**. This is a proposed gate, not an assertion of a completed independent approval or permission to merge. Freeze only the logical occurrence/profile requirements if the reviewer confirms their exact scoped meaning; keep the physical trusted Host path on HOLD.
+
+
+---
+
+### 18.5 Exact-HEAD Independent Scoped Normative Freeze Decision v0.9（2026-10-13）
+
+**审查依据：** §18 的 PR #119 后对齐证据、PR #116 独立范围审查记录 #6138805697、PR #118 P0 交叉审查记录 #6138806248，以及 `main@7fbd1e2f7c705d36a788ffa957b2078f018e827d`。本节只将已作出的限定逻辑冻结决定写入候选设计文档，不追认全部 §16–17 为生产合同，也不代表独立人类安全审批。
+
+**正式范围决策：`F1_ORD_SCOPED_LOGICAL_NORMATIVE_FREEZE = APPROVED_WITH_EXCLUSIONS`。以下逻辑约束冻结：**
+
+1. Occurrence 主键严格为有序、将来须由 Host 密封的 Definition 所决定的 `(source_key.kind,namespace,id,version; full C0 relation_id; builtin int ordinal)`。ordinal 来自规范化声明顺序、从零开始；重复 target_id 不去重，用户自报 ordinal 不能充当来源认证。
+2. V2 canonical profile `GA02-D2C-C1-OPTIONAL-ABSENCE-OCC-2`、精确七个 JSON 内容键 `host_policy_generation,ordinal,reason,relation,source_key,target_id,target_kind`（source_key 含四个键）、固定原因 `HOST_APPROVED_OMISSION`、ASCII profile + NUL + canonical UTF-8 JSON 的 SHA-256 摘要及两个各 234-byte、digest 不相同的 ordinal 0/1 Golden。
+3. Legacy V1 / hash-only 的既有内容不能自动升级成 Host-authenticated V2 approval；同一个批准记录不能跨 ordinal 重放；即使只有一个 Occurrence 也不能以内容 Hash 取代真实批准来源。
+4. 仅作为后续实现必须满足的 **逻辑安全不变量**：每个 optional occurrence 恰好一个合规 Pinned Edge 或真实 Host 单独批准的 V2 absence；required occurrence 必须具备合规 Pinned Edge，不允许通过 absence 绕过。
+
+**明确不冻结：** 生产 Host Issuer / issuer-private provenance 物理结构、Source/Image 密封真实性、tenant/lane/policy/package/generation/transition pins、真实 DB CAS/Fencing/Lease/Issuance/Recovery/GC、全局双故障拒绝优先级、生产 API、执行授权与 DomainBinding、B01–B07 解除、D2-D/D3。模拟 `V2Fixture.check` 先校验非法 Edge shape 再校验批准 Handle，因此不能支持 §17 假设的每种生产 issuer-first 组合；C0 对 float ordinal 的 `D2C_RESOLUTION_UNSTABLE` 与 Edge 语义上的 `D2C_EDGE_CATALOG_INVALID` 也只属于 C0 阶段。
+
+**与 PR #118 的交叉更新：** 该 PR 已新增 §15 P0-09 Evidence Ledger，订正 §14 中 `SECOND_VERIFIER_PENDING`、`SPECIFIED_NOT_EXECUTED` 等过期的测试状态。已通过的是代码和非生产模拟子门禁；真实 Host 签发者独立性、P0 外部 Owner/DB/部署事实及生产物理取证仍缺失。§12 的 P0 退出准则不因本注释而改变。
+
+| Gate | Decision |
+|---|---|
+| `F1_ORD_SCOPED_LOGICAL_FREEZE` | `APPROVED_WITH_EXCLUSIONS` |
+| `F1_ORD_GLOBAL_PRODUCTION_NORMATIVE_FREEZE` | `HOLD` |
+| `P0_09_TEST_ONLY_CODE_PARITY` | `VERIFIED_TESTED_SCOPE` |
+| `P0_09_REAL_HOST_AND_DB_EVIDENCE` | `HARD_HOLD` |
+| `PR116_MERGE_AUTHORIZATION` | `NOT_ISSUED` |
+| `PR118_MERGE_AUTHORIZATION` | `NOT_ISSUED` |
+| `D2-D / D3` | `HARD_HOLD` |
+
+**下一 Gate：** PR #116 §18.5 与 PR #118 §15 进行精确 HEAD 独立定向复审。此次内容更新不自动授权合并或生产实施。

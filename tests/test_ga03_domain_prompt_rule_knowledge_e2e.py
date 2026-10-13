@@ -31,7 +31,10 @@ from agent_core.runner import (
     ObservedFact,
     RunKind,
 )
-from agent_core.sandbox_domain_assembly import SandboxAssemblyError, assemble_sandbox_domain
+from agent_core.sandbox_domain_assembly import (
+    SandboxAssemblyError,
+    assemble_sandbox_domain,
+)
 from tests.ga03_domain_content_assembly import (
     SandboxDomainKnowledge,
     assemble_ga03_domain,
@@ -183,9 +186,9 @@ class GA03Turn(DomainDrivenTurn):
         self.content = content
         self.evidence = content.admitted_knowledge(available=available)
         super().__init__(initial, content.m4)
-        self.transport = DomainKnowledgeTransport(content, self.evidence)
+        self.ga03_transport = DomainKnowledgeTransport(content, self.evidence)
         self._planner, self._validator, self._rechecker = _planner(
-            content.m4, StructuredStrategyTransportAdapter(self.transport)
+            content.m4, StructuredStrategyTransportAdapter(self.ga03_transport)
         )
 
     async def decide(
@@ -238,12 +241,11 @@ def test_ga03_two_domains_have_distinct_evidence_rules_and_task_paths(
                 domain.m4.collect_action,
                 *([domain.m4.verify_action] if expected == 2 else []),
             ]
-            assert len(turn.transport.calls) == expected
+            assert len(turn.ga03_transport.calls) == expected
             assert domain.prompt_focus == case[2]
             assert turn.evidence == (case[4],)
             assert all(
-                observed.domain_fingerprint
-                == domain.m4.binding.binding_fingerprint
+                observed.domain_fingerprint == domain.m4.binding.binding_fingerprint
                 for observed in result.observations
             )
             observations.append(
@@ -286,13 +288,12 @@ def test_ga03_rejects_tampered_rule_asset_before_assembly(tmp_path: Path) -> Non
     domain = _load_case(tmp_path, _CASES[0])
     original = next(a for a in domain.m4.binding.assets if a.kind == "rule")
     forged = replace(
-        original, content_bytes=b'{"required_knowledge":"notes.index","completion_after":"collect"}'
+        original,
+        content_bytes=b'{"required_knowledge":"notes.index","completion_after":"collect"}',
     )
     altered = replace(
         domain.m4.binding,
-        assets=tuple(
-            forged if a is original else a for a in domain.m4.binding.assets
-        ),
+        assets=tuple(forged if a is original else a for a in domain.m4.binding.assets),
     )
     with pytest.raises(SandboxAssemblyError, match="digest"):
         assemble_ga03_domain(altered)

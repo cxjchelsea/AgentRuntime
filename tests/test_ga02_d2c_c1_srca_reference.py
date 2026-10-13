@@ -553,7 +553,7 @@ def test_g3_lease_revocation_before_issue_and_after_issue() -> None:
     issued = catalog.issue(
         principal, lease_id=fresh, request_id="existing", request_payload={}
     )
-    catalog.revoke_lease(principal, fresh)
+    denied("C1_LEASE_INVALID", catalog.revoke_lease, principal, fresh)
     assert (
         catalog.issue(
             principal, lease_id=fresh, request_id="existing", request_payload={}
@@ -736,3 +736,165 @@ def test_g7_simulated_role_and_exact_scope_not_executable() -> None:
     assert evidence.role == ROLE
     assert not hasattr(evidence, "implementation_ref")
     assert not hasattr(evidence, "run")
+
+def test_r3_01_enrolled_principal_mutation_denied() -> None:
+    for field, replacement in (("name", "foreign"), ("lane", "lane-b"), ("role", "TRUSTED")):
+        catalog, principal = fixture()
+        object.__setattr__(principal, field, replacement)
+        denied("C1_ISSUER_UNVERIFIED", catalog.take_writer_term, principal)
+        denied("C1_ISSUER_UNVERIFIED", catalog.open_lease, principal)
+        assert catalog.counts() == (1, 0)
+
+
+def test_r3_03_absence_does_not_survive_revoke() -> None:
+    catalog, principal = fixture()
+    approved = admit_absence(catalog, principal)
+    catalog.revoke(principal)
+    denied(
+        "C1_PUBLICATION_REVOKED", catalog.check_absences, principal,
+        source=SOURCE, declared=DECLARED, edges=(),
+        absences=(approved,), policy="p1",
+    )
+
+
+def test_r3_04_publication_receipt_is_historical_on_replay() -> None:
+    catalog, principal = fixture()
+    original = catalog._transactions[("lane-a", "tx-a")]
+    candidate = catalog.admit_candidate(
+        principal, policy="p1", package="pkg-a", image={"k": ["v"]}
+    )
+    term, revision = catalog.take_writer_term(principal)
+    current = catalog.publish(
+        principal,
+        catalog.admit_candidate(
+            principal, policy="p1", package="pkg-a", image={"later": True}
+        ),
+        term=term, expected_revision=revision, tx_id="next",
+    )
+    assert current == (2, 2)
+    assert current.historical is False
+    old = catalog.publish(
+        principal, candidate, term=original[4],
+        expected_revision=original[5], tx_id="tx-a",
+    )
+    assert old == (1, 1)
+    assert old.historical is True
+    assert catalog.counts() == (2, 0)
+
+
+def test_r3_05_lease_terminal_transitions_are_monotonic() -> None:
+    catalog, principal = fixture()
+    for method in ("close_lease", "revoke_lease"):
+        lease = catalog.open_lease(principal)
+        getattr(catalog, method)(principal, lease)
+        denied("C1_LEASE_INVALID", catalog.close_lease, principal, lease)
+        denied("C1_LEASE_INVALID", catalog.revoke_lease, principal, lease)
+    consumed = catalog.open_lease(principal)
+    catalog.issue(principal, lease_id=consumed, request_id="spent", request_payload={})
+    denied("C1_LEASE_INVALID", catalog.close_lease, principal, consumed)
+    denied("C1_LEASE_INVALID", catalog.revoke_lease, principal, consumed)
+
+
+def test_t12_t13_simulated_crash_before_and_after_publish_cas() -> None:
+    catalog, principal = fixture()
+    term, revision = catalog.take_writer_term(principal)
+    candidate = catalog.admit_candidate(
+        principal, policy="p1", package="pkg-a", image={"version": 2}
+    )
+    catalog.simulate_crash_at("BEFORE_PUBLISH_CAS")
+    denied(
+        "C1_SIMULATED_CRASH", catalog.publish, principal, candidate,
+        term=term, expected_revision=revision, tx_id="replay",
+    )
+    assert catalog.counts() == (1, 0)
+    catalog.simulate_crash_at("AFTER_PUBLISH_CAS")
+    denied(
+        "C1_SIMULATED_CRASH", catalog.publish, principal, candidate,
+        term=term, expected_revision=revision, tx_id="replay",
+    )
+    assert catalog.counts() == (2, 0)
+    replay = catalog.publish(
+        principal, candidate, term=term,
+        expected_revision=revision, tx_id="replay",
+    )
+    assert replay == (2, 2) and replay.historical is True
+    assert catalog.counts() == (2, 0)
+
+
+def test_f2_a_simulated_crash_before_and_after_issue_commit() -> None:
+    catalog, principal = fixture()
+    lease = catalog.open_lease(principal)
+    catalog.simulate_crash_at("BEFORE_ISSUE_CAS")
+    denied(
+        "C1_SIMULATED_CRASH", catalog.issue, principal,
+        lease_id=lease, request_id="request", request_payload={},
+    )
+    assert catalog.counts() == (1, 0)
+    catalog.simulate_crash_at("AFTER_ISSUE_CAS")
+    denied(
+        "C1_SIMULATED_CRASH", catalog.issue, principal,
+        lease_id=lease, request_id="request", request_payload={},
+    )
+    assert catalog.counts() == (1, 1)
+    historical = catalog.issue(
+        principal, lease_id=lease, request_id="request", request_payload={},
+    )
+    assert historical.role == ROLE
+    assert catalog.counts() == (1, 1)
+
+
+def test_f2_g_racing_same_request_commits_once() -> None:
+    catalog, principal = fixture()
+    lease = catalog.open_lease(principal)
+    barrier = threading.Barrier(2)
+
+    def send() -> object:
+        barrier.wait()
+        return catalog.issue(
+            principal, lease_id=lease, request_id="same",
+            request_payload={"value": 1},
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(send) for _ in range(2)]
+        assert futures[0].result() is futures[1].result()
+    assert catalog.counts() == (1, 1)
+
+
+def test_f1_g_mismatched_optional_target_not_accepted() -> None:
+    catalog, principal = fixture()
+    approved = admit_absence(catalog, principal)
+    denied(
+        "C1_DEPENDENCY_INVALID", catalog.check_absences, principal,
+        source=SOURCE,
+        declared=(("optional_tools", "tool", "foreign-tool", 0, False),),
+        edges=(), absences=(approved,), policy="p1",
+    )
+
+
+def test_t14_committed_image_corruption_denied() -> None:
+    catalog, principal = fixture()
+    lease = catalog.open_lease(principal)
+    lane = catalog._lanes["lane-a"]
+    catalog._images[lane.image_digest] = b'{"tampered":true}'
+    denied(
+        "C1_PUBLICATION_DIGEST_MISMATCH", catalog.issue, principal,
+        lease_id=lease, request_id="corrupt", request_payload={},
+    )
+    assert catalog.counts() == (1, 0)
+
+
+def test_t19_semantic_json_order_same_digest_wire_canonical() -> None:
+    left = {"z": 2, "a": {"second": 2, "first": 1}}
+    right = {"a": {"first": 1, "second": 2}, "z": 2}
+    assert canonical(left) == canonical(right)
+    assert digest("GA02-D2C-C1-SIM-IMAGE-1", left) == digest(
+        "GA02-D2C-C1-SIM-IMAGE-1", right
+    )
+    denied("C1_INPUT_INVALID", canonical_wire, b'{"z":2,"a":1}')
+
+
+def test_t17_string_limit_shape_before_total_budget() -> None:
+    assert canonical({"x": "a" * 1024}).startswith(b'{"x":')
+    denied("C1_INPUT_INVALID", canonical, {"x": "a" * 1025})
+    denied("C1_INPUT_INVALID", canonical_wire, b'{"a":1,"a":2}')

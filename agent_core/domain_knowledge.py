@@ -127,6 +127,26 @@ def build_domain_model_messages(
         or not admission.accepted
     ):
         raise KnowledgeContractError("model context preconditions failed")
+    # Admission objects are publicly constructible. Never trust the accepted
+    # property alone when building the actual model context.
+    if len(admission.documents) > 3 or any(
+        type(item) is not KnowledgeDocument
+        or type(item.content) is not str
+        or not 1 <= len(item.content) <= 2048
+        or type(item.source_ref) is not str
+        or not 1 <= len(item.source_ref) <= 256
+        or type(item.document_id) is not str
+        or not 1 <= len(item.document_id) <= 128
+        or type(item.content_sha256) is not str
+        or hashlib.sha256(item.content.encode("utf-8")).hexdigest()
+        != item.content_sha256
+        or _SUSPICIOUS.search(item.content) is not None
+        for item in admission.documents
+    ):
+        raise KnowledgeContractError("unverified model context evidence")
+    scopes = {(d.domain_id, d.binding_fingerprint) for d in admission.documents}
+    if len(scopes) != 1:
+        raise KnowledgeContractError("mixed-domain model context")
     docs = [
         {
             "domain_id": d.domain_id,

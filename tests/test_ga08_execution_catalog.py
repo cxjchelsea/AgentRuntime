@@ -132,6 +132,8 @@ def test_distinct_domain_execution_catalogs_and_ordered_completion(
                 f"execution-{number}",
                 catalog.binding_fingerprint,
                 (step.completion_fact,),
+                workflow_step_id=step.step_id,
+                tool_id=step.tool_id,
             ),
         )
         for number, step in enumerate(catalog.workflow.steps, 1)
@@ -166,6 +168,19 @@ def test_distinct_domain_execution_catalogs_and_ordered_completion(
             replace(evidence[-1], step_id="wrong-step"),
         ),
     )
+    for mutation in (
+        {"workflow_step_id": "wrong-step"},
+        {"tool_id": "wrong-tool"},
+        {"tool_id": None},
+        {"workflow_step_id": None},
+    ):
+        altered = replace(
+            evidence[-1],
+            observation=replace(evidence[-1].observation, **mutation),
+        )
+        assert not catalog.completion_from_observations(
+            run_id="run-1", observations=(*evidence[:-1], altered)
+        )
 
 
 def test_cross_package_catalog_cannot_consume_foreign_snapshot(tmp_path: Path) -> None:

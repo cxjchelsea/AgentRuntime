@@ -11,7 +11,7 @@ import json
 import threading
 import unicodedata
 from dataclasses import dataclass
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Self
 
 ROLE = "NON_PRODUCTION_SIMULATION"
 
@@ -220,7 +220,7 @@ class PublicationResult(tuple[int, int]):
 
     def __new__(
         cls, revision: int, epoch: int, *, historical: bool = False
-    ) -> PublicationResult:
+    ) -> Self:
         receipt = tuple.__new__(cls, (revision, epoch))
         receipt.historical = historical
         return receipt

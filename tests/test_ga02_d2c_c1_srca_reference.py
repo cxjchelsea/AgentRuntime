@@ -9,11 +9,11 @@ import pytest
 
 from tests.reference_models.ga02_d2c_c1_srca_model import (
     ROLE,
+    ApprovedAbsence,
     Principal,
+    SealedCandidate,
     SimulatedDenial,
     TestOnlyCatalog,
-    ApprovedAbsence,
-    SealedCandidate,
     canonical,
     canonical_wire,
     digest,

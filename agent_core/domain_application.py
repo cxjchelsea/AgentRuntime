@@ -25,6 +25,7 @@ from agent_core.iteration import AgentRunBinding
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import (
     AgentRunCoordinator,
+    Decision,
     LoopBudget,
     ObservedFact,
     RunOutcome,
@@ -78,6 +79,7 @@ class DomainApplication:
         if step_binding != binding:
             raise DomainExtensionError("application step binding mismatch")
         completion_check: Callable[[str, tuple[ObservedFact, ...]], bool] | None = None
+        execution_guard: Callable[[Decision, ObservedFact | None, int], bool] | None = None
         if execution_catalog is not None:
             if (
                 type(execution_catalog) is not DomainExecutionCatalog
@@ -106,8 +108,32 @@ class DomainApplication:
 
             completion_check = evaluate_domain_completion
 
+            def validate_workflow_execution(
+                decision: Decision, observed: ObservedFact | None, index: int
+            ) -> bool:
+                steps = execution_catalog.workflow.steps
+                if index < 0 or index >= len(steps) or decision.approved is None:
+                    return False
+                workflow_step = steps[index]
+                approved_steps = decision.approved.steps
+                if (
+                    len(approved_steps) != 1
+                    or approved_steps[0].action != workflow_step.action_id
+                ):
+                    return False
+                if observed is None:
+                    return True
+                return (
+                    observed.workflow_step_id == workflow_step.step_id
+                    and observed.tool_id == workflow_step.tool_id
+                    and workflow_step.completion_fact in observed.facts
+                )
+
+            execution_guard = validate_workflow_execution
+
         return await AgentRunCoordinator(
-            step, budget, completion_check=completion_check
+            step, budget, completion_check=completion_check,
+            execution_guard=execution_guard
         ).run(initial, binding)
 
 

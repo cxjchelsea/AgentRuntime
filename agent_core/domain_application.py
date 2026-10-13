@@ -6,8 +6,8 @@ implicitly fabricated here. M4/M6 checks must be supplied by the application.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from agent_core.domain_execution_catalog import (
     DomainExecutionCatalog,
@@ -23,7 +23,13 @@ from agent_core.domain_m4_assembly import assemble_domain_m4
 from agent_core.domain_package_loader import VerifiedPackageSnapshotV1
 from agent_core.iteration import AgentRunBinding
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
-from agent_core.runner import AgentRunCoordinator, LoopBudget, ObservedFact, RunOutcome, StepPort
+from agent_core.runner import (
+    AgentRunCoordinator,
+    LoopBudget,
+    ObservedFact,
+    RunOutcome,
+    StepPort,
+)
 from runtime.contracts import RuntimeInput
 
 
@@ -83,14 +89,17 @@ class DomainApplication:
             def evaluate_domain_completion(
                 run: str, observations: tuple[ObservedFact, ...]
             ) -> bool:
-                # Sandbox ordering is NOT a trusted tool-to-step attestation.
+                # Explicit sandbox correlation; NOT a production attestation.
                 steps = execution_catalog.workflow.steps
                 if len(observations) != len(steps):
                     return False
                 evidence = tuple(
-                    WorkflowStepEvidence(workflow_step.step_id, observed)
-                    for workflow_step, observed in zip(steps, observations, strict=True)
+                    WorkflowStepEvidence(observed.workflow_step_id, observed)
+                    for observed in observations
+                    if observed.workflow_step_id is not None
                 )
+                if len(evidence) != len(steps):
+                    return False
                 return execution_catalog.completion_from_observations(
                     run_id=run, observations=evidence
                 )

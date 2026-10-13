@@ -218,7 +218,9 @@ class PublicationResult(tuple[int, int]):
 
     historical: bool
 
-    def __new__(cls, revision: int, epoch: int, *, historical: bool = False) -> PublicationResult:
+    def __new__(
+        cls, revision: int, epoch: int, *, historical: bool = False
+    ) -> PublicationResult:
         receipt = tuple.__new__(cls, (revision, epoch))
         receipt.historical = historical
         return receipt
@@ -264,7 +266,9 @@ class TestOnlyCatalog:
     def _auth(self, principal: Principal, lane: str) -> None:
         if type(principal) is not Principal or principal not in self._principals:
             _deny("C1_ISSUER_UNVERIFIED")
-        if (principal.name, principal.lane, principal.role) != self._principals[principal]:
+        if (principal.name, principal.lane, principal.role) != self._principals[
+            principal
+        ]:
             _deny("C1_ISSUER_UNVERIFIED")
         if principal.lane != lane:
             _deny("C1_LANE_SCOPE_MISMATCH")
@@ -689,7 +693,13 @@ class TestOnlyCatalog:
 
     def simulate_crash_at(self, stage: str | None) -> None:
         """Fault injection is single-process and never proves durable recovery."""
-        if stage not in (None, "BEFORE_PUBLISH_CAS", "AFTER_PUBLISH_CAS", "BEFORE_ISSUE_CAS", "AFTER_ISSUE_CAS"):
+        if stage not in (
+            None,
+            "BEFORE_PUBLISH_CAS",
+            "AFTER_PUBLISH_CAS",
+            "BEFORE_ISSUE_CAS",
+            "AFTER_ISSUE_CAS",
+        ):
             _deny("C1_INPUT_INVALID")
         self._crash_stage = stage
 

@@ -7,6 +7,7 @@ permission, or a production DomainBinding.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -81,6 +82,11 @@ def assemble_sandbox_m4(binding: SandboxDomainBinding) -> SandboxM4Domain:
     action_ids: set[str] = set()
     strategy_assets: list[tuple[str, str, str]] = []
     for asset in binding.assets:
+        if (
+            type(asset.content_bytes) is not bytes
+            or hashlib.sha256(asset.content_bytes).hexdigest() != asset.sha256
+        ):
+            raise SandboxAssemblyError("sandbox bound asset digest mismatch")
         if asset.namespace != binding.domain_id or asset.version != "1.0.0":
             raise SandboxAssemblyError("sandbox namespace/version mismatch")
         if asset.kind == "action":

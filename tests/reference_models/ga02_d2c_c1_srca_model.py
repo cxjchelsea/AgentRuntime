@@ -223,7 +223,6 @@ class PublicationResult:
     role: str = ROLE
 
 
-
 class TestOnlyCatalog:
     """Single-process reference with explicitly internal mock capability registry.
 

@@ -45,7 +45,8 @@ def _snapshot(root: Path, domain: str, noun: str):
 
 
 class _WaitOnlyStep:
-    def __init__(self):
+    def __init__(self, binding):
+        self.binding = binding
         self.calls = 0
 
     async def decide(self, _input, iteration, _observations):
@@ -80,7 +81,7 @@ def test_reusable_bootstrap_loads_two_domain_packages(
     assert extension.strategies is not None
     assert extension.skills is not None
     initial = build_runtime_input(text=f"synthetic {noun} task")
-    step = _WaitOnlyStep()
+    step = _WaitOnlyStep(app.prepare(initial, run_id=f"ga07-{noun}"))
     outcome = asyncio.run(
         app.run(initial, run_id=f"ga07-{noun}", step=step, budget=LoopBudget())
     )
@@ -155,3 +156,29 @@ def test_package_driven_m4_runs_existing_agent_loop(
     assert outcome.executions == 2
     assert turn.selected_actions == [f"collect-{noun}", f"verify-{noun}"]
     assert turn.mock_calls == 2
+
+
+def test_application_rejects_unbound_or_cross_domain_step_before_decision(
+    tmp_path: Path,
+) -> None:
+    inventory = bootstrap_domain_application(
+        _snapshot(tmp_path / "stock", "inventory.reconcile", "stock")
+    )
+    learning = bootstrap_domain_application(
+        _snapshot(tmp_path / "notes", "learning.plan", "notes")
+    )
+    initial = build_runtime_input(text="synthetic guarded inventory")
+    for invalid_step in (
+        _WaitOnlyStep(None),
+        _WaitOnlyStep(learning.prepare(initial, run_id="same-run")),
+    ):
+        with pytest.raises(DomainExtensionError, match="unbound|binding mismatch"):
+            asyncio.run(
+                inventory.run(
+                    initial,
+                    run_id="same-run",
+                    step=invalid_step,
+                    budget=LoopBudget(),
+                )
+            )
+        assert invalid_step.calls == 0

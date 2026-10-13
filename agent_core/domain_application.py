@@ -13,10 +13,10 @@ from agent_core.domain_extension import (
     DomainExtensionError,
     assemble_domain_extension,
 )
-from agent_core.domain_package_loader import VerifiedPackageSnapshotV1
 from agent_core.domain_m4_assembly import assemble_domain_m4
-from agent_core.model_adapter import StructuredStrategyTransportAdapter
+from agent_core.domain_package_loader import VerifiedPackageSnapshotV1
 from agent_core.iteration import AgentRunBinding
+from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import AgentRunCoordinator, LoopBudget, RunOutcome, StepPort
 from runtime.contracts import RuntimeInput
 

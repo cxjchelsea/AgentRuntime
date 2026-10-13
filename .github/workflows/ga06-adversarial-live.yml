@@ -1,0 +1,51 @@
+name: GA-06 Trust Boundary and Adversarial Qwen E2E
+
+on:
+  pull_request:
+    paths:
+      - "tests/ga06_evidence_admission.py"
+      - "tests/ga06_role_separated_turn.py"
+      - "tests/test_ga06_trust_relevance_adversarial.py"
+      - ".github/workflows/ga06-adversarial-live.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ga06-qwen:
+    name: GA-06 role-separated evidence with real Qwen2.5 3B
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: python -m pip install -e '.[test]'
+      - name: Start loopback real model
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GA06_HEAD_SHA=${{ github.event.pull_request.head.sha || github.sha }}"
+          docker run -d --name ga06-qwen --cpus=2 --memory=5g -p 127.0.0.1:11434:11434 ollama/ollama:latest
+          for attempt in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null
+          docker exec ga06-qwen ollama pull qwen2.5:3b
+          docker exec ga06-qwen sha256sum /root/.ollama/models/manifests/registry.ollama.ai/library/qwen2.5/3b
+      - name: Run adversarial negatives and six real-model task trials
+        env:
+          GA06_LIVE_OPT_IN: "1"
+          GA01C_LLM_URL: http://127.0.0.1:11434/v1/chat/completions
+          GA01C_LLM_MODEL: qwen2.5:3b
+        run: python -m pytest tests/test_ga06_trust_relevance_adversarial.py -q -s -rs
+      - name: Diagnostics if failed
+        if: failure()
+        run: docker logs --tail 60 ga06-qwen || true
+      - name: Stop model
+        if: always()
+        run: docker rm -f ga06-qwen || true

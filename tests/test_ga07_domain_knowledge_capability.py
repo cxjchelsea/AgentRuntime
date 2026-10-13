@@ -77,6 +77,7 @@ def test_two_domains_use_same_capability_with_actual_fts_index(tmp_path: Path) -
         assert not other.accepted
         assert other.reason == "NO_EVIDENCE"
         messages = build_domain_model_messages(
+            scope=capability.scope,
             system_instruction="Use only the legal action identifiers given in TASK_JSON.",
             task_payload={
                 "legal_strategy_ids": ["strategy-a"],
@@ -101,6 +102,7 @@ def test_low_relevance_does_not_raise_positive_admission(tmp_path: Path) -> None
     assert admitted.reason == "LOW_RELEVANCE"
     with pytest.raises(KnowledgeContractError, match="preconditions"):
         build_domain_model_messages(
+            scope=DomainScope(domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint),
             system_instruction="Use only the legal candidate identifiers provided.",
             task_payload={},
             admission=admitted,
@@ -207,6 +209,7 @@ def test_public_admission_cannot_override_rejection_or_duplicate_document() -> N
     ):
         with pytest.raises(KnowledgeContractError, match="preconditions|duplicate"):
             build_domain_model_messages(
+                scope=DomainScope(document.domain_id, document.binding_fingerprint),
                 system_instruction="Use only legal candidate strategy and action IDs.",
                 task_payload={"legal_strategy_ids": ["collect"]},
                 admission=forged,

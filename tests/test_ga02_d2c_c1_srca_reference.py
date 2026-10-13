@@ -1191,3 +1191,143 @@ def test_t21_two_readers_one_writer_generation_turnover() -> None:
         assert a.result() == "C1_EPOCH_STALE"
         assert b.result() == "C1_EPOCH_STALE"
     assert catalog.counts() == (2, 0)
+
+def test_rr03_candidate_mutated_between_precheck_and_publish_cas() -> None:
+    catalog, principal = fixture()
+    term, revision = catalog.take_writer_term(principal)
+    candidate = catalog.admit_candidate(
+        principal, policy="p1", package="pkg-a", image={"version": "original"}
+    )
+    authentic = catalog._auth
+    calls = 0
+
+    def mutate_after_precheck(value: Principal, lane: str) -> None:
+        nonlocal calls
+        calls += 1
+        authentic(value, lane)
+        if calls == 2:
+            object.__setattr__(candidate, "package", "injected")
+
+    setattr(catalog, "_auth", mutate_after_precheck)  # noqa: B010 — fixture
+    denied(
+        "C1_PUBLICATION_DIGEST_MISMATCH",
+        catalog.publish,
+        principal,
+        candidate,
+        term=term,
+        expected_revision=revision,
+        tx_id="rr03-mutated",
+    )
+    assert calls == 2
+    assert catalog.counts() == (1, 0)
+    assert ("lane-a", "rr03-mutated") not in catalog._transactions
+
+
+def test_rr03_candidate_payload_mutated_after_precheck_no_commit() -> None:
+    catalog, principal = fixture()
+    term, revision = catalog.take_writer_term(principal)
+    candidate = catalog.admit_candidate(
+        principal, policy="p1", package="pkg-a", image={"version": "original"}
+    )
+    auth = catalog._auth
+    calls = 0
+
+    def mutate_payload(value: Principal, lane: str) -> None:
+        nonlocal calls
+        calls += 1
+        auth(value, lane)
+        if calls == 2:
+            object.__setattr__(candidate, "image", b'{"version":"injected"}')
+
+    setattr(catalog, "_auth", mutate_payload)  # noqa: B010 — fixture
+    denied(
+        "C1_PUBLICATION_DIGEST_MISMATCH",
+        catalog.publish,
+        principal,
+        candidate,
+        term=term,
+        expected_revision=revision,
+        tx_id="rr03-image",
+    )
+    assert catalog.counts() == (1, 0)
+    assert ("lane-a", "rr03-image") not in catalog._transactions
+
+
+def test_rr04_request_mutated_between_fingerprint_and_issue_cas() -> None:
+    catalog, principal = fixture()
+    lease = catalog.open_lease(principal)
+    request = {"query": {"intent": "original"}}
+    authentic = catalog._auth
+    calls = 0
+
+    def mutate_after_fingerprint(value: Principal, lane: str) -> None:
+        nonlocal calls
+        calls += 1
+        authentic(value, lane)
+        if calls == 2:
+            request["query"]["intent"] = "altered"
+
+    setattr(catalog, "_auth", mutate_after_fingerprint)  # noqa: B010 — fixture
+    denied(
+        "C1_ISSUANCE_CONFLICT",
+        catalog.issue,
+        principal,
+        lease_id=lease,
+        request_id="rr04-request",
+        request_payload=request,
+    )
+    assert calls == 2
+    assert catalog.counts() == (1, 0)
+    assert catalog._leases[lease].status == "ACTIVE"
+    assert ("lane-a", "rr04-request") not in catalog._issuance
+
+
+def test_rr04_retry_after_failed_mutation_issues_only_exact_content() -> None:
+    catalog, principal = fixture()
+    lease = catalog.open_lease(principal)
+    request = {"payload": ["stable"]}
+    auth = catalog._auth
+    calls = 0
+
+    def mutate_once(value: Principal, lane: str) -> None:
+        nonlocal calls
+        calls += 1
+        auth(value, lane)
+        if calls == 2:
+            request["payload"].append("mutated")
+
+    setattr(catalog, "_auth", mutate_once)  # noqa: B010 — fixture
+    denied(
+        "C1_ISSUANCE_CONFLICT",
+        catalog.issue,
+        principal,
+        lease_id=lease,
+        request_id="rr04-retry",
+        request_payload=request,
+    )
+    setattr(catalog, "_auth", auth)  # noqa: B010 — restore
+    evidence = catalog.issue(
+        principal,
+        lease_id=lease,
+        request_id="rr04-retry",
+        request_payload=request,
+    )
+    assert evidence.role == ROLE
+    assert (
+        catalog.issue(
+            principal,
+            lease_id=lease,
+            request_id="rr04-retry",
+            request_payload={"payload": ["stable", "mutated"]},
+        )
+        is evidence
+    )
+    denied(
+        "C1_ISSUANCE_CONFLICT",
+        catalog.issue,
+        principal,
+        lease_id=lease,
+        request_id="rr04-retry",
+        request_payload={"payload": ["stable"]},
+    )
+    assert catalog.counts() == (1, 1)

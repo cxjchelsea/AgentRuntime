@@ -31,8 +31,8 @@ from agent_core.runner import Decision, LoopBudget, ObservedFact, RunKind
 from tests.ga05_fts_retrieval import IndexedDocument, SandboxFTSIndex
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga03_domain_prompt_rule_knowledge_e2e import (
-    GA03Turn,
     _CASES,
+    GA03Turn,
     _with_domain_assets,
 )
 from tests.test_ga05_retrieval_robustness_e2e import _DOCUMENTS, _QUERIES
@@ -130,9 +130,7 @@ def _legacy_content(snapshot):
 
 
 @pytest.mark.parametrize("number", [0, 1])
-def test_unified_package_content_and_scope(
-    tmp_path: Path, number: int
-) -> None:
+def test_unified_package_content_and_scope(tmp_path: Path, number: int) -> None:
     snapshot = _snapshot(tmp_path / f"domain-{number}", _CASES[number])
     index = SandboxFTSIndex()
     unified = _assembled(snapshot, index, _QUERIES[number])
@@ -171,7 +169,10 @@ def test_unified_no_retrieval_waits_without_model_or_tool(
 def test_unified_rule_knowledge_mismatch_rejected(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path / "inventory", _CASES[0])
     rule = next(a for a in snapshot.assets if a.ref.kind == "rule")
-    altered = replace(rule, content_bytes=b'{"required_knowledge":"foreign","completion_after":"verify"}')
+    altered = replace(
+        rule,
+        content_bytes=b'{"required_knowledge":"foreign","completion_after":"verify"}',
+    )
     tampered = replace(
         snapshot,
         assets=tuple(altered if asset is rule else asset for asset in snapshot.assets),

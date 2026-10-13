@@ -552,3 +552,78 @@ P0-09 的 **逻辑代码对照子门禁** 达到 `VERIFIED_TESTED_SCOPE`，但�
 | `PR120_MERGE_AUTHORIZATION` | `NOT_ISSUED` |
 
 **Next gated scope:** PR #120 §19 exact-new-head targeted independent review, then P0-08 test-only source-alias dynamic negative fixtures and executable full caller enumeration; P0-01～04 actual deployment owner evidence remains a separate external intake. This design-only document update does not change runtime Registry behavior or authorize production implementation.
+
+
+
+
+---
+
+## 20. P0-08 Alias/Mutation Test-Only Verification — Exact-HEAD Review Closure and Design v0.3（2026-10-13）
+
+### 20.1 §19 独立定向复审（基于原文精确 HEAD，非动态执行）
+
+**审查对象：** PR #120 `ce8310c2ee95a31c0154bc57efef36bae9b3393a` / blob `b5c63b73f49677f2117f22c0d6f881df16345a4b`；main `4e27e755c683737d3f957e55426c9c684a6b2ee9`。此段为 source-based design re-review，不代表外部独立安全专家签字。
+
+| Check | Source anchor | Decision |
+|---|---|---|
+| Input alias persisted without defensive copy | `runtime/registries/base.py` `_store`: assigns the same `definition` and `implementation_ref` into `RegistryRecord` | `PASS_STATIC` |
+| Live RegistryRecord from get/list | `runtime/registries/base.py` `get` returns `stored_record`; `list` returns matching records, not cloned records | `PASS_STATIC` |
+| Explicit mutation surface | `enable/disable/unregister/clear`, mutable `RegistryRecord.enabled`; ten reviewed derived registries use `_store` | `PASS_STATIC_SCOPED` |
+| Definition & ordered relations mutable | `runtime/contracts/common.py:14–17` only `extra="forbid"`, not `frozen`; `runtime/registries/definitions.py:76–84,109` optional_tools are lists | `PASS_STATIC` |
+| D2-B role boundary | `agent_core/domain_registry_mapping.py:256–307` reads records but explicitly returns non-authoritative observation | `PASS_STATIC` |
+| Execution / completeness | GitHub source inspection only; no alias mutation test, no full AST/git-grep callers inventory, no deployment | `HOLD_FOR_EXECUTABLE_EVIDENCE` |
+
+**Review decision:** `SECTION19_EXACT_HEAD_INDEPENDENT_SOURCE_REVIEW=ACCEPT_WITH_SCOPED_EXCLUSIONS`. §19 所称“间接修改风险”是源码可证的 **可变性路径**，不是已经复现真实攻击或证明所有应用调用方可达。部分 Pydantic 模型赋值及列表修改的具体运行期行为应由下面的精确测试固定；不可将推测结果冒充已运行结果。
+
+### 20.2 测试隔离与合同边界
+
+- 仅允许新增 `tests/test_ga02_d2c_c1_p008_registry_alias.py`（可选将可复用、纯函数的调用方审计放入 `tests/reference_models/ga02_d2c_c1_p008_source_scan.py`）；测试导入 **既有** `runtime.registries.*`、`runtime.contracts.common` 和 D2-B 非权威入口，不修改生产 Registry API、`agent_core`、迁移或应用依赖。
+- 每个 Fixture 创建独立 Registry 实例与 `SkillDefinition`/`WorkflowDefinition`；使用纯虚构 `tool-a/tool-b`、`skill-a/workflow-a` 和 `1.0.0`。不得连接 Host/Issuer、数据库、网络、文件系统上的生产密钥，或真实用户数据。
+- **测试用于暴露已存在的不可信 Registry 特征，不是要求现有 Registry 的活引用突然变成 immutable。** 若复制或冻结与当前真实语义不一致，不能为了让“防御成功”测试通过而修改 Registry 行为；应把来源拒绝/冻结要求留在未来独立的 C1 Host Source Admission。
+- 必须显式区分 `ALIAS_MUTATION_OBSERVED`、`D2B_NON_AUTHORITY_VERIFIED`、`HOST_SEAL_NOT_TESTED`；不能使用 `C1_TRUSTED_PINNED`、`C1_ISSUER_APPROVED` 或其它暗示物理验收的状态。
+- 通过要求限定于**确切注册键、别名传播、声明次序、非权威观察及没有隐式执行**；并发竞态、真实 Gen/Issuer/P0 Exit 必须保持未验。禁止运行时通过编造对象自赋 `role` 来模拟真实签发者。
+
+### 20.3 P0-08 test oracle matrix（实现前冻结测试语义）
+
+| ID | Setup / stimulus | Oracle（必须断言或明确的限制） | 预期分类 |
+|---|---|---|---|
+| `ALIAS-01` | 以 `SkillDefinition(optional_tools=["tool-a","tool-b"])` 登记到 `SkillRegistry`；保留输入对象引用；输入对象列表原地修改一个元素 | `registry.get(key).definition is original`，同一 RegistryKey 下可观察变化；先后声明 target 与 ordered index 分别捕获 | `EXPOSED_INPUT_ALIAS` |
+| `ALIAS-02` | 两个相同名字 `["tool-a","tool-a"]`；输入别名执行 `reverse`、`pop`、`append` | 重复项不能按 target 名合并：记录旧 `[(0,"tool-a"),(1,"tool-a")]` 与变更后声明 ordinal；相同值 reverse 不应被错误当成可观测不同顺序；用 `pop/append` 测试形状漂移 | `ORDINAL_DECLARATION_MUTABLE` |
+| `ALIAS-03` | 通过 `get` 获得 record；修改 `record.enabled`，替换 `record.definition` 或原地修改 `optional_tools` | `get` 再读同一个 record 引用；不改 RegistryKey 即可改变 `enabled` 或 Definition 视图；测试不调用 Registry 显式 writer | `EXPOSED_GET_RECORD_ALIAS` |
+| `ALIAS-04` | 通过 `list(namespace=...)` 得到列表并更改元素的 `enabled`；从返回列表 `pop` | 列表是新容器但元素是原始 record：元素字段修改传回；仅修改返回列表的结构不应改变 `registry.exists(key)` | `LIVE_ELEMENTS_NOT_LIVE_CONTAINER` |
+| `ALIAS-05` | `implementation_ref` 放入 probe；经过登记与 get/list 后观察原引用 | 保留对象同一性且不被 Registry 调用；覆盖原有 `tests/test_registries.py` 证明，不得被解释为 Host/Tool 执行授权 | `PASS_NO_IMPLICIT_INVOCATION` |
+| `ALIAS-06` | `WorkflowRegistry` 注册 workflow 的 `optional_tools`，然后通过输入对象和读取记录对列表进行修改 | 明确和 Skill 同样的别名链；required/optional 的次序与个数保留，不能在测试里去重 | `EXPOSED_WORKFLOW_ALIAS` |
+| `ALIAS-07` | 多次调用 `registry.disable/enable/unregister/clear` 后，对既有 `get/list` 引用读取状态 | 显式 Writer 的可见变化与旧别名的生命周期区别应有明确断言；不得将已注销的旧对象别名视为仍已登记/可信有效 | `EXPLICIT_WRITER_LIFECYCLE` |
+| `NONAUTH-01` | 用隔离 `RegistryCatalogViewV1` 和 D2-B `_map_untrusted_observation`，只使用现有 test-only fixture 结构 | 输出 `observation_role` 必为 `NON_AUTHORITATIVE_AT_READ` 或 `INERT_INSPECTION_ONLY`；内容匹配或 hash 不得升格 C1 Trusted Evidence | `D2B_NON_AUTHORITY` |
+| `NONAUTH-02` | 用改变后的活 Registry 记录重新观察 D2-B | 要么按既有 fail-closed 规则拒绝，要么仍为 non-authoritative observation；不得创建 issuer、lease、publication 或强制一种未经验证的 D2-B error code | `NO_TRUST_PROMOTION` |
+| `ENUM-01` | 从固定的 main checkout 枚举 `BaseRegistry`、十个子类和所有 `register/_store/get/list/unregister/enable/disable/clear` 调用点 | 输出结构化 `path, line, symbol, operation, classification, evidence_sha`；区分 AST 直接调用、动态 `getattr`、未知外部调用、测试调用，禁止将 Search 未命中当做无调用点 | `REPRODUCIBLE_SOURCE_ENUMERATION` |
+| `ENUM-02` | 枚举 `RegistryRecord`、`definition`、`implementation_ref` 的赋值与传递 | 明确 `UNKNOWN_DYNAMIC_IMPORT_OR_EXTERNAL_APPLICATION` 档位；对不可访问外部应用不填 `NONE` | `BOUNDED_COMPLETENESS` |
+
+**特定误判保护：** ① 同名两项 `reverse` 观察值相同，不得假报“发生了可观测 ordinal 对换”；② `list()` 返回新容器，不等于返回新 record；③ Pydantic `model_copy(deep=True)` 的可能行为不能用于替代真实来源认证；④ 测试只验证现有 Registry/模型别名，未来 Host Source Sealing 的测试应另按实现开展，不得先捏造其正向通过结果。
+
+### 20.4 测试通过门禁、环境证据与实施范围
+
+| Gate | 最小通过证据 |
+|---|---|
+| `SOURCE_PIN` | main exact SHA、每个已审计源文件 Blob SHA、新测试分支精确 HEAD、仅 `tests/**` 改动清单 |
+| `FOCUSED_TEST` | `python -m pytest tests/test_ga02_d2c_c1_p008_registry_alias.py -q`，每个 ALIAS/NONAUTH 案例具独立断言、完整退出码 |
+| `FULL_GATE` | `python -m pytest tests -q`; `python -m mypy runtime agent_core tests` 或仓库已冻结的确切 mypy 门禁；`python -m ruff check runtime agent_core tests`; `python -m ruff format --check runtime agent_core tests`，记录真实命令与输出，不得复制旧 HEAD 的 CI |
+| `ENUM_AUDIT` | ENUM-01/02 按固定树执行；提交检索工具/版本、范围与遗漏清单，声明调用者全集覆盖程度；工具不可用则 `HOLD` |
+| `SCOPE` | 不改 Registry/DomainBinding/Host/Issuer/DB code；不产生生产发行、持久化副作用；不可绑定 C1 trusted output |
+| `INTERPRETATION` | 检测到活引用与可变声明是 **expected evidence**，不是生产系统测试“已防御”的 PASS；任何真实的未预期越界/执行须阻断 |
+
+本阶段仅 **批准设计这组 test-only verification**，不自动批准其代码实施或将源码审计视为全部完成。后续实现仍需单独限定授权/审查；外部 P0-01～04 的生产环境元数据仍不具备。
+
+### 20.5 Design decision / next gate
+
+| Gate | Decision |
+|---|---|
+| `PR120_SECTION19_EXACT_HEAD_INDEPENDENT_REVIEW` | `ACCEPT_WITH_SCOPED_EXCLUSIONS` |
+| `P0_08_TEST_ONLY_ALIAS_MUTATION_DESIGN` | `READY_FOR_INDEPENDENT_DESIGN_RE_REVIEW` |
+| `P0_08_DYNAMIC_TEST_EXECUTION` | `NOT_IMPLEMENTED_OR_EXECUTED` |
+| `P0_08_FULL_CALLER_ENUMERATION` | `PARTIAL_HOLD` |
+| `PR120_MERGE_AUTHORIZATION` | `NOT_ISSUED` |
+| `P0_INTAKE_EXIT / P1 / P2` | `HOLD` |
+| `B01–B07 / C1_PRODUCTION / D2-D / D3` | `HARD_HOLD` |
+
+**下一步建议：** `GA-02 D2-C C1 — PR #120 §20 Exact-HEAD Independent Test-Only Design Review + Scoped Implementation Authorization`，独立复核每个 Oracle 的可执行性，再决定是否在单独 tests-only PR 中实现。

@@ -964,9 +964,9 @@ def test_rr01_identity_revalidated_inside_publish_lock() -> None:
         original_auth(value, lane)
         if not fired:
             fired = True
-            object.__setattr__(value, "lane", "foreign-lane")
+            object.__setattr__(value, "name", "foreign-principal")
 
-    catalog._auth = adversarial_auth  # isolated test-only after-auth injection
+    setattr(catalog, "_auth", adversarial_auth)  # isolated test-only injection
     denied(
         "C1_ISSUER_UNVERIFIED", catalog.publish, principal, candidate,
         term=term, expected_revision=rev, tx_id="auth-race",
@@ -988,7 +988,7 @@ def test_rr02_historical_receipt_is_immutable_and_distinct() -> None:
     assert historical != PublicationResult(1, 1, historical=False)
     assert historical != (1, 1)
     with pytest.raises((AttributeError, TypeError)):
-        historical.historical = False
+        setattr(historical, "historical", False)
 
 
 def test_t02_self_consistent_digest_does_not_mint_issuer() -> None:

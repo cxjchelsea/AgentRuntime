@@ -176,12 +176,26 @@ class _Issuance:
     record_digest: str
 
 
-def _issuance_record_digest(owner: Principal, lease_id: str, fp: str, policy: str, package: str, evidence_digest: str) -> str:
-    return digest("GA02-D2C-C1-SIM-LEDGER-1", {
-        "principal": owner.name, "lane": owner.lane, "lease": lease_id,
-        "fingerprint": fp, "policy": policy, "package": package,
-        "evidence_digest": evidence_digest,
-    })
+def _issuance_record_digest(
+    owner: Principal,
+    lease_id: str,
+    fp: str,
+    policy: str,
+    package: str,
+    evidence_digest: str,
+) -> str:
+    return digest(
+        "GA02-D2C-C1-SIM-LEDGER-1",
+        {
+            "principal": owner.name,
+            "lane": owner.lane,
+            "lease": lease_id,
+            "fingerprint": fp,
+            "policy": policy,
+            "package": package,
+            "evidence_digest": evidence_digest,
+        },
+    )
 
 
 def _evidence_digest(e: SimulatedEvidence) -> str:
@@ -212,13 +226,17 @@ class TestOnlyCatalog:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._principals: set[Principal] = set()
-        self._candidates: dict[SealedCandidate, tuple[Principal, str, str, str, bytes, str]] = {}
+        self._candidates: dict[
+            SealedCandidate, tuple[Principal, str, str, str, bytes, str]
+        ] = {}
         self._absences: dict[ApprovedAbsence, tuple[Principal, str, int, str, str]] = {}
         self._lanes: dict[str, _Lane] = {}
         self._images: dict[str, bytes] = {}
         self._leases: dict[str, _Lease] = {}
         self._issuance: dict[tuple[str, str], _Issuance] = {}
-        self._transactions: dict[tuple[str, str], tuple[Principal, str, int, int, int, int]] = {}
+        self._transactions: dict[
+            tuple[str, str], tuple[Principal, str, int, int, int, int]
+        ] = {}
         self._counter = 0
         self._lease_counter = 0
         self._clock = 0
@@ -259,7 +277,12 @@ class TestOnlyCatalog:
                 hashlib.sha256(raw).hexdigest(),
             )
             self._candidates[candidate] = (
-                principal, principal.lane, policy, package, raw, candidate.image_digest
+                principal,
+                principal.lane,
+                policy,
+                package,
+                raw,
+                candidate.image_digest,
             )
             return candidate
 
@@ -312,7 +335,11 @@ class TestOnlyCatalog:
             if not lane.generation or lane.revoked or policy != lane.policy:
                 _deny("C1_LANE_SCOPE_MISMATCH")
             self._absences[approved] = (
-                principal, proof, lane.epoch, lane.generation, policy
+                principal,
+                proof,
+                lane.epoch,
+                lane.generation,
+                policy,
             )
             return approved
 
@@ -332,17 +359,36 @@ class TestOnlyCatalog:
             for a in absences:
                 if type(a) is not ApprovedAbsence or a not in self._absences:
                     _deny("C1_ISSUER_UNVERIFIED")
-                admitted_owner, original_digest, epoch, generation, original_policy = self._absences[a]
+                admitted_owner, original_digest, epoch, generation, original_policy = (
+                    self._absences[a]
+                )
                 lane = self._lane(principal.lane)
-                if admitted_owner is not principal or epoch != lane.epoch or generation != lane.generation:
+                if (
+                    admitted_owner is not principal
+                    or epoch != lane.epoch
+                    or generation != lane.generation
+                ):
                     _deny("C1_EPOCH_STALE")
                 canonical_value = {
-                    "source_key": {"kind": a.source_kind, "namespace": a.source_namespace, "id": a.source_id, "version": a.source_version},
-                    "relation": a.relation, "target_kind": a.target_kind, "target_id": a.target_id,
-                    "occurrence": a.occurrence, "host_policy_generation": a.policy,
+                    "source_key": {
+                        "kind": a.source_kind,
+                        "namespace": a.source_namespace,
+                        "id": a.source_id,
+                        "version": a.source_version,
+                    },
+                    "relation": a.relation,
+                    "target_kind": a.target_kind,
+                    "target_id": a.target_id,
+                    "occurrence": a.occurrence,
+                    "host_policy_generation": a.policy,
                     "reason": "HOST_APPROVED_OMISSION",
                 }
-                if a.digest != original_digest or a.digest != digest("GA02-D2C-C1-SIM-OPTIONAL-ABSENCE-1", canonical_value) or a.policy != original_policy:
+                if (
+                    a.digest != original_digest
+                    or a.digest
+                    != digest("GA02-D2C-C1-SIM-OPTIONAL-ABSENCE-1", canonical_value)
+                    or a.policy != original_policy
+                ):
                     _deny("C1_PUBLICATION_DIGEST_MISMATCH")
                 if a.policy != policy or a.policy != self._lane(principal.lane).policy:
                     _deny("C1_LANE_SCOPE_MISMATCH")
@@ -396,11 +442,28 @@ class TestOnlyCatalog:
         self._auth(principal, principal.lane)
         if type(candidate) is not SealedCandidate or candidate not in self._candidates:
             _deny("C1_ISSUER_UNVERIFIED")
-        owner, admitted_lane, admitted_policy, admitted_package, admitted_bytes, admitted_digest = self._candidates[candidate]
+        (
+            owner,
+            admitted_lane,
+            admitted_policy,
+            admitted_package,
+            admitted_bytes,
+            admitted_digest,
+        ) = self._candidates[candidate]
         if owner is not principal:
             _deny("C1_ISSUER_UNVERIFIED")
-        if (candidate.lane, candidate.policy, candidate.package, candidate.image, candidate.image_digest) != (
-            admitted_lane, admitted_policy, admitted_package, admitted_bytes, admitted_digest
+        if (
+            candidate.lane,
+            candidate.policy,
+            candidate.package,
+            candidate.image,
+            candidate.image_digest,
+        ) != (
+            admitted_lane,
+            admitted_policy,
+            admitted_package,
+            admitted_bytes,
+            admitted_digest,
         ):
             _deny("C1_PUBLICATION_DIGEST_MISMATCH")
         if candidate.lane != principal.lane:
@@ -424,7 +487,11 @@ class TestOnlyCatalog:
                 old_owner, old_fp, old_rev, old_epoch, old_term, old_expected = previous
                 if old_owner is not principal:
                     _deny("C1_ISSUER_UNVERIFIED")
-                if old_fp != fp or old_term != term or old_expected != expected_revision:
+                if (
+                    old_fp != fp
+                    or old_term != term
+                    or old_expected != expected_revision
+                ):
                     _deny("C1_ISSUANCE_CONFLICT")
                 return old_rev, old_epoch
             if term != lane.term:
@@ -440,7 +507,12 @@ class TestOnlyCatalog:
             self._images[candidate.image_digest] = candidate.image
             result = (lane.revision, lane.epoch)
             self._transactions[(principal.lane, tx_id)] = (
-                principal, fp, result[0], result[1], term, expected_revision
+                principal,
+                fp,
+                result[0],
+                result[1],
+                term,
+                expected_revision,
             )
             return result
 
@@ -521,11 +593,22 @@ class TestOnlyCatalog:
                 if previous.fingerprint != fingerprint or previous.lease_id != lease_id:
                     _deny("C1_ISSUANCE_CONFLICT")
                 saved_lease = self._leases.get(previous.lease_id)
-                if saved_lease is None or saved_lease.owner is not principal or saved_lease.policy != previous.policy or saved_lease.package != previous.package:
+                if (
+                    saved_lease is None
+                    or saved_lease.owner is not principal
+                    or saved_lease.policy != previous.policy
+                    or saved_lease.package != previous.package
+                ):
                     _deny("C1_PUBLICATION_DIGEST_MISMATCH")
-                if previous.evidence_digest != _evidence_digest(previous.evidence) or previous.record_digest != _issuance_record_digest(
-                    previous.owner, previous.lease_id, previous.fingerprint,
-                    previous.policy, previous.package, previous.evidence_digest
+                if previous.evidence_digest != _evidence_digest(
+                    previous.evidence
+                ) or previous.record_digest != _issuance_record_digest(
+                    previous.owner,
+                    previous.lease_id,
+                    previous.fingerprint,
+                    previous.policy,
+                    previous.package,
+                    previous.evidence_digest,
                 ):
                     _deny("C1_PUBLICATION_DIGEST_MISMATCH")
                 return previous.evidence  # immutable historical, not fresh authority
@@ -570,8 +653,14 @@ class TestOnlyCatalog:
             lease.status = "CONSUMED"
             ed = _evidence_digest(evidence)
             self._issuance[key] = _Issuance(
-                principal, lease_id, fingerprint, lane.policy, lane.package,
-                evidence, ed, _issuance_record_digest(
+                principal,
+                lease_id,
+                fingerprint,
+                lane.policy,
+                lane.package,
+                evidence,
+                ed,
+                _issuance_record_digest(
                     principal, lease_id, fingerprint, lane.policy, lane.package, ed
                 ),
             )

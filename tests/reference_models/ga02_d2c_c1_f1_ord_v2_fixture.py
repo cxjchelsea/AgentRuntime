@@ -19,7 +19,7 @@ class FixtureDenial(ValueError):
         super().__init__(code)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Approval:
     """Handle identity is object identity; record is kept privately in fixture."""
 
@@ -29,7 +29,7 @@ class Approval:
     role: str = ROLE
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class FixturePrincipal:
     name: str
     lane: str

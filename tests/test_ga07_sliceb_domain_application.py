@@ -110,7 +110,9 @@ def test_cross_domain_assemblies_do_not_share_registries(tmp_path: Path) -> None
 def test_modified_package_strategy_rejected_before_m4_assembly(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path / "stock", "inventory.reconcile", "stock")
     original = next(asset for asset in snapshot.assets if asset.ref.kind == "strategy")
-    forged = replace(original, content_bytes=b'{"action_id":"foreign","role":"collect"}')
+    forged = replace(
+        original, content_bytes=b'{"action_id":"foreign","role":"collect"}'
+    )
     tampered = replace(
         snapshot,
         assets=tuple(forged if item is original else item for item in snapshot.assets),

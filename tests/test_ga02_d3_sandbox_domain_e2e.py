@@ -21,9 +21,14 @@ from agent_core.domain_package_loader import (
     HostPublishedGeneration,
     LocalPackageLoader,
     TrustedPackageIdentity,
-    VerifiedAssetV1,
 )
-from agent_core.runner import AgentRunCoordinator, Decision, LoopBudget, ObservedFact, RunKind
+from agent_core.runner import (
+    AgentRunCoordinator,
+    Decision,
+    LoopBudget,
+    ObservedFact,
+    RunKind,
+)
 from agent_core.sandbox_domain_assembly import (
     ROLE,
     SandboxAssemblyError,
@@ -40,7 +45,9 @@ pytestmark = pytest.mark.skipif(
 ACTION_MAP = {"DOMAIN_ACTION_A": "collect", "DOMAIN_ACTION_B": "verify"}
 
 
-def _write_package(tmp_path: Path, *, domain_id: str = "inventory.reconcile") -> TrustedPackageIdentity:
+def _write_package(
+    tmp_path: Path, *, domain_id: str = "inventory.reconcile"
+) -> TrustedPackageIdentity:
     assets: list[dict[str, str]] = []
     for action_id in ("collect", "verify"):
         content = json.dumps({"description": action_id}, sort_keys=True).encode()
@@ -97,7 +104,9 @@ class PackageBoundSandboxStep:
     def __init__(self, inner: ModelDrivenSandboxTurn, binding: SandboxDomainBinding):
         self.inner = inner
         self.domain_binding = binding
-        self.binding = inner.binding = binding.for_run(inner.initial, run_id="d3-sandbox-run")
+        self.binding = inner.binding = binding.for_run(
+            inner.initial, run_id="d3-sandbox-run"
+        )
         if set(ACTION_MAP.values()) != set(binding.action_ids):
             raise SandboxAssemblyError("sandbox action mapping does not match package")
 
@@ -119,8 +128,7 @@ class PackageBoundSandboxStep:
 
 def _bound_step(initial, binding: SandboxDomainBinding):
     inner = ModelDrivenSandboxTurn(initial)
-    step = PackageBoundSandboxStep(inner, binding)
-    return step
+    return PackageBoundSandboxStep(inner, binding)
 
 
 def test_d3_first_package_bound_task_e2e(tmp_path: Path) -> None:
@@ -141,11 +149,13 @@ def test_d3_first_package_bound_task_e2e(tmp_path: Path) -> None:
         assert result.iterations == 3
         assert step.inner.selected_actions == ["DOMAIN_ACTION_A", "DOMAIN_ACTION_B"]
         assert [obs.domain_fingerprint for obs in result.observations] == [
-            binding.binding_fingerprint, binding.binding_fingerprint
+            binding.binding_fingerprint,
+            binding.binding_fingerprint,
         ]
         assert step.inner.fake_model.calls[1]["last_agent_action"] == (
             "MOCK_FOUND_NEEDS_VERIFICATION"
         )
+
     asyncio.run(scenario())
 
 

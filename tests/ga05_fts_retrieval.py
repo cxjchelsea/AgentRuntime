@@ -12,7 +12,10 @@ import re
 import sqlite3
 from dataclasses import dataclass
 
-from agent_core.sandbox_domain_assembly import SandboxAssemblyError, SandboxDomainBinding
+from agent_core.sandbox_domain_assembly import (
+    SandboxAssemblyError,
+    SandboxDomainBinding,
+)
 
 _TOKEN = re.compile(r"[A-Za-z0-9_]+", re.ASCII)
 

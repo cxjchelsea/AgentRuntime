@@ -164,7 +164,7 @@ def assemble_domain_extension(snapshot: VerifiedPackageSnapshotV1) -> DomainExte
             raise DomainExtensionError("ambiguous strategy role")
         roles.add(role)
         links.append((sid, action))
-    if set(action for _, action in links) != action_seen:
+    if {action for _, action in links} != action_seen:
         raise DomainExtensionError("unreachable domain action")
 
     identity = {

@@ -98,7 +98,9 @@ class DomainExecutionCatalog:
             request_ids.add(observed.request_id)
             execution_ids.add(observed.execution_id)
             plan_ids.add(observed.plan_id)
-        return len(request_ids) == 1
+        # Each Agent iteration may have a distinct request ID under one run.
+        # The Coordinator validates exact request/plan correlation per turn.
+        return len(request_ids) in (1, len(observations))
 
 
 def _data(raw: bytes, *, keys: frozenset[str]) -> dict[str, Any]:

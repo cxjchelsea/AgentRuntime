@@ -110,6 +110,7 @@ class DomainKnowledgeCapability:
 
 def build_domain_model_messages(
     *,
+    scope: DomainScope,
     system_instruction: str,
     task_payload: dict[str, object],
     admission: KnowledgeAdmission,
@@ -120,7 +121,10 @@ def build_domain_model_messages(
     Retrieved documents cannot modify roles, strategies, or permissions.
     """
     if (
-        type(system_instruction) is not str
+        type(scope) is not DomainScope
+        or not scope.domain_id
+        or not re.fullmatch(r"[0-9a-f]{64}", scope.binding_fingerprint)
+        or type(system_instruction) is not str
         or not 20 <= len(system_instruction) <= 2048
         or type(task_payload) is not dict
         or type(admission) is not KnowledgeAdmission
@@ -147,8 +151,8 @@ def build_domain_model_messages(
     ):
         raise KnowledgeContractError("unverified model context evidence")
     scopes = {(d.domain_id, d.binding_fingerprint) for d in admission.documents}
-    if len(scopes) != 1:
-        raise KnowledgeContractError("mixed-domain model context")
+    if scopes != {(scope.domain_id, scope.binding_fingerprint)}:
+        raise KnowledgeContractError("foreign or mixed-domain model context")
     if len({d.document_id for d in admission.documents}) != len(admission.documents):
         raise KnowledgeContractError("duplicate model context document")
     docs = [

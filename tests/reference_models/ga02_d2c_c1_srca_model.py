@@ -3,6 +3,7 @@
 No production Host issuer, durable store, network, Registry, or runnable authority.
 Thread locks and logical time are deliberate test simulation, NOT durable CAS.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -230,7 +231,11 @@ class TestOnlyCatalog:
             _deny("C1_LANE_SCOPE_MISMATCH")
 
     def admit_candidate(
-        self, principal: Principal, *, policy: str, package: str,
+        self,
+        principal: Principal,
+        *,
+        policy: str,
+        package: str,
         image: dict[str, Any],
     ) -> SealedCandidate:
         self._auth(principal, principal.lane)
@@ -238,42 +243,67 @@ class TestOnlyCatalog:
         raw = canonical(image)
         with self._lock:
             candidate = SealedCandidate(
-                principal.lane, policy, package, raw,
+                principal.lane,
+                policy,
+                package,
+                raw,
                 hashlib.sha256(raw).hexdigest(),
             )
             self._candidates.add(candidate)
             return candidate
 
     def approve_absence(
-        self, principal: Principal, *,
-        source_kind: str, source_namespace: str, source_id: str,
-        source_version: str, relation: str, target_kind: str,
-        target_id: str, occurrence: int, policy: str,
+        self,
+        principal: Principal,
+        *,
+        source_kind: str,
+        source_namespace: str,
+        source_id: str,
+        source_version: str,
+        relation: str,
+        target_kind: str,
+        target_id: str,
+        occurrence: int,
+        policy: str,
     ) -> ApprovedAbsence:
         self._auth(principal, principal.lane)
         if type(occurrence) is not int or occurrence < 0:
             _deny("C1_DEPENDENCY_INVALID")
         value = {
             "source_key": {
-                "kind": source_kind, "namespace": source_namespace,
-                "id": source_id, "version": source_version,
+                "kind": source_kind,
+                "namespace": source_namespace,
+                "id": source_id,
+                "version": source_version,
             },
-            "relation": relation, "target_kind": target_kind,
-            "target_id": target_id, "occurrence": occurrence,
+            "relation": relation,
+            "target_kind": target_kind,
+            "target_id": target_id,
+            "occurrence": occurrence,
             "host_policy_generation": policy,
             "reason": "HOST_APPROVED_OMISSION",
         }
         proof = digest("GA02-D2C-C1-SIM-OPTIONAL-ABSENCE-1", value)
         with self._lock:
             approved = ApprovedAbsence(
-                source_kind, source_namespace, source_id, source_version,
-                relation, target_kind, target_id, occurrence, policy, proof,
+                source_kind,
+                source_namespace,
+                source_id,
+                source_version,
+                relation,
+                target_kind,
+                target_id,
+                occurrence,
+                policy,
+                proof,
             )
             self._absences.add(approved)
             return approved
 
     def check_absences(
-        self, principal: Principal, *,
+        self,
+        principal: Principal,
+        *,
         source: tuple[str, str, str, str],
         declared: tuple[tuple[str, str, str, int, bool], ...],
         edges: tuple[tuple[str, str, str, int], ...],
@@ -288,19 +318,31 @@ class TestOnlyCatalog:
                     _deny("C1_ISSUER_UNVERIFIED")
                 if a.policy != policy or a.policy != self._lane(principal.lane).policy:
                     _deny("C1_LANE_SCOPE_MISMATCH")
-                if (a.source_kind, a.source_namespace, a.source_id, a.source_version) != source:
+                if (
+                    a.source_kind,
+                    a.source_namespace,
+                    a.source_id,
+                    a.source_version,
+                ) != source:
                     _deny("C1_DEPENDENCY_INVALID")
                 key = (a.relation, a.target_kind, a.target_id, a.occurrence)
                 if key in approved:
                     _deny("C1_DEPENDENCY_INVALID")
                 approved.add(key)
-            declared_keys = {(rel, kind, target, n) for rel, kind, target, n, _ in declared}
+            declared_keys = {
+                (rel, kind, target, n) for rel, kind, target, n, _ in declared
+            }
             edge_keys = set(edges)
             if len(declared_keys) != len(declared) or len(edge_keys) != len(edges):
                 _deny("C1_DEPENDENCY_INVALID")
             if (approved | edge_keys) != declared_keys or approved & edge_keys:
                 _deny("C1_DEPENDENCY_INVALID")
-            if any(key in approved for *parts, required in declared if required for key in [tuple(parts)]):
+            if any(
+                key in approved
+                for *parts, required in declared
+                if required
+                for key in [tuple(parts)]
+            ):
                 _deny("C1_DEPENDENCY_INVALID")
             return tuple(sorted(edge_keys))
 
@@ -315,8 +357,13 @@ class TestOnlyCatalog:
             return lane.term, lane.revision
 
     def publish(
-        self, principal: Principal, candidate: SealedCandidate, *,
-        term: int, expected_revision: int, tx_id: str,
+        self,
+        principal: Principal,
+        candidate: SealedCandidate,
+        *,
+        term: int,
+        expected_revision: int,
+        tx_id: str,
     ) -> tuple[int, int]:
         self._auth(principal, principal.lane)
         if type(candidate) is not SealedCandidate or candidate not in self._candidates:
@@ -328,8 +375,12 @@ class TestOnlyCatalog:
         canonical_wire(candidate.image)
         fp = digest(
             "GA02-D2C-C1-SIM-PUBLISH-1",
-            {"image": candidate.image_digest, "lane": candidate.lane,
-             "package": candidate.package, "policy": candidate.policy},
+            {
+                "image": candidate.image_digest,
+                "lane": candidate.lane,
+                "package": candidate.package,
+                "policy": candidate.policy,
+            },
         )
         with self._lock:
             lane = self._lane(principal.lane)
@@ -378,8 +429,14 @@ class TestOnlyCatalog:
             self._lease_counter += 1
             lease_id = f"sim-lease-{self._lease_counter}"
             self._leases[lease_id] = _Lease(
-                principal, principal.lane, lane.revision, lane.epoch,
-                lane.generation, lane.policy, lane.package, self._clock + ttl,
+                principal,
+                principal.lane,
+                lane.revision,
+                lane.epoch,
+                lane.generation,
+                lane.policy,
+                lane.package,
+                self._clock + ttl,
             )
             return lease_id
 
@@ -398,14 +455,22 @@ class TestOnlyCatalog:
             lease.status = status
 
     def issue(
-        self, principal: Principal, *, lease_id: str,
-        request_id: str, request_payload: dict[str, Any],
+        self,
+        principal: Principal,
+        *,
+        lease_id: str,
+        request_id: str,
+        request_payload: dict[str, Any],
     ) -> SimulatedEvidence:
         self._auth(principal, principal.lane)
         fingerprint = digest(
             "GA02-D2C-C1-SIM-ISSUANCE-1",
-            {"principal": principal.name, "lane": principal.lane,
-             "lease": lease_id, "request": request_payload},
+            {
+                "principal": principal.name,
+                "lane": principal.lane,
+                "lease": lease_id,
+                "request": request_payload,
+            },
         )
         with self._lock:
             key = (principal.lane, request_id)
@@ -428,24 +493,48 @@ class TestOnlyCatalog:
                 _deny("C1_PUBLICATION_REVOKED")
             if lease.status != "ACTIVE" or self._clock >= lease.expiry:
                 _deny("C1_LEASE_INVALID")
-            if (lease.revision, lease.epoch, lease.generation, lease.policy, lease.package) != (
-                lane.revision, lane.epoch, lane.generation, lane.policy, lane.package,
+            if (
+                lease.revision,
+                lease.epoch,
+                lease.generation,
+                lease.policy,
+                lease.package,
+            ) != (
+                lane.revision,
+                lane.epoch,
+                lane.generation,
+                lane.policy,
+                lane.package,
             ):
                 _deny("C1_EPOCH_STALE")
-            if hashlib.sha256(self._images.get(lane.image_digest, b"")).hexdigest() != lane.image_digest:
+            if (
+                hashlib.sha256(self._images.get(lane.image_digest, b"")).hexdigest()
+                != lane.image_digest
+            ):
                 _deny("C1_PUBLICATION_DIGEST_MISMATCH")
             self._counter += 1
             evidence = SimulatedEvidence(
-                f"sim-evidence-{self._counter}", principal.lane,
-                principal.name, lane.epoch, lane.generation, lane.image_digest,
+                f"sim-evidence-{self._counter}",
+                principal.lane,
+                principal.name,
+                lane.epoch,
+                lane.generation,
+                lane.image_digest,
             )
             lease.status = "CONSUMED"
             self._issuance[key] = _Issuance(
-                principal, lease_id, fingerprint, lane.policy,
-                lane.package, evidence, _evidence_digest(evidence),
+                principal,
+                lease_id,
+                fingerprint,
+                lane.policy,
+                lane.package,
+                evidence,
+                _evidence_digest(evidence),
             )
             return evidence
 
     def counts(self) -> tuple[int, int]:
         with self._lock:
-            return sum(lane.revision for lane in self._lanes.values()), len(self._issuance)
+            return sum(lane.revision for lane in self._lanes.values()), len(
+                self._issuance
+            )

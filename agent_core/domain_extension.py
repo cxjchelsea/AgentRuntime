@@ -1,8 +1,8 @@
-"""GA-07 Slice B: package-driven, non-authoritative Domain Extension assembly.
+"""GA-07 Slice B bounded, non-authoritative package-to-M4 extension assembly.
 
-This consumes an inert GA-02 pinned binding, never a trusted issuer claim.
-Only bounded LOW-impact actions/strategies are supported. No tools, workflow
-execution, C1 publisher authority, M6 grant or new M4 planner is created.
+Consumes existing GA-02 D2-A verified package snapshots. These Python objects
+are not Host issuance credentials: the application must independently supply
+an authentic publisher/issuer. No positive external execution grants here.
 """
 
 from __future__ import annotations
@@ -12,11 +12,10 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from agent_core.sandbox_domain_assembly import (
-    ROLE,
-    SandboxAssemblyError,
-    SandboxDomainBinding,
-)
+from agent_core.domain_descriptor import parse_package_descriptor
+from agent_core.domain_package_loader import VerifiedAssetV1, VerifiedPackageSnapshotV1
+from agent_core.iteration import AgentRunBinding
+from runtime.contracts import RuntimeInput
 from runtime.contracts.enums import PlanningMode
 from runtime.registries import (
     ActionDefinition,
@@ -30,14 +29,30 @@ from runtime.registries import (
 
 
 class DomainExtensionError(ValueError):
-    """Invalid inert domain package configuration; no partial assembly returned."""
+    """Invalid inert package, never a partial registry or execution grant."""
+
+
+@dataclass(frozen=True, slots=True)
+class DomainExtensionBinding:
+    domain_id: str
+    domain_version: str
+    generation_id: str
+    manifest_digest: str
+    binding_fingerprint: str
+
+    def for_run(self, initial: RuntimeInput, *, run_id: str) -> AgentRunBinding:
+        return AgentRunBinding.from_input(
+            initial,
+            run_id=run_id,
+            domain_id=self.domain_id,
+            domain_version=self.domain_version,
+            binding_fingerprint=self.binding_fingerprint,
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class DomainExtension:
-    """Fresh, run-scoped M4 registries, generated from one pinned package."""
-
-    binding: SandboxDomainBinding
+    binding: DomainExtensionBinding
     actions: ActionRegistry
     strategies: StrategyRegistry
     skills: SkillRegistry
@@ -71,53 +86,64 @@ def _strict_object(raw: bytes, fields: frozenset[str]) -> dict[str, str]:
     return parsed
 
 
-def assemble_domain_extension(binding: SandboxDomainBinding) -> DomainExtension:
-    """Use package-defined IDs and strategy links, never fixed domain values.
-
-    The GA-02 binding is still explicitly SANDBOX_NON_AUTHORITATIVE, so
-    registries generated here are not grants and cannot enable external tools.
-    """
+def assemble_domain_extension(snapshot: VerifiedPackageSnapshotV1) -> DomainExtension:
+    """Create fresh registries from verified bytes, without relying on test code."""
     if (
-        type(binding) is not SandboxDomainBinding
-        or binding.role != ROLE
-        or not binding.domain_id
-        or not binding.binding_fingerprint
-        or not binding.assets
-        or len(binding.assets) > 256
+        type(snapshot) is not VerifiedPackageSnapshotV1
+        or not snapshot.descriptor.enabled
+        or not snapshot.generation_id
+        or snapshot.expected_manifest_digest != snapshot.descriptor.manifest_digest
+        or type(snapshot.assets) is not tuple
+        or len(snapshot.assets) != len(snapshot.descriptor.asset_refs)
+        or len(snapshot.assets) > 256
     ):
-        raise DomainExtensionError("invalid inert domain binding")
-    actions = ActionRegistry()
-    strategies = StrategyRegistry()
-    skills = SkillRegistry()
-    action_ids: list[str] = []
-    strategy_ids: list[str] = []
-    links: list[tuple[str, str]] = []
-    action_seen: set[str] = set()
-    strategy_seen: set[str] = set()
+        raise DomainExtensionError("invalid D2-A package snapshot")
+    try:
+        if parse_package_descriptor(snapshot.descriptor_bytes) != snapshot.descriptor:
+            raise DomainExtensionError("package descriptor changed")
+    except (TypeError, ValueError) as exc:
+        raise DomainExtensionError("invalid package descriptor") from exc
+    if (
+        any(type(asset) is not VerifiedAssetV1 for asset in snapshot.assets)
+        or tuple(asset.ref for asset in snapshot.assets) != snapshot.descriptor.asset_refs
+    ):
+        raise DomainExtensionError("package asset reference mismatch")
+    identity_assets: list[dict[str, str]] = []
     action_records: list[tuple[str, str, str]] = []
     strategy_records: list[tuple[str, str, str]] = []
-    for asset in binding.assets:
+    action_seen: set[str] = set()
+    strategy_seen: set[str] = set()
+    for asset in snapshot.assets:
+        ref = asset.ref
         if (
-            asset.namespace != binding.domain_id
-            or hashlib.sha256(asset.content_bytes).hexdigest() != asset.sha256
-            or asset.version != "1.0.0"
+            ref.namespace != snapshot.descriptor.domain_id
+            or ref.version != "1.0.0"
+            or type(asset.content_bytes) is not bytes
+            or hashlib.sha256(asset.content_bytes).hexdigest() != ref.sha256
         ):
             raise DomainExtensionError("asset scope, version or digest invalid")
-        if asset.kind == "action":
-            value = _strict_object(asset.content_bytes, frozenset({"role", "description"}))
-            if asset.id in action_seen:
+        identity_assets.append(
+            {
+                "kind": ref.kind,
+                "namespace": ref.namespace,
+                "id": ref.id,
+                "version": ref.version,
+                "sha256": ref.sha256,
+            }
+        )
+        if ref.kind == "action":
+            fields = _strict_object(asset.content_bytes, frozenset({"role", "description"}))
+            if ref.id in action_seen:
                 raise DomainExtensionError("duplicate action identifier")
-            action_seen.add(asset.id)
-            action_records.append((asset.id, value["description"], value["role"]))
-        elif asset.kind == "strategy":
-            value = _strict_object(asset.content_bytes, frozenset({"role", "action_id"}))
-            if asset.id in strategy_seen:
+            action_seen.add(ref.id)
+            action_records.append((ref.id, fields["description"], fields["role"]))
+        elif ref.kind == "strategy":
+            fields = _strict_object(asset.content_bytes, frozenset({"role", "action_id"}))
+            if ref.id in strategy_seen:
                 raise DomainExtensionError("duplicate strategy identifier")
-            strategy_seen.add(asset.id)
-            strategy_records.append((asset.id, value["action_id"], value["role"]))
-        elif asset.kind in {"prompt", "rule", "knowledge"}:
-            # Domain content has a separate retrieval/prompt interface (Slice A).
-            # Do not accidentally interpret its bytes as executable actions.
+            strategy_seen.add(ref.id)
+            strategy_records.append((ref.id, fields["action_id"], fields["role"]))
+        elif ref.kind in {"prompt", "rule", "knowledge"}:
             continue
         else:
             raise DomainExtensionError("unsupported executable asset kind")
@@ -126,25 +152,46 @@ def assemble_domain_extension(binding: SandboxDomainBinding) -> DomainExtension:
         or not strategy_records
         or len(action_records) > 32
         or len(strategy_records) > 32
-        or set(binding.action_ids) != action_seen
     ):
         raise DomainExtensionError("incomplete domain action/strategy mapping")
-    by_action = {item: (description, role) for item, description, role in action_records}
+    by_action = {name: (description, role) for name, description, role in action_records}
     roles: set[str] = set()
-    for strategy_id, action_id, role in strategy_records:
-        if action_id not in by_action or by_action[action_id][1] != role:
+    links: list[tuple[str, str]] = []
+    for sid, action, role in strategy_records:
+        if action not in by_action or by_action[action][1] != role:
             raise DomainExtensionError("foreign or mismatched strategy action")
         if role in roles:
             raise DomainExtensionError("ambiguous strategy role")
         roles.add(role)
-        strategy_ids.append(strategy_id)
-        links.append((strategy_id, action_id))
-    if set(item for _, item in links) != action_seen:
+        links.append((sid, action))
+    if set(action for _, action in links) != action_seen:
         raise DomainExtensionError("unreachable domain action")
-    for action_id, description, _role in action_records:
+
+    identity = {
+        "domain_id": snapshot.descriptor.domain_id,
+        "domain_version": snapshot.descriptor.domain_version,
+        "generation_id": snapshot.generation_id,
+        "manifest_digest": snapshot.descriptor.manifest_digest,
+        "assets": identity_assets,
+    }
+    raw = json.dumps(
+        identity, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    fingerprint = hashlib.sha256(b"GA02-D3-SANDBOX-BINDING-1\0" + raw).hexdigest()
+    binding = DomainExtensionBinding(
+        snapshot.descriptor.domain_id,
+        snapshot.descriptor.domain_version,
+        snapshot.generation_id,
+        snapshot.descriptor.manifest_digest,
+        fingerprint,
+    )
+    actions = ActionRegistry()
+    strategies = StrategyRegistry()
+    skills = SkillRegistry()
+    for aid, description, _role in action_records:
         actions.register(
             ActionDefinition(
-                action_id=action_id,
+                action_id=aid,
                 version="1.0.0",
                 category="SANDBOX",
                 description=description,
@@ -157,27 +204,26 @@ def assemble_domain_extension(binding: SandboxDomainBinding) -> DomainExtension:
                 ],
             )
         )
-        action_ids.append(action_id)
-    for strategy_id, action_id in links:
+    for sid, action in links:
         strategies.register(
             StrategyDefinition(
-                strategy_id=strategy_id,
+                strategy_id=sid,
                 version="1.0.0",
-                description="package-bound sandbox strategy",
+                description="package-bound non-authoritative strategy",
                 preferred_goals=[],
                 preferred_needs=[],
                 compatible_emotions=[],
                 required_conditions=[],
                 avoid_conditions=[],
-                default_actions=[action_id],
+                default_actions=[action],
                 intrusiveness_level=IntrusivenessLevel.LOW,
             )
         )
         skills.register(
             SkillDefinition(
-                skill_id="skill-" + strategy_id,
+                skill_id="skill-" + sid,
                 version="1.0.0",
-                supported_actions=[action_id],
+                supported_actions=[action],
             )
         )
     return DomainExtension(
@@ -185,7 +231,7 @@ def assemble_domain_extension(binding: SandboxDomainBinding) -> DomainExtension:
         actions,
         strategies,
         skills,
-        tuple(action_ids),
-        tuple(strategy_ids),
+        tuple(item[0] for item in action_records),
+        tuple(item[0] for item in strategy_records),
         tuple(links),
     )

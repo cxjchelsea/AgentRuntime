@@ -11,7 +11,7 @@ import json
 import threading
 import unicodedata
 from dataclasses import dataclass
-from typing import Any, NoReturn, Self
+from typing import Any, NoReturn
 
 ROLE = "NON_PRODUCTION_SIMULATION"
 
@@ -213,15 +213,15 @@ def _evidence_digest(e: SimulatedEvidence) -> str:
     )
 
 
-class PublicationResult(tuple[int, int]):
-    """Tuple-compatible non-authorizing publication receipt."""
+@dataclass(frozen=True, slots=True)
+class PublicationResult:
+    """Immutable test-only publication receipt; history is never runnable."""
 
+    revision: int
+    epoch: int
     historical: bool
+    role: str = ROLE
 
-    def __new__(cls, revision: int, epoch: int, *, historical: bool = False) -> Self:
-        receipt = tuple.__new__(cls, (revision, epoch))
-        receipt.historical = historical
-        return receipt
 
 
 class TestOnlyCatalog:
@@ -283,6 +283,7 @@ class TestOnlyCatalog:
         canonical({"policy": policy, "package": package})
         raw = canonical(image)
         with self._lock:
+            self._auth(principal, principal.lane)
             candidate = SealedCandidate(
                 principal.lane,
                 policy,
@@ -333,6 +334,7 @@ class TestOnlyCatalog:
         }
         proof = digest("GA02-D2C-C1-SIM-OPTIONAL-ABSENCE-1", value)
         with self._lock:
+            self._auth(principal, principal.lane)
             approved = ApprovedAbsence(
                 source_kind,
                 source_namespace,
@@ -369,6 +371,7 @@ class TestOnlyCatalog:
     ) -> tuple[tuple[str, str, str, int], ...]:
         self._auth(principal, principal.lane)
         with self._lock:
+            self._auth(principal, principal.lane)
             lane_state = self._lane(principal.lane)
             if lane_state.revoked or not lane_state.generation:
                 _deny("C1_PUBLICATION_REVOKED")
@@ -443,6 +446,7 @@ class TestOnlyCatalog:
     def take_writer_term(self, principal: Principal) -> tuple[int, int]:
         self._auth(principal, principal.lane)
         with self._lock:
+            self._auth(principal, principal.lane)
             lane = self._lane(principal.lane)
             lane.term += 1
             return lane.term, lane.revision
@@ -498,6 +502,7 @@ class TestOnlyCatalog:
             },
         )
         with self._lock:
+            self._auth(principal, principal.lane)
             lane = self._lane(principal.lane)
             previous = self._transactions.get((principal.lane, tx_id))
             if previous is not None:
@@ -538,6 +543,7 @@ class TestOnlyCatalog:
     def revoke(self, principal: Principal) -> int:
         self._auth(principal, principal.lane)
         with self._lock:
+            self._auth(principal, principal.lane)
             lane = self._lane(principal.lane)
             lane.revision += 1
             lane.revoked = True
@@ -554,6 +560,7 @@ class TestOnlyCatalog:
         if type(ttl) is not int or ttl <= 0:
             _deny("C1_LEASE_INVALID")
         with self._lock:
+            self._auth(principal, principal.lane)
             lane = self._lane(principal.lane)
             if not lane.generation or lane.revoked:
                 _deny("C1_PUBLICATION_REVOKED")
@@ -580,6 +587,7 @@ class TestOnlyCatalog:
     def _change_lease(self, principal: Principal, lease_id: str, status: str) -> None:
         self._auth(principal, principal.lane)
         with self._lock:
+            self._auth(principal, principal.lane)
             lease = self._leases.get(lease_id)
             if lease is None or lease.owner is not principal:
                 _deny("C1_LEASE_INVALID")
@@ -606,6 +614,7 @@ class TestOnlyCatalog:
             },
         )
         with self._lock:
+            self._auth(principal, principal.lane)
             key = (principal.lane, request_id)
             previous = self._issuance.get(key)
             if previous is not None:

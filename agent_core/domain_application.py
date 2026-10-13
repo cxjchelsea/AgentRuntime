@@ -53,9 +53,10 @@ class DomainApplication:
         binding = self.prepare(initial, run_id=run_id)
         # An application must not reuse a StepPort assembled for a different
         # domain, run, subject or session, even for a WAIT-only decision.
-        if type(getattr(step, "binding", None)) is not AgentRunBinding:
+        step_binding = getattr(step, "binding", None)
+        if type(step_binding) is not AgentRunBinding:
             raise DomainExtensionError("unbound application step")
-        if step.binding != binding:
+        if step_binding != binding:
             raise DomainExtensionError("application step binding mismatch")
         return await AgentRunCoordinator(step, budget).run(initial, binding)
 

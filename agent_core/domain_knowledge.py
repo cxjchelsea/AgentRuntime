@@ -124,6 +124,8 @@ def build_domain_model_messages(
         or not 20 <= len(system_instruction) <= 2048
         or type(task_payload) is not dict
         or type(admission) is not KnowledgeAdmission
+        or type(admission.documents) is not tuple
+        or admission.reason != "ADMITTED"
         or not admission.accepted
     ):
         raise KnowledgeContractError("model context preconditions failed")
@@ -147,6 +149,8 @@ def build_domain_model_messages(
     scopes = {(d.domain_id, d.binding_fingerprint) for d in admission.documents}
     if len(scopes) != 1:
         raise KnowledgeContractError("mixed-domain model context")
+    if len({d.document_id for d in admission.documents}) != len(admission.documents):
+        raise KnowledgeContractError("duplicate model context document")
     docs = [
         {
             "domain_id": d.domain_id,

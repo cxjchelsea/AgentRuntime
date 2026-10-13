@@ -51,6 +51,12 @@ class DomainApplication:
         if type(budget) is not LoopBudget:
             raise DomainExtensionError("invalid application loop budget")
         binding = self.prepare(initial, run_id=run_id)
+        # An application must not reuse a StepPort assembled for a different
+        # domain, run, subject or session, even for a WAIT-only decision.
+        if type(getattr(step, "binding", None)) is not AgentRunBinding:
+            raise DomainExtensionError("unbound application step")
+        if step.binding != binding:
+            raise DomainExtensionError("application step binding mismatch")
         return await AgentRunCoordinator(step, budget).run(initial, binding)
 
 

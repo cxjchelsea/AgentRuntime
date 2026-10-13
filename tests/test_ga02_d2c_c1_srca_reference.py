@@ -1,10 +1,10 @@
 """C1-SRC-A S1/S2: isolation-only golden and publisher/issuer simulation tests."""
 
 import concurrent.futures
-from dataclasses import replace
 import hashlib
 import json
 import threading
+from dataclasses import replace
 
 import pytest
 
@@ -431,6 +431,7 @@ def test_simulation_only_never_run_capability() -> None:
     assert evidence.role == "NON_PRODUCTION_SIMULATION"
     assert "TRUSTED_PINNED_NON_RUNNABLE" not in repr(evidence)
 
+
 def test_g1_admitted_candidate_mutation_rejected_without_publication() -> None:
     catalog, principal = fixture()
     term, rev = catalog.take_writer_term(principal)
@@ -439,8 +440,13 @@ def test_g1_admitted_candidate_mutation_rejected_without_publication() -> None:
     )
     object.__setattr__(admitted, "policy", "evil")
     denied(
-        "C1_PUBLICATION_DIGEST_MISMATCH", catalog.publish,
-        principal, admitted, term=term, expected_revision=rev, tx_id="tamper",
+        "C1_PUBLICATION_DIGEST_MISMATCH",
+        catalog.publish,
+        principal,
+        admitted,
+        term=term,
+        expected_revision=rev,
+        tx_id="tamper",
     )
     assert catalog.counts() == (1, 0)
 
@@ -454,8 +460,13 @@ def test_g1_admitted_candidate_package_and_image_tampering_denied() -> None:
         )
         object.__setattr__(admitted, field, value)
         denied(
-            "C1_PUBLICATION_DIGEST_MISMATCH", catalog.publish,
-            principal, admitted, term=term, expected_revision=rev, tx_id="tamper",
+            "C1_PUBLICATION_DIGEST_MISMATCH",
+            catalog.publish,
+            principal,
+            admitted,
+            term=term,
+            expected_revision=rev,
+            tx_id="tamper",
         )
         assert catalog.counts() == (1, 0)
 
@@ -466,9 +477,14 @@ def test_g2_approved_absence_digest_and_occurrence_tamper_denied() -> None:
         approved = admit_absence(catalog, principal)
         object.__setattr__(approved, field, value)
         denied(
-            "C1_PUBLICATION_DIGEST_MISMATCH", catalog.check_absences,
-            principal, source=SOURCE, declared=DECLARED, edges=(),
-            absences=(approved,), policy="p1",
+            "C1_PUBLICATION_DIGEST_MISMATCH",
+            catalog.check_absences,
+            principal,
+            source=SOURCE,
+            declared=DECLARED,
+            edges=(),
+            absences=(approved,),
+            policy="p1",
         )
 
 
@@ -483,9 +499,14 @@ def test_g2_optional_approval_stale_after_generation_rotation() -> None:
         principal, image, term=term, expected_revision=rev, tx_id="new-generation"
     ) == (2, 2)
     denied(
-        "C1_EPOCH_STALE", catalog.check_absences,
-        principal, source=SOURCE, declared=DECLARED, edges=(),
-        absences=(approved,), policy="p1",
+        "C1_EPOCH_STALE",
+        catalog.check_absences,
+        principal,
+        source=SOURCE,
+        declared=DECLARED,
+        edges=(),
+        absences=(approved,),
+        policy="p1",
     )
 
 
@@ -494,8 +515,11 @@ def test_g3_lease_expiry_before_commit_versus_after_commit() -> None:
     first_lease = catalog.open_lease(principal, ttl=1)
     catalog.advance_clock(1)
     denied(
-        "C1_LEASE_INVALID", catalog.issue,
-        principal, lease_id=first_lease, request_id="too-late",
+        "C1_LEASE_INVALID",
+        catalog.issue,
+        principal,
+        lease_id=first_lease,
+        request_id="too-late",
         request_payload={},
     )
     assert catalog.counts() == (1, 0)
@@ -504,9 +528,12 @@ def test_g3_lease_expiry_before_commit_versus_after_commit() -> None:
         principal, lease_id=later_lease, request_id="issued", request_payload={}
     )
     catalog.advance_clock(1)
-    assert catalog.issue(
-        principal, lease_id=later_lease, request_id="issued", request_payload={}
-    ) == issued
+    assert (
+        catalog.issue(
+            principal, lease_id=later_lease, request_id="issued", request_payload={}
+        )
+        == issued
+    )
     assert catalog.counts() == (1, 1)
 
 
@@ -515,17 +542,24 @@ def test_g3_lease_revocation_before_issue_and_after_issue() -> None:
     lease = catalog.open_lease(principal)
     catalog.revoke_lease(principal, lease)
     denied(
-        "C1_LEASE_INVALID", catalog.issue,
-        principal, lease_id=lease, request_id="new", request_payload={},
+        "C1_LEASE_INVALID",
+        catalog.issue,
+        principal,
+        lease_id=lease,
+        request_id="new",
+        request_payload={},
     )
     fresh = catalog.open_lease(principal)
     issued = catalog.issue(
         principal, lease_id=fresh, request_id="existing", request_payload={}
     )
     catalog.revoke_lease(principal, fresh)
-    assert catalog.issue(
-        principal, lease_id=fresh, request_id="existing", request_payload={}
-    ) == issued
+    assert (
+        catalog.issue(
+            principal, lease_id=fresh, request_id="existing", request_payload={}
+        )
+        == issued
+    )
 
 
 def test_g4_publication_tx_owner_and_term_bound() -> None:
@@ -535,16 +569,26 @@ def test_g4_publication_tx_owner_and_term_bound() -> None:
         other, policy="p1", package="pkg-a", image={"k": ["v"]}
     )
     denied(
-        "C1_ISSUER_UNVERIFIED", catalog.publish, other, same,
-        term=1, expected_revision=0, tx_id="tx-a",
+        "C1_ISSUER_UNVERIFIED",
+        catalog.publish,
+        other,
+        same,
+        term=1,
+        expected_revision=0,
+        tx_id="tx-a",
     )
     term, rev = catalog.take_writer_term(principal)
     own = catalog.admit_candidate(
         principal, policy="p1", package="pkg-a", image={"k": ["v"]}
     )
     denied(
-        "C1_ISSUANCE_CONFLICT", catalog.publish, principal, own,
-        term=term, expected_revision=0, tx_id="tx-a",
+        "C1_ISSUANCE_CONFLICT",
+        catalog.publish,
+        principal,
+        own,
+        term=term,
+        expected_revision=0,
+        tx_id="tx-a",
     )
     # The originally authorized publisher can retrieve its historical result.
     assert catalog.publish(
@@ -576,14 +620,20 @@ def test_g5_issuance_ledger_policy_package_and_evidence_corruption_denied() -> N
     for field, replacement in (("policy", "changed"), ("package", "changed")):
         catalog, principal = fixture()
         lease = catalog.open_lease(principal)
-        catalog.issue(
-            principal, lease_id=lease, request_id="id", request_payload={}
-        )
+        catalog.issue(principal, lease_id=lease, request_id="id", request_payload={})
         row = catalog._issuance[("lane-a", "id")]  # test-owned fault injection
-        catalog._issuance[("lane-a", "id")] = replace(row, **{field: replacement})
+        catalog._issuance[("lane-a", "id")] = (
+            replace(row, policy=replacement)
+            if field == "policy"
+            else replace(row, package=replacement)
+        )
         denied(
-            "C1_PUBLICATION_DIGEST_MISMATCH", catalog.issue, principal,
-            lease_id=lease, request_id="id", request_payload={},
+            "C1_PUBLICATION_DIGEST_MISMATCH",
+            catalog.issue,
+            principal,
+            lease_id=lease,
+            request_id="id",
+            request_payload={},
         )
         assert catalog.counts() == (1, 1)
 
@@ -595,8 +645,12 @@ def test_g5_issuance_evidence_digest_corruption_denied() -> None:
     row = catalog._issuance[("lane-a", "id")]  # test-owned fault injection
     catalog._issuance[("lane-a", "id")] = replace(row, evidence_digest="0" * 64)
     denied(
-        "C1_PUBLICATION_DIGEST_MISMATCH", catalog.issue, principal,
-        lease_id=lease, request_id="id", request_payload={},
+        "C1_PUBLICATION_DIGEST_MISMATCH",
+        catalog.issue,
+        principal,
+        lease_id=lease,
+        request_id="id",
+        request_payload={},
     )
 
 
@@ -615,7 +669,9 @@ def test_g6_barrier_controlled_revoke_before_and_after_issue() -> None:
     def issue_second() -> str:
         assert revoke_complete.wait(5)
         try:
-            catalog.issue(principal, lease_id=lease, request_id="new", request_payload={})
+            catalog.issue(
+                principal, lease_id=lease, request_id="new", request_payload={}
+            )
         except SimulatedDenial as exc:
             return exc.code
         return "UNEXPECTED_SUCCESS"
@@ -631,8 +687,9 @@ def test_g6_barrier_controlled_revoke_before_and_after_issue() -> None:
     issued_complete = threading.Event()
 
     def issue_first() -> object:
-        item = catalog2.issue(principal2, lease_id=lease2,
-                              request_id="prior", request_payload={})
+        item = catalog2.issue(
+            principal2, lease_id=lease2, request_id="prior", request_payload={}
+        )
         issued_complete.set()
         return item
 
@@ -645,15 +702,25 @@ def test_g6_barrier_controlled_revoke_before_and_after_issue() -> None:
         second = executor.submit(revoke_second)
         original = first.result()
         second.result()
-    assert catalog2.issue(principal2, lease_id=lease2,
-                          request_id="prior", request_payload={}) is original
+    assert (
+        catalog2.issue(
+            principal2, lease_id=lease2, request_id="prior", request_payload={}
+        )
+        is original
+    )
 
 
 def test_g7_two_fault_precedence_and_upper_bounds() -> None:
     catalog, principal = fixture()
     forged = Principal(principal.name, principal.lane)
-    denied("C1_ISSUER_UNVERIFIED", catalog.admit_candidate, forged,
-           policy="p1", package="pkg-a", image={"x": "z" * 1025})
+    denied(
+        "C1_ISSUER_UNVERIFIED",
+        catalog.admit_candidate,
+        forged,
+        policy="p1",
+        package="pkg-a",
+        image={"x": "z" * 1025},
+    )
     denied("C1_INPUT_INVALID", canonical, {"x": "x" * 1025})
     denied("C1_INPUT_INVALID", canonical_wire, b'{"a":1,"a":2}')
     assert len(canonical({"x": "x" * 1024})) > 1024
@@ -663,8 +730,9 @@ def test_g7_two_fault_precedence_and_upper_bounds() -> None:
 def test_g7_simulated_role_and_exact_scope_not_executable() -> None:
     catalog, principal = fixture()
     lease = catalog.open_lease(principal)
-    evidence = catalog.issue(principal, lease_id=lease,
-                             request_id="nonrun", request_payload={})
+    evidence = catalog.issue(
+        principal, lease_id=lease, request_id="nonrun", request_payload={}
+    )
     assert evidence.role == ROLE
     assert not hasattr(evidence, "implementation_ref")
     assert not hasattr(evidence, "run")

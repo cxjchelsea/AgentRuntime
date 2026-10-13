@@ -18,7 +18,6 @@ from agent_core.domain_m4_assembly import assemble_domain_m4
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.iteration import AgentRunBinding
 from agent_core.runner import AgentRunCoordinator, LoopBudget, RunOutcome, StepPort
-from agent_core.sandbox_domain_assembly import assemble_sandbox_domain
 from runtime.contracts import RuntimeInput
 
 
@@ -59,5 +58,4 @@ def bootstrap_domain_application(
     snapshot: VerifiedPackageSnapshotV1,
 ) -> DomainApplication:
     """Accept only GA-02 D2-A snapshot and create a fresh isolated extension."""
-    bound = assemble_sandbox_domain(snapshot)
-    return DomainApplication(assemble_domain_extension(bound))
+    return DomainApplication(assemble_domain_extension(snapshot))

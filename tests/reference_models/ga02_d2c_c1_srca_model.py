@@ -4,6 +4,7 @@ Test support only. No runtime imports, Host issuer, Registry, IO or permissions.
 It models one process's atomic transitions under a Python RLock; this is NOT
 durable CAS, cross-worker fencing, or a trusted Catalog implementation.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -11,7 +12,7 @@ import json
 import threading
 import unicodedata
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, NoReturn
 
 ROLE = "NON_PRODUCTION_SIMULATION"
 _SOURCE = "SIMULATED_HOST_SEALED_CANDIDATE"
@@ -23,7 +24,7 @@ class SimulatedDenial(ValueError):
         super().__init__(code)
 
 
-def _deny(code: str) -> None:
+def _deny(code: str) -> NoReturn:
     raise SimulatedDenial(code)
 
 
@@ -52,8 +53,11 @@ def canonical(v: Any) -> bytes:
     _validate(v)
     try:
         data = json.dumps(
-            v, sort_keys=True, ensure_ascii=False,
-            separators=(",", ":"), allow_nan=False,
+            v,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
         ).encode("utf-8", "strict")
     except (UnicodeError, ValueError, TypeError):
         _deny("C1_INPUT_INVALID")
@@ -65,6 +69,7 @@ def canonical(v: Any) -> bytes:
 def canonical_wire(raw: bytes) -> Any:
     if type(raw) is not bytes or len(raw) > 2097152:
         _deny("C1_RESOURCE_LIMIT")
+
     def pairs(v: list[tuple[str, Any]]) -> dict[str, Any]:
         out: dict[str, Any] = {}
         for k, x in v:
@@ -72,6 +77,7 @@ def canonical_wire(raw: bytes) -> Any:
                 _deny("C1_INPUT_INVALID")
             out[k] = x
         return out
+
     try:
         obj = json.loads(raw.decode("utf-8", "strict"), object_pairs_hook=pairs)
     except (ValueError, UnicodeError):
@@ -82,7 +88,9 @@ def canonical_wire(raw: bytes) -> Any:
 
 
 def digest(profile: str, value: Any) -> str:
-    return hashlib.sha256(profile.encode("ascii") + b"\0" + canonical(value)).hexdigest()
+    return hashlib.sha256(
+        profile.encode("ascii") + b"\0" + canonical(value)
+    ).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,7 +153,10 @@ def synthetic_candidate(
         _validate(s)
     raw = canonical(image)
     return SealedCandidate(
-        lane, policy, package, raw,
+        lane,
+        policy,
+        package,
+        raw,
         hashlib.sha256(raw).hexdigest(),
     )
 
@@ -186,6 +197,8 @@ def check_optional_absences(
 class TestOnlyCatalog:
     """Deterministic in-memory reference. RLock != durable DB transaction."""
 
+    __test__ = False
+
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._lanes: dict[str, _Lane] = {}
@@ -212,8 +225,13 @@ class TestOnlyCatalog:
             return state.term, state.revision
 
     def publish(
-        self, principal: Principal, candidate: SealedCandidate, *,
-        term: int, expected_revision: int, tx_id: str,
+        self,
+        principal: Principal,
+        candidate: SealedCandidate,
+        *,
+        term: int,
+        expected_revision: int,
+        tx_id: str,
     ) -> tuple[int, int]:
         self._auth(principal, candidate.lane)
         if type(candidate) is not SealedCandidate or candidate.source != _SOURCE:
@@ -221,10 +239,15 @@ class TestOnlyCatalog:
         if hashlib.sha256(candidate.image).hexdigest() != candidate.image_digest:
             _deny("C1_PUBLICATION_DIGEST_MISMATCH")
         canonical_wire(candidate.image)
-        fingerprint = digest("GA02-D2C-C1-SIM-PUBLISH-1", {
-            "candidate": candidate.image_digest, "lane": candidate.lane,
-            "package": candidate.package, "policy": candidate.policy,
-        })
+        fingerprint = digest(
+            "GA02-D2C-C1-SIM-PUBLISH-1",
+            {
+                "candidate": candidate.image_digest,
+                "lane": candidate.lane,
+                "package": candidate.package,
+                "policy": candidate.policy,
+            },
+        )
         with self._lock:
             state = self._lane(candidate.lane)
             prior = self._transactions.get((candidate.lane, tx_id))
@@ -264,19 +287,33 @@ class TestOnlyCatalog:
             if not lane.generation or lane.revoked:
                 _deny("C1_PUBLICATION_REVOKED")
             self._leases[lease_id] = _Lease(
-                principal.name, principal.lane, lane.revision, lane.epoch,
-                lane.generation, lane.policy, lane.package,
+                principal.name,
+                principal.lane,
+                lane.revision,
+                lane.epoch,
+                lane.generation,
+                lane.policy,
+                lane.package,
             )
 
     def issue(
-        self, principal: Principal, *, lease_id: str, request_id: str,
+        self,
+        principal: Principal,
+        *,
+        lease_id: str,
+        request_id: str,
         request_payload: dict[str, Any],
     ) -> SimulatedEvidence:
         self._auth(principal, principal.lane)
-        fp = digest("GA02-D2C-C1-SIM-ISSUANCE-1", {
-            "principal": principal.name, "lane": principal.lane,
-            "lease": lease_id, "request": request_payload,
-        })
+        fp = digest(
+            "GA02-D2C-C1-SIM-ISSUANCE-1",
+            {
+                "principal": principal.name,
+                "lane": principal.lane,
+                "lease": lease_id,
+                "request": request_payload,
+            },
+        )
         with self._lock:
             key = (principal.lane, request_id)
             prior = self._issuance.get(key)
@@ -296,16 +333,33 @@ class TestOnlyCatalog:
                 _deny("C1_PUBLICATION_REVOKED")
             if not lease.active:
                 _deny("C1_LEASE_INVALID")
-            if (lease.revision, lease.epoch, lease.generation, lease.policy, lease.package) != (
-                lane.revision, lane.epoch, lane.generation, lane.policy, lane.package,
+            if (
+                lease.revision,
+                lease.epoch,
+                lease.generation,
+                lease.policy,
+                lease.package,
+            ) != (
+                lane.revision,
+                lane.epoch,
+                lane.generation,
+                lane.policy,
+                lane.package,
             ):
                 _deny("C1_EPOCH_STALE")
-            if hashlib.sha256(self._images.get(lane.image_digest, b"")).hexdigest() != lane.image_digest:
+            if (
+                hashlib.sha256(self._images.get(lane.image_digest, b"")).hexdigest()
+                != lane.image_digest
+            ):
                 _deny("C1_PUBLICATION_DIGEST_MISMATCH")
             self._counter += 1
             evidence = SimulatedEvidence(
-                f"sim-evidence-{self._counter}", principal.lane, principal.name,
-                lane.epoch, lane.generation, lane.image_digest,
+                f"sim-evidence-{self._counter}",
+                principal.lane,
+                principal.name,
+                lane.epoch,
+                lane.generation,
+                lane.image_digest,
             )
             lease.active = False
             self._issuance[key] = (fp, evidence)

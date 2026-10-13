@@ -31,7 +31,9 @@ pytestmark = pytest.mark.skipif(
 
 
 def _capability(domain, text: str):
-    scope = DomainScope(domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint)
+    scope = DomainScope(
+        domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint
+    )
     document = KnowledgeDocument(
         scope.domain_id,
         scope.binding_fingerprint,
@@ -40,9 +42,7 @@ def _capability(domain, text: str):
         hashlib.sha256(text.encode("utf-8")).hexdigest(),
         text,
     )
-    return DomainKnowledgeCapability(
-        scope, lambda _scope, _query, _limit: (document,)
-    )
+    return DomainKnowledgeCapability(scope, lambda _scope, _query, _limit: (document,))
 
 
 def test_knowledge_backed_transport_forms_live_model_messages(tmp_path: Path) -> None:
@@ -107,7 +107,7 @@ async def test_live_transport_sends_three_roles_without_promoting_evidence() -> 
 
     def fake_send(request: Request, timeout: float) -> bytes:
         del timeout
-        captured.append(json.loads(request.data or b"{}"))
+        captured.append(json.loads(bytes(request.data or b"{}")))
         return json.dumps(
             {
                 "choices": [
@@ -130,8 +130,8 @@ async def test_live_transport_sends_three_roles_without_promoting_evidence() -> 
         cfg,
         message_builder=lambda _payload: (
             {"role": "system", "content": "Trusted testing strategy selector."},
-            {"role": "user", "content": "TASK_JSON={}"}, 
-            {"role": "user", "content": "EVIDENCE_JSON={}"}, 
+            {"role": "user", "content": "TASK_JSON={}"},
+            {"role": "user", "content": "EVIDENCE_JSON={}"},
         ),
         send_once=fake_send,
     )

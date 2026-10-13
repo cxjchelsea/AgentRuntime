@@ -497,3 +497,58 @@ P0-09 的 **逻辑代码对照子门禁** 达到 `VERIFIED_TESTED_SCOPE`，但�
 | `PRODUCTION_C1_IMPLEMENTATION_AUTHORIZATION` | `NOT_ISSUED` |
 
 **下一个关口**：`GA-02 D2-C C1 — P0-01/02/03/04 Real Deployment Evidence Owner Intake + P0-08 Registry Writer/Alias Source Audit`。如真实应用与 DB 元数据不可取得，应该只提交缺口与责任人待定表，**不得**自行推断部署事实、创建生产 Issuer 或宣布 P0 已关闭。本节是可复审的候选 Intake 台账，不是独立审批或 Merge Authorization。
+
+
+
+
+---
+
+## 19. PR #120 Exact-HEAD Independent Source Provenance Review + P0-08 Registry Writer/Alias Audit v0.2（2026-10-13）
+
+**审查基线：** 原 §18 基于 `main@4e27e755c683737d3f957e55426c9c684a6b2ee9`；PR #120 §18 原文件 blob `69378b5833ded3046e0fe54b7949775968017799`。本节直接复核 BaseRegistry、全部十种子 Registry、CanonicalModel、Definition 和 D2-B Metadata Reader 的仓库源码，属于 **SOURCE-ONLY STATIC REVIEW**，不宣称运行已部署系统或执行动态攻击测试。
+
+### 19.1 证据来源分级与前述 §18 审查决定
+
+- `EVIDENCE_PROVENANCE=PASS_SCOPED`：§18 的源文件 Blob 与声明的源码范围可读取且事实在源文件上成立；§18 中“未找到实际部署来源”的正确含义是 **在当前取证范围内未提供**，不是对所有服务/连接器代码不存在的证明。
+- `COVERAGE=PARTIAL`：GitHub 代码搜索对若干关键词返回零匹配；不能因无索引结果而宣称完成全仓库消费者枚举。还需完整可检索代码快照（`git grep`/AST）及实际应用仓库。当前没有数据库或 Host/Deploy owner 的外部事实。
+- `P0_EXIT=HOLD`：无真实服务账号、数据库类型及事务级别、双 worker、迁移/备份/运行日志证据。§18 的 P0-01～10 状态保持不变。
+
+### 19.2 P0-08 确证的对象所有权/写入/读取链
+
+| 类别 | 直接仓库证据 | 结果 / 信任边界 |
+|---|---|---|
+| BaseRegistry 显式写入 | `runtime/registries/base.py` blob `e41d49367338aa40908ac9fbe5d2ee14b4a03400`：`register → _store → _records[key]=RegistryRecord`，`unregister/enable/disable/clear` | `VERIFIED_STATIC`；记录身份不具不可变、事务或 multi-worker fence |
+| 导出活对象别名 | 同文件 `get` 直接返回 stored `RegistryRecord`，`list` 返回含原记录的列表；`_store` 未深拷贝 `definition` 和 `implementation_ref` | `VERIFIED_STATIC`；可从注册时输入别名、get/list 返回别名影响记录内容 |
+| 子类写入归口 | `runtime/registries/{action,strategy,skill,tool,workflow,capability,prompt,policy,schema,domain}.py` 十类 Registry 均在 `register` 中调用共享 `_store` | `VERIFIED_STATIC`；精确调用方和外部插件仍需全仓索引/部署调查 |
+| Definition 允许修改 | `runtime/contracts/common.py` blob `f628caf7be535cd8109194777eb1cf6da815dda1` 的 `CanonicalModel.model_config=ConfigDict(extra="forbid")` **未启用 frozen**；`runtime/registries/definitions.py` blob `3c8d8eca2855236f2c3870926d5cd304c16e5edd` 中 `SkillDefinition.optional_tools`、`WorkflowDefinition.optional_tools` 和大量其它字段为 `list` | `VERIFIED_STATIC`；非只读字段与内层列表不应假定密封 |
+| D2-B 消费者 | `agent_core/domain_registry_mapping.py` blob `cc44d52249a018cff2c92b1eeac1fb21f4d97ad8`：`_map_untrusted_observation → _read(registry.get) → _check_record(record.definition,record.enabled)` | `VERIFIED_STATIC`；非权威观察、并非 Catalog Publisher，不能作 C1 `TRUSTED` 证明 |
+| 既有测试证明边界 | `tests/test_registries.py` blob `f1a0f1dddd82759e0e6d5c4501f84546da960e48` 覆盖注册、get/list、重复拒绝和 implementation_ref 身份保留 | `TESTS_PRESENT`；本轮未运行新的 alias/mutation 动态负例，不能宣称并发复现已通过 |
+
+**确定性风险机制（静态推断，动态复现未运行）：** 代码将传入的 `definition` 对象保留为原引用，`get/list` 暴露活 `RegistryRecord`，对象模型默认可变并含 list。调用方因此具有在原 Registry Key 不变的情况下修改 `record.definition`、`record.enabled` 或 `definition.optional_tools` 顺序/内容的能力；内容 SHA、Ordinal 身份、Catalog 声明稳定性均不能靠当前 Registry 自身担保。该风险不声称已出现真实攻击或生产越权。
+
+### 19.3 需独立补齐的动态对抗与消费者枚举
+
+| 验证任务 | 最小负例 / 完成条件 | 当前 |
+|---|---|---|
+| `P0-08-A` register 输入引用别名 | 注册 Skill/Workflow 后修改输入定义及 `optional_tools`，读取 Registry 是否变化；记录 exact hash 与 declaration ordinal | `SPECIFIED_NOT_EXECUTED` |
+| `P0-08-B` get/list 活记录别名 | `get`/ `list` 获得记录后修改 `enabled` 和内层 list，验证并发读取前后能否形成不一致快照 | `SPECIFIED_NOT_EXECUTED` |
+| `P0-08-C` 10 Registry 子类和使用者枚举 | 在可访问的完整仓库 checkout 运行限定 `git grep` / AST：`register/_store/unregister/enable/disable/clear/get/list/implementation_ref` 的引用和动态包装；列出所有写者、外部扩展与入口；无法检索者明确记录不可观测 | `PARTIAL_SOURCE_ENUMERATION` |
+| `P0-08-D` Sealed Source Admission 对抗 | Host 源的 Definition、Edge、Adapter、CORE allowlist 在封存后变化必须失败或创建新 Generation，并阻断旧批准重放 | `HOST_PHYSICAL_NOT_AVAILABLE` |
+| `P0-08-E` D2-B Non-Authority Guard | D2-B 读取活 Registry，即使结果内容/Hash 与已封存元数据相同，也不能用于 C1 Trusted Publisher/Issuer 构造 | `REQUIREMENT_SPECIFIED` |
+
+**范围限制：** 不可将修改 BaseRegistry 使其 frozen/deepcopy 当成自动获得受信 C1；那只能是潜在的普通 Registry 防误用改进，无法替代 Host 身份、密封来源、同代际一致性和 DB 原子提交。当前 C1-SRC-A 仍必须独立于 live Registry。
+
+### 19.4 Targeted Review & Gate
+
+| Gate | Decision |
+|---|---|
+| `PR120_SECTION18_SOURCE_PROVENANCE_REVIEW` | `PASS_WITH_COVERAGE_LIMITS` |
+| `P0_08_10_REGISTRY_WRITE_ENTRYPOINT_ENUMERATION` | `VERIFIED_STATIC_IN_REVIEWED_MODULES` |
+| `P0_08_ALIAS_MUTABILITY_MECHANISM` | `CONFIRMED_FROM_SOURCE / DYNAMIC_TEST_PENDING` |
+| `P0_08_FULL_CALLER_WRITER_AUDIT` | `PARTIAL / HOLD` |
+| `P0_REAL_HOST_DB_OWNER_EVIDENCE` | `MISSING_EXTERNAL_EVIDENCE` |
+| `P0_EXIT / P1 / P2` | `HOLD` |
+| `B01–B07 / PRODUCTION_C1 / D2-D / D3` | `HARD_HOLD` |
+| `PR120_MERGE_AUTHORIZATION` | `NOT_ISSUED` |
+
+**Next gated scope:** PR #120 §19 exact-new-head targeted independent review, then P0-08 test-only source-alias dynamic negative fixtures and executable full caller enumeration; P0-01～04 actual deployment owner evidence remains a separate external intake. This design-only document update does not change runtime Registry behavior or authorize production implementation.

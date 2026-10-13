@@ -79,7 +79,9 @@ class DomainApplication:
         if step_binding != binding:
             raise DomainExtensionError("application step binding mismatch")
         completion_check: Callable[[str, tuple[ObservedFact, ...]], bool] | None = None
-        execution_guard: Callable[[Decision, ObservedFact | None, int], bool] | None = None
+        execution_guard: Callable[[Decision, ObservedFact | None, int], bool] | None = (
+            None
+        )
         if execution_catalog is not None:
             if (
                 type(execution_catalog) is not DomainExecutionCatalog
@@ -132,8 +134,10 @@ class DomainApplication:
             execution_guard = validate_workflow_execution
 
         return await AgentRunCoordinator(
-            step, budget, completion_check=completion_check,
-            execution_guard=execution_guard
+            step,
+            budget,
+            completion_check=completion_check,
+            execution_guard=execution_guard,
         ).run(initial, binding)
 
 

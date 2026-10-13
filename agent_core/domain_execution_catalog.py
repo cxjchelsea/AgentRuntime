@@ -30,6 +30,7 @@ class DomainStep:
     step_id: str
     tool_id: str
     completion_fact: str
+    action_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,14 +210,20 @@ def assemble_execution_catalog(
             "step_id",
             "tool_id",
             "completion_fact",
+            "action_id",
         }:
             raise DomainExtensionError("invalid workflow step schema")
         step_id = _name(entry["step_id"])
         tool_id = _name(entry["tool_id"])
         fact = _name(entry["completion_fact"])
-        if tool_id not in tool_ids or step_id in {step.step_id for step in parsed}:
+        action_id = _name(entry["action_id"])
+        if (
+            tool_id not in tool_ids
+            or action_id not in extension.action_ids
+            or step_id in {step.step_id for step in parsed}
+        ):
             raise DomainExtensionError("unknown tool or duplicate workflow step")
-        parsed.append(DomainStep(step_id, tool_id, fact))
+        parsed.append(DomainStep(step_id, tool_id, fact, action_id))
     allowed_tools = raw_capability["tool_ids"]
     if (
         raw_capability["workflow_id"] != workflow_id

@@ -89,7 +89,8 @@ class ChatCompletionsStrategyTransport:
         *,
         send_once: Callable[[Request, float], bytes] = _send_once,
         system_instruction: str | None = None,
-        message_builder: Callable[[dict[str, Any]], tuple[dict[str, str], ...]] | None = None,
+        message_builder: Callable[[dict[str, Any]], tuple[dict[str, str], ...]]
+        | None = None,
     ) -> None:
         self._config = config
         self._send_once = send_once

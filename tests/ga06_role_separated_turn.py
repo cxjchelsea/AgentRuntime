@@ -68,8 +68,10 @@ class RoleSeparatedTransport:
             {"role": "system", "content": self._system},
             {
                 "role": "user",
-                "content": "TASK_JSON=" + json.dumps(payload, ensure_ascii=True)
-                + "\nEVIDENCE_JSON=" + self._evidence,
+                "content": "TASK_JSON="
+                + json.dumps(payload, ensure_ascii=True)
+                + "\nEVIDENCE_JSON="
+                + self._evidence,
             },
         ]
 
@@ -106,8 +108,19 @@ class RoleSeparatedTransport:
             if type(selection) is not dict:
                 raise ValueError("invalid model result")
             return selection
-        except (TimeoutError, HTTPError, URLError, OSError, ValueError, KeyError, IndexError, TypeError) as exc:
-            raise LiveModelTransportError("GA06 structured provider response unavailable") from exc
+        except (
+            TimeoutError,
+            HTTPError,
+            URLError,
+            OSError,
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+        ) as exc:
+            raise LiveModelTransportError(
+                "GA06 structured provider response unavailable"
+            ) from exc
 
 
 class AdmittedDomainTurn(GA03Turn):

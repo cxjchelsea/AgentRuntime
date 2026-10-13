@@ -282,6 +282,7 @@ class TestOnlyCatalog:
         self._auth(principal, principal.lane)
         canonical({"policy": policy, "package": package})
         raw = canonical(image)
+        self._crash("BEFORE_ISSUER_ADMISSION")
         with self._lock:
             self._auth(principal, principal.lane)
             candidate = SealedCandidate(
@@ -491,6 +492,7 @@ class TestOnlyCatalog:
             _deny("C1_LANE_SCOPE_MISMATCH")
         if hashlib.sha256(candidate.image).hexdigest() != candidate.image_digest:
             _deny("C1_PUBLICATION_DIGEST_MISMATCH")
+        self._crash("BEFORE_DIGEST_VALIDATION")
         canonical_wire(candidate.image)
         fp = digest(
             "GA02-D2C-C1-SIM-PUBLISH-1",
@@ -671,6 +673,7 @@ class TestOnlyCatalog:
                 != lane.image_digest
             ):
                 _deny("C1_PUBLICATION_DIGEST_MISMATCH")
+            self._crash("BEFORE_FINAL_ISSUE")
             self._crash("BEFORE_ISSUE_CAS")
             self._counter += 1
             evidence = SimulatedEvidence(
@@ -706,6 +709,9 @@ class TestOnlyCatalog:
             "AFTER_PUBLISH_CAS",
             "BEFORE_ISSUE_CAS",
             "AFTER_ISSUE_CAS",
+            "BEFORE_ISSUER_ADMISSION",
+            "BEFORE_DIGEST_VALIDATION",
+            "BEFORE_FINAL_ISSUE",
         ):
             _deny("C1_INPUT_INVALID")
         self._crash_stage = stage
@@ -720,3 +726,52 @@ class TestOnlyCatalog:
             return sum(lane.revision for lane in self._lanes.values()), len(
                 self._issuance
             )
+
+
+def validate_simulated_closure(
+    nodes: list[dict[str, Any]], edges: list[tuple[str, str]], *,
+    core_namespace: str = "CORE",
+) -> str:
+    """A deliberately narrow test-only graph and byte budget oracle.
+
+    This is not an actual C0 Definition/adapter or D2-C trusted graph validator.
+    """
+    if len(nodes) > 256 or len(edges) > 1024:
+        _deny("C1_RESOURCE_LIMIT")
+    seen: set[str] = set()
+    for node in nodes:
+        raw = canonical(node)
+        if len(raw) > 10240:
+            _deny("C1_RESOURCE_LIMIT")
+        name = node.get("id")
+        if type(name) is not str or name in seen:
+            _deny("C1_DEPENDENCY_INVALID")
+        seen.add(name)
+    if len(canonical({"nodes": nodes, "edges": [list(e) for e in edges]})) > 2097152:
+        _deny("C1_RESOURCE_LIMIT")
+    graph: dict[str, list[str]] = {name: [] for name in seen}
+    for parent, target in edges:
+        if parent not in graph or target not in graph:
+            _deny("C1_DEPENDENCY_INVALID")
+        if target.startswith(core_namespace + ":") and not parent.startswith(
+            core_namespace + ":"
+        ):
+            _deny("C1_DEPENDENCY_INVALID")
+        graph[parent].append(target)
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def walk(name: str) -> None:
+        if name in visiting:
+            _deny("C1_DEPENDENCY_INVALID")
+        if name in visited:
+            return
+        visiting.add(name)
+        for target in graph[name]:
+            walk(target)
+        visiting.remove(name)
+        visited.add(name)
+
+    for node_id in graph:
+        walk(node_id)
+    return ROLE

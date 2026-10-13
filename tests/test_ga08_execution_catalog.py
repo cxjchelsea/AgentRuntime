@@ -78,8 +78,11 @@ def _snapshot(root: Path, *, steps: int = 1):
     manifest["asset_refs"].extend(additions)
     manifest["asset_refs"].sort(
         key=lambda row: (
-            row["kind"], row["namespace"], row["id"],
-            row["version"], row["relative_path"]
+            row["kind"],
+            row["namespace"],
+            row["id"],
+            row["version"],
+            row["relative_path"],
         )
     )
     manifest.pop("manifest_digest")
@@ -127,18 +130,17 @@ def test_distinct_domain_execution_catalogs_and_ordered_completion(
         )
         for number, step in enumerate(catalog.workflow.steps, 1)
     )
-    assert catalog.completion_from_observations(
-        run_id="run-1", observations=evidence
-    )
+    assert catalog.completion_from_observations(run_id="run-1", observations=evidence)
     assert not catalog.completion_from_observations(
         run_id="other-run", observations=evidence
     )
     assert not catalog.completion_from_observations(
         run_id="run-1", observations=evidence[:-1]
     )
-    assert not catalog.completion_from_observations(
-        run_id="run-1", observations=tuple(reversed(evidence))
-    )
+    if steps > 1:
+        assert not catalog.completion_from_observations(
+            run_id="run-1", observations=tuple(reversed(evidence))
+        )
     assert not catalog.completion_from_observations(
         run_id="run-1",
         observations=(
@@ -180,9 +182,7 @@ def test_tool_asset_tamper_and_foreign_capability_reference_rejected(
         assemble_execution_catalog(
             replace(
                 snapshot,
-                assets=tuple(
-                    forged_cap if a is cap else a for a in snapshot.assets
-                ),
+                assets=tuple(forged_cap if a is cap else a for a in snapshot.assets),
             ),
             extension,
         )

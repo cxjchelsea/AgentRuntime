@@ -125,9 +125,17 @@ def test_mismatched_digest_or_scope_fails_closed(tmp_path: Path) -> None:
         replace(legitimate, binding_fingerprint="0" * 64),
         replace(legitimate, content="tampered"),
     ):
-        result = DomainKnowledgeCapability(
-            scope, lambda _scope, _query, _limit, item=corrupt: (item,)
-        ).retrieve_and_admit("stock threshold")
+        def provider(
+            _scope: DomainScope,
+            _query: str,
+            _limit: int,
+            item: KnowledgeDocument = corrupt,
+        ) -> tuple[KnowledgeDocument, ...]:
+            return (item,)
+
+        result = DomainKnowledgeCapability(scope, provider).retrieve_and_admit(
+            "stock threshold"
+        )
         assert not result.accepted
         assert result.reason == "UNVERIFIED_EVIDENCE"
 
@@ -167,8 +175,14 @@ def test_invalid_port_return_fails_closed(tmp_path: Path) -> None:
     scope = DomainScope(
         domain.m4.binding.domain_id, domain.m4.binding.binding_fingerprint
     )
-    capability = DomainKnowledgeCapability(
-        scope, lambda _scope, _query, _limit: ("wrong-type",)  # type: ignore[return-value]
-    )
-    with pytest.raises(KnowledgeContractError, match="provider output"):
-        capability.retrieve_and_admit("stock threshold")
+    def malformed_provider(
+        _scope: DomainScope, _query: str, _limit: int
+    ) -> tuple[KnowledgeDocument, ...]:
+        from typing import cast
+
+        return cast(tuple[KnowledgeDocument, ...], ("wrong-type",))
+
+    capability = DomainKnowledgeCapability(scope, malformed_provider)
+    outcome = capability.retrieve_and_admit("stock threshold")
+    assert not outcome.accepted
+    assert outcome.reason == "UNVERIFIED_EVIDENCE"

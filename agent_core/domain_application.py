@@ -14,6 +14,8 @@ from agent_core.domain_extension import (
     assemble_domain_extension,
 )
 from agent_core.domain_package_loader import VerifiedPackageSnapshotV1
+from agent_core.domain_m4_assembly import assemble_domain_m4
+from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.iteration import AgentRunBinding
 from agent_core.runner import AgentRunCoordinator, LoopBudget, RunOutcome, StepPort
 from agent_core.sandbox_domain_assembly import assemble_sandbox_domain
@@ -23,6 +25,10 @@ from runtime.contracts import RuntimeInput
 @dataclass(frozen=True, slots=True)
 class DomainApplication:
     extension: DomainExtension
+
+    def m4(self, model: StructuredStrategyTransportAdapter):
+        """Create the existing M4 planner/validator/rechecker for this package."""
+        return assemble_domain_m4(self.extension, model)
 
     def prepare(self, initial: RuntimeInput, *, run_id: str) -> AgentRunBinding:
         if type(initial) is not RuntimeInput or type(run_id) is not str or not run_id:

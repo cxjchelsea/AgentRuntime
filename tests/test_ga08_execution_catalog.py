@@ -310,10 +310,14 @@ def test_ga08_workflow_rejects_invalid_sandbox_execution(
         initial = build_runtime_input(text="validate two-stage sandbox workflow")
 
         async def select(payload: dict[str, Any]) -> dict[str, object]:
-            role = "verify" if (
-                failure == "wrong-action"
-                or payload["last_agent_action"] == "FACT_1"
-            ) else "collect"
+            role = (
+                "verify"
+                if (
+                    failure == "wrong-action"
+                    or payload["last_agent_action"] == "FACT_1"
+                )
+                else "collect"
+            )
             return {
                 "strategy_id": role + "-strategy-notes",
                 "action_ids": [role + "-notes"],
@@ -331,12 +335,12 @@ def test_ga08_workflow_rejects_invalid_sandbox_execution(
             async def decide(self, current_input, iteration, observations):
                 if failure == "premature-finish" and observations:
                     return Decision(
-                        iteration, "FINISH", reason="MODEL_SAID_DONE",
+                        iteration,
+                        "FINISH",
+                        reason="MODEL_SAID_DONE",
                         completion_fact="FACT_1",
                     )
-                return await super().decide(
-                    current_input, iteration, observations
-                )
+                return await super().decide(current_input, iteration, observations)
 
             async def execute_and_observe(self, decision: Decision) -> ObservedFact:
                 index = self.actions
@@ -346,7 +350,9 @@ def test_ga08_workflow_rejects_invalid_sandbox_execution(
                 return replace(
                     result,
                     workflow_step_id=step.step_id,
-                    tool_id="incorrect-tool" if failure == "wrong-tool" else step.tool_id,
+                    tool_id="incorrect-tool"
+                    if failure == "wrong-tool"
+                    else step.tool_id,
                 )
 
         turn = InvalidTurn(initial)

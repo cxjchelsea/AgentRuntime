@@ -148,7 +148,7 @@ def assemble_domain_extension(snapshot: VerifiedPackageSnapshotV1) -> DomainExte
                 raise DomainExtensionError("duplicate strategy identifier")
             strategy_seen.add(ref.id)
             strategy_records.append((ref.id, fields["action_id"], fields["role"]))
-        elif ref.kind in {"prompt", "rule", "knowledge"}:
+        elif ref.kind in {"prompt", "rule", "knowledge", "tool", "workflow", "capability"}:
             continue
         else:
             raise DomainExtensionError("unsupported executable asset kind")

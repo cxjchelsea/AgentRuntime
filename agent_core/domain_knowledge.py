@@ -54,9 +54,7 @@ class KnowledgeAdmission:
 
 
 # The caller supplies search; this is a capability port, NOT a source trust claim.
-KnowledgeRetriever = Callable[
-    [DomainScope, str, int], tuple[KnowledgeDocument, ...]
-]
+KnowledgeRetriever = Callable[[DomainScope, str, int], tuple[KnowledgeDocument, ...]]
 
 
 class DomainKnowledgeCapability:
@@ -73,9 +71,7 @@ class DomainKnowledgeCapability:
         self.scope = scope
         self._retriever = retriever
 
-    def retrieve_and_admit(
-        self, query: str, *, limit: int = 2
-    ) -> KnowledgeAdmission:
+    def retrieve_and_admit(self, query: str, *, limit: int = 2) -> KnowledgeAdmission:
         if type(query) is not str or len(query) > 256 or limit not in {1, 2, 3}:
             raise KnowledgeContractError("invalid knowledge request")
         terms = tuple(dict.fromkeys(_TOKEN.findall(query.lower())))

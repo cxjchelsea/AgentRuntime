@@ -45,9 +45,14 @@ from runtime.registries import CapabilityRegistry, ToolRegistry, WorkflowRegistr
 
 def assemble_domain_m4(
     extension: DomainExtension, model: StructuredStrategyTransportAdapter
-) -> tuple[DefaultM4Planner, RuntimePlanValidatorAdapter, RuntimePolicyRecheckerAdapter]:
+) -> tuple[
+    DefaultM4Planner, RuntimePlanValidatorAdapter, RuntimePolicyRecheckerAdapter
+]:
     """Create fresh, isolated M4 components from one domain package and model."""
-    if type(extension) is not DomainExtension or type(model) is not StructuredStrategyTransportAdapter:
+    if (
+        type(extension) is not DomainExtension
+        or type(model) is not StructuredStrategyTransportAdapter
+    ):
         raise ValueError("invalid M4 application assembly")
     knowledge = KnowledgeCapabilityContext(
         available_domains=frozenset(), supported_retrieval_modes=frozenset()

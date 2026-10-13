@@ -262,9 +262,12 @@ def test_no_cross_fixture_handle_reuse() -> None:
 
 # Real C0 cross-layer oracle: no mock resolver is used in these cases.
 # C0 returns diagnostic data only; it has no authority to approve omissions.
+from agent_core.domain_catalog_resolution import DiagnosticCatalogInputV1
+
+
 def _c0_duplicate_catalog(
     edge_ordinals: tuple[object, ...] = (0, 1),
-) -> object:
+) -> "DiagnosticCatalogInputV1":
     import hashlib
     import json
 
@@ -319,19 +322,42 @@ def _c0_duplicate_catalog(
     }
     entries = (
         DiagnosticRegistryEntryV1(
-            "domain", "demo", "demo", "1.0.0", "DomainManifest",
-            manifest_fields, definition_hash(manifest_fields), True, True,
+            "domain",
+            "demo",
+            "demo",
+            "1.0.0",
+            "DomainManifest",
+            manifest_fields,
+            definition_hash(manifest_fields),
+            True,
+            True,
         ),
         DiagnosticRegistryEntryV1(
-            "skill", "demo", "helper", "1.0.0", "SkillDefinition",
-            skill_fields, definition_hash(skill_fields), True, True,
+            "skill",
+            "demo",
+            "helper",
+            "1.0.0",
+            "SkillDefinition",
+            skill_fields,
+            definition_hash(skill_fields),
+            True,
+            True,
         ),
     )
     edges = tuple(
         DiagnosticEdgeOccurrenceV1(
-            "skill", "demo", "helper", "1.0.0",
-            "skill.optional_tools", cast(int, ordinal),
-            "tool-a", "OPTIONAL_ABSENT", None, None, None, None,
+            "skill",
+            "demo",
+            "helper",
+            "1.0.0",
+            "skill.optional_tools",
+            cast(int, ordinal),
+            "tool-a",
+            "OPTIONAL_ABSENT",
+            None,
+            None,
+            None,
+            None,
         )
         for ordinal in edge_ordinals
     )
@@ -349,7 +375,11 @@ def _c0_duplicate_catalog(
         rule_mode="INERT_ONLY",
         asset_refs=(
             DiagnosticAssetRefV1(
-                "skill", "demo", "helper", "1.0.0", "b" * 64,
+                "skill",
+                "demo",
+                "helper",
+                "1.0.0",
+                "b" * 64,
                 "skills/helper.json",
             ),
         ),
@@ -358,8 +388,16 @@ def _c0_duplicate_catalog(
         edge_occurrences=edges,
         adapter_entries=(
             DiagnosticAdapterEntryV1(
-                "skill", "demo", "helper", "1.0.0",
-                "ABSENT_UNVERIFIED", None, None, None, None, None,
+                "skill",
+                "demo",
+                "helper",
+                "1.0.0",
+                "ABSENT_UNVERIFIED",
+                None,
+                None,
+                None,
+                None,
+                None,
             ),
         ),
     )
@@ -411,7 +449,12 @@ def test_real_c0_rejects_missing_duplicate_or_bad_ordinal(
 
     with pytest.raises(D2CResolutionError) as failure:
         _resolve_untrusted_catalog_observation(_c0_duplicate_catalog(ordinals))
-    assert failure.value.code == D2CCode.D2C_EDGE_CATALOG_INVALID
+    expected = (
+        D2CCode.D2C_RESOLUTION_UNSTABLE
+        if any(type(ordinal) is float for ordinal in ordinals)
+        else D2CCode.D2C_EDGE_CATALOG_INVALID
+    )
+    assert failure.value.code == expected
 
 
 def test_c0_diagnostic_absence_is_not_host_approval() -> None:

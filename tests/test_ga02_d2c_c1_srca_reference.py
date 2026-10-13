@@ -737,8 +737,13 @@ def test_g7_simulated_role_and_exact_scope_not_executable() -> None:
     assert not hasattr(evidence, "implementation_ref")
     assert not hasattr(evidence, "run")
 
+
 def test_r3_01_enrolled_principal_mutation_denied() -> None:
-    for field, replacement in (("name", "foreign"), ("lane", "lane-b"), ("role", "TRUSTED")):
+    for field, replacement in (
+        ("name", "foreign"),
+        ("lane", "lane-b"),
+        ("role", "TRUSTED"),
+    ):
         catalog, principal = fixture()
         object.__setattr__(principal, field, replacement)
         denied("C1_ISSUER_UNVERIFIED", catalog.take_writer_term, principal)
@@ -751,9 +756,14 @@ def test_r3_03_absence_does_not_survive_revoke() -> None:
     approved = admit_absence(catalog, principal)
     catalog.revoke(principal)
     denied(
-        "C1_PUBLICATION_REVOKED", catalog.check_absences, principal,
-        source=SOURCE, declared=DECLARED, edges=(),
-        absences=(approved,), policy="p1",
+        "C1_PUBLICATION_REVOKED",
+        catalog.check_absences,
+        principal,
+        source=SOURCE,
+        declared=DECLARED,
+        edges=(),
+        absences=(approved,),
+        policy="p1",
     )
 
 
@@ -769,13 +779,18 @@ def test_r3_04_publication_receipt_is_historical_on_replay() -> None:
         catalog.admit_candidate(
             principal, policy="p1", package="pkg-a", image={"later": True}
         ),
-        term=term, expected_revision=revision, tx_id="next",
+        term=term,
+        expected_revision=revision,
+        tx_id="next",
     )
     assert current == (2, 2)
     assert current.historical is False
     old = catalog.publish(
-        principal, candidate, term=original[4],
-        expected_revision=original[5], tx_id="tx-a",
+        principal,
+        candidate,
+        term=original[4],
+        expected_revision=original[5],
+        tx_id="tx-a",
     )
     assert old == (1, 1)
     assert old.historical is True
@@ -803,19 +818,32 @@ def test_t12_t13_simulated_crash_before_and_after_publish_cas() -> None:
     )
     catalog.simulate_crash_at("BEFORE_PUBLISH_CAS")
     denied(
-        "C1_SIMULATED_CRASH", catalog.publish, principal, candidate,
-        term=term, expected_revision=revision, tx_id="replay",
+        "C1_SIMULATED_CRASH",
+        catalog.publish,
+        principal,
+        candidate,
+        term=term,
+        expected_revision=revision,
+        tx_id="replay",
     )
     assert catalog.counts() == (1, 0)
     catalog.simulate_crash_at("AFTER_PUBLISH_CAS")
     denied(
-        "C1_SIMULATED_CRASH", catalog.publish, principal, candidate,
-        term=term, expected_revision=revision, tx_id="replay",
+        "C1_SIMULATED_CRASH",
+        catalog.publish,
+        principal,
+        candidate,
+        term=term,
+        expected_revision=revision,
+        tx_id="replay",
     )
     assert catalog.counts() == (2, 0)
     replay = catalog.publish(
-        principal, candidate, term=term,
-        expected_revision=revision, tx_id="replay",
+        principal,
+        candidate,
+        term=term,
+        expected_revision=revision,
+        tx_id="replay",
     )
     assert replay == (2, 2) and replay.historical is True
     assert catalog.counts() == (2, 0)
@@ -826,18 +854,29 @@ def test_f2_a_simulated_crash_before_and_after_issue_commit() -> None:
     lease = catalog.open_lease(principal)
     catalog.simulate_crash_at("BEFORE_ISSUE_CAS")
     denied(
-        "C1_SIMULATED_CRASH", catalog.issue, principal,
-        lease_id=lease, request_id="request", request_payload={},
+        "C1_SIMULATED_CRASH",
+        catalog.issue,
+        principal,
+        lease_id=lease,
+        request_id="request",
+        request_payload={},
     )
     assert catalog.counts() == (1, 0)
     catalog.simulate_crash_at("AFTER_ISSUE_CAS")
     denied(
-        "C1_SIMULATED_CRASH", catalog.issue, principal,
-        lease_id=lease, request_id="request", request_payload={},
+        "C1_SIMULATED_CRASH",
+        catalog.issue,
+        principal,
+        lease_id=lease,
+        request_id="request",
+        request_payload={},
     )
     assert catalog.counts() == (1, 1)
     historical = catalog.issue(
-        principal, lease_id=lease, request_id="request", request_payload={},
+        principal,
+        lease_id=lease,
+        request_id="request",
+        request_payload={},
     )
     assert historical.role == ROLE
     assert catalog.counts() == (1, 1)
@@ -851,7 +890,9 @@ def test_f2_g_racing_same_request_commits_once() -> None:
     def send() -> object:
         barrier.wait()
         return catalog.issue(
-            principal, lease_id=lease, request_id="same",
+            principal,
+            lease_id=lease,
+            request_id="same",
             request_payload={"value": 1},
         )
 
@@ -865,10 +906,14 @@ def test_f1_g_mismatched_optional_target_not_accepted() -> None:
     catalog, principal = fixture()
     approved = admit_absence(catalog, principal)
     denied(
-        "C1_DEPENDENCY_INVALID", catalog.check_absences, principal,
+        "C1_DEPENDENCY_INVALID",
+        catalog.check_absences,
+        principal,
         source=SOURCE,
         declared=(("optional_tools", "tool", "foreign-tool", 0, False),),
-        edges=(), absences=(approved,), policy="p1",
+        edges=(),
+        absences=(approved,),
+        policy="p1",
     )
 
 
@@ -878,8 +923,12 @@ def test_t14_committed_image_corruption_denied() -> None:
     lane = catalog._lanes["lane-a"]
     catalog._images[lane.image_digest] = b'{"tampered":true}'
     denied(
-        "C1_PUBLICATION_DIGEST_MISMATCH", catalog.issue, principal,
-        lease_id=lease, request_id="corrupt", request_payload={},
+        "C1_PUBLICATION_DIGEST_MISMATCH",
+        catalog.issue,
+        principal,
+        lease_id=lease,
+        request_id="corrupt",
+        request_payload={},
     )
     assert catalog.counts() == (1, 0)
 

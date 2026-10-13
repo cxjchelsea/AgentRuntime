@@ -847,7 +847,9 @@ def test_t12_t13_simulated_crash_before_and_after_publish_cas() -> None:
         expected_revision=revision,
         tx_id="replay",
     )
-    assert replay == PublicationResult(2, 2, historical=True) and replay.historical is True
+    assert (
+        replay == PublicationResult(2, 2, historical=True) and replay.historical is True
+    )
     assert catalog.counts() == (2, 0)
 
 
@@ -950,6 +952,7 @@ def test_t17_string_limit_shape_before_total_budget() -> None:
     denied("C1_INPUT_INVALID", canonical, {"x": "a" * 1025})
     denied("C1_INPUT_INVALID", canonical_wire, b'{"a":1,"a":2}')
 
+
 def test_rr01_identity_revalidated_inside_publish_lock() -> None:
     catalog, principal = fixture()
     term, rev = catalog.take_writer_term(principal)
@@ -968,8 +971,13 @@ def test_rr01_identity_revalidated_inside_publish_lock() -> None:
 
     setattr(catalog, "_auth", adversarial_auth)  # isolated test-only injection
     denied(
-        "C1_ISSUER_UNVERIFIED", catalog.publish, principal, candidate,
-        term=term, expected_revision=rev, tx_id="auth-race",
+        "C1_ISSUER_UNVERIFIED",
+        catalog.publish,
+        principal,
+        candidate,
+        term=term,
+        expected_revision=rev,
+        tx_id="auth-race",
     )
     assert catalog.counts() == (1, 0)
 
@@ -981,8 +989,11 @@ def test_rr02_historical_receipt_is_immutable_and_distinct() -> None:
         principal, policy="p1", package="pkg-a", image={"k": ["v"]}
     )
     historical = catalog.publish(
-        principal, original, term=record[4],
-        expected_revision=record[5], tx_id="tx-a",
+        principal,
+        original,
+        term=record[4],
+        expected_revision=record[5],
+        tx_id="tx-a",
     )
     assert historical == PublicationResult(1, 1, historical=True)
     assert historical != PublicationResult(1, 1, historical=False)
@@ -996,12 +1007,20 @@ def test_t02_self_consistent_digest_does_not_mint_issuer() -> None:
     term, rev = catalog.take_writer_term(principal)
     raw = canonical({"forged_c0_digest": "d" * 64})
     claimed = SealedCandidate(
-        lane=principal.lane, policy="p1", package="pkg-a",
-        image=raw, image_digest=hashlib.sha256(raw).hexdigest(),
+        lane=principal.lane,
+        policy="p1",
+        package="pkg-a",
+        image=raw,
+        image_digest=hashlib.sha256(raw).hexdigest(),
     )
     denied(
-        "C1_ISSUER_UNVERIFIED", catalog.publish,
-        principal, claimed, term=term, expected_revision=rev, tx_id="forged-c0",
+        "C1_ISSUER_UNVERIFIED",
+        catalog.publish,
+        principal,
+        claimed,
+        term=term,
+        expected_revision=rev,
+        tx_id="forged-c0",
     )
     assert catalog.counts() == (1, 0)
 
@@ -1011,63 +1030,93 @@ def test_t15_adapter_generation_rotation_invalidates_old_lease() -> None:
     lease = catalog.open_lease(principal)
     term, rev = catalog.take_writer_term(principal)
     fresh_image = catalog.admit_candidate(
-        principal, policy="p1", package="pkg-a",
+        principal,
+        policy="p1",
+        package="pkg-a",
         image={"adapter_generation": "adapter-v2", "tenant": "lane-a"},
     )
     new = catalog.publish(
-        principal, fresh_image, term=term, expected_revision=rev, tx_id="adapter-v2",
+        principal,
+        fresh_image,
+        term=term,
+        expected_revision=rev,
+        tx_id="adapter-v2",
     )
     assert new == PublicationResult(2, 2, historical=False)
     denied(
-        "C1_EPOCH_STALE", catalog.issue, principal,
-        lease_id=lease, request_id="stale-adapter", request_payload={},
+        "C1_EPOCH_STALE",
+        catalog.issue,
+        principal,
+        lease_id=lease,
+        request_id="stale-adapter",
+        request_payload={},
     )
 
 
 def test_t16_synthetic_core_cross_namespace_and_graph_cycles() -> None:
-    assert validate_simulated_closure(
-        [{"id": "skill-a"}, {"id": "tool-a"}],
-        [("skill-a", "tool-a")],
-    ) == ROLE
+    assert (
+        validate_simulated_closure(
+            [{"id": "skill-a"}, {"id": "tool-a"}],
+            [("skill-a", "tool-a")],
+        )
+        == ROLE
+    )
     denied(
-        "C1_DEPENDENCY_INVALID", validate_simulated_closure,
+        "C1_DEPENDENCY_INVALID",
+        validate_simulated_closure,
         [{"id": "tenant:skill"}, {"id": "CORE:tool"}],
         [("tenant:skill", "CORE:tool")],
     )
     denied(
-        "C1_DEPENDENCY_INVALID", validate_simulated_closure,
-        [{"id": "a"}, {"id": "b"}], [("a", "b"), ("b", "a")],
+        "C1_DEPENDENCY_INVALID",
+        validate_simulated_closure,
+        [{"id": "a"}, {"id": "b"}],
+        [("a", "b"), ("b", "a")],
     )
     denied(
-        "C1_DEPENDENCY_INVALID", validate_simulated_closure,
-        [{"id": "a"}], [("a", "missing")],
+        "C1_DEPENDENCY_INVALID",
+        validate_simulated_closure,
+        [{"id": "a"}],
+        [("a", "missing")],
     )
 
 
 def test_t17_synthetic_definition_node_edge_byte_limits() -> None:
     denied(
-        "C1_RESOURCE_LIMIT", validate_simulated_closure,
-        [{"id": "n", "payload": "x" * 1024, "items": ["a" * 1024] * 11}], [],
+        "C1_RESOURCE_LIMIT",
+        validate_simulated_closure,
+        [{"id": "n", "payload": "x" * 1024, "items": ["a" * 1024] * 11}],
+        [],
     )
     denied(
-        "C1_RESOURCE_LIMIT", validate_simulated_closure,
-        [{"id": f"node-{n}"} for n in range(257)], [],
+        "C1_RESOURCE_LIMIT",
+        validate_simulated_closure,
+        [{"id": f"node-{n}"} for n in range(257)],
+        [],
     )
     denied(
-        "C1_RESOURCE_LIMIT", validate_simulated_closure,
-        [{"id": "n"}], [("n", "n")] * 1025,
+        "C1_RESOURCE_LIMIT",
+        validate_simulated_closure,
+        [{"id": "n"}],
+        [("n", "n")] * 1025,
     )
-    assert validate_simulated_closure(
-        [{"id": f"node-{n}"} for n in range(256)], []
-    ) == ROLE
+    assert (
+        validate_simulated_closure([{"id": f"node-{n}"} for n in range(256)], [])
+        == ROLE
+    )
+
 
 
 def test_t18_injected_verifier_and_finalization_fail_closed() -> None:
     catalog, principal = fixture()
     catalog.simulate_crash_at("BEFORE_ISSUER_ADMISSION")
     denied(
-        "C1_SIMULATED_CRASH", catalog.admit_candidate,
-        principal, policy="p1", package="pkg-a", image={"v": "valid"},
+        "C1_SIMULATED_CRASH",
+        catalog.admit_candidate,
+        principal,
+        policy="p1",
+        package="pkg-a",
+        image={"v": "valid"},
     )
     term, rev = catalog.take_writer_term(principal)
     candidate = catalog.admit_candidate(
@@ -1075,16 +1124,24 @@ def test_t18_injected_verifier_and_finalization_fail_closed() -> None:
     )
     catalog.simulate_crash_at("BEFORE_DIGEST_VALIDATION")
     denied(
-        "C1_SIMULATED_CRASH", catalog.publish,
-        principal, candidate, term=term, expected_revision=rev,
+        "C1_SIMULATED_CRASH",
+        catalog.publish,
+        principal,
+        candidate,
+        term=term,
+        expected_revision=rev,
         tx_id="digest-fault",
     )
     assert catalog.counts() == (1, 0)
     lease = catalog.open_lease(principal)
     catalog.simulate_crash_at("BEFORE_FINAL_ISSUE")
     denied(
-        "C1_SIMULATED_CRASH", catalog.issue,
-        principal, lease_id=lease, request_id="final-fault", request_payload={},
+        "C1_SIMULATED_CRASH",
+        catalog.issue,
+        principal,
+        lease_id=lease,
+        request_id="final-fault",
+        request_payload={},
     )
     assert catalog.counts() == (1, 0)
 
@@ -1101,7 +1158,9 @@ def test_t21_two_readers_one_writer_generation_turnover() -> None:
         assert published.wait(5)
         try:
             catalog.issue(
-                principal, lease_id=lease, request_id=f"stale-{lease}",
+                principal,
+                lease_id=lease,
+                request_id=f"stale-{lease}",
                 request_payload={},
             )
         except SimulatedDenial as exc:
@@ -1111,10 +1170,16 @@ def test_t21_two_readers_one_writer_generation_turnover() -> None:
     def writer() -> None:
         barrier.wait()
         changed = catalog.admit_candidate(
-            principal, policy="p1", package="pkg-a", image={"generation": 2},
+            principal,
+            policy="p1",
+            package="pkg-a",
+            image={"generation": 2},
         )
         catalog.publish(
-            principal, changed, term=term, expected_revision=rev,
+            principal,
+            changed,
+            term=term,
+            expected_revision=rev,
             tx_id="reader-turnover",
         )
         published.set()

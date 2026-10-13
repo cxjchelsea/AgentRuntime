@@ -95,7 +95,10 @@ def assemble_domain_content(
     prompt, rule, knowledge = present["prompt"], present["rule"], present["knowledge"]
     if rule["required_knowledge"] != knowledge["key"]:
         raise DomainExtensionError("rule requires different knowledge key")
-    if not generalized_workflow and rule["completion_after"] not in {"collect", "verify"}:
+    if not generalized_workflow and rule["completion_after"] not in {
+        "collect",
+        "verify",
+    }:
         raise DomainExtensionError("unsupported sandbox completion rule")
     return DomainContent(
         focus=prompt["focus"],

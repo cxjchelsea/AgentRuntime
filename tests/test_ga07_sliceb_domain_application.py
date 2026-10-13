@@ -124,3 +124,32 @@ def test_invalid_asset_reference_order_rejected(tmp_path: Path) -> None:
     tampered = replace(snapshot, assets=tuple(reversed(snapshot.assets)))
     with pytest.raises(DomainExtensionError, match="reference mismatch"):
         assemble_domain_extension(tampered)
+
+
+@pytest.mark.parametrize(
+    ("domain_id", "noun"),
+    [("inventory.reconcile", "stock"), ("learning.plan", "notes")],
+)
+def test_package_driven_m4_runs_existing_agent_loop(
+    tmp_path: Path, domain_id: str, noun: str
+) -> None:
+    snapshot = _snapshot(tmp_path / noun, domain_id, noun)
+    app = bootstrap_domain_application(snapshot)
+    domain_fixture = assemble_sandbox_m4(assemble_sandbox_domain(snapshot))
+    initial = build_runtime_input(text=f"collect and verify fictional {noun}")
+    turn = DomainDrivenTurn(initial, domain_fixture)
+    turn._planner, turn._validator, turn._rechecker = app.m4(
+        StructuredStrategyTransportAdapter(turn.transport)
+    )
+    outcome = asyncio.run(
+        app.run(
+            initial,
+            run_id=f"sandbox-{domain_id}",
+            step=turn,
+            budget=LoopBudget(max_iterations=4, max_executions=3),
+        )
+    )
+    assert outcome.kind is RunKind.FINISH
+    assert outcome.executions == 2
+    assert turn.selected_actions == [f"collect-{noun}", f"verify-{noun}"]
+    assert turn.mock_calls == 2

@@ -52,7 +52,17 @@ class UnifiedDomainApplication:
         step: StepPort,
         budget: LoopBudget,
     ) -> RunOutcome:
-        """Run only a separately constructed and exact-bound StepPort."""
+        """Require the step to consume this application's exact M4 components.
+
+        Binding equality alone cannot prove the injected StepPort uses the
+        package's model, validator and policy rechecker.
+        """
+        if (
+            getattr(step, "_planner", None) is not self.planner
+            or getattr(step, "_validator", None) is not self.validator
+            or getattr(step, "_rechecker", None) is not self.rechecker
+        ):
+            raise DomainExtensionError("unified application M4 binding mismatch")
         return await self.app.run(initial, run_id=run_id, step=step, budget=budget)
 
 

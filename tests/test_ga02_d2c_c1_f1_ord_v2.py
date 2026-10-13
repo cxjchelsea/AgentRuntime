@@ -73,37 +73,80 @@ def test_f1_c_forged_principal_precedes_missing_edge() -> None:
 def test_f1_d_stale_policy_and_foreign_lane() -> None:
     fixture, principal = setup()
     approved = fixture.approve(principal, ordinal=0)
-    denied("C1_LANE_SCOPE_MISMATCH", fixture.check, principal=principal, approvals=(approved,), policy="p0")
-    denied("C1_LANE_SCOPE_MISMATCH", fixture.check, principal=principal, approvals=(approved,), lane="foreign")
+    denied(
+        "C1_LANE_SCOPE_MISMATCH",
+        fixture.check,
+        principal=principal,
+        approvals=(approved,),
+        policy="p0",
+    )
+    denied(
+        "C1_LANE_SCOPE_MISMATCH",
+        fixture.check,
+        principal=principal,
+        approvals=(approved,),
+        lane="foreign",
+    )
     assert_no_effects(fixture)
 
 
 def test_f1_e_edge_and_approval_or_duplicate_approval() -> None:
     fixture, principal = setup()
     approved = fixture.approve(principal, ordinal=0)
-    denied("C1_DEPENDENCY_INVALID", fixture.check, principal=principal, approvals=(approved,), edges=(0,))
-    denied("C1_DEPENDENCY_INVALID", fixture.check, principal=principal, approvals=(approved, approved))
+    denied(
+        "C1_DEPENDENCY_INVALID",
+        fixture.check,
+        principal=principal,
+        approvals=(approved,),
+        edges=(0,),
+    )
+    denied(
+        "C1_DEPENDENCY_INVALID",
+        fixture.check,
+        principal=principal,
+        approvals=(approved, approved),
+    )
     assert_no_effects(fixture)
 
 
 def test_f1_f_required_cannot_be_absent() -> None:
     fixture, principal = setup()
     approved = fixture.approve(principal, ordinal=0)
-    denied("C1_DEPENDENCY_INVALID", fixture.check, principal=principal, approvals=(approved,), required=(0,))
+    denied(
+        "C1_DEPENDENCY_INVALID",
+        fixture.check,
+        principal=principal,
+        approvals=(approved,),
+        required=(0,),
+    )
     assert_no_effects(fixture)
 
 
 def test_f1_g_invalid_edge_target_with_unrelated_absence() -> None:
     fixture, principal = setup()
     approved = fixture.approve(principal, ordinal=1)
-    denied("C1_DEPENDENCY_INVALID", fixture.check, principal=principal, targets=("tool-a", "tool-a"), approvals=(approved,), edges=(0,), edge_targets_valid=False)
+    denied(
+        "C1_DEPENDENCY_INVALID",
+        fixture.check,
+        principal=principal,
+        targets=("tool-a", "tool-a"),
+        approvals=(approved,),
+        edges=(0,),
+        edge_targets_valid=False,
+    )
     assert_no_effects(fixture)
 
 
 def test_ord_01_missing_second_occurrence() -> None:
     fixture, principal = setup()
     approved = fixture.approve(principal, ordinal=0)
-    denied("C1_DEPENDENCY_INVALID", fixture.check, principal=principal, targets=("tool-a", "tool-a"), approvals=(approved,))
+    denied(
+        "C1_DEPENDENCY_INVALID",
+        fixture.check,
+        principal=principal,
+        targets=("tool-a", "tool-a"),
+        approvals=(approved,),
+    )
     assert_no_effects(fixture)
 
 
@@ -124,14 +167,25 @@ def test_ord_03_digest_or_approval_transfer_rejected() -> None:
     fixture, principal = setup()
     approved = fixture.approve(principal, ordinal=0)
     forged = replace(approved, ordinal=1)
-    denied("C1_ISSUER_UNVERIFIED", fixture.check, principal=principal, targets=("tool-a", "tool-a"), approvals=(forged,))
+    denied(
+        "C1_ISSUER_UNVERIFIED",
+        fixture.check,
+        principal=principal,
+        targets=("tool-a", "tool-a"),
+        approvals=(forged,),
+    )
     assert_no_effects(fixture)
 
 
 @pytest.mark.parametrize("ordinal", [2, -1, True, 1.0])
 def test_ord_04_invalid_ordinal(ordinal: object) -> None:
     fixture, principal = setup()
-    denied("C1_DEPENDENCY_INVALID", fixture.approve, principal=principal, ordinal=cast(int, ordinal))
+    denied(
+        "C1_DEPENDENCY_INVALID",
+        fixture.approve,
+        principal=principal,
+        ordinal=cast(int, ordinal),
+    )
     assert_no_effects(fixture)
 
 
@@ -148,14 +202,24 @@ def test_ord_05_legacy_v1_handle_cannot_promote() -> None:
         "44d1052aafdb430e715230e5eb6cc8ea626253b2a10a13d9625d573138ab5c6a",
         0,
     )
-    denied("C1_ISSUER_UNVERIFIED", fixture.check, principal=principal, approvals=(legacy,))
+    denied(
+        "C1_ISSUER_UNVERIFIED",
+        fixture.check,
+        principal=principal,
+        approvals=(legacy,),
+    )
     assert_no_effects(fixture)
 
 
 def test_ir_03_forged_handle_distinct_from_valid_but_wrong_content() -> None:
     fixture, principal = setup()
     approved = fixture.approve(principal, ordinal=0)
-    denied("C1_ISSUER_UNVERIFIED", fixture.check, principal=principal, approvals=(replace(approved),))
+    denied(
+        "C1_ISSUER_UNVERIFIED",
+        fixture.check,
+        principal=principal,
+        approvals=(replace(approved),),
+    )
     assert fixture.check(principal, approvals=(approved,)) == ((0, "tool-a"),)
     assert_no_effects(fixture)
 
@@ -169,7 +233,13 @@ def test_neg_pair_foreign_scope_precedes_missing_dependency() -> None:
 def test_neg_pair_valid_scope_conflict_is_dependency_denial() -> None:
     fixture, principal = setup()
     approved = fixture.approve(principal, ordinal=0)
-    denied("C1_DEPENDENCY_INVALID", fixture.check, principal=principal, approvals=(approved,), edges=(0,))
+    denied(
+        "C1_DEPENDENCY_INVALID",
+        fixture.check,
+        principal=principal,
+        approvals=(approved,),
+        edges=(0,),
+    )
     assert_no_effects(fixture)
 
 

@@ -21,13 +21,24 @@ from agent_core.domain_knowledge import (
 )
 from agent_core.knowledge_model_transport import KnowledgeBackedStrategyTransport
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
-from agent_core.runner import AgentRunCoordinator, Decision, LoopBudget, ObservedFact, RunKind
+from agent_core.runner import (
+    AgentRunCoordinator,
+    Decision,
+    LoopBudget,
+    ObservedFact,
+    RunKind,
+)
 from tests.ga05_fts_retrieval import IndexedDocument, SandboxFTSIndex
 from tests.ga06_role_separated_turn import trusted_sandbox_instruction
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga02_d4_two_domain_m4_e2e import _planner
 from tests.test_ga03_domain_prompt_rule_knowledge_e2e import GA03Turn
-from tests.test_ga05_retrieval_robustness_e2e import _CASES, _DOCUMENTS, _QUERIES, _domain
+from tests.test_ga05_retrieval_robustness_e2e import (
+    _CASES,
+    _DOCUMENTS,
+    _QUERIES,
+    _domain,
+)
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"),
@@ -126,7 +137,11 @@ def test_ga07_real_qwen_formal_knowledge_port_two_domains(
             for number, domain in enumerate(domains):
                 initial = build_runtime_input(text=_CASES[number][2])
                 turn = IntegratedDomainTurn(
-                    initial, domain, index=index, query=_QUERIES[number], config=_config()
+                    initial,
+                    domain,
+                    index=index,
+                    query=_QUERIES[number],
+                    config=_config(),
                 )
                 result = await AgentRunCoordinator(
                     turn,

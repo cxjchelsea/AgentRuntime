@@ -124,7 +124,9 @@ def assemble_execution_catalog(
     ):
         raise DomainExtensionError("execution catalog package binding mismatch")
     found: dict[str, list[tuple[str, dict[str, Any]]]] = {
-        "tool": [], "workflow": [], "capability": []
+        "tool": [],
+        "workflow": [],
+        "capability": [],
     }
     for asset in snapshot.assets:
         kind = asset.ref.kind
@@ -162,7 +164,9 @@ def assemble_execution_catalog(
         tool_ids.append(tool_id)
         tools.register(
             ToolDefinition(
-                tool_id=tool_id, version="1.0.0", description=desc,
+                tool_id=tool_id,
+                version="1.0.0",
+                description=desc,
                 side_effect_level="NO_EXTERNAL_EXECUTION",
                 required_permissions=[],
             ),
@@ -177,7 +181,11 @@ def assemble_execution_catalog(
         raise DomainExtensionError("invalid workflow steps")
     parsed: list[DomainStep] = []
     for entry in steps:
-        if type(entry) is not dict or entry.keys() != {"step_id", "tool_id", "completion_fact"}:
+        if type(entry) is not dict or entry.keys() != {
+            "step_id",
+            "tool_id",
+            "completion_fact",
+        }:
             raise DomainExtensionError("invalid workflow step schema")
         step_id = _name(entry["step_id"])
         tool_id = _name(entry["tool_id"])

@@ -47,7 +47,7 @@ def test_v2_golden_byte_and_profile(ordinal: int) -> None:
     assert len(raw) == 234
     assert hash_bytes(raw) == GOLDENS[ordinal]
     assert b'"relation":"skill.optional_tools"' in raw
-    assert (PROFILE != "GA02-D2C-C1-OPTIONAL-ABSENCE-1")
+    assert PROFILE != "GA02-D2C-C1-OPTIONAL-ABSENCE-1"
 
 
 def test_f1_a_approved_metadata_only() -> None:
@@ -156,9 +156,7 @@ def test_ord_02_two_approvals_are_distinct_and_ordered() -> None:
     a1 = fixture.approve(principal, ordinal=1)
     assert a0 is not a1
     assert a0.digest != a1.digest
-    result = fixture.check(
-        principal, targets=("tool-a", "tool-a"), approvals=(a1, a0)
-    )
+    result = fixture.check(principal, targets=("tool-a", "tool-a"), approvals=(a1, a0))
     assert result == ((0, "tool-a"), (1, "tool-a"))
     assert_no_effects(fixture)
 
@@ -180,12 +178,22 @@ def test_ord_03_digest_or_approval_transfer_rejected() -> None:
 @pytest.mark.parametrize("ordinal", [2, -1, True, 1.0])
 def test_ord_04_invalid_ordinal(ordinal: object) -> None:
     fixture, principal = setup()
-    denied(
-        "C1_DEPENDENCY_INVALID",
-        fixture.approve,
-        principal=principal,
-        ordinal=cast(int, ordinal),
-    )
+    if type(ordinal) is int and ordinal >= 0:
+        approval = fixture.approve(principal, ordinal=cast(int, ordinal))
+        denied(
+            "C1_DEPENDENCY_INVALID",
+            fixture.check,
+            principal=principal,
+            targets=("tool-a", "tool-a"),
+            approvals=(approval,),
+        )
+    else:
+        denied(
+            "C1_DEPENDENCY_INVALID",
+            fixture.approve,
+            principal=principal,
+            ordinal=cast(int, ordinal),
+        )
     assert_no_effects(fixture)
 
 

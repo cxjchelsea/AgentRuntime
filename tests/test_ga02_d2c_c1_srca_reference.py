@@ -969,7 +969,7 @@ def test_rr01_identity_revalidated_inside_publish_lock() -> None:
             fired = True
             object.__setattr__(value, "name", "foreign-principal")
 
-    setattr(catalog, "_auth", adversarial_auth)  # isolated test-only injection
+    setattr(catalog, "_auth", adversarial_auth)  # noqa: B010 — test-only injection
     denied(
         "C1_ISSUER_UNVERIFIED",
         catalog.publish,
@@ -999,7 +999,7 @@ def test_rr02_historical_receipt_is_immutable_and_distinct() -> None:
     assert historical != PublicationResult(1, 1, historical=False)
     assert historical != (1, 1)
     with pytest.raises((AttributeError, TypeError)):
-        setattr(historical, "historical", False)
+        setattr(historical, "historical", False)  # noqa: B010 — immutable negative test
 
 
 def test_t02_self_consistent_digest_does_not_mint_issuer() -> None:
@@ -1104,7 +1104,6 @@ def test_t17_synthetic_definition_node_edge_byte_limits() -> None:
         validate_simulated_closure([{"id": f"node-{n}"} for n in range(256)], [])
         == ROLE
     )
-
 
 
 def test_t18_injected_verifier_and_finalization_fail_closed() -> None:

@@ -864,3 +864,28 @@ The valid C0 diagnostic error taxonomy is phase-sensitive: `float` ordinal is re
 | `D2-D / D3` | `HARD_HOLD` |
 
 **下一 Gate：** PR #116 §18.5 与 PR #118 §15 进行精确 HEAD 独立定向复审。此次内容更新不自动授权合并或生产实施。
+
+
+---
+
+### 18.6 R1–R4 Documentation Closure + Main-Target Design Merge Scope v1.0
+
+**文档状态优先级（R4）：** §18.6 → §18.5 → §18.1–18.4 → §16–17 的历史候选与测试计划。仅就 PR #119 已实施、通过源 HEAD CI 的 F1/ORD 非生产测试状态，旧“未执行／未验证”字样由 §18.1–18.2 覆盖；其余尚未物理验证的要求不得被此覆盖。本文不是对旧条款的静默全面冻结。
+
+**R1——验证器证据分级：** V2 JSON、234-byte 与两项 SHA256 可由已合并非生产 Fixture 的可执行单元测试核对，真实 C0 ordinal 通过独立的 C0 解析函数直接调用校验。这些是 `TEST_ORACLE_EXECUTED` 和 `REAL_C0_DIAGNOSTIC_PARITY_TESTED`；**不是**经过独立代码库/独立实现验收的第二 Host Verifier、真实 Issuer 或部署身份认证。正式第二实现验收 `INDEPENDENT_SECOND_VERIFIER_GATE=NOT_ESTABLISHED`；真实 Host `HARD_HOLD`。
+
+**R2——冻结权威分类：** §18.5 的 `APPROVED_WITH_EXCLUSIONS` 仅指 *本 Draft 设计文档内部的限定逻辑合同审查决定*。由于 PR #116 尚未合入 main，`MERGED_MAIN_NORMATIVE_AUTHORITY=NOT_ESTABLISHED`。即便未来仅合并文档，也不会自动令 `F1_GLOBAL_PRODUCTION_NORMATIVE_FREEZE` PASS、批准真实 C1 API，或替代真正 Host/Security Owner 的确认。完整限定范围严格继承 §18.5 四条，未列明事项不纳入冻结。
+
+**R3——保持阻塞：** 全局“伪造审批＋畸形 Edge”等双故障的 issuer-first 错误优先级 `HOLD`。模拟 `V2Fixture.check` 的部分检查顺序与候选生产级全局顺序不同；不能将测试本地错误码解释为生产全序通过。真实 Host issuer-private provenance、sealed image + lane/tenant/policy/transition、CAS/fencing/recovery/lease 和 D2-D/D3 同为 `HARD_HOLD`。
+
+**合并评估边界：** PR #116 当前仅是一份新增设计 Markdown，允许先作为 `DESIGN_ONLY_DRAFT_BASELINE` 做 Exact-Main Merge Readiness 评估；但原分支落后 main，不可将“单文件无重叠”直接等价为 GitHub `mergeable` 或获得 Required Checks 许可。下一合并 Gate 必须重新检查精确 base/head、Draft、CI/branch protection、单文件范围、必要的 ready-for-review 和明确用户授权。PR #118 应在 PR #116 合入后重新按最终 main 对齐，单独授权；绝不捆绑合并。
+
+| Gate | 本次文档结论 |
+|---|---|
+| `R1_SECOND_VERIFIER_EVIDENCE_LEVEL` | `CLOSED_WITH_FORMAL_VERIFIER_HOLD` |
+| `R2_SCOPED_DRAFT_AUTHORITY` | `CLOSED_WITH_NO_MAIN_FREEZE_PROMOTION` |
+| `R3_PRODUCTION_GLOBAL_ERROR_PRECEDENCE` | `HOLD` |
+| `R4_HISTORICAL_STATUS_PRECEDENCE` | `CLOSED` |
+| `PR116_DESIGN_MERGE_READINESS` | `READY_FOR_EXACT_MAIN_ASSESSMENT_ONLY` |
+| `PR116_MERGE_AUTHORIZATION` | `NOT_ISSUED` |
+| `B01–B07 / PRODUCTION_C1 / D2-D / D3` | `HARD_HOLD` |

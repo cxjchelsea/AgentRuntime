@@ -213,6 +213,15 @@ def _evidence_digest(e: SimulatedEvidence) -> str:
     )
 
 
+class PublicationResult(tuple[int, int]):
+    """Tuple-compatible non-authorizing publication receipt."""
+
+    def __new__(cls, revision: int, epoch: int, *, historical: bool = False) -> PublicationResult:
+        receipt = tuple.__new__(cls, (revision, epoch))
+        receipt.historical = historical
+        return receipt
+
+
 class TestOnlyCatalog:
     """Single-process reference with explicitly internal mock capability registry.
 
@@ -225,7 +234,7 @@ class TestOnlyCatalog:
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
-        self._principals: set[Principal] = set()
+        self._principals: dict[Principal, tuple[str, str, str]] = {}
         self._candidates: dict[
             SealedCandidate, tuple[Principal, str, str, str, bytes, str]
         ] = {}
@@ -239,6 +248,7 @@ class TestOnlyCatalog:
         ] = {}
         self._counter = 0
         self._lease_counter = 0
+        self._crash_stage: str | None = None
         self._clock = 0
 
     def mint_principal(self, name: str, lane: str) -> Principal:
@@ -246,13 +256,13 @@ class TestOnlyCatalog:
         canonical({"name": name, "lane": lane})
         with self._lock:
             principal = Principal(name, lane)
-            self._principals.add(principal)
+            self._principals[principal] = (name, lane, ROLE)
             return principal
 
     def _auth(self, principal: Principal, lane: str) -> None:
         if type(principal) is not Principal or principal not in self._principals:
             _deny("C1_ISSUER_UNVERIFIED")
-        if principal.role != ROLE:
+        if (principal.name, principal.lane, principal.role) != self._principals[principal]:
             _deny("C1_ISSUER_UNVERIFIED")
         if principal.lane != lane:
             _deny("C1_LANE_SCOPE_MISMATCH")
@@ -355,6 +365,9 @@ class TestOnlyCatalog:
     ) -> tuple[tuple[str, str, str, int], ...]:
         self._auth(principal, principal.lane)
         with self._lock:
+            lane_state = self._lane(principal.lane)
+            if lane_state.revoked or not lane_state.generation:
+                _deny("C1_PUBLICATION_REVOKED")
             approved: set[tuple[str, str, str, int]] = set()
             for a in absences:
                 if type(a) is not ApprovedAbsence or a not in self._absences:
@@ -493,7 +506,8 @@ class TestOnlyCatalog:
                     or old_expected != expected_revision
                 ):
                     _deny("C1_ISSUANCE_CONFLICT")
-                return old_rev, old_epoch
+                return PublicationResult(old_rev, old_epoch, historical=True)
+            self._crash("BEFORE_PUBLISH_CAS")
             if term != lane.term:
                 _deny("C1_WRITER_FENCE_INVALID")
             if expected_revision != lane.revision:
@@ -514,7 +528,8 @@ class TestOnlyCatalog:
                 term,
                 expected_revision,
             )
-            return result
+            self._crash("AFTER_PUBLISH_CAS")
+            return PublicationResult(*result, historical=False)
 
     def revoke(self, principal: Principal) -> int:
         self._auth(principal, principal.lane)
@@ -563,6 +578,8 @@ class TestOnlyCatalog:
         with self._lock:
             lease = self._leases.get(lease_id)
             if lease is None or lease.owner is not principal:
+                _deny("C1_LEASE_INVALID")
+            if lease.status != "ACTIVE":
                 _deny("C1_LEASE_INVALID")
             lease.status = status
 
@@ -641,6 +658,7 @@ class TestOnlyCatalog:
                 != lane.image_digest
             ):
                 _deny("C1_PUBLICATION_DIGEST_MISMATCH")
+            self._crash("BEFORE_ISSUE_CAS")
             self._counter += 1
             evidence = SimulatedEvidence(
                 f"sim-evidence-{self._counter}",
@@ -664,7 +682,19 @@ class TestOnlyCatalog:
                     principal, lease_id, fingerprint, lane.policy, lane.package, ed
                 ),
             )
+            self._crash("AFTER_ISSUE_CAS")
             return evidence
+
+    def simulate_crash_at(self, stage: str | None) -> None:
+        """Fault injection is single-process and never proves durable recovery."""
+        if stage not in (None, "BEFORE_PUBLISH_CAS", "AFTER_PUBLISH_CAS", "BEFORE_ISSUE_CAS", "AFTER_ISSUE_CAS"):
+            _deny("C1_INPUT_INVALID")
+        self._crash_stage = stage
+
+    def _crash(self, stage: str) -> None:
+        if self._crash_stage == stage:
+            self._crash_stage = None
+            _deny("C1_SIMULATED_CRASH")
 
     def counts(self) -> tuple[int, int]:
         with self._lock:

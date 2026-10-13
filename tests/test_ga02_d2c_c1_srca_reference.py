@@ -1192,6 +1192,7 @@ def test_t21_two_readers_one_writer_generation_turnover() -> None:
         assert b.result() == "C1_EPOCH_STALE"
     assert catalog.counts() == (2, 0)
 
+
 def test_rr03_candidate_mutated_between_precheck_and_publish_cas() -> None:
     catalog, principal = fixture()
     term, revision = catalog.take_writer_term(principal)

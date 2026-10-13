@@ -504,8 +504,51 @@ class TestOnlyCatalog:
         )
         with self._lock:
             self._auth(principal, principal.lane)
-            lane = self._lane(principal.lane)
-            previous = self._transactions.get((principal.lane, tx_id))
+            # RR-03: revalidate the admitted, issuer-owned immutable snapshot
+            # at the same simulated commit boundary as publication and replay.
+            if (
+                type(candidate) is not SealedCandidate
+                or candidate not in self._candidates
+                or self._candidates[candidate]
+                != (
+                    principal,
+                    admitted_lane,
+                    admitted_policy,
+                    admitted_package,
+                    admitted_bytes,
+                    admitted_digest,
+                )
+                or (
+                    candidate.lane,
+                    candidate.policy,
+                    candidate.package,
+                    candidate.image,
+                    candidate.image_digest,
+                )
+                != (
+                    admitted_lane,
+                    admitted_policy,
+                    admitted_package,
+                    admitted_bytes,
+                    admitted_digest,
+                )
+                or hashlib.sha256(admitted_bytes).hexdigest() != admitted_digest
+            ):
+                _deny("C1_PUBLICATION_DIGEST_MISMATCH")
+            canonical_wire(admitted_bytes)
+            commit_fingerprint = digest(
+                "GA02-D2C-C1-SIM-PUBLISH-1",
+                {
+                    "image": admitted_digest,
+                    "lane": admitted_lane,
+                    "package": admitted_package,
+                    "policy": admitted_policy,
+                },
+            )
+            if commit_fingerprint != fp:
+                _deny("C1_PUBLICATION_DIGEST_MISMATCH")
+            lane = self._lane(admitted_lane)
+            previous = self._transactions.get((admitted_lane, tx_id))
             if previous is not None:
                 old_owner, old_fp, old_rev, old_epoch, old_term, old_expected = previous
                 if old_owner is not principal:
@@ -526,9 +569,9 @@ class TestOnlyCatalog:
             lane.epoch += 1
             lane.generation = f"sim-gen-{lane.revision}"
             lane.revoked = False
-            lane.policy, lane.package = candidate.policy, candidate.package
-            lane.image_digest = candidate.image_digest
-            self._images[candidate.image_digest] = candidate.image
+            lane.policy, lane.package = admitted_policy, admitted_package
+            lane.image_digest = admitted_digest
+            self._images[admitted_digest] = admitted_bytes
             result = (lane.revision, lane.epoch)
             self._transactions[(principal.lane, tx_id)] = (
                 principal,
@@ -616,6 +659,19 @@ class TestOnlyCatalog:
         )
         with self._lock:
             self._auth(principal, principal.lane)
+            # RR-04: the fingerprint used for historical lookup and newly
+            # committed issuance must represent the same admitted input.
+            commit_fingerprint = digest(
+                "GA02-D2C-C1-SIM-ISSUANCE-1",
+                {
+                    "principal": principal.name,
+                    "lane": principal.lane,
+                    "lease": lease_id,
+                    "request": request_payload,
+                },
+            )
+            if commit_fingerprint != fingerprint:
+                _deny("C1_ISSUANCE_CONFLICT")
             key = (principal.lane, request_id)
             previous = self._issuance.get(key)
             if previous is not None:

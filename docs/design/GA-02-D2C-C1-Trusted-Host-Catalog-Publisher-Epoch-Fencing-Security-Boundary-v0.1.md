@@ -594,3 +594,97 @@ These exercise nonempty relations and UTF-8 \`é\` (two UTF-8 bytes, one Python 
 - `PRODUCTION_C1_B01–B07=HARD_HOLD`
 
 **下一 Gate：** `GA-02 D2-C C1 — PR #116/#118 Exact-HEAD F1–F3 / A1–A6 Targeted Independent Design Re-Review + P0 Evidence Admission Decision`。P0 真实 Host/DB 证据未到位前，PR #116 和 #118 都应保留 Draft，不允许新增生产可信接口、DB 发行迁移或授予 D2-D/D3 执行权限。
+
+
+---
+
+## 16. F1-ORD-01 — Versioned Occurrence-Bound Host Absence Contract v0.6 (Targeted Remediation)
+
+**状态：DESIGN REMEDIATION SUBMITTED / PHYSICAL TRUST AND FINAL NORMATIVE FREEZE HOLD。** 本节将 §15.1 的“Occurrence 定位方式尚未证实”收窄为：**C0 已有并已验证精确 Ordinal 身份；欠缺的是 Host 批准与其可认证摘要之间的绑定。** 本节优先于 §14.1 旧版可选缺省记录中不带 ordinal 的候选正向准入语义。PR #117 已合并的 test-only `NON_PRODUCTION_SIMULATION` 旧 profile 不可被悄悄升级或视为生产认证。
+
+### 16.1 与已合并 C0 的逐字段物理对齐
+
+`main@d2d59ec4c97ed6a85a13a5f36551752ad2c0f067` 中 `agent_core/domain_catalog_resolution.py:145–158` 的 `DiagnosticEdgeOccurrenceV1` 定义了 `relation_id: str`、`ordinal: int`、`declared_target_id: str` 与 `outcome`。该文件 `:759–775` 对规范化源 Definition 的每一个关联字段的声明顺序执行 `enumerate(vals)`，形成 `expected[(source_key, relation, ordinal)] = (targetkind, declared_target, optional)`。在 `:776–812` 中，边条目使用 **相同的三元组** 检查 ordinal 类型/非负、键重复、不存在的声明、declared target 不一致、required vs optional 及缺项，失败先归为 `D2C_EDGE_CATALOG_INVALID`。`OPTIONAL_ABSENT` 在 C0 是 **诊断性结果**，不是 Host Policy 授权证明。
+
+**精确匹配原则：** `relation` 字段的值必须是 C0 的完整 `relation_id`（例如 `skill.optional_tools`），不只是 Pydantic 字段名 `optional_tools`。Occurrence 身份 = `(source_key.kind,namespace,id,version;relation_id;ordinal)`，ordinal 是规范化 Definition 声明列表里的零起点索引，而不是 edge 请求传来的任意整数，也不以目标名字去重。即使两个 ordinal 指向同名的 tool，也必须具有相互区分的认证记录。
+
+### 16.2 新版本 HostOptionalAbsenceOccV2 合同
+
+**新 profile：`GA02-D2C-C1-OPTIONAL-ABSENCE-OCC-2`；旧 `GA02-D2C-C1-OPTIONAL-ABSENCE-1` / `V-ABS-01` 保留 hash-only 历史参考，不允许旧版在存在多个同名 optional 声明时获得生产 C1 正向准入。新旧 profile 严格区分，不允许版本自适应升级。**
+
+| 字段 | 身份绑定要求 |
+|---|---|
+| `source_key` | Exact `kind,namespace,id,version`，由 sealed C1-SRC-A 的规范化 Definition 确定 |
+| `relation` | C0 `relation_id` 全字符串，与源 Definition 的关系表精确匹配 |
+| **`ordinal`** | Exact builtin int、≥0、来自规范化声明数组 `enumerate(vals)`，不得从客户端自证；必须纳入摘要 |
+| `target_kind,target_id` | C0 `expected[(source_key,relation,ordinal)]` 的声明目标，不接受任意目标或通配 |
+| `host_policy_generation` | 由真实 Host 身份/策略确定；不从包或者用户文本获得 |
+| `reason` | 固定 `HOST_APPROVED_OMISSION` |
+| `absence_digest` | `SHA256(ASCII(profile) || 0x00 || canonical_JSON(以上七个内容字段))`；不是签名、不可自行赋权 |
+| `issuer_provenance` | DB / Host 私有的候选 admission、lane/policy/source image/transition、精确 occurrence 与批准记录关联；不可仅使用外部字符串或 hash 认领 |
+
+Canonical JSON 内容键严格为 `host_policy_generation,ordinal,reason,relation,source_key,target_id,target_kind`，其中 `source_key` 内部含四个键。Profile 和编码沿用 §14.3 F3 规则（UTF-8/NFC、字典键排序、紧凑分隔符、不接收重复键、禁非规范外部 wire）；定义数据必须受真正的 Host 来源证明。对已签发/待签发的 V2 occurrence 与 admitted sealed image，应以 **明确的 image/transition id + publication generation + issuer-private proof** 记录版本绑定；内容 digest 不代替该权限记录。
+
+验证顺序（细化 F1 局部，不越过总身份优先级）：
+1. 先完成真正 Host issuer、scope、source package/policy 的独立认证；不允许用户提交含合法 digest 的“自签”批准。
+2. 在 issuer-owned 的同一密封快照中还原 `expected[(source,relation,ordinal)]`；ordinal 不属于声明集合、target 不一致、required relation 作为 absent → 拒绝；不能先按 target_id 合并。
+3. 对每一个 occurrence，**恰好一个** exact pinned edge **或** current Host-approved V2 absence；二者皆无、共存、重复 V2 approval/edge、不同 ordinal 重放相同批准都拒绝。
+4. 记录 V2 内容的独立完整性摘要并验证 issuer-private provenance、候选 image/policy generation 与时序状态。旧 policy/撤销/新 generation 不能复用旧批准。
+5. 通过后仅保留无目标的 omission metadata 与 exact digest 在 closure；不能自动填 edge，更不能生成 Tool 执行许可。随后仍要执行完整 C1 原子发行及撤销检查。
+
+**兼容性 HOLD：** 本节并未证明真实 Host 已认证、上游 C0 的 `OPTIONAL_ABSENT` 支持 Host 私有批准或正式 C1 production API 已存在；这些保持独立准入条件。类型化错误码对齐须经过两故障优先级复审，不能凭一条设计文字冻结所有新 C1 代码路径。
+
+### 16.3 F1-ORD Golden Fixtures（字面量已独立计算，待第二实现复算）
+
+对 `source_key={"kind":"skill","namespace":"demo","id":"helper","version":"1.0.0"}`，关系 `"skill.optional_tools"`，目标 `tool-a`，Policy `p1`，同一个 Definition 的 `optional_tools=["tool-a","tool-a"]`：C0 精确 identity 为 ordinal 0 和 1 两个 occurrence；不能通过集合去重或用单个批准覆盖两处。
+
+**V-ABS-OCC-00（ordinal 0）：** 编码为无结尾换行的 UTF-8，**234 字节**，完整 canonical JSON：
+
+```json
+{"host_policy_generation":"p1","ordinal":0,"reason":"HOST_APPROVED_OMISSION","relation":"skill.optional_tools","source_key":{"id":"helper","kind":"skill","namespace":"demo","version":"1.0.0"},"target_id":"tool-a","target_kind":"tool"}
+```
+
+`SHA256("GA02-D2C-C1-OPTIONAL-ABSENCE-OCC-2" || 0x00 || UTF8(JSON)) = 349e20e0dcf7af2d68c1a6dd5173188ba583346df92c9d37d2ad72094cf5000c`
+
+**V-ABS-OCC-01（ordinal 1）：** 同样 **234 字节**，完整 canonical JSON：
+
+```json
+{"host_policy_generation":"p1","ordinal":1,"reason":"HOST_APPROVED_OMISSION","relation":"skill.optional_tools","source_key":{"id":"helper","kind":"skill","namespace":"demo","version":"1.0.0"},"target_id":"tool-a","target_kind":"tool"}
+```
+
+`SHA256("GA02-D2C-C1-OPTIONAL-ABSENCE-OCC-2" || 0x00 || UTF8(JSON)) = ff2cf9ef7cea434720bf614d6d201d2be93d3b3d4eaefd343ad25b7a1cb2bf7b`
+
+这两个内容的摘要不同，然而**两者都只是 hash algorithm test vectors，不证明 Host批准**；真实 Host issuer-private provenance 仍须单独验证。测试必须再对旧 `V-ABS-01` 在双 occurrence 场景中的复用尝试作拒绝断言。
+
+### 16.4 F1-A..G + Ordinal 对抗用例合同（仅设计 Fixtures）
+
+| ID | 同一个密封源/可控调度 | 期望第一结果和 Side Effects |
+|---|---|---|
+| F1-A | 单个 optional occurrence ordinal 0，Host 预先批准正确 V2 absence、issuer provenance、policy/image pins 全正确 | 允许 **metadata-only** absence；零 fabricated edge / 零 Tool side effect；后续是否发行仍取决于 C1 lease/epoch |
+| F1-B | 同样的 declared occurrence，但 exact edge 与 V2 absence 都不存在 | `C1_DEPENDENCY_INVALID`；零 C1 Evidence |
+| F1-C | caller 伪造 V2 bytes/hash、issuer principal 或加入看似合法的 approval，没有真实 Host 记录 | `C1_ISSUER_UNVERIFIED` 在图验证前；零出版/签发 |
+| F1-D | 批准来自旧 policy/image/generation，尽管 target/ordinal/hash 自洽 | `C1_LANE_SCOPE_MISMATCH` 或经过冻结的 stale 代码；零新签发，不可静默升级 |
+| F1-E | 同一 ordinal 0 同时具有 exact edge + V2 absence，或两份同键 V2 approvals | `C1_DEPENDENCY_INVALID`；零部分闭包 |
+| F1-F | required relation 的 ordinal 0 用 V2 absence 替代 pinned edge | `C1_DEPENDENCY_INVALID`；零签发 |
+| F1-G | optional ordinal 0 有 exact edge，但目标不属于当前 tenant/schema allowlist；存在另一个可选 absence 也不能掩盖坏边 | `C1_DEPENDENCY_INVALID`；零签发 |
+| ORD-01 | `optional_tools=["tool-a","tool-a"]`；V2 approval 仅有 ordinal 0 | ordinal 1 缺失 ⇒ `C1_DEPENDENCY_INVALID`；不得合并同名声明 |
+| ORD-02 | 相同双声明，分别批准 ordinal 0 与 1 | 两条 omission metadata 可在已认证 Host Image 内独立保持；两条 digest 不同；零 fabricated edge |
+| ORD-03 | 修改批准内容 ordinal 0→1，却仍使用 ordinal 0 的 digest/provenance | 摘要或 issuer-private record mismatch ⇒ fail-closed；零签发 |
+| ORD-04 | 第三条 ordinal 2 / 负数 / bool-as-int ordinal / 重复 ordinal 0 | 非法或重复的 `C1_DEPENDENCY_INVALID`/相应形状码（精确双故障优先级待审），不得隐式编号 |
+| ORD-05 | Legacy V-ABS-01 无 ordinal，试图对同名双 occurrence 重放一次以授权两处 | 拒绝或明确 `HOLD_FOR_UPSTREAM_ALIGNMENT`；旧 hash-only 绝不能提升为双 occurrence Host Authority |
+
+**必备 oracle 元数据：** 每一 Case 都要有 `input_source_revision, expected_ordinal_keys, admitted_approval_ids, issuer_identity, pinned_policy_generation, source_image_digest, first_typed_code, publication_count, issuance_count, external_side_effects=0`。针对负例两种冲突同时存在时须固定检查顺序，不从数个“可接受”错误码中随意挑选一个作为结果。
+
+### 16.5 Gate 和变更范围
+
+- `F1-ORD-01 VERSIONED ORDINAL-BOUND SCHEMA DESIGN = SUBMITTED_FOR_REVIEW`
+- `EXACT_C0_ORDINAL_KEY_AND_DUPLICATE_PRECEDENCE = SOURCE_MATCHED`
+- `V-ABS-OCC-00/01 CONTENT_GOLDEN = INDEPENDENT_LITERAL_COMPUTATION_REQUIRES_SECOND_VERIFIER`
+- `F1-A..G + ORD-01..05 EXECUTABLE_FIXTURES = DESIGN_ONLY / NOT_EXECUTED`
+- `LEGACY V-ABS-01 = HASH_ONLY, NOT PRODUCTION TRUST`
+- `REAL HOST APPROVAL_PROVENANCE / P0 DEPLOYMENT_EVIDENCE = MISSING`
+- `F1 PRODUCTION NORMATIVE FINAL FREEZE = HOLD_PENDING_REVIEW_AND_AUTHORITY`
+- `PR116 MERGE AUTHORIZATION = NOT ISSUED`
+- `C1 PRODUCTION B01–B07 / D2-D/D3 = HARD_HOLD`
+
+**下一 Gate：** `GA-02 D2-C C1 — PR #116 F1-ORD-01 Exact-HEAD Independent Versioned Schema/Golden Re-Review + PR #118 P0 Cross-Alignment Verification`。只有精确头、跨实现复算、重名声明与 Host 授权分权经过独立评估，才考虑 F1 设计冻结；生产实施准入仍取决于实际 Host/DB 证据。

@@ -520,3 +520,77 @@ These exercise nonempty relations and UTF-8 \`é\` (two UTF-8 bytes, one Python 
 **Authorization ledger:** \`F1_EXPLICIT_ABSENCE_SCHEMA = SUBMITTED\`; \`F2_ISSUANCE_IDENTITY_AND_IDEMPOTENCY = SUBMITTED\`; \`F3_VECTOR_AND_ERROR_BOUNDARY = SUBMITTED\`; \`C1-SRC-A_TEST_ONLY_CONTRACT = PROPOSED_FOR_FREEZE\`; \`INDEPENDENT_EXACT_HEAD_RE_REVIEW = PENDING\`; \`TEST_ONLY_CODE_AUTHORIZATION = NOT_ISSUED\`; \`PR116_MERGE_AUTHORIZATION = NOT_ISSUED\`; \`C1_PRODUCTION_AUTHORITY = HOLD_B01..B07\`.
 
 **Next gate:** \`GA-02 D2-C C1 — PR #116 F1–F3 Exact-HEAD Independent Final Design Re-Review + Test-Only Prototype Authorization Readiness\`. Independently recompute golden vectors, verify upstream optional absence and C0 limits, challenge issuer retrieval authentication and zero-authority simulation guardrails. No C1 code or PR merge without explicit separate authorization.
+
+
+---
+
+## 15. F1–F3 Targeted Physical Contract Gap Resolution Candidate v0.5（2026-10-13）
+
+> **状态：TARGETED NORMATIVE AMENDMENT SUBMITTED / NOT FROZEN / NOT MERGED.** 本补遗仅修复 §§13–14 与真实 main C0 对齐时暴露的规则缺口；与 PR #118 §11–13 的物理设计/取证格式互相引用。任何标记 `HOLD` 的条款不得因补遗文字完成而被宣布生产验收。§14.4 “test-only authorization pending” 是该版本历史设计阶段状态；PR #117 已作为 `NON_PRODUCTION_SIMULATION` 合并，不改变本文件生产 C1 的 B01–B07 阻塞。
+
+### 15.1 F1 — Occurrence / Duplicate Precedence 兼容边界
+
+上游规则不变：一个被声明的可选 relation 必须有**一个匹配的 exact edge**，或**一个经过 Host 独立批准、绑定当前密封图和策略的显式 absence**；两者皆无、同时存在、重复或伪造，均不可静默接受。
+
+**必须验证才能冻结的 Occurrence 合同：**
+1. 对每条规范化 source Definition，以精确 `source_key=(kind,namespace,id,version)` 和 `relation,target_kind,target_id` 识别声明位置；声明数组可能含多个完全相同的目标。Occurrence 需要源自**冻结的规范化 Definition 及上游 C0 边语义**，不能由请求方重编号、字典合并、隐式去重、按输入顺序生成平行可信标识。
+2. 若 C0 实际将相同声明组合视为重复非法，C1 必须继承 **duplicate denial**；若 C0 允许同值多次出现，则 Host Approval 必须分别绑定每个 C0 可区分的 occurrence，并提供显式匹配证据。若无法证明与 C0 兼容，该 Shape = `HOLD_FOR_UPSTREAM_ALIGNMENT`；**本补遗不虚构已冻结的 occurrence 算法**。
+3. `HostOptionalAbsenceV1` 逻辑字段仍为 §14.1 原始固定集合；如后续 C0 证明需要在 canonical payload 里纳入 `occurrence_key`，必须先发布新的版本化 profile、golden vector 和两版本拒绝/迁移规则，不能在现有 `V-ABS-01` 上悄悄添加字段却沿用旧 SHA。
+4. 每个 Host-owned absence 必须绑定完整 Source key、Target、relation、Host Policy Generation、真实密封 candidate transition/image digest、独立 Host issuer provenance。不得以自身 Hash 证明被批准；同 occurrence 的 edge+absence、required-as-absence、外租户 edge 必须拒绝。其 `HOST_APPROVED_OMISSION` 只是元数据，不授予 Tool Execution。
+
+**F1 状态：DESIGN_MATCHED_ON_BASE_RULES / OCCURRENCE_AND_DUPLICATE_PRECEDENCE_HOLD。** 完成准入须提交具体 C0 源码入口、具有相同声明多次出现的正负向 Fixture、F1-A..G 精确错误码和“空边/空 absence”无发行副作用核对。
+
+### 15.2 F2 — 历史签发私有身份及 DB 提交顺序
+
+1. Application Host 在进入 Ledger 可见性边界之前完成**真实服务/Issuer 身份认证和 Lane/Tenant 作用域推导**；请求体的 principal、role、lease ID、issuer string、签名外观文字不能凭值获得权限。未经认证且尝试枚举 request ID 时，返回统一拒绝，不泄露 Ledger 存在性。
+2. 出版、撤销、租约、签发和历史查询由**同一个可线性化事务权威**维护；不可将 Lane Revision/WriterTerm 与 Lease/Issuance 拆到不具备一致提交条件的两个缓存/数据库。
+3. 无法确定提交是否完成时，先按 `(lane,request_id)` 和已认证 owner 精确读 `COMMITTED` Issuance/Publication Tx；原 Principal、policy/package/source generation、exact fingerprint、original evidence digest 必须一致，才返回明确历史回执（**历史记录不等于当前有效授权**）。否则 fail-closed；不同 fingerprint 为 `C1_ISSUANCE_CONFLICT`，外租户/未认证优先拒绝，保留失败优先级矩阵。
+4. 新签发的唯一线性化点是 DB 原子事务：带授权身份的查询与验证、同 Lane 的当前 epoch/revision/revocation、不可变 image digest、TTL/ACTIVE/单次消费的 Lease、`catalog_issuance` 唯一写入在一致提交条件下生效；两个真正 Worker 并发只能有一个新的 Evidence ID。
+5. 数据库失联、已提交历史记录被损坏、事务恢复/GC 后证据不完整时必须显式拒绝，绝不从 C0 或 Runtime 缓存中重建可信证据。Issuer Secret 和 DB 凭据不得进入 Catalog Image、日志或设计证据包。
+
+**F2 真实验收 Gate：** F2-A..H 每项要求真实 DB 的唯一约束、提交/失败 trace 与版本号证据；`RLock` 和 `simulate_crash_at` 仅可作 Mock 参考，不算完成物理证据。Host 认证、真实部署进程、DB 产品及隔离级别尚未取得，因此 F2 `PHYSICAL_HOLD`。
+
+### 15.3 F3 — 已合并 C0 资源/Canonical 精确兼容更正
+
+**勘误：§14.3 “图深度 32 只是 proposed” 并不符合目前的 C0 main 源码。** 实际 `main@d2d59ec4c97ed6a85a13a5f36551752ad2c0f067` 的 `agent_core/domain_catalog_resolution.py` 在 `longest_depth` 计算后已有 `>32` 资源拒绝（约 864–892 行）。同一个 C0 文件还在嵌套复制环节独立实现 `depth > 12` 的拒绝（约 295–297 行）。这些是**两条不同的已有物理代码限制**，不可混为一种“深度 32”的新候选语义。
+
+| C0 已核查行为（源码位置） | 对 C1 的审查/测试承诺 | 未完成证明 |
+|---|---|---|
+| `_string`：1024 Python code points；NFC、严格类型及字符类别（218+） | shape 错误 vs budget 错误优先级不得默改 | 字段别错误映射、双故障 |
+| `_copy_fields`：嵌套 value depth ≤12（295–297） | 使用 same primitive/dictionary/list 嵌套模型 | 上下界及复杂嵌套对齐 |
+| `_canonical_definition`：UTF-8 bytes ≤10240（472–474） | ≤ / = / > 三点证明与 C0 Definition 类型对齐 | 非空真实 Definition Golden |
+| `_copy_fields`/admission/active：某些 list、asset_refs 和 active entries ≤256（327–328、378、678） | 仅对 C0 命名的集合使用同一上限 | 禁止概括“所有节点和列表” |
+| edges ≤1024（811–812） | exact edge count、重复声明及去重优先级检查 | F1 occurrence 映射 |
+| graph longest dependency path ≤32（864–892） | 深度 32/33 及 cycle 优先级、可选边语义 | D2-C-C0 真实图 fixture |
+| combined canonical envelope/closure ≤2,097,152 UTF-8 bytes（519+、974+） | 累积预算口径与 profile 版本对齐 | 实际证据 Envelope 计算 |
+| C0 `_json`、`_digest`：排序 JSON、UTF-8、profile + NUL + SHA256（232–245） | 从 C0 真实 primitive 产物算独立 Golden，不用 mock 自证 | Authenticated issuer 和 Snapshot 证明独立 |
+
+`V-ABS-01`、`V-DEF-01`、`V-IMAGE-02` 继续是 §14.3 中指定字节串的 **hash-only/test-only Golden**，并不代表已认证的 Host 来源。尤其不能修改现有 Golden 串中的字段、添加 Occurrence 又声称 SHA 不变；如要改变正式 schema，需新的显式 `profile-version` 和独立向量校验。
+
+**F3 状态：C0 LIMIT TYPO/SEMANTIC CORRECTION SUBMITTED / FULL PARITY HOLD**。真正冻结须有：C0 错误顺序矩阵（至少 issuer+超长、scope+坏 Definition、revoke+缺 required Edge）；depth 12 与 32 的清晰边界 Case；Canonical 非空 Definition/Edge/Adapter；两份独立实现计算出的字节长度与 Digest；来源签发与内容 Hash 的分权证明。
+
+### 15.4 PR #116 ↔ PR #118 Contract/Physical Gate Map
+
+| Concern | #116 此次合同候选 | #118 物理证明义务 | 决定 |
+|---|---|---|---|
+| Host 来源 / Issuer 归属 | §15.2 真实 issuer-first + §13.1 SRC-A only | P0-01/02/05，真实 App Root 与 D2-A publisher | HOLD_FOR_EXTERNAL_EVIDENCE |
+| CAS / Epoch / Term | §13.2 R2 唯一 Tx/Lane/Transition | P0-03/04/07 + P2 真实 DB 两 Worker | HOLD_FOR_PHYSICAL_CAS |
+| F1 显式缺省 | §15.1 保留原字段、不虚冻 Occurrence | P1 解 C0 edge precedence + Host provenance | HOLD_FOR_UPSTREAM_ALIGNMENT |
+| F2 历史身份 | §15.2 private Ledger / original evidence | P2/P4 原子性和故障恢复 | HOLD_FOR_REAL_ISSUER_DB |
+| F3 Canonical | §15.3 与 main C0 精确对照 | P0-09 exact code/test evidence | HOLD_FOR_FULL_PARITY |
+| Lease TTL / GC | §13.2 原子性要求 | P0-06/07/10，owner+runbook | HOLD_FOR_OPERATIONS |
+| D2-D/D3 | 不发布运行权 | 独立未来 Development Unit | HARD_HOLD |
+
+### 15.5 Independent Admission Gate / Status
+
+- `F1_BASE_OPTIONAL_ABSENCE_RULES=ALIGNED_FOR_REVIEW`
+- `F1_OCCURRENCE_DUPLICATE_FROZEN=NO/HOLD_FOR_UPSTREAM_ALIGNMENT`
+- `F2_HISTORICAL_ISSUER_AND_LEDGER_CONTRACT=EXPLICIT_DRAFT`
+- `F2_REAL_AUTHENTICATOR_DURABLE_CAS=NOT_VERIFIED/HARD_HOLD`
+- `F3_C0_DEPTH_12_VS_GRAPH_32=CORRECTED_DRAFT`
+- `F3_FULL_CANONICAL_RESOURCE_ERROR_PARITY=NOT_VERIFIED`
+- `PR116_NEW_EXACT_HEAD_INDEPENDENT_DESIGN_REVIEW=PENDING`
+- `PR116_MERGE_AUTHORIZATION=NOT_ISSUED`
+- `PRODUCTION_C1_B01–B07=HARD_HOLD`
+
+**下一 Gate：** `GA-02 D2-C C1 — PR #116/#118 Exact-HEAD F1–F3 / A1–A6 Targeted Independent Design Re-Review + P0 Evidence Admission Decision`。P0 真实 Host/DB 证据未到位前，PR #116 和 #118 都应保留 Draft，不允许新增生产可信接口、DB 发行迁移或授予 D2-D/D3 执行权限。

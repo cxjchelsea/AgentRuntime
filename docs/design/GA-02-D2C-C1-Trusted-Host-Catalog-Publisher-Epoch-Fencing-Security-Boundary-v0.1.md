@@ -766,3 +766,71 @@ Each executable fixture must record `source_definition_hash, expected_occurrence
 | `D2-D/D3` | `HARD_HOLD` |
 
 **Next gate:** exact-head independent design re-review of §17 and separate scoped test-only implementation authorization decision. A PASS at this gate does not close P0, B01–B07 or production trust.
+
+
+---
+
+## 18. Post-PR-#119 Main Alignment + F1 Normative Freeze Readiness v0.8 (2026-10-13)
+
+**Provenance / scope:** This section updates the *evidence ledger and scoped readiness* of §§16–17, not the physical issuer contract. Verified \`main@7fbd1e2f7c705d36a788ffa957b2078f018e827d\` contains standard-merged PR #119; its two new \`tests/**\` files are test-only \`NON_PRODUCTION_SIMULATION\`. Earlier statements in §§16.3–16.5 and §§17.4–17.5 that fixtures were not yet implemented or executed are **historical pre-#119 status**, not the current status. §16 V2 logical profile and canonical field order remain the normative *design candidate*; C1 trusted Host implementation is absent.
+
+### 18.1 Exact physical source and evidence inventory
+
+| Source or gate | Checked reference | Interpretation |
+|---|---|---|
+| Exact post-merge main | \`7fbd1e2f7c705d36a788ffa957b2078f018e827d\` | PR #119 merged by standard merge; test files exist in main |
+| C0 real diagnostic resolver | \`agent_core/domain_catalog_resolution.py\`, \`_resolve_untrusted_catalog_observation\` | Executed C0-only reference; not a Host authority API |
+| Isolated V2 fixture | \`tests/reference_models/ga02_d2c_c1_f1_ord_v2_fixture.py\` | 180-line test-only simulation; \`PROFILE="GA02-D2C-C1-OPTIONAL-ABSENCE-OCC-2"\` |
+| Executable test scenarios | \`tests/test_ga02_d2c_c1_f1_ord_v2.py\` | 474-line test-only suite, including real C0 duplicate-target and invalid-ordinal calls |
+| Exact PR #119 source-head Actions | \`de5b786237fc64bea5c73cbf2be1fab964a8d45a\` / runs \`38349863938\`, \`38349863914\` | Standard test gate and GA-01C final integration workflow completed successfully |
+| Main merge-commit CI | \`7fbd1e2f7c705d36a788ffa957b2078f018e827d\` | Post-merge main content verified; **merge-commit-specific CI not independently verified**; do not mislabel source-head CI as main push CI |
+
+The exact-head test gate reports \`1547 passed, 7 skipped, 1 warning\`, mypy \`276 source files\` PASS, Ruff lint PASS, Ruff formatting \`276 files already formatted\`. This is **test simulation and real C0 diagnostic parity** only. The PR #119 implementation contains no real Host principal store, durable CAS, issuer ledger, trusted publication, or runtime permissions.
+
+### 18.2 F1/ORD normative design-to-test trace
+
+| Contract requirement | Source of executable verification | Freeze status |
+|---|---|---|
+| Exact occurrence key = sealed source identity + full relation ID + declaration ordinal | Real C0 \`_c0_duplicate_catalog\` + \`test_real_c0_distinguishes_duplicate_target_ordinals\` | \`TESTED_C0_DIAGNOSTIC_SEMANTICS\` |
+| Duplicated \`tool-a\` in ordered \`optional_tools\` is **two** separate occurrences | Real C0 resolver + \`test_ord_01_missing_second_occurrence\`, \`test_ord_02_two_approvals_are_distinct_and_ordered\` | \`TESTED_SCOPE\` |
+| V2 canonical profile/234-byte golden digest for ordinal 0 and 1 | \`test_v2_golden_byte_and_profile\` plus \`canonical_bytes\`, \`hash_bytes\` | \`TESTED_SIMULATION\`; cannot authenticate provenance |
+| Reject missing/duplicated/out-of-range/negative/bool/float ordinals | Real C0 \`test_real_c0_rejects_missing_duplicate_or_bad_ordinal\` and V2 \`test_ord_04_*\` | \`TESTED_C0_AND_SIM\` |
+| Diagnostic \`OPTIONAL_ABSENT\` never creates Host approval | \`test_c0_diagnostic_absence_is_not_host_approval\` | \`TESTED_NEGATIVE_SCOPE\` |
+| One edge or approved absence per optional occurrence; required cannot be absent | F1-B/E/F + ORD-01/02 isolated checks | \`SIMULATION_TESTED_ONLY\` |
+| Mock issuer identity not forged; no handle transfer; stale scope rejected | F1-C/D, ORD-03/05, \`test_ir_03_forged_handle_*\`, \`test_no_cross_fixture_handle_reuse\` | \`SIMULATION_TESTED_ONLY\` |
+| No publisher/issuance/external side effects during checks | \`assert_no_effects\` test-double counters | \`SIMULATION_TESTED_ONLY\`; not a real Host safety claim |
+
+**Crucial bound:** The standalone V2 fixture has a fixed \`SOURCE\` and \`RELATION\` and \`check\` is supplied an explicit \`targets\` tuple; it does **not** independently authenticate a sealed Definition, real tenant allowlist, issuer-controlled policy generation or binding to a durable publication transition. It uses synthetic Python-object identity for approval. Thus the fixture tests declared logical semantics and deliberate failure order, not arbitrary real-world producer inputs. §17's proposed global issuer-first precedence must **not** be inferred from all simulation cases: the test harness checks an invalid edge shape before it loops over fake approval handles, while the production cross-source error priority remains HOLD.
+
+The valid C0 diagnostic error taxonomy is phase-sensitive: \`float\` ordinal is rejected during defensive admission with \`D2C_RESOLUTION_UNSTABLE\`; duplicate, missing, negative, bool and out-of-range edge ordinals reject as \`D2C_EDGE_CATALOG_INVALID\`. These are C0 codes only; they do not freeze production C1 error precedence.
+
+### 18.3 Readiness classification and explicit exclusions
+
+**Eligible for scoped design freeze, subject to independent exact-head review:**
+1. Occurrence identity from the ordered normalized C0 sealed declaration (no target-name deduplication).
+2. Logical V2 canonical seven-field JSON payload, exact Profile ASCII + NUL + UTF-8 digest recipe, two 234-byte test vectors.
+3. V1/hash-only evidence **cannot** be upgraded to V2 trusted approval by content hash, including when only one occurrence exists.
+4. Logical optional exactly-one PINNED-or-approved-absence and required PINNED-only invariants, as **proposed safety requirements**, with test coverage explicitly labeled simulation.
+
+**Not eligible for physical or global normative freeze at this gate:**
+- Any claim that a test-created principal, approval handle or digest is authenticated Host evidence.
+- Durable issuer-private provenance schema, identity admission, sealed image/policy/tenant/transition validation, DB CAS/fencing/revocation, issuance and crash recovery.
+- Production-wide priority taxonomy or exact C1 public exported APIs; full cross-source two-fault ordering remains separate.
+- Any real DomainBinding, D2-D/D3 admission, Tool/Skill/Workflow execution permission, production security approval or P0/B01–B07 completion.
+
+### 18.4 Readiness decision and next independent gate
+
+| Gate | Decision |
+|---|---|
+| \`PR119_MAIN_INTEGRATION\` | \`VERIFIED_MAIN_CONTENT / MERGED\` |
+| \`F1_ORD_V2_LOGICAL_CONTRACT_EVIDENCE\` | \`READY_FOR_SCOPED_NORMATIVE_FREEZE_RE_REVIEW\` |
+| \`V2_234_BYTE_GOLDEN\` | \`EXECUTABLE_TESTS_PASS_ON_PR119_SOURCE_HEAD\` |
+| \`C0_DUPLICATE_ORDINAL_PARITY\` | \`EXECUTABLE_REAL_C0_PASS_ON_PR119_SOURCE_HEAD\` |
+| \`F1_ORD_SIMULATION_CASES\` | \`IMPLEMENTED_AND_SOURCE_HEAD_TESTED\` |
+| \`MAIN_PUSH_CI\` | \`NOT_INDEPENDENTLY_VERIFIED\` |
+| \`F1_GLOBAL_PRODUCTION_NORMATIVE_FINAL_FREEZE\` | \`HOLD\` |
+| \`P0 / REAL_HOST_APPROVAL / B01–B07\` | \`HARD_HOLD\` |
+| \`PR116_MERGE_AUTHORIZATION\` | \`NOT_ISSUED\` |
+| \`D2-D / D3\` | \`HARD_HOLD\` |
+
+**Recommended next gate:** PR #116 §18 **Exact-HEAD Independent Scoped Normative Freeze Review + PR #118 P0 Cross-Alignment**. This is a proposed gate, not an assertion of a completed independent approval or permission to merge. Freeze only the logical occurrence/profile requirements if the reviewer confirms their exact scoped meaning; keep the physical trusted Host path on HOLD.

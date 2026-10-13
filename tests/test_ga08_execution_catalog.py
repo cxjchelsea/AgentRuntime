@@ -26,10 +26,10 @@ from agent_core.domain_package_loader import (
 )
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import Decision, LoopBudget, ObservedFact, RunKind
-from tests.test_ga02_d4_two_domain_m4_e2e import _package
+from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga01_slice1 import SandboxTurn
 from tests.test_ga01_slice2_loop import ModelDrivenSandboxTurn
-from tests.orchestration_stubs import build_runtime_input
+from tests.test_ga02_d4_two_domain_m4_e2e import _package
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("linux"),
@@ -240,7 +240,9 @@ def test_ga08_domain_workflow_real_m4_sandbox_loop(tmp_path: Path, steps: int) -
 
             async def __call__(self, payload: dict[str, Any]) -> dict[str, object]:
                 self.calls.append(payload)
-                next_role = "verify" if payload["last_agent_action"] == "FACT_1" else "collect"
+                next_role = (
+                    "verify" if payload["last_agent_action"] == "FACT_1" else "collect"
+                )
                 return {
                     "strategy_id": next_role + "-strategy-" + noun,
                     "action_ids": [next_role + "-" + noun],
@@ -282,7 +284,9 @@ def test_ga08_domain_workflow_real_m4_sandbox_loop(tmp_path: Path, steps: int) -
         assert outcome.kind is RunKind.FINISH
         assert outcome.executions == steps
         assert outcome.iterations == steps + 1
-        assert turn.selected_actions == [step.action_id for step in catalog.workflow.steps]
+        assert turn.selected_actions == [
+            step.action_id for step in catalog.workflow.steps
+        ]
         assert turn.mock_calls == steps
         assert len(transport.calls) == steps
         assert len(outcome.observations) == steps

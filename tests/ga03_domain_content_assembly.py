@@ -11,7 +11,10 @@ import json
 from dataclasses import dataclass, replace
 from typing import Any
 
-from agent_core.sandbox_domain_assembly import SandboxAssemblyError, SandboxDomainBinding
+from agent_core.sandbox_domain_assembly import (
+    SandboxAssemblyError,
+    SandboxDomainBinding,
+)
 from tests.ga02_d4_domain_m4_assembly import SandboxM4Domain, assemble_sandbox_m4
 
 
@@ -82,18 +85,15 @@ def assemble_ga03_domain(binding: SandboxDomainBinding) -> SandboxDomainKnowledg
         }
         if asset.kind not in schemas or asset.kind in additional:
             raise SandboxAssemblyError("unknown or duplicate GA03 asset")
-        additional[asset.kind] = _asset_dict(
-            asset.content_bytes, schemas[asset.kind]
-        )
+        additional[asset.kind] = _asset_dict(asset.content_bytes, schemas[asset.kind])
 
     if set(additional) != {"prompt", "rule", "knowledge"}:
         raise SandboxAssemblyError("missing GA03 domain asset")
     rule = additional["rule"]
     knowledge = additional["knowledge"]
-    if (
-        rule["required_knowledge"] != knowledge["key"]
-        or rule["completion_after"] not in {"collect", "verify"}
-    ):
+    if rule["required_knowledge"] != knowledge["key"] or rule[
+        "completion_after"
+    ] not in {"collect", "verify"}:
         raise SandboxAssemblyError("GA03 rule/knowledge mismatch")
 
     # D4 knows Action/Strategy only. Preserve the original full identity and

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from contextlib import closing
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -49,7 +50,7 @@ def load_sqlite_business_snapshot(
     records: dict[str, ReadOnlyRecord] = {}
     try:
         uri = database_file.resolve(strict=True).as_uri() + "?mode=ro"
-        with sqlite3.connect(uri, uri=True, timeout=2.0) as connection:
+        with closing(sqlite3.connect(uri, uri=True, timeout=2.0)) as connection:
             connection.execute("PRAGMA query_only=ON")
             connection.execute("BEGIN")
             for key in dict.fromkeys(step_keys.values()):

@@ -12,7 +12,6 @@ import hashlib
 import sqlite3
 from collections.abc import Mapping
 from pathlib import Path
-from types import MappingProxyType
 
 from agent_core.domain_execution_catalog import DomainExecutionCatalog
 from agent_core.readonly_domain_lookup import ReadOnlyDomainLookup, ReadOnlyRecord

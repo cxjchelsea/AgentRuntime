@@ -33,7 +33,7 @@ def load_sqlite_business_snapshot(
     """
     if (
         type(catalog) is not DomainExecutionCatalog
-        or type(database_file) is not Path
+        or not isinstance(database_file, Path)
         or type(step_keys) is not dict
         or set(step_keys) != {step.step_id for step in catalog.workflow.steps}
         or any(

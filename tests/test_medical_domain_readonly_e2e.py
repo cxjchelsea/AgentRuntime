@@ -59,8 +59,37 @@ def _medical_package(root: Path, domain: str):
     manifest_path = root / "package.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["domain_id"] = domain
+    is_chronic = domain == "medical.chronic-management"
+    domain_content = {
+        "knowledge": {
+            "key": "bp-metric-guide" if is_chronic else "wellbeing-checkin-guide",
+            "fact": (
+                "Synthetic blood pressure trend evidence; no clinical classification"
+                if is_chronic else
+                "Synthetic mood and sleep checkin evidence; no mental health diagnosis"
+            ),
+        },
+        "rule": {
+            "required_knowledge": (
+                "bp-metric-guide" if is_chronic else "wellbeing-checkin-guide"
+            ),
+            "completion_after": "verify",
+        },
+        "prompt": {
+            "focus": (
+                "Review synthetic longitudinal metrics without clinical advice"
+                if is_chronic else
+                "Summarize synthetic wellbeing checkin without diagnosis"
+            ),
+        },
+    }
     for ref in manifest["asset_refs"]:
         ref["namespace"] = domain
+        if ref["kind"] in domain_content:
+            asset_path = root / ref["relative_path"]
+            raw = json.dumps(domain_content[ref["kind"]], sort_keys=True).encode()
+            asset_path.write_bytes(raw)
+            ref["sha256"] = hashlib.sha256(raw).hexdigest()
     manifest.pop("manifest_digest")
     digest = hashlib.sha256(
         json.dumps(

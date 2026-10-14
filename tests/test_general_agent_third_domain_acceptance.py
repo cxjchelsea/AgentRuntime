@@ -17,6 +17,7 @@ from agent_core.chat_transport import (
     ChatCompletionsConfig,
     ChatCompletionsStrategyTransport,
 )
+from agent_core.iteration import IterationRef
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import AgentRunCoordinator, LoopBudget, RunKind
 from runtime.planning.errors import StrategyModelOutputError
@@ -224,8 +225,10 @@ def test_third_domain_semantic_first_action_live(
                     ),
                 },
             ),
-        )
+)
+
         async def select(payload: dict[str, object]) -> dict[str, object]:
+            assert isinstance(payload["candidate_action_ids"], list)
             assert len(payload["candidate_action_ids"]) == 2
             return dict(await model(payload))
 
@@ -236,8 +239,7 @@ def test_third_domain_semantic_first_action_live(
         iteration = IterationRef.from_input(step.binding, current, ordinal=0)
         decision = await step.decide(current, iteration, ())
         selected = (
-            decision.approved.steps[0].action
-            if decision.approved is not None else None
+            decision.approved.steps[0].action if decision.approved is not None else None
         )
         print(
             f"RESEARCH_SEMANTIC_ACTION task={task_text!r} "

@@ -199,7 +199,29 @@ class ReadOnlyConversation:
             ReplanAction.REFRESH_WITH_FRESH_EVIDENCE,
         ):
             raise ValueError("goal update did not require new execution")
-        result = await self._runner(self.domain, question, target_update)
+        prior = self._last
+        goal_state = self._goal_state
+        if (
+            kind is TurnKind.GOAL_UPDATE
+            and self._run_continuation is not None
+            and prior is not None
+            and prior.binding_fingerprint is not None
+            and prior.step_sources
+            and goal_state is not None
+            and self._goal_policy is not None
+        ):
+            evidence = PreviousStepSources(
+                domain=self.domain,
+                binding_fingerprint=prior.binding_fingerprint,
+                goal_version=goal_state.version,
+                goal_key=self._goal_policy.goal_key,
+                step_sources=prior.step_sources,
+            )
+            result = await self._run_continuation(
+                self.domain, question, target_update, evidence
+            )
+        else:
+            result = await self._runner(self.domain, question, target_update)
         if result.get("domain") != self.domain or result.get("read_only") is not True:
             raise ValueError("untrusted runner result")
         if result.get("admitted_goal_target") != target_update:

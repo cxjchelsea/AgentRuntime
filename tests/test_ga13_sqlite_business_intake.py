@@ -34,12 +34,12 @@ def _database(path: Path, rows: list[tuple[str, str, str, str, str]]) -> None:
             "CREATE TABLE business_records (domain_id TEXT, binding_fingerprint TEXT, "
             "record_key TEXT, value TEXT, sha256 TEXT)"
         )
-        conn.executemany(
-            "INSERT INTO business_records VALUES (?, ?, ?, ?, ?)", rows
-        )
+        conn.executemany("INSERT INTO business_records VALUES (?, ?, ?, ?, ?)", rows)
 
 
-def _row(catalog: Any, key: str, data: dict[str, int]) -> tuple[str, str, str, str, str]:
+def _row(
+    catalog: Any, key: str, data: dict[str, int]
+) -> tuple[str, str, str, str, str]:
     value = json.dumps(data, sort_keys=True, separators=(",", ":"))
     return (
         catalog.domain_id,
@@ -51,9 +51,7 @@ def _row(catalog: Any, key: str, data: dict[str, int]) -> tuple[str, str, str, s
 
 
 @pytest.mark.parametrize("steps", [1, 2])
-def test_sqlite_intake_real_db_two_domain_agent_e2e(
-    tmp_path: Path, steps: int
-) -> None:
+def test_sqlite_intake_real_db_two_domain_agent_e2e(tmp_path: Path, steps: int) -> None:
     async def scenario() -> None:
         snapshot = _snapshot(tmp_path / "package", steps=steps)
         app = bootstrap_domain_application(snapshot)
@@ -130,7 +128,9 @@ def test_sqlite_intake_real_db_two_domain_agent_e2e(
         else:
             assert "PROGRESS_PERCENT_40" in result.observations[0].facts
             assert "PROGRESS_PERCENT_100" in result.observations[1].facts
-        for step, observation in zip(catalog.workflow.steps, result.observations, strict=True):
+        for step, observation in zip(
+            catalog.workflow.steps, result.observations, strict=True
+        ):
             record = lookup.records[lookup.step_keys[step.step_id]]
             assert "RECORD_SHA256_" + record.sha256 in observation.facts
         assert database.read_bytes() == before
@@ -138,11 +138,15 @@ def test_sqlite_intake_real_db_two_domain_agent_e2e(
     asyncio.run(scenario())
 
 
-def test_sqlite_intake_immutable_after_external_database_changes(tmp_path: Path) -> None:
+def test_sqlite_intake_immutable_after_external_database_changes(
+    tmp_path: Path,
+) -> None:
     snapshot = _snapshot(tmp_path / "package", steps=1)
     catalog = bootstrap_domain_application(snapshot).execution_catalog(snapshot)
     path = tmp_path / "data.sqlite"
-    _database(path, [_row(catalog, "sku-1", {"on_hand": 8, "reserved": 3, "target": 12})])
+    _database(
+        path, [_row(catalog, "sku-1", {"on_hand": 8, "reserved": 3, "target": 12})]
+    )
     step = catalog.workflow.steps[0]
     lookup = load_sqlite_business_snapshot(
         catalog=catalog, database_file=path, step_keys={step.step_id: "sku-1"}
@@ -151,14 +155,19 @@ def test_sqlite_intake_immutable_after_external_database_changes(tmp_path: Path)
     with sqlite3.connect(path) as conn:
         conn.execute(
             "UPDATE business_records SET value=?, sha256=?",
-            ('{"on_hand":100,"reserved":0,"target":0}',
-             hashlib.sha256(b'{"on_hand":100,"reserved":0,"target":0}').hexdigest()),
+            (
+                '{"on_hand":100,"reserved":0,"target":0}',
+                hashlib.sha256(b'{"on_hand":100,"reserved":0,"target":0}').hexdigest(),
+            ),
         )
     assert lookup.records["sku-1"].value == original
     assert original != '{"on_hand":100,"reserved":0,"target":0}'
 
 
-@pytest.mark.parametrize("problem", ["missing", "duplicate", "bad_digest", "foreign", "missing_db", "symlink"])
+@pytest.mark.parametrize(
+    "problem",
+    ["missing", "duplicate", "bad_digest", "foreign", "missing_db", "symlink"],
+)
 def test_sqlite_intake_fail_closed_on_untrusted_rows(
     tmp_path: Path, problem: str
 ) -> None:

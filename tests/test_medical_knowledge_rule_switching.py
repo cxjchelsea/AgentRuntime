@@ -109,10 +109,14 @@ def test_cross_medical_knowledge_rejected_in_both_directions(
         current = _scope(tmp_path / f"active-{index}", active.domain)
         external = _scope(tmp_path / f"foreign-{index}", foreign.domain)
         foreign_doc = _record(external, foreign)
+
         def foreign_provider(
-            _scope: DomainScope, _query: str, _limit: int
+            _scope: DomainScope,
+            _query: str,
+            _limit: int,
+            item: KnowledgeDocument = foreign_doc,
         ) -> tuple[KnowledgeDocument, ...]:
-            return (foreign_doc,)
+            return (item,)
 
         cap = DomainKnowledgeCapability(current, foreign_provider)
         admitted = cap.retrieve_and_admit(active.topic)

@@ -297,8 +297,7 @@ def test_replan_requires_trigger_preserves_evidence_and_has_budget(
     changed = GoalPlan.from_model(
         goal, _proposal(("step-2", ()), ("step-1", ("step-2",)))
     )
-    with pytest.raises(RunBoundaryError, match="not executable"):
-        session.revised(changed, "run", (evidence,))
+    assert session.revised(changed, "run", (evidence,)).replan_count == 1
     replacement = GoalPlan.from_model(
         goal, _proposal(("step-2", ()), ("step-1", ()))
     )

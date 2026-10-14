@@ -98,3 +98,17 @@ def inventory_goal_policy() -> DomainGoalPolicy:
         delta_label="建议补货",
         unit="件",
     )
+
+
+def learning_goal_policy() -> DomainGoalPolicy:
+    """Demo host learning target, independent of the reusable Agent Core."""
+    return DomainGoalPolicy(
+        domain="learning",
+        goal_key="completion_target",
+        update_pattern=r"学习目标(?:改成|改为|调整为|设为|设成)\s*(\d{1,6})\s*项",
+        metric_key="completed",
+        metric_label="已完成任务",
+        target_label="学习目标",
+        delta_label="还需完成",
+        unit="项",
+    )

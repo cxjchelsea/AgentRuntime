@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from examples.ga21_conversation import ReadOnlyConversation, TurnKind
 from examples.ga22_goal_policy import (
     DomainGoalPolicy,
     GoalUpdate,
@@ -54,3 +55,52 @@ def test_goal_policy_rejects_malformed_config() -> None:
             delta_label="buy",
             unit="pcs",
         )
+
+
+def test_injected_learning_goal_policy_updates_same_session_controller() -> None:
+    async def scenario() -> None:
+        policy = DomainGoalPolicy(
+            domain="learning",
+            goal_key="completion_target",
+            update_pattern=r"学习目标改成\s*(\d+)\s*项",
+            metric_key="completed",
+            metric_label="已完成任务",
+            target_label="学习目标",
+            delta_label="还需完成",
+            unit="项",
+            max_value=100,
+        )
+        seen: list[int | None] = []
+
+        async def run(
+            domain: str, question: str, target: int | None
+        ) -> dict[str, object]:
+            assert domain == "learning"
+            assert "学习" in question
+            seen.append(target)
+            return {
+                "domain": domain,
+                "answer": "已查询学习进度",
+                "read_only": True,
+                "evidence_digests": ["verified-study-record"],
+                "executions": 1,
+                "admitted_goal_target": target,
+                "verified_metrics": {"completed": 3},
+            }
+
+        session = ReadOnlyConversation(
+            domain="learning",
+            session_id="learning-s",
+            subject_id="learning-u",
+            run_read_only=run,
+            goal_policy=policy,
+        )
+        await session.send("查询学习进度")
+        changed = await session.send("学习目标改成 8 项")
+        assert changed.kind is TurnKind.GOAL_UPDATE
+        assert "还需完成 5 项" in changed.text
+        refreshed = await session.send("再查一次")
+        assert "还需完成 5 项" in refreshed.text
+        assert seen == [None, 8, 8]
+
+    asyncio.run(scenario())

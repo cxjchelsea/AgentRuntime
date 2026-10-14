@@ -160,8 +160,6 @@ def test_dynamic_task_rejects_foreign_and_replayed_steps(tmp_path: Path) -> None
     with pytest.raises(RunBoundaryError, match="outside approved"):
         DynamicBusinessTask(catalog, frozenset())
     task = DynamicBusinessTask(catalog, frozenset({"step-1"}))
-    from agent_core.runner import RunOutcome
-
     assert not task.completed(
         "ga16-run", (ObservedFact("ga16-run", "req", "plan", "exec", catalog.binding_fingerprint, ("FACT_1",)),)
     )

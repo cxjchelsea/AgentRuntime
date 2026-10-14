@@ -1,0 +1,244 @@
+"""GA-22 domain-swappable update policy with fail-closed evidence rendering."""
+
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+
+from examples.ga21_conversation import ReadOnlyConversation, TurnKind
+from examples.ga22_goal_policy import (
+    DomainGoalPolicy,
+    GoalUpdate,
+    inventory_goal_policy,
+)
+from examples.ga22_replanning import (
+    GoalState,
+    ReplanAction,
+    StepRevision,
+    authorize_revision_selection,
+    decide_replanning,
+    revise_step_plan,
+)
+
+
+def test_inventory_policy_parses_and_renders() -> None:
+    policy = inventory_goal_policy()
+    update = policy.parse("如果库存目标改成20件呢")
+    assert update == GoalUpdate("inventory", "target", 20)
+    assert "建议补货 15 件" in policy.render(update, {"available": 5})
+    for text in ("目标改成20件而不是30件", "目标改成100001件", "随便调整"):
+        with pytest.raises(ValueError):
+            policy.parse(text)
+    with pytest.raises(ValueError, match="fresh verified"):
+        policy.render(update, {"available": "5"})
+
+
+def test_second_domain_uses_same_policy_engine_without_inventory_logic() -> None:
+    policy = DomainGoalPolicy(
+        domain="learning",
+        goal_key="completion_target",
+        update_pattern=r"学习目标改成\s*(\d+)\s*项",
+        metric_key="completed",
+        metric_label="已完成任务",
+        target_label="学习目标",
+        delta_label="还需完成",
+        unit="项",
+        max_value=100,
+    )
+    change = policy.parse("学习目标改成 8 项")
+    assert change == GoalUpdate("learning", "completion_target", 8)
+    assert "还需完成 5 项" in policy.render(change, {"completed": 3})
+    with pytest.raises(ValueError, match="foreign"):
+        policy.render(GoalUpdate("inventory", "target", 8), {"completed": 3})
+
+
+def test_goal_policy_rejects_malformed_config() -> None:
+    with pytest.raises(ValueError):
+        DomainGoalPolicy(
+            domain="inventory",
+            goal_key="target",
+            update_pattern=r"(\d+)-(\d+)",
+            metric_key="available",
+            metric_label="stock",
+            target_label="target",
+            delta_label="buy",
+            unit="pcs",
+        )
+
+
+def test_injected_learning_goal_policy_updates_same_session_controller() -> None:
+    async def scenario() -> None:
+        policy = DomainGoalPolicy(
+            domain="learning",
+            goal_key="completion_target",
+            update_pattern=r"学习目标改成\s*(\d+)\s*项",
+            metric_key="completed",
+            metric_label="已完成任务",
+            target_label="学习目标",
+            delta_label="还需完成",
+            unit="项",
+            max_value=100,
+        )
+        seen: list[int | None] = []
+
+        async def run(
+            domain: str, question: str, target: int | None
+        ) -> dict[str, object]:
+            assert domain == "learning"
+            assert "学习" in question
+            seen.append(target)
+            return {
+                "domain": domain,
+                "answer": "已查询学习进度",
+                "read_only": True,
+                "evidence_digests": ["verified-study-record"],
+                "executions": 1,
+                "admitted_goal_target": target,
+                "verified_metrics": {"completed": 3},
+            }
+
+        session = ReadOnlyConversation(
+            domain="learning",
+            session_id="learning-s",
+            subject_id="learning-u",
+            run_read_only=run,
+            goal_policy=policy,
+        )
+        await session.send("查询学习进度")
+        changed = await session.send("学习目标改成 8 项")
+        assert changed.kind is TurnKind.GOAL_UPDATE
+        assert "还需完成 5 项" in changed.text
+        refreshed = await session.send("再查一次")
+        assert "还需完成 5 项" in refreshed.text
+        assert seen == [None, 8, 8]
+        assert session.goal_state is not None
+        assert session.goal_state.version == 2
+        assert session.goal_state.update == GoalUpdate(
+            "learning", "completion_target", 8
+        )
+
+    asyncio.run(scenario())
+
+
+def test_versioned_replan_requires_fresh_execution_and_scope() -> None:
+    policy = inventory_goal_policy()
+    initial = decide_replanning(
+        previous=None,
+        domain="inventory",
+        question="查询库存",
+        policy=policy,
+    )
+    assert initial.action is ReplanAction.NEW_RUN
+    state = GoalState("inventory", "查询库存", initial.next_version, None, ("d1",))
+    changed = decide_replanning(
+        previous=state,
+        domain="inventory",
+        question="查询库存",
+        policy=policy,
+        update_text="目标改成20件",
+    )
+    assert changed.action is ReplanAction.REPLAN_WITH_FRESH_EVIDENCE
+    assert changed.must_execute and changed.next_version == 2
+    updated = GoalState("inventory", "查询库存", 2, changed.update, ("d2",))
+    refreshed = decide_replanning(
+        previous=updated,
+        domain="inventory",
+        question="查询库存",
+        policy=policy,
+        refresh=True,
+    )
+    assert refreshed.action is ReplanAction.REFRESH_WITH_FRESH_EVIDENCE
+    assert refreshed.next_version == 2
+    assert refreshed.must_execute
+    with pytest.raises(ValueError, match="scope"):
+        decide_replanning(
+            previous=updated,
+            domain="learning",
+            question="查询学习进度",
+            policy=policy,
+            refresh=True,
+        )
+
+
+def test_revision_retains_unchanged_definition_and_replans_affected_step() -> None:
+    policy = inventory_goal_policy()
+    previous = GoalState("inventory", "查询库存", 1, None, ("original-digest",))
+    decision = decide_replanning(
+        previous=previous,
+        domain="inventory",
+        question="查询库存",
+        policy=policy,
+        update_text="目标改成20件",
+    )
+    steps = (
+        StepRevision("read", "read-inventory", frozenset({"source"}), "sha-read"),
+        StepRevision(
+            "compute", "calculate-deficit", frozenset({"target"}), "sha-compute"
+        ),
+    )
+    revision = revise_step_plan(
+        previous=previous,
+        decision=decision,
+        steps=steps,
+        changed_keys=frozenset({"target"}),
+        domain_fingerprint_matches=True,
+    )
+    assert revision.retained_step_ids == ("read",)
+    assert revision.replanned_step_ids == ("compute",)
+    assert revision.requires_m4_reapproval
+    with pytest.raises(ValueError, match="provenance"):
+        revise_step_plan(
+            previous=previous,
+            decision=decision,
+            steps=steps,
+            changed_keys=frozenset({"target"}),
+            domain_fingerprint_matches=False,
+        )
+
+
+def test_new_m4_approval_and_fresh_digest_gate_selective_continuation() -> None:
+    previous = GoalState("inventory", "查询库存", 1, None, ("d1",))
+    decision = decide_replanning(
+        previous=previous,
+        domain="inventory",
+        question="查询库存",
+        policy=inventory_goal_policy(),
+        update_text="目标改成20件",
+    )
+    steps = (
+        StepRevision("read", "read-action", frozenset({"source"}), "sha-read"),
+        StepRevision("compute", "compute-action", frozenset({"target"}), "sha-result"),
+    )
+    revision = revise_step_plan(
+        previous=previous,
+        decision=decision,
+        steps=steps,
+        changed_keys=frozenset({"target"}),
+        domain_fingerprint_matches=True,
+    )
+    approved = {"read": "read-action", "compute": "compute-action"}
+    chosen = authorize_revision_selection(
+        revision=revision,
+        steps=steps,
+        approved_actions=approved,
+        freshly_verified_digests={"read": "sha-read"},
+    )
+    assert [step.disposition for step in chosen] == [
+        "REVALIDATED_NO_TOOL",
+        "EXECUTE_APPROVED",
+    ]
+    changed = authorize_revision_selection(
+        revision=revision,
+        steps=steps,
+        approved_actions=approved,
+        freshly_verified_digests={"read": "changed-source"},
+    )
+    assert all(step.disposition == "EXECUTE_APPROVED" for step in changed)
+    with pytest.raises(ValueError, match="approved"):
+        authorize_revision_selection(
+            revision=revision,
+            steps=steps,
+            approved_actions={"read": "read-action"},
+            freshly_verified_digests={"read": "sha-read"},
+        )

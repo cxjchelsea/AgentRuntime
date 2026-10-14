@@ -31,6 +31,7 @@ class DomainStep:
     tool_id: str
     completion_fact: str
     action_id: str
+    goal_effect_keys: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,12 +209,17 @@ def assemble_execution_catalog(
         raise DomainExtensionError("invalid workflow steps")
     parsed: list[DomainStep] = []
     for entry in steps:
-        if type(entry) is not dict or entry.keys() != {
-            "step_id",
-            "tool_id",
-            "completion_fact",
-            "action_id",
-        }:
+        if type(entry) is not dict or not (
+            entry.keys() == {"step_id", "tool_id", "completion_fact", "action_id"}
+            or entry.keys()
+            == {
+                "step_id",
+                "tool_id",
+                "completion_fact",
+                "action_id",
+                "goal_effect_keys",
+            }
+        ):
             raise DomainExtensionError("invalid workflow step schema")
         step_id = _name(entry["step_id"])
         tool_id = _name(entry["tool_id"])
@@ -225,7 +231,22 @@ def assemble_execution_catalog(
             or step_id in {step.step_id for step in parsed}
         ):
             raise DomainExtensionError("unknown tool or duplicate workflow step")
-        parsed.append(DomainStep(step_id, tool_id, fact, action_id))
+        raw_effects = entry.get("goal_effect_keys")
+        if raw_effects is None:
+            # Legacy packages can run, but must never silently retain a step.
+            effects = frozenset({"*"})
+        elif (
+            type(raw_effects) is not list
+            or not 1 <= len(raw_effects) <= 8
+            or any(
+                type(key) is not str or not 1 <= len(key) <= 96 for key in raw_effects
+            )
+            or len(set(raw_effects)) != len(raw_effects)
+        ):
+            raise DomainExtensionError("invalid workflow goal effect keys")
+        else:
+            effects = frozenset(raw_effects)
+        parsed.append(DomainStep(step_id, tool_id, fact, action_id, effects))
     allowed_tools = raw_capability["tool_ids"]
     if (
         raw_capability["workflow_id"] != workflow_id

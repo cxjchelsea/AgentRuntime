@@ -7,6 +7,7 @@ read-only GA-09 dispatcher can execute steps. No tests imports.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from agent_core.domain_application import DomainApplication
@@ -48,7 +49,10 @@ class ReadOnlyApplicationStep:
     understanding_engine: UnderstandingEngine
     admitted_intent_id: str
     domain_goal: str
+    revalidated_facts: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     executed: int = 0
+    physical_tool_calls: int = 0
+    revalidated_step_ids: list[str] = field(default_factory=list)
     binding: AgentRunBinding = field(init=False)
 
     def __post_init__(self) -> None:
@@ -58,6 +62,18 @@ class ReadOnlyApplicationStep:
             != self.binding.binding_fingerprint
         ):
             raise RunBoundaryError("application dispatcher binding mismatch")
+        catalog_steps = {
+            step.step_id: step for step in self.dispatcher.catalog.workflow.steps
+        }
+        if any(
+            step_id not in catalog_steps
+            or type(facts) is not tuple
+            or not 1 <= len(facts) <= 8
+            or any(type(fact) is not str or not 1 <= len(fact) <= 96 for fact in facts)
+            or catalog_steps[step_id].completion_fact not in facts
+            for step_id, facts in self.revalidated_facts.items()
+        ):
+            raise RunBoundaryError("invalid fresh revalidation facts")
         # M2 is explicitly configured with no preemption of another task and
         # no silent priority bypass. This local sandbox supports one task only.
         self._safety = DefaultSafetyGuard(rules=[])
@@ -186,6 +202,28 @@ class ReadOnlyApplicationStep:
         # Increment once, before await: no retry of an uncertain tool outcome.
         index = self.executed
         self.executed += 1
+        step = self.dispatcher.catalog.workflow.steps[index]
+        if step.step_id in self.revalidated_facts:
+            approved = decision.approved
+            if (
+                approved is None
+                or len(approved.steps) != 1
+                or approved.steps[0].action != step.action_id
+                or approved.request_id != decision.iteration.request_id
+            ):
+                raise RunBoundaryError("revalidated step lacks current M4 approval")
+            self.revalidated_step_ids.append(step.step_id)
+            return ObservedFact(
+                run_id=self.run_id,
+                request_id=approved.request_id,
+                plan_id=approved.plan_id,
+                execution_id=f"ga22-revalidated-{index + 1}",
+                domain_fingerprint=self.binding.binding_fingerprint,
+                facts=self.revalidated_facts[step.step_id],
+                workflow_step_id=step.step_id,
+                tool_id=step.tool_id,
+            )
+        self.physical_tool_calls += 1
         return await self.dispatcher.observe(
             decision=decision,
             step_index=index,

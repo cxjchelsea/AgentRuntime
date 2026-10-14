@@ -9,6 +9,8 @@ from pathlib import Path
 from agent_core.chat_transport import ChatCompletionsConfig
 from examples.ga20_sandbox_cli import ask_once
 from examples.ga21_conversation import ReadOnlyConversation
+from examples.ga22_goal_policy import learning_goal_policy
+from examples.ga22_replanning import PreviousStepSources
 
 
 async def converse(domain: str, operator_config: Path) -> None:
@@ -21,13 +23,31 @@ async def converse(domain: str, operator_config: Path) -> None:
     )
 
     async def run(selected: str, question: str, target: int | None) -> dict[str, object]:
-        return await ask_once(selected, question, config, operator_config, goal_target=target)
+        return await ask_once(
+            selected, question, config, operator_config,
+            goal_target=target,
+            session_id="ga21-local-session",
+            subject_id="ga21-local-subject",
+        )
+
+    async def continue_run(
+        selected: str, question: str, target: int | None,
+        previous: PreviousStepSources,
+    ) -> dict[str, object]:
+        return await ask_once(
+            selected, question, config, operator_config,
+            goal_target=target, continuation=previous,
+            session_id="ga21-local-session",
+            subject_id="ga21-local-subject",
+        )
 
     conversation = ReadOnlyConversation(
         domain=domain,
         session_id="ga21-local-session",
         subject_id="ga21-local-subject",
         run_read_only=run,
+        goal_policy=learning_goal_policy() if domain == "learning" else None,
+        run_continuation=continue_run,
     )
     print("GA-21 本地只读会话。输入任务、‘刚才结果’、‘再查一次’或‘取消’。")
     while True:
@@ -41,6 +61,12 @@ async def converse(domain: str, operator_config: Path) -> None:
             print(f"拒绝本轮请求: {exc}")
             continue
         print(f"Agent: {answer.text}")
+        if answer.revalidated_steps:
+            print(
+                "GA22_STEP_CONTINUATION "
+                f"revalidated={','.join(answer.revalidated_steps)} "
+                f"tool_calls={answer.tool_executions}"
+            )
         if answer.kind.value == "CANCEL":
             return
 

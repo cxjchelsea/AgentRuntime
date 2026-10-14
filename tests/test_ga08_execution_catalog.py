@@ -195,6 +195,13 @@ def test_distinct_domain_execution_catalogs_and_ordered_completion(
             replace(evidence[-1], step_id="wrong-step"),
         ),
     )
+    assert not catalog.completion_from_observations(
+        run_id="run-1",
+        observations=(
+            *evidence[:-1],
+            replace(evidence[-1], observation=None),
+        ),
+    )
     invalid_observations = (
         replace(evidence[-1].observation, workflow_step_id="wrong-step"),
         replace(evidence[-1].observation, tool_id="wrong-tool"),

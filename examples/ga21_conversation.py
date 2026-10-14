@@ -6,6 +6,7 @@ an explicit new GA-20 run with fresh read-only evidence. Fail closed on ambiguit
 """
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -82,6 +83,7 @@ class ReadOnlyConversation:
         self._last: VerifiedTurn | None = None
         self._turns = 0
         self._closed = False
+        self._turn_lock = asyncio.Lock()
 
     @property
     def last_verified(self) -> VerifiedTurn | None:
@@ -106,6 +108,11 @@ class ReadOnlyConversation:
         return TurnKind.NEW
 
     async def send(self, message: str) -> ConversationReply:
+        # Serialize state mutations across concurrent callers in one session.
+        async with self._turn_lock:
+            return await self._send_serial(message)
+
+    async def _send_serial(self, message: str) -> ConversationReply:
         if self._closed:
             raise ValueError("conversation is closed")
         if self._turns >= self.max_turns:
@@ -133,7 +140,7 @@ class ReadOnlyConversation:
             if self._last is None or self._last.domain != "inventory":
                 raise ValueError("goal update requires a prior verified inventory goal")
             found = _TARGET_UPDATE.findall(message)
-            if len(found) != 1:
+            if len(found) != 1 or len(re.findall(r"\\d+", message)) != 1:
                 raise ValueError("ambiguous inventory target update")
             target_update = int(found[0])
             if target_update > 100_000:

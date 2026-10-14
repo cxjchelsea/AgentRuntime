@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 import tempfile
@@ -17,6 +18,7 @@ from typing import Any
 from agent_core.business_answer import render_business_answer
 from agent_core.chat_transport import ChatCompletionsConfig, ChatCompletionsStrategyTransport
 from agent_core.domain_application import bootstrap_domain_application
+from agent_core.domain_package_loader import HostPackageRootIssuer, HostPublishedGeneration, LocalPackageLoader, TrustedPackageIdentity
 from agent_core.live_business_answer import generate_live_business_answer
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.readonly_business_tools import ReadOnlyBusinessTools
@@ -53,7 +55,36 @@ def validated_question(domain: str, question: str) -> str:
     return question
 
 
-async def ask_once(domain: str, question: str, config: ChatCompletionsConfig) -> dict[str, object]:
+def load_operator_source(config_file: Path, domain: str):
+    """Resolve a pinned external package and existing SQLite file, sandbox only."""
+    if config_file.is_symlink() or not config_file.is_file():
+        raise ValueError("operator config must be a regular file")
+    raw = json.loads(config_file.read_text(encoding="utf-8"))
+    fields = {"domain", "package_root", "generation_id", "domain_version", "runtime_profile", "manifest_digest", "database_file", "step_keys"}
+    if type(raw) is not dict or set(raw) != fields or raw["domain"] != domain:
+        raise ValueError("operator source configuration mismatch")
+    if any(type(raw[key]) is not str or not raw[key] for key in fields - {"step_keys"}):
+        raise ValueError("operator source values invalid")
+    keys = raw["step_keys"]
+    if type(keys) is not dict or not keys or any(type(k) is not str or type(v) is not str or not v for k, v in keys.items()):
+        raise ValueError("operator step keys invalid")
+    root, database = Path(raw["package_root"]), Path(raw["database_file"])
+    if not root.is_absolute() or not database.is_absolute() or root.is_symlink() or database.is_symlink():
+        raise ValueError("operator sources require absolute non-symlink paths")
+    identity = TrustedPackageIdentity(raw["generation_id"], domain, raw["domain_version"], raw["runtime_profile"], raw["manifest_digest"])
+    record = HostPublishedGeneration(identity, str(root), True)
+    # This is only an operator-controlled local demo verifier, not an independent host attestation.
+    issuer = HostPackageRootIssuer((record,), publication_verifier=lambda candidate: candidate == record)
+    with issuer.issue(identity.generation_id) as lease:
+        snapshot = LocalPackageLoader().load(lease, identity)
+    catalog = bootstrap_domain_application(snapshot).execution_catalog(snapshot)
+    if set(keys) != {step.step_id for step in catalog.workflow.steps}:
+        raise ValueError("operator step bindings do not match package")
+    lookup = load_sqlite_business_snapshot(catalog=catalog, database_file=database, step_keys=keys)
+    return snapshot, lookup
+
+
+async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, operator_config: Path | None = None) -> dict[str, object]:
     """Run the existing real-model/M4/SQLite read-only path, not a canned answer."""
     if not sys.platform.startswith("linux"):
         raise RuntimeError("GA-20 fixture-backed sandbox is Linux-only")
@@ -62,29 +93,36 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig) ->
     operation = OPERATIONS[domain]
     with tempfile.TemporaryDirectory(prefix="ga20-sandbox-") as temp:
         root = Path(temp)
-        snapshot = _snapshot(root / "package", steps=steps)
+        if operator_config is None:
+            snapshot = _snapshot(root / "package", steps=steps)
+            app = bootstrap_domain_application(snapshot)
+            catalog = app.execution_catalog(snapshot)
+            step_keys = {
+                step.step_id: f"business-{index}"
+                for index, step in enumerate(catalog.workflow.steps, 1)
+            }
+            data = (
+                ({"on_hand": 8, "reserved": 3, "target": 12},)
+                if steps == 1 else
+                ({"completed": 2, "total": 5}, {"completed": 2, "total": 5})
+            )
+            database = root / "business.sqlite"
+            _database(
+                database,
+                [
+                    _row(catalog, step_keys[step.step_id], values)
+                    for step, values in zip(catalog.workflow.steps, data, strict=True)
+                ],
+            )
+            lookup = load_sqlite_business_snapshot(
+                catalog=catalog, database_file=database, step_keys=step_keys,
+            )
+        else:
+            snapshot, lookup = load_operator_source(operator_config, domain)
         app = bootstrap_domain_application(snapshot)
         catalog = app.execution_catalog(snapshot)
-        step_keys = {
-            step.step_id: f"business-{index}"
-            for index, step in enumerate(catalog.workflow.steps, 1)
-        }
-        data = (
-            ({"on_hand": 8, "reserved": 3, "target": 12},)
-            if steps == 1 else
-            ({"completed": 2, "total": 5}, {"completed": 2, "total": 5})
-        )
-        database = root / "business.sqlite"
-        _database(
-            database,
-            [
-                _row(catalog, step_keys[step.step_id], values)
-                for step, values in zip(catalog.workflow.steps, data, strict=True)
-            ],
-        )
-        lookup = load_sqlite_business_snapshot(
-            catalog=catalog, database_file=database, step_keys=step_keys,
-        )
+        if catalog.binding_fingerprint != lookup.catalog.binding_fingerprint or len(catalog.workflow.steps) != steps:
+            raise ValueError("operator package not compatible with selected demo domain")
         dispatcher = SandboxToolDispatcher(
             catalog,
             ReadOnlyBusinessTools(
@@ -182,7 +220,7 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig) ->
             "executions": outcome.executions,
             "evidence_digests": list(answer.source_digests),
             "read_only": True,
-            "fixture_data": True,
+            "fixture_data": operator_config is None,
         }
 
 
@@ -190,6 +228,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="GA-20 experimental Linux-only Agent sandbox")
     parser.add_argument("--domain", choices=tuple(OPERATIONS), required=True)
     parser.add_argument("--question", help="One natural-language request (or interactive prompt)")
+    parser.add_argument("--operator-config", type=Path, help="Pinned external package and SQLite data (sandbox only)")
     args = parser.parse_args()
     try:
         question = args.question if args.question is not None else input("用户任务: ")
@@ -201,12 +240,12 @@ def main() -> int:
             timeout_seconds=45.0,
             max_tokens=200,
         )
-        result = asyncio.run(ask_once(args.domain, question, config))
+        result = asyncio.run(ask_once(args.domain, question, config, args.operator_config))
     except (ValueError, RuntimeError, OSError, EOFError) as exc:
         print(f"GA-20 sandbox declined: {exc}", file=sys.stderr)
         return 1
     print(result["answer"])
-    print(f"[read-only sandbox; {result['executions']} verified tool observation(s); {result['answer_mode']}; fixture data]")
+    print(f"[read-only sandbox; {result['executions']} verified tool observation(s); {result['answer_mode']}; fixture_data={result['fixture_data']}]")
     return 0
 
 

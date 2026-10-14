@@ -14,7 +14,6 @@ import pytest
 from agent_core.domain_application import bootstrap_domain_application
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.readonly_domain_lookup import ReadOnlyDomainLookup, ReadOnlyRecord
-from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.runner import (
     Decision,
     LoopBudget,
@@ -22,6 +21,7 @@ from agent_core.runner import (
     RunBoundaryError,
     RunKind,
 )
+from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga01_slice2_loop import ModelDrivenSandboxTurn
 from tests.test_ga08_execution_catalog import _snapshot

@@ -41,9 +41,7 @@ def test_medical_high_risk_preflight_never_calls_knowledge_model_or_tools(
         calls.append("knowledge")
         raise AssertionError("knowledge must not run on high-risk task")
 
-    snapshot = _medical_package(
-        tmp_path / "package", domain, differentiated=True
-    )
+    snapshot = _medical_package(tmp_path / "package", domain, differentiated=True)
     config = ChatCompletionsConfig(
         endpoint="http://127.0.0.1:11434/v1/chat/completions",
         model="qwen2.5:3b",

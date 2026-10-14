@@ -135,8 +135,7 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
         model_calls: list[dict[str, Any]] = []
 
         strategy_for_action = {
-            action: strategy
-            for strategy, action in app.extension.strategy_actions
+            action: strategy for strategy, action in app.extension.strategy_actions
         }
 
         async def choose(payload: dict[str, Any]) -> dict[str, object]:

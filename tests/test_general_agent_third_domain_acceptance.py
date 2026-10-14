@@ -117,26 +117,6 @@ def test_third_domain_real_qwen_with_multiple_first_turn_candidates(
             text="Collect source evidence first, then independently verify references"
         )
         step = DomainDrivenTurn(initial, package)
-        model = ChatCompletionsStrategyTransport(
-            ChatCompletionsConfig(
-                endpoint=os.environ["GA01C_LLM_URL"],
-                model=os.environ["GA01C_LLM_MODEL"],
-                api_key=os.environ.get("GA01C_LLM_API_KEY", ""),
-                timeout_seconds=45.0,
-                max_tokens=200,
-            ),
-            system_instruction=(
-                "You choose one action for a sandbox research evidence workflow. "
-                "Return a JSON object with exactly strategy_id, action_ids and "
-                "reason_code. The two legal tasks are collect-sources using "
-                "collect-strategy-sources and verify-sources using "
-                "verify-strategy-sources. Choose collect-sources first to gather "
-                "the source evidence. When last_agent_action is "
-                "MOCK_FOUND_NEEDS_VERIFICATION, choose verify-sources. "
-                "Use reason_code RESEARCH_EVIDENCE_WORKFLOW. "
-                "Never claim retrieval of real literature."
-            ),
-        )
         calls: list[tuple[str, ...]] = []
 
         async def choose(payload: dict[str, object]) -> dict[str, object]:
@@ -161,7 +141,29 @@ def test_third_domain_real_qwen_with_multiple_first_turn_candidates(
             assert isinstance(filtered_strategies, list)
             assert len(filtered_strategies) == len(pending)
             calls.append(tuple(pending))
-            result = dict(await model(bounded))
+            # The model must see the CURRENT legal subset and the previous
+            # observation. It may still fail; never rewrite its output.
+            guidance = (
+                "Choose exactly one action from the current legal action list. "
+                "Return JSON strategy_id, action_ids, reason_code. "
+                "Do not repeat a completed action. "
+                f"Current permitted actions: {pending}. "
+                f"Current permitted strategies: {filtered_strategies}. "
+                f"Previous observed action fact: {payload.get('last_agent_action')}. "
+                "A source collection that returned "
+                "MOCK_FOUND_NEEDS_VERIFICATION requires reference verification."
+            )
+            current_model = ChatCompletionsStrategyTransport(
+                ChatCompletionsConfig(
+                    endpoint=os.environ["GA01C_LLM_URL"],
+                    model=os.environ["GA01C_LLM_MODEL"],
+                    api_key=os.environ.get("GA01C_LLM_API_KEY", ""),
+                    timeout_seconds=45.0,
+                    max_tokens=200,
+                ),
+                system_instruction=guidance,
+            )
+            result = dict(await current_model(bounded))
             selected = result.get("action_ids")
             if (
                 type(selected) is not list

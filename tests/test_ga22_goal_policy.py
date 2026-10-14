@@ -172,7 +172,9 @@ def test_revision_retains_unchanged_definition_and_replans_affected_step() -> No
     )
     steps = (
         StepRevision("read", "read-inventory", frozenset({"source"}), "sha-read"),
-        StepRevision("compute", "calculate-deficit", frozenset({"target"}), "sha-compute"),
+        StepRevision(
+            "compute", "calculate-deficit", frozenset({"target"}), "sha-compute"
+        ),
     )
     revision = revise_step_plan(
         previous=previous,

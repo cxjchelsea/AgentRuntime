@@ -1,4 +1,5 @@
 """CI-only GA-20 synthetic published package and SQLite fixture producer."""
+
 from __future__ import annotations
 
 import argparse
@@ -43,9 +44,7 @@ def prepare(output: Path) -> None:
             "database_file": str(database.resolve()),
             "step_keys": keys,
         }
-        (output / (domain + ".json")).write_text(
-            json.dumps(config), encoding="utf-8"
-        )
+        (output / (domain + ".json")).write_text(json.dumps(config), encoding="utf-8")
 
 
 def main() -> None:

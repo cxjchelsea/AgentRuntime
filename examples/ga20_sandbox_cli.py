@@ -26,7 +26,7 @@ from agent_core.runner import LoopBudget, RunBoundaryError, RunKind
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.sqlite_business_intake import load_sqlite_business_snapshot
 from runtime.contracts import InputSource, InputTriggerType, RuntimeInput
-from agent_core.readonly_application_step import ReadOnlyApplicationStep
+from examples.readonly_application_step import ReadOnlyApplicationStep
 
 DEFAULT_QUESTIONS = {
     "inventory": "请查询库存并计算需要补货多少件",

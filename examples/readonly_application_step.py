@@ -4,6 +4,7 @@ Uses the existing M1 normalization, M2 safety/policy/constraints, M3
 understanding contract, and M4 planner/validator/rechecker. Only a pinned
 read-only GA-09 dispatcher can execute steps. No tests imports.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -56,7 +57,10 @@ class ReadOnlyApplicationStep:
 
     def __post_init__(self) -> None:
         self.binding = self.app.prepare(self.initial, run_id=self.run_id)
-        if self.dispatcher.catalog.binding_fingerprint != self.binding.binding_fingerprint:
+        if (
+            self.dispatcher.catalog.binding_fingerprint
+            != self.binding.binding_fingerprint
+        ):
             raise RunBoundaryError("application dispatcher binding mismatch")
         # M2 is explicitly configured with no preemption of another task and
         # no silent priority bypass. This local sandbox supports one task only.
@@ -140,18 +144,21 @@ class ReadOnlyApplicationStep:
             policy_decision=constraint.policy_decision,
         )
         if len(observations) == len(self.dispatcher.catalog.workflow.steps):
+            if any(observed.workflow_step_id is None for observed in observations):
+                raise RunBoundaryError("missing application step provenance")
             if not self.dispatcher.catalog.completion_from_observations(
                 run_id=self.run_id,
                 observations=tuple(
-                    WorkflowStepEvidence(
-                        observed.workflow_step_id, observed
-                    )
+                    WorkflowStepEvidence(observed.workflow_step_id, observed)
                     for observed in observations
+                    if observed.workflow_step_id is not None
                 ),
             ):
                 raise RunBoundaryError("unverified final business observation")
             return Decision(
-                iteration, "FINISH", reason="VERIFIED_READ_ONLY_GOAL",
+                iteration,
+                "FINISH",
+                reason="VERIFIED_READ_ONLY_GOAL",
                 completion_fact=observations[-1].facts[-1],
             )
         draft = await self.planner.plan(
@@ -159,9 +166,7 @@ class ReadOnlyApplicationStep:
         )
         draft = draft.model_copy(update={"plan_id": "ga20-" + iteration.request_id})
         validated = await self.validator.validate(draft)
-        approved = await self.rechecker.recheck(
-            validated, constraint.policy_decision
-        )
+        approved = await self.rechecker.recheck(validated, constraint.policy_decision)
         return Decision(iteration, "ACT", context=context, approved=approved)
 
     async def execute_and_observe(self, decision: Decision) -> ObservedFact:

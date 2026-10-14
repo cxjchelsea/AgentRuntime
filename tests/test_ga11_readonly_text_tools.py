@@ -103,9 +103,8 @@ def test_shared_readonly_text_tools_two_domain_agent_loops(
         )
         assert result.kind is RunKind.FINISH
         assert result.executions == steps
-        assert "WORD_COUNT_3" in result.observations[0].facts if steps == 1 else (
-            "WORD_COUNT_2" in result.observations[0].facts
-        )
+        expected_count = "WORD_COUNT_3" if steps == 1 else "WORD_COUNT_2"
+        assert expected_count in result.observations[0].facts
         if steps == 2:
             assert "CHARACTER_COUNT_12" in result.observations[1].facts
         assert result.observations[-1].facts[-1] == "GOAL_SATISFIED"
@@ -134,9 +133,7 @@ def test_text_tools_reject_unregistered_operation_and_cross_step(
             value,
             hashlib.sha256(value.encode()).hexdigest(),
         )
-        lookup = ReadOnlyDomainLookup(
-            catalog, {"key": record}, {step.step_id: "key"}
-        )
+        lookup = ReadOnlyDomainLookup(catalog, {"key": record}, {step.step_id: "key"})
         with pytest.raises(RunBoundaryError, match="operations"):
             ReadOnlyTextTools(lookup, {step.step_id: "write_file"})
         with pytest.raises(RunBoundaryError, match="operations"):

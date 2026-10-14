@@ -174,7 +174,11 @@ def test_dynamic_model_tool_choice_and_replanning(
         turn = DynamicTurn(initial)
         outcome = await AgentRunCoordinator(
             turn,
-            LoopBudget(max_iterations=4, max_executions=3),
+            LoopBudget(
+                max_iterations=4,
+                max_executions=3,
+                max_decision_seconds=70.0 if live else 5.0,
+            ),
             completion_check=task.completed,
             execution_guard=lambda decision, observation, index: task.guard(
                 decision, observation, index, turn.prior

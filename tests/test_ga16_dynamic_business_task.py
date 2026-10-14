@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -10,6 +11,10 @@ from typing import Any
 
 import pytest
 
+from agent_core.chat_transport import (
+    ChatCompletionsConfig,
+    ChatCompletionsStrategyTransport,
+)
 from agent_core.domain_application import bootstrap_domain_application
 from agent_core.dynamic_business_task import DynamicBusinessTask
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
@@ -36,16 +41,20 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.mark.parametrize(
-    ("order", "required"),
+    ("order", "required", "live"),
     [
-        (("verify-notes", "collect-notes"), frozenset({"step-1", "step-2"})),
-        (("collect-notes", "verify-notes"), frozenset({"step-1", "step-2"})),
-        (("collect-notes",), frozenset({"step-1"})),
+        (("verify-notes", "collect-notes"), frozenset({"step-1", "step-2"}), False),
+        (("collect-notes", "verify-notes"), frozenset({"step-1", "step-2"}), False),
+        (("collect-notes",), frozenset({"step-1"}), False),
+        (("verify-notes", "collect-notes"), frozenset({"step-1", "step-2"}), True),
     ],
 )
 def test_dynamic_model_tool_choice_and_replanning(
-    tmp_path: Path, order: tuple[str, ...], required: frozenset[str]
+    tmp_path: Path, order: tuple[str, ...], required: frozenset[str], live: bool
 ) -> None:
+    if live and os.environ.get("GA16_LIVE_OPT_IN") != "1":
+        pytest.skip("GA-16 dynamic Qwen test requires local-model opt-in")
+
     async def scenario() -> None:
         snapshot = _snapshot(tmp_path / "domain", steps=2)
         app = bootstrap_domain_application(snapshot)
@@ -74,9 +83,34 @@ def test_dynamic_model_tool_choice_and_replanning(
             ).handlers(),
         )
         calls: list[dict[str, Any]] = []
+        live_model = None
+        if live:
+            config = ChatCompletionsConfig(
+                endpoint=os.environ["GA01C_LLM_URL"],
+                model=os.environ["GA01C_LLM_MODEL"],
+                api_key=os.environ.get("GA01C_LLM_API_KEY", ""),
+                timeout_seconds=45.0,
+                max_tokens=180,
+            )
+            live_model = ChatCompletionsStrategyTransport(
+                config,
+                system_instruction=(
+                    "You are a sandbox read-only learning task agent. Choose a "
+                    "strategy and action ONLY from legal_strategy_ids and "
+                    "candidate_action_ids, and return exactly a JSON object "
+                    "strategy_id, action_ids, reason_code. The user requests "
+                    "verification FIRST and then a collection based on that result. "
+                    "If last_agent_action is FACT_2, select collect-strategy-notes "
+                    "and collect-notes. Otherwise select verify-strategy-notes "
+                    "and verify-notes. Do not invent tools or claim external actions. "
+                    "Set reason_code DYNAMIC_REPLAN_AFTER_OBSERVATION."
+                ),
+            )
 
         async def model(payload: dict[str, Any]) -> dict[str, object]:
             calls.append(payload)
+            if live_model is not None:
+                return dict(await live_model(payload))
             selected = order[len(calls) - 1]
             assert selected in payload["candidate_action_ids"]
             return {

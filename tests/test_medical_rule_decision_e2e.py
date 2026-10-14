@@ -53,9 +53,10 @@ def test_medical_package_rule_changes_approved_agent_execution(
             domain.m4.collect_action,
             *([domain.m4.verify_action] if expected_actions == 2 else []),
         ]
-        assert turn.ga03_transport.projections == [
-            (domain.prompt_focus, (domain.knowledge_fact,))
-        ] * expected_actions
+        assert (
+            turn.ga03_transport.projections
+            == [(domain.prompt_focus, (domain.knowledge_fact,))] * expected_actions
+        )
 
     asyncio.run(scenario())
 

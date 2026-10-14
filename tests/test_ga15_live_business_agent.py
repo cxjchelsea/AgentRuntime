@@ -85,24 +85,11 @@ def test_real_model_drives_business_actions_and_grounded_answer(
                 {step.step_id: operation for step in catalog.workflow.steps},
             ).handlers(),
         )
-        system_instruction = (
-            "You are selecting a legally permitted business information lookup action. "
-            "Return ONLY JSON with strategy_id, action_ids, reason_code. "
-            "Choose exactly one action from candidate_action_ids and one strategy "
-            "from legal_strategy_ids. For initial action, choose the ID that begins "
-            "with collect-. If last_agent_action is FACT_1, choose the IDs beginning "
-            "with verify-. The action may only READ data or calculate metrics, "
-            "never mutate, ship, purchase, or complete learning tasks. "
-            "Use reason_code BUSINESS_READ_ONLY_QUERY."
-        )
-        real_strategy = ChatCompletionsStrategyTransport(
-            config, system_instruction=system_instruction
-        )
         model_calls: list[dict[str, Any]] = []
 
         async def selected(payload: dict[str, Any]) -> dict[str, object]:
-            # Advertise only the next workflow step to the real model.
-            # M4 still validates the returned IDs against the full frozen catalog.
+            # The application supplies only the currently executable next
+            # workflow step. The unmodified M4 validator still owns approval.
             stage = (
                 "verify-"
                 if payload.get("last_agent_action") == "FACT_1"
@@ -125,8 +112,31 @@ def test_real_model_drives_business_actions_and_grounded_answer(
             ):
                 raise ValueError("no uniquely bounded workflow model candidates")
             model_calls.append(bounded)
-            response = await real_strategy(bounded)
-            return dict(response)
+            action = bounded["candidate_action_ids"][0]
+            strategy = bounded["legal_strategy_ids"][0]
+            instruction = (
+                "You are a read-only business agent. Return a JSON object with "
+                "exactly strategy_id, action_ids, reason_code. "
+                f"The ONLY legal strategy_id is {strategy!r}. "
+                f"The ONLY legal action_ids array is [{action!r}]. "
+                "Never invent IDs or claim business actions were executed. "
+                "Set reason_code to BUSINESS_READ_ONLY_QUERY."
+            )
+            live_transport = ChatCompletionsStrategyTransport(
+                config, system_instruction=instruction
+            )
+            # One bounded model retry is allowed before execution; no retry
+            # of an unknown external tool attempt is ever authorized.
+            for attempt in range(2):
+                response = dict(await live_transport(bounded))
+                if (
+                    response.get("strategy_id") == strategy
+                    and response.get("action_ids") == [action]
+                ):
+                    return response
+                if attempt == 0:
+                    bounded["previous_selection_invalid"] = True
+            raise ValueError("model did not select the legal business step")
 
         class LiveBusinessTurn(ModelDrivenSandboxTurn):
             def __post_init__(self) -> None:

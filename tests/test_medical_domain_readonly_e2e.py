@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,7 +20,13 @@ from agent_core.domain_package_loader import (
 )
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.readonly_domain_lookup import ReadOnlyDomainLookup
-from agent_core.runner import Decision, LoopBudget, ObservedFact, RunBoundaryError, RunKind
+from agent_core.runner import (
+    Decision,
+    LoopBudget,
+    ObservedFact,
+    RunBoundaryError,
+    RunKind,
+)
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.sqlite_business_intake import load_sqlite_business_snapshot
 from tests.orchestration_stubs import build_runtime_input
@@ -30,12 +35,21 @@ from tests.test_ga08_execution_catalog import _snapshot
 from tests.test_ga13_sqlite_business_intake import _database, _row
 
 pytestmark = pytest.mark.skipif(
-    not sys.platform.startswith("linux"), reason="verified package loader requires Linux"
+    not sys.platform.startswith("linux"),
+    reason="verified package loader requires Linux",
 )
 
 DOMAINS = (
-    ("medical.chronic-management", "blood_pressure", {"systolic": 128, "diastolic": 82}),
-    ("medical.mental-wellbeing", "mood_checkin", {"mood_score": 3, "sleep_hours": 7}),
+    (
+        "medical.chronic-management",
+        "blood_pressure",
+        {"systolic": 128, "diastolic": 82},
+    ),
+    (
+        "medical.mental-wellbeing",
+        "mood_checkin",
+        {"mood_score": 3, "sleep_hours": 7},
+    ),
 )
 
 
@@ -75,14 +89,22 @@ def test_medical_subdomain_real_sqlite_m4_tool_chain(
         app = bootstrap_domain_application(snapshot)
         catalog = app.execution_catalog(snapshot)
         assert catalog.domain_id == domain_id
-        knowledge = [asset for asset in snapshot.assets if asset.ref.kind == "knowledge"]
+        knowledge = [
+            asset for asset in snapshot.assets if asset.ref.kind == "knowledge"
+        ]
         assert len(knowledge) == 1
-        keys = {step.step_id: f"{topic}-{i}" for i, step in enumerate(catalog.workflow.steps)}
+        keys = {
+            step.step_id: f"{topic}-{i}"
+            for i, step in enumerate(catalog.workflow.steps)
+        }
         db = tmp_path / "medical-synthetic.sqlite"
-        _database(db, [
-            _row(catalog, keys[step.step_id], medical_data)
-            for step in catalog.workflow.steps
-        ])
+        _database(
+            db,
+            [
+                _row(catalog, keys[step.step_id], medical_data)
+                for step in catalog.workflow.steps
+            ],
+        )
         before = db.read_bytes()
         lookup = load_sqlite_business_snapshot(
             catalog=catalog, database_file=db, step_keys=keys
@@ -107,26 +129,35 @@ def test_medical_subdomain_real_sqlite_m4_tool_chain(
 
             async def execute_and_observe(self, decision: Decision) -> ObservedFact:
                 observed = await dispatcher.observe(
-                    decision=decision, step_index=self.actions,
+                    decision=decision,
+                    step_index=self.actions,
                     run_id=self.binding.run_id,
                     execution_id=f"medical-execution-{self.actions + 1}",
                 )
                 self.actions += 1
                 return observed
 
-        initial = build_runtime_input(text=f"Read synthetic {topic} and verify its source")
+        initial = build_runtime_input(
+            text=f"Read synthetic {topic} and verify its source"
+        )
         result = await app.run(
-            initial, run_id="medical-readonly-run", step=MedicalTurn(initial),
+            initial,
+            run_id="medical-readonly-run",
+            step=MedicalTurn(initial),
             budget=LoopBudget(max_iterations=4, max_executions=3),
             execution_catalog=catalog,
         )
         assert result.kind is RunKind.FINISH
         assert result.executions == 2
         assert [obs.workflow_step_id for obs in result.observations] == [
-            "step-1", "step-2"
+            "step-1",
+            "step-2",
         ]
-        assert all("RECORD_SHA256_" in " ".join(obs.facts) for obs in result.observations)
+        assert all(
+            "RECORD_SHA256_" in " ".join(obs.facts) for obs in result.observations
+        )
         assert db.read_bytes() == before
+
     asyncio.run(scenario())
 
 
@@ -140,15 +171,15 @@ def test_medical_sqlite_cross_domain_evidence_rejected(tmp_path: Path) -> None:
     _database(db, [_row(a, f"record-{i}", DOMAINS[0][2]) for i in range(1, 3)])
     with pytest.raises(RunBoundaryError, match="SQLite|record snapshot"):
         load_sqlite_business_snapshot(
-            catalog=b, database_file=db,
-            step_keys={"step-1": "record-1", "step-2": "record-2"}
+            catalog=b,
+            database_file=db,
+            step_keys={"step-1": "record-1", "step-2": "record-2"},
         )
 
     valid = load_sqlite_business_snapshot(
-        catalog=a, database_file=db,
-        step_keys={"step-1": "record-1", "step-2": "record-2"}
+        catalog=a,
+        database_file=db,
+        step_keys={"step-1": "record-1", "step-2": "record-2"},
     )
     with pytest.raises(RunBoundaryError, match="scope mismatch"):
-        ReadOnlyDomainLookup(
-            b, dict(valid.records), dict(valid.step_keys)
-        )
+        ReadOnlyDomainLookup(b, dict(valid.records), dict(valid.step_keys))

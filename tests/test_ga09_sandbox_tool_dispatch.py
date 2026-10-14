@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from agent_core.domain_application import bootstrap_domain_application
+from agent_core.iteration import IterationRef
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import (
     Decision,
@@ -128,24 +129,34 @@ def test_handler_fails_closed_on_incomplete_evidence(tmp_path: Path) -> None:
             catalog, {catalog.tool_ids[0]: incomplete}
         )
         initial = build_runtime_input(text="validate incomplete tool")
-        from tests.test_ga01_slice2_loop import ModelDrivenSandboxTurn
+        async def model(payload: dict[str, Any]) -> dict[str, object]:
+            del payload
+            return {
+                "strategy_id": "collect-strategy-stock",
+                "action_ids": ["collect-stock"],
+                "reason_code": "SANDBOX_VALID_ACTION",
+            }
 
-        turn = ModelDrivenSandboxTurn(initial)
-        # A caller cannot run even the handler if the action is not the
-        # package-specific approved M4 action.
-        decision = await turn.decide(
-            initial,
-            turn.binding.iteration_input(initial, ordinal=0),
-            (),
-        )
+        class PackageTurn(ModelDrivenSandboxTurn):
+            def __post_init__(self) -> None:
+                super().__post_init__()
+                self.binding = app.prepare(self.initial, run_id="ga09-incomplete")
+                self._planner, self._validator, self._rechecker = app.m4(
+                    StructuredStrategyTransportAdapter(model)
+                )
+
+        turn = PackageTurn(initial)
+        current = turn.binding.iteration_input(initial, ordinal=0)
+        iteration = IterationRef.from_input(turn.binding, current, ordinal=0)
+        decision = await turn.decide(current, iteration, ())
         assert decision.approved is not None
-        with pytest.raises(RunBoundaryError, match="approved workflow"):
+        with pytest.raises(RunBoundaryError, match="observation incomplete"):
             await dispatcher.observe(
                 decision=decision,
                 step_index=0,
-                run_id="wrong-run",
+                run_id="ga09-incomplete",
                 execution_id="execution-1",
             )
-        assert calls == 0
+        assert calls == 1
 
     asyncio.run(scenario())

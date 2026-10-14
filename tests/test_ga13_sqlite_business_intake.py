@@ -204,3 +204,42 @@ def test_sqlite_intake_fail_closed_on_untrusted_rows(
             database_file=database,
             step_keys={catalog.workflow.steps[0].step_id: key},
         )
+
+
+def test_sqlite_intake_always_closes_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = _snapshot(tmp_path / "package", steps=1)
+    catalog = bootstrap_domain_application(snapshot).execution_catalog(snapshot)
+    database = tmp_path / "data.sqlite"
+    _database(
+        database, [_row(catalog, "sku-1", {"on_hand": 8, "reserved": 3, "target": 12})]
+    )
+    original_connect = sqlite3.connect
+    closed: list[bool] = []
+
+    class TrackedConnection(sqlite3.Connection):
+        def close(self) -> None:
+            closed.append(True)
+            super().close()
+
+    def tracked_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        return original_connect(*args, **kwargs, factory=TrackedConnection)
+
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+    step_keys = {catalog.workflow.steps[0].step_id: "sku-1"}
+    snapshot_result = load_sqlite_business_snapshot(
+        catalog=catalog, database_file=database, step_keys=step_keys
+    )
+    assert snapshot_result.records["sku-1"].value
+    assert closed == [True]
+
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "DELETE FROM business_records WHERE record_key=?", ("sku-1",)
+        )
+    with pytest.raises(RunBoundaryError, match="missing or ambiguous"):
+        load_sqlite_business_snapshot(
+            catalog=catalog, database_file=database, step_keys=step_keys
+        )
+    assert closed == [True, True]

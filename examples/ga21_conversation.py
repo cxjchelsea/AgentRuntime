@@ -10,10 +10,9 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
-import re
-from typing import Any
 
 from examples.ga20_sandbox_cli import validated_question
+from examples.ga22_goal_policy import DomainGoalPolicy, GoalUpdate, inventory_goal_policy
 
 RunReadOnly = Callable[[str, str, int | None], Awaitable[dict[str, object]]]
 
@@ -46,9 +45,6 @@ class ConversationReply:
     tool_executions: int
 
 
-_TARGET_UPDATE = re.compile(r"(?:库存)?目标(?:改成|改为|调整为|设为|设成|设置为|是)\s*(\d{1,6})\s*件?")
-
-
 _RECALL = ("刚才", "上次", "之前", "结果", "还剩", "还有多少", "多少件", "再说", "复述", "继续", "what was", "previous", "recap")
 _REFRESH = ("重新查询", "再查", "刷新", "更新数据", "最新", "查一次", "refresh", "query again", "recheck")
 _CANCEL = ("取消", "结束任务", "停止任务", "cancel", "stop task")
@@ -70,6 +66,7 @@ class ReadOnlyConversation:
         subject_id: str,
         run_read_only: RunReadOnly,
         max_turns: int = 20,
+        goal_policy: DomainGoalPolicy | None = None,
     ) -> None:
         if domain not in ("inventory", "learning"):
             raise ValueError("unsupported domain")
@@ -80,6 +77,11 @@ class ReadOnlyConversation:
         self.subject_id = subject_id
         self.max_turns = max_turns
         self._runner = run_read_only
+        self._goal_policy = goal_policy if goal_policy is not None else (
+            inventory_goal_policy() if domain == "inventory" else None
+        )
+        if self._goal_policy is not None and self._goal_policy.domain != domain:
+            raise ValueError("goal policy domain mismatch")
         self._last: VerifiedTurn | None = None
         self._turns = 0
         self._closed = False
@@ -96,7 +98,8 @@ class ReadOnlyConversation:
         # A goal change needs re-understanding and fresh evidence. Never
         # classify it as RECALL, even if it mentions previous results.
         if any(phrase in value for phrase in _AMEND):
-            if self.domain == "inventory" and _TARGET_UPDATE.search(value):
+            if self._goal_policy is not None:
+                self._goal_policy.parse(value)
                 return TurnKind.GOAL_UPDATE
             raise ValueError("unsupported or ambiguous goal amendment")
         if value in _CANCEL:
@@ -139,12 +142,10 @@ class ReadOnlyConversation:
         if kind is TurnKind.GOAL_UPDATE:
             if self._last is None or self._last.domain != "inventory":
                 raise ValueError("goal update requires a prior verified inventory goal")
-            found = _TARGET_UPDATE.findall(message)
-            if len(found) != 1 or len(re.findall(r"\d+", message)) != 1:
-                raise ValueError("ambiguous inventory target update")
-            target_update = int(found[0])
-            if target_update > 100_000:
-                raise ValueError("inventory target exceeds safe bounds")
+            policy = self._goal_policy
+            if policy is None:
+                raise ValueError("no admitted domain goal policy")
+            target_update = policy.parse(message).value
             # New read-only workflow is required; cached measurements cannot
             # be treated as current evidence for the modified goal.
             question = self._last.goal
@@ -177,23 +178,20 @@ class ReadOnlyConversation:
         ):
             raise ValueError("unverified or incomplete business result")
         available: int | None = None
-        if self.domain == "inventory":
+        if target_update is not None:
             metrics = result.get("verified_metrics")
+            policy = self._goal_policy
+            if policy is None:
+                raise ValueError("no admitted domain goal policy")
             if target_update is not None:
-                if (
-                    not isinstance(metrics, dict)
-                    or set(metrics) != {"available"}
-                    or type(metrics["available"]) is not int
-                    or not 0 <= metrics["available"] <= 100_000
-                ):
-                    raise ValueError("goal update requires verified fresh stock evidence")
-                available = metrics["available"]
-                deficit = max(0, target_update - available)
-                answer = (
-                    f"重新查询验证可用库存为 {available} 件；按新目标 "
-                    f"{target_update} 件，建议补货 {deficit} 件。"
-                    "只进行了只读查询与重新计算，没有执行采购或库存变更。"
+                answer = policy.render(
+                    GoalUpdate(self.domain, policy.goal_key, target_update),
+                    metrics,
                 )
+                if type(metrics) is dict:
+                    value = metrics.get(policy.metric_key)
+                    if type(value) is int:
+                        available = value
         # Commit conversational state only after the entire read-only run
         # succeeds. Previous verified answer survives any denied request.
         self._last = VerifiedTurn(

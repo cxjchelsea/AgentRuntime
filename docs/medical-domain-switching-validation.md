@@ -30,6 +30,18 @@ The package fixtures use inert collect/verify facts, not medical knowledge bases
 patient records, real disease prediction or actual mental-health assessments.
 The deterministic model test double is NOT a real LLM test.
 
+## Knowledge and Rule Switching Evidence (synthetic)
+
+The two pinned medical packages now contain different, hash-verified knowledge,
+prompt and rule JSON assets, with domain-specific required-knowledge keys.
+`tests/test_medical_knowledge_rule_switching.py` checks these exact package
+assets, separate per-domain admitted retrieval, role-separated model messages,
+foreign-domain rejection and a known prompt injection pattern. Its FTS5
+case uses a real in-memory SQLite full-text index but only synthetic content.
+It does **not** prove medical guideline quality, clinical safety enforcement,
+clinical triage, or model performance. Policy rule identifiers in model
+contexts are illustrative; no production policy engine is switched by this test.
+
 ## Required gates before claiming a usable medical Agent
 
 | Gate | Required evidence | Phase 1 |

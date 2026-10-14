@@ -29,12 +29,20 @@ def test_ga19_fixed_suite_distinguishes_live_and_offline_dimensions() -> None:
     assert len(LIVE) == 4
     assert len({case.scenario_id for case in (*OFFLINE, *LIVE)}) == 12
     assert {item.dimension for item in OFFLINE} >= {
-        "grounding", "data_integrity", "tool_choice",
-        "authorization", "planning", "replanning",
-        "goal_evaluation", "failure_safety",
+        "grounding",
+        "data_integrity",
+        "tool_choice",
+        "authorization",
+        "planning",
+        "replanning",
+        "goal_evaluation",
+        "failure_safety",
     }
     assert {item.dimension for item in LIVE} == {
-        "grounding", "tool_choice", "planning", "replanning"
+        "grounding",
+        "tool_choice",
+        "planning",
+        "replanning",
     }
     assert all(item.min_passed > 0 for item in (*OFFLINE, *LIVE))
 
@@ -45,8 +53,7 @@ def test_report_rejects_missing_scenarios_and_false_passes() -> None:
     with pytest.raises(ValueError, match="provenance"):
         build_report("offline", [], sha="")
     rows: list[dict[str, object]] = [
-        {"scenario_id": case.scenario_id, "dimension": case.dimension,
-         "status": "PASS"}
+        {"scenario_id": case.scenario_id, "dimension": case.dimension, "status": "PASS"}
         for case in OFFLINE
     ]
     assert build_report("offline", rows, sha="exact-head")["acceptance"] == "PASS"

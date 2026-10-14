@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -15,7 +16,7 @@ from agent_core.medical_safety_application import (
     MedicalPreflightPolicy,
     MedicalSafetyApplication,
 )
-from agent_core.runner import LoopBudget, RunKind
+from agent_core.runner import LoopBudget, RunKind, StepPort
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_medical_domain_readonly_e2e import DOMAINS, _medical_package
 
@@ -127,7 +128,7 @@ def test_direct_unified_medical_run_rejected_before_step(
             await unified.run(
                 build_runtime_input(text="routine synthetic request"),
                 run_id="unguarded-medical",
-                step=object(),
+                step=cast(StepPort, object()),
                 budget=LoopBudget(),
             )
 

@@ -18,7 +18,10 @@ from agent_core.domain_knowledge import (
     KnowledgeDocument,
     build_domain_model_messages,
 )
-from agent_core.sandbox_domain_assembly import SandboxDomainBinding, assemble_sandbox_domain
+from agent_core.sandbox_domain_assembly import (
+    SandboxDomainBinding,
+    assemble_sandbox_domain,
+)
 from tests.ga05_fts_retrieval import IndexedDocument, SandboxFTSIndex
 from tests.test_medical_domain_readonly_e2e import _medical_package
 

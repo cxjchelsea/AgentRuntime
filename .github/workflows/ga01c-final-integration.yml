@@ -84,6 +84,8 @@ jobs:
           GA16_LIVE_OPT_IN=1 python -m pytest tests/test_ga16_dynamic_business_task.py -q -s -rs
           GA17_LIVE_OPT_IN=1 python -m pytest tests/test_ga17_goal_driven_plan.py -q -s -rs
           GA18_LIVE_OPT_IN=1 python -m pytest tests/test_ga18_adaptive_goal.py -q -s -rs
+          GENERAL_AGENT_LIVE_OPT_IN=1 python -m pytest tests/test_general_agent_third_domain_acceptance.py::test_third_domain_semantic_first_action_live -q -s -rs
+          GENERAL_AGENT_LIVE_OPT_IN=1 python -m pytest tests/test_general_agent_third_domain_acceptance.py::test_third_domain_real_qwen_with_multiple_first_turn_candidates -q -s -rs
           GA15_LIVE_OPT_IN=1 GA16_LIVE_OPT_IN=1 GA17_LIVE_OPT_IN=1 GA18_LIVE_OPT_IN=1 python tests/ga19_evaluate.py --tier live --out-dir ga19-reports
           python -m tests.ga20_fixture_prepare --output-dir /tmp/ga20-business-fixtures
           python -m examples.ga20_sandbox_cli --operator-config /tmp/ga20-business-fixtures/inventory.json --domain inventory --question '请查询库存并计算需要补货多少件'

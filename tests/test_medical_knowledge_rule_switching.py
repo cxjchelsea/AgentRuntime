@@ -108,9 +108,12 @@ def test_cross_medical_knowledge_rejected_in_both_directions(
         current = _scope(tmp_path / f"active-{index}", active.domain)
         external = _scope(tmp_path / f"foreign-{index}", foreign.domain)
         foreign_doc = _record(external, foreign)
-        cap = DomainKnowledgeCapability(
-            current, lambda _scope, _query, _limit, item=foreign_doc: (item,)
-        )
+        def foreign_provider(
+            _scope: DomainScope, _query: str, _limit: int
+        ) -> tuple[KnowledgeDocument, ...]:
+            return (foreign_doc,)
+
+        cap = DomainKnowledgeCapability(current, foreign_provider)
         admitted = cap.retrieve_and_admit(active.topic)
         assert admitted.reason == "UNVERIFIED_EVIDENCE"
         assert not admitted.accepted

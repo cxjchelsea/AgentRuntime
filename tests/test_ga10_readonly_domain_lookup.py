@@ -14,6 +14,7 @@ import pytest
 from agent_core.domain_application import bootstrap_domain_application
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.readonly_domain_lookup import ReadOnlyDomainLookup, ReadOnlyRecord
+from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.runner import (
     Decision,
     LoopBudget,
@@ -55,7 +56,7 @@ def test_readonly_lookup_runs_complete_two_domains(tmp_path: Path, steps: int) -
             for i, step in enumerate(catalog.workflow.steps, 1)
         }
         lookup = ReadOnlyDomainLookup(catalog, records, keys)
-        dispatcher = lookup.dispatcher()
+        dispatcher = SandboxToolDispatcher(catalog, lookup.handlers())
         records.clear()
         keys.clear()
         assert len(lookup.records) == steps

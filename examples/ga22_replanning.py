@@ -220,3 +220,30 @@ def authorize_revision_selection(
             )
         )
     return tuple(result)
+
+
+@dataclass(frozen=True, slots=True)
+class PreviousStepSources:
+    """Prior successful run's source fingerprints, scoped to one conversation."""
+
+    domain: str
+    binding_fingerprint: str
+    goal_version: int
+    goal_key: str
+    step_sources: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        if (
+            not self.domain
+            or len(self.binding_fingerprint) != 64
+            or self.goal_version < 1
+            or not self.goal_key
+            or not self.step_sources
+            or len({key for key, _ in self.step_sources}) != len(self.step_sources)
+            or any(
+                not step or len(digest) != 64
+                or any(char not in "0123456789abcdef" for char in digest)
+                for step, digest in self.step_sources
+            )
+        ):
+            raise ValueError("invalid previous step source evidence")

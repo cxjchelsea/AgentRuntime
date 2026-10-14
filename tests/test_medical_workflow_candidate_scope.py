@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from agent_core.domain_application import bootstrap_domain_application
 from agent_core.domain_extension import DomainExtensionError
 from agent_core.domain_unified_application import _WorkflowScopedModelTransport
+from agent_core.knowledge_model_transport import KnowledgeBackedStrategyTransport
 from tests.test_medical_domain_readonly_e2e import DOMAINS, _medical_package
 
 pytestmark = pytest.mark.skipif(
@@ -29,7 +30,9 @@ def test_medical_workflow_candidates_are_scoped_and_model_is_not_rewritten(
         snapshot = _medical_package(tmp_path / "package", domain_id)
         app = bootstrap_domain_application(snapshot)
         catalog = app.execution_catalog(snapshot)
-        actions = {action: strategy for strategy, action in app.extension.strategy_actions}
+        actions = {
+            action: strategy for strategy, action in app.extension.strategy_actions
+        }
         calls: list[dict[str, Any]] = []
 
         class Model:
@@ -42,7 +45,9 @@ def test_medical_workflow_candidates_are_scoped_and_model_is_not_rewritten(
                 }
 
         model = Model()
-        scoped = _WorkflowScopedModelTransport(model, catalog, actions)
+        scoped = _WorkflowScopedModelTransport(
+            cast(KnowledgeBackedStrategyTransport, model), catalog, actions
+        )
         all_actions = [step.action_id for step in catalog.workflow.steps]
         legal = [actions[action] for action in all_actions]
         payload: dict[str, Any] = {
@@ -56,7 +61,9 @@ def test_medical_workflow_candidates_are_scoped_and_model_is_not_rewritten(
         assert calls[-1]["required_workflow_step"] == catalog.workflow.steps[0].step_id
         assert payload["candidate_action_ids"] == all_actions
 
-        second = dict(payload, last_agent_action=catalog.workflow.steps[0].completion_fact)
+        second = dict(
+            payload, last_agent_action=catalog.workflow.steps[0].completion_fact
+        )
         result = await scoped(second)
         assert result["action_ids"] == [all_actions[1]]
         assert calls[-1]["required_workflow_step"] == catalog.workflow.steps[1].step_id
@@ -76,7 +83,9 @@ def test_medical_workflow_candidates_are_scoped_and_model_is_not_rewritten(
                     "reason_code": "INVALID_EARLY_ACTION",
                 }
 
-        rejecting = _WorkflowScopedModelTransport(InvalidModel(), catalog, actions)
+        rejecting = _WorkflowScopedModelTransport(
+            cast(KnowledgeBackedStrategyTransport, InvalidModel()), catalog, actions
+        )
         with pytest.raises(DomainExtensionError, match="model selection violates"):
             await rejecting(payload)
 

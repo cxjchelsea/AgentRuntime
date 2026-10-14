@@ -1,4 +1,5 @@
 """GA-22 domain-swappable update policy with fail-closed evidence rendering."""
+
 from __future__ import annotations
 
 import pytest

@@ -1,14 +1,18 @@
 """GA-20 interactive sandbox input boundaries; live inference is opt-in CI."""
+
 from __future__ import annotations
 
 import pytest
 
-from examples.ga20_sandbox_cli import validated_question, OPERATIONS, DEFAULT_QUESTIONS
+from examples.ga20_sandbox_cli import DEFAULT_QUESTIONS, OPERATIONS, validated_question
 
 
 @pytest.mark.parametrize("domain", ["inventory", "learning"])
 def test_valid_demo_scope(domain: str) -> None:
-    assert validated_question(domain, DEFAULT_QUESTIONS[domain]) == DEFAULT_QUESTIONS[domain]
+    assert (
+        validated_question(domain, DEFAULT_QUESTIONS[domain])
+        == DEFAULT_QUESTIONS[domain]
+    )
     assert domain in OPERATIONS
 
 

@@ -20,7 +20,7 @@ from agent_core.domain_application import bootstrap_domain_application
 from agent_core.live_business_answer import generate_live_business_answer
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.readonly_business_tools import ReadOnlyBusinessTools
-from agent_core.runner import Decision, LoopBudget, ObservedFact, RunKind
+from agent_core.runner import Decision, LoopBudget, ObservedFact, RunBoundaryError, RunKind
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.sqlite_business_intake import load_sqlite_business_snapshot
 from tests.orchestration_stubs import build_runtime_input
@@ -163,13 +163,22 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig) ->
         baseline = render_business_answer(
             question=question, outcome=outcome, lookup=lookup, operation=operation,
         )
-        answer = await generate_live_business_answer(
-            baseline=baseline, operation=operation, config=config,
-        )
+        # Fail closed on ungrounded model paraphrase. A verified deterministic
+        # answer is safer and more available than accepting an invalid LLM claim.
+        # No tool call or external side effect is retried by this fallback.
+        answer_mode = "verified_model"
+        try:
+            answer = await generate_live_business_answer(
+                baseline=baseline, operation=operation, config=config,
+            )
+        except RunBoundaryError:
+            answer = baseline
+            answer_mode = "verified_deterministic_fallback"
         return {
             "domain": domain,
             "question": question,
             "answer": answer.text,
+            "answer_mode": answer_mode,
             "executions": outcome.executions,
             "evidence_digests": list(answer.source_digests),
             "read_only": True,
@@ -197,7 +206,7 @@ def main() -> int:
         print(f"GA-20 sandbox declined: {exc}", file=sys.stderr)
         return 1
     print(result["answer"])
-    print(f"[read-only sandbox; {result['executions']} verified tool observation(s); fixture data]")
+    print(f"[read-only sandbox; {result['executions']} verified tool observation(s); {result['answer_mode']}; fixture data]")
     return 0
 
 

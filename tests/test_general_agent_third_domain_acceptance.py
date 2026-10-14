@@ -88,6 +88,8 @@ def test_third_domain_rejects_foreign_action_and_invalid_evidence(
 
 
 def test_third_domain_has_distinct_package_binding(tmp_path: Path) -> None:
+    (tmp_path / "research").mkdir()
+    (tmp_path / "inventory").mkdir()
     research = _load(tmp_path / "research", DOMAIN, NOUN)
     inventory = _load(tmp_path / "inventory", "inventory.reconcile", "stock")
     assert research.binding.domain_id != inventory.binding.domain_id

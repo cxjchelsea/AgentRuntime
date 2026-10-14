@@ -81,10 +81,10 @@ class DomainExecutionCatalog:
                 return False
             observed = evidence.observation
             if (
-                evidence.step_id != step.step_id
+                type(observed) is not ObservedFact
+                or evidence.step_id != step.step_id
                 or observed.workflow_step_id != step.step_id
                 or observed.tool_id != step.tool_id
-                or type(observed) is not ObservedFact
                 or observed.run_id != run_id
                 or observed.domain_fingerprint != self.binding_fingerprint
                 or not observed.request_id

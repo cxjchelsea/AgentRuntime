@@ -188,7 +188,7 @@ def test_package_owned_knowledge_prompt_and_rule_are_distinct(
         }
         assert set(assets) == {"knowledge", "prompt", "rule"}
         assert assets["rule"]["required_knowledge"] == assets["knowledge"]["key"]
-        assert assets["rule"]["completion_after"] == "verify"
+        assert assets["rule"]["completion_after"] == ("verify" if index == 0 else "collect")
         assert assets["prompt"]["focus"]
         snapshots.append(assets)
     assert snapshots[0]["knowledge"] != snapshots[1]["knowledge"]

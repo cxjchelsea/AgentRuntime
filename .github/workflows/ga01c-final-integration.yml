@@ -74,6 +74,7 @@ jobs:
           GA15_LIVE_OPT_IN=1 python -m pytest tests/test_ga15_live_business_agent.py -q -s -rs
           GA16_LIVE_OPT_IN=1 python -m pytest tests/test_ga16_dynamic_business_task.py -q -s -rs
           GA17_LIVE_OPT_IN=1 python -m pytest tests/test_ga17_goal_driven_plan.py -q -s -rs
+          GA18_LIVE_OPT_IN=1 python -m pytest tests/test_ga18_adaptive_goal.py -q -s -rs
       - name: Repeat final DIAG-03 E2E three independent executions
         shell: bash
         env:

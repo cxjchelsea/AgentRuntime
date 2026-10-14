@@ -104,7 +104,7 @@ def load_operator_source(config_file: Path, domain: str):
     return snapshot, lookup
 
 
-async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, operator_config: Path | None = None, *, goal_target: int | None = None, continuation: PreviousStepSources | None = None) -> dict[str, object]:
+async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, operator_config: Path | None = None, *, goal_target: int | None = None, continuation: PreviousStepSources | None = None, session_id: str | None = None, subject_id: str | None = None) -> dict[str, object]:
     """Run the existing real-model/M4/SQLite read-only path, not a canned answer."""
     if not sys.platform.startswith("linux"):
         raise RuntimeError("GA-20 fixture-backed sandbox is Linux-only")
@@ -114,6 +114,24 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         or not 0 <= goal_target <= 100_000
     ):
         raise ValueError("invalid bounded goal target")
+    if (session_id is None) != (subject_id is None):
+        raise ValueError("conversation identity must be supplied together")
+    for value in (session_id, subject_id):
+        if value is not None and (
+            type(value) is not str or not 1 <= len(value) <= 96
+            or any(
+                not char.isascii()
+                or (not char.isalnum() and char not in "-_")
+                for char in value
+            )
+        ):
+            raise ValueError("invalid scoped conversation identity")
+    if continuation is not None and (
+        session_id is None or subject_id is None
+        or continuation.session_id != session_id
+        or continuation.subject_id != subject_id
+    ):
+        raise RunBoundaryError("cross-session continuation denied")
     steps = 1 if domain == "inventory" else 2
     operation = OPERATIONS[domain]
     if operator_config is None:
@@ -224,17 +242,17 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         raise ValueError("model did not choose a legal action")
 
     initial = RuntimeInput(
-        request_id="request-001",
-        trace_id="trace-001",
-        session_id="session-001",
-        subject_id="subject-001",
+        request_id="request-001" if session_id is None else "ga22-request-" + uuid4().hex,
+        trace_id="trace-001" if session_id is None else "ga22-trace-" + uuid4().hex,
+        session_id="session-001" if session_id is None else session_id,
+        subject_id="subject-001" if subject_id is None else subject_id,
         identity_scope="scope-001",
         source=InputSource.USER,
         trigger_type=InputTriggerType.USER_TEXT,
         timestamp=datetime.now(UTC),
         text=question,
     )
-    run_id = "ga20-sandbox-run" if continuation is None else "ga22-" + uuid4().hex
+    run_id = "ga20-sandbox-run" if session_id is None else "ga22-" + uuid4().hex
 
     planner, validator, rechecker = app.m4(
         StructuredStrategyTransportAdapter(selected),

@@ -109,6 +109,7 @@ def test_handler_registry_rejects_missing_or_foreign_tools(tmp_path: Path) -> No
     catalog = bootstrap_domain_application(snapshot).execution_catalog(snapshot)
     with pytest.raises(RunBoundaryError, match="registry mismatch"):
         SandboxToolDispatcher(catalog, {})
+
     async def foreign(step_id: str, tool_id: str) -> tuple[str, ...]:
         return (step_id, tool_id)
 

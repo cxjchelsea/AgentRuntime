@@ -127,37 +127,59 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(tmp_path: Path, live: bool) ->
                 max_tokens=220,
             )
             system = (
-                "You are a sandbox goal planner. Return ONLY a JSON object "
-                'with goal_id "study-status" and steps list. Each step MUST '
-                "have exactly step_id (string) and depends_on (array). "
-                "The goal requires FACT_2 from step-2. You may use step-1 "
-                "to collect information before step-2. To satisfy the "
-                "request to read notes first, output step-1 with empty "
-                "dependencies, then step-2 depending on step-1. "
-                "Do not invent any tools, fields, steps or external actions."
+                "You are a strict JSON goal planner, NOT a strategy selector. "
+                "Produce exactly one JSON object with EXACTLY TWO TOP-LEVEL KEYS: "
+                "goal_id and steps. goal_id MUST equal study-status. steps MUST "
+                "be a JSON array, each object has EXACTLY step_id and depends_on. "
+                "Each depends_on is an array of step IDs. Allowed IDs are step-1 "
+                "(read notes, FACT_1) and step-2 (study check, FACT_2). "
+                "The goal requires FACT_2. The user asks to read notes BEFORE "
+                "checking; encode step-2 depends_on step-1. "
+                'EXACT FORMAT EXAMPLE: {"goal_id":"study-status","steps":'
+                '[{"step_id":"step-1","depends_on":[]},'
+                '{"step_id":"step-2","depends_on":["step-1"]}]}. '
+                "Never return strategy_id, action_ids, tool_id, or any extra keys."
             )
             transport = ChatCompletionsStrategyTransport(
                 config,
                 system_instruction=system,
-                message_builder=lambda _payload: (
+                message_builder=lambda payload: (
                     {"role": "system", "content": system},
                     {
                         "role": "user",
                         "content": (
-                            "Goal: study-status; user asks: "
+                            "Admitted goal: study-status; actual user goal: "
                             + task_text
-                            + ". Only admitted step IDs: step-1, step-2; "
-                            "step-1 produces FACT_1, step-2 produces FACT_2."
+                            + ". Available step-1 produces FACT_1; "
+                            "step-2 produces FACT_2. Required FACT_2. "
+                            + (
+                                "Previous response violated the exact goal DAG "
+                                "schema. Correct JSON keys and dependencies. "
+                                if payload.get("invalid_plan")
+                                else ""
+                            )
                         ),
                     },
                 ),
             )
-            proposed = await transport(
-                {"legal_strategy_ids": [], "candidate_action_ids": []}
-            )
+            plan = None
+            for attempt in range(2):
+                proposed = await transport(
+                    {
+                        "legal_strategy_ids": [],
+                        "candidate_action_ids": [],
+                        "invalid_plan": attempt > 0,
+                    }
+                )
+                try:
+                    plan = GoalPlan.from_model(goal, proposed)
+                except RunBoundaryError:
+                    if attempt:
+                        raise
+            assert plan is not None
         else:
             proposed = _proposal(("step-1", ()), ("step-2", ("step-1",)))
-        plan = GoalPlan.from_model(goal, proposed)
+            plan = GoalPlan.from_model(goal, proposed)
         keys = {
             step.step_id: f"note-{i}"
             for i, step in enumerate(catalog.workflow.steps, 1)

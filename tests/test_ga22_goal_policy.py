@@ -12,7 +12,13 @@ from examples.ga22_goal_policy import (
     GoalUpdate,
     inventory_goal_policy,
 )
-from examples.ga22_replanning import GoalState, ReplanAction, decide_replanning
+from examples.ga22_replanning import (
+    GoalState,
+    ReplanAction,
+    StepRevision,
+    decide_replanning,
+    revise_step_plan,
+)
 
 
 def test_inventory_policy_parses_and_renders() -> None:
@@ -151,4 +157,38 @@ def test_versioned_replan_requires_fresh_execution_and_scope() -> None:
             question="查询学习进度",
             policy=policy,
             refresh=True,
+        )
+
+
+def test_revision_retains_unchanged_definition_and_replans_affected_step() -> None:
+    policy = inventory_goal_policy()
+    previous = GoalState("inventory", "查询库存", 1, None, ("original-digest",))
+    decision = decide_replanning(
+        previous=previous,
+        domain="inventory",
+        question="查询库存",
+        policy=policy,
+        update_text="目标改成20件",
+    )
+    steps = (
+        StepRevision("read", "read-inventory", frozenset({"source"}), "sha-read"),
+        StepRevision("compute", "calculate-deficit", frozenset({"target"}), "sha-compute"),
+    )
+    revision = revise_step_plan(
+        previous=previous,
+        decision=decision,
+        steps=steps,
+        changed_keys=frozenset({"target"}),
+        domain_fingerprint_matches=True,
+    )
+    assert revision.retained_step_ids == ("read",)
+    assert revision.replanned_step_ids == ("compute",)
+    assert revision.requires_m4_reapproval
+    with pytest.raises(ValueError, match="provenance"):
+        revise_step_plan(
+            previous=previous,
+            decision=decision,
+            steps=steps,
+            changed_keys=frozenset({"target"}),
+            domain_fingerprint_matches=False,
         )

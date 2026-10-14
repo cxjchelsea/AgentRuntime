@@ -234,10 +234,14 @@ def test_sqlite_intake_always_closes_connection(
     assert snapshot_result.records["sku-1"].value
     assert closed == [True]
 
-    with sqlite3.connect(database) as connection:
-        connection.execute(
-            "DELETE FROM business_records WHERE record_key=?", ("sku-1",)
-        )
+    writer = original_connect(database)
+    try:
+        with writer:
+            writer.execute(
+                "DELETE FROM business_records WHERE record_key=?", ("sku-1",)
+            )
+    finally:
+        writer.close()
     with pytest.raises(RunBoundaryError, match="missing or ambiguous"):
         load_sqlite_business_snapshot(
             catalog=catalog, database_file=database, step_keys=step_keys

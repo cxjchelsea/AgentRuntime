@@ -173,6 +173,7 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(tmp_path: Path, live: bool) ->
                 )
                 try:
                     plan = GoalPlan.from_model(goal, proposed)
+                    break
                 except RunBoundaryError:
                     if attempt:
                         raise

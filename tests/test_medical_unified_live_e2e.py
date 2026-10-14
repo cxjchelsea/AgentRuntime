@@ -15,11 +15,9 @@ from typing import Any
 
 import pytest
 
-from agent_core.chat_transport import (
-    ChatCompletionsConfig,
-)
-from agent_core.domain_unified_application import bootstrap_unified_domain_application
+from agent_core.chat_transport import ChatCompletionsConfig
 from agent_core.domain_application import bootstrap_domain_application
+from agent_core.domain_unified_application import bootstrap_unified_domain_application
 from agent_core.domain_knowledge import (
     DomainKnowledgeCapability,
     DomainScope,
@@ -95,7 +93,9 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
             retriever=retrieve,
             query=query,
             model_config=ChatCompletionsConfig(
-                endpoint=os.getenv("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions"),
+                endpoint=os.getenv(
+                    "GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions"
+                ),
                 model=os.getenv("GA01C_LLM_MODEL", "qwen2.5:3b"),
                 api_key=os.getenv("GA01C_LLM_API_KEY", ""),
                 timeout_seconds=45.0,
@@ -128,7 +128,6 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
         )
         dispatcher = SandboxToolDispatcher(catalog, lookup.handlers())
         model_calls: list[dict[str, Any]] = []
-        live_transport = None
 
         async def choose(payload: dict[str, Any]) -> dict[str, object]:
             model_calls.append(dict(payload))
@@ -149,8 +148,6 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
             )
             assert messages[2]["role"] == "user"
             assert "UNTRUSTED_RETRIEVAL_DATA" in messages[2]["content"]
-            if live_transport is not None:
-                return dict(await live_transport(payload))
             role = "verify" if payload["last_agent_action"] == "FACT_1" else "collect"
             return {
                 "strategy_id": f"{role}-strategy-notes",

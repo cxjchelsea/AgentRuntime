@@ -7,6 +7,7 @@ import asyncio
 import pytest
 
 from examples.ga21_conversation import ReadOnlyConversation, TurnKind
+from examples.ga22_replanning import GoalState, ReplanAction, decide_replanning
 from examples.ga22_goal_policy import (
     DomainGoalPolicy,
     GoalUpdate,
@@ -104,5 +105,47 @@ def test_injected_learning_goal_policy_updates_same_session_controller() -> None
         refreshed = await session.send("再查一次")
         assert "还需完成 5 项" in refreshed.text
         assert seen == [None, 8, 8]
+        assert session.goal_state is not None
+        assert session.goal_state.version == 2
+        assert session.goal_state.update == GoalUpdate("learning", "completion_target", 8)
 
     asyncio.run(scenario())
+
+def test_versioned_replan_requires_fresh_execution_and_scope() -> None:
+    policy = inventory_goal_policy()
+    initial = decide_replanning(
+        previous=None,
+        domain="inventory",
+        question="查询库存",
+        policy=policy,
+    )
+    assert initial.action is ReplanAction.NEW_RUN
+    state = GoalState("inventory", "查询库存", initial.next_version, None, ("d1",))
+    changed = decide_replanning(
+        previous=state,
+        domain="inventory",
+        question="查询库存",
+        policy=policy,
+        update_text="目标改成20件",
+    )
+    assert changed.action is ReplanAction.REPLAN_WITH_FRESH_EVIDENCE
+    assert changed.must_execute and changed.next_version == 2
+    updated = GoalState("inventory", "查询库存", 2, changed.update, ("d2",))
+    refreshed = decide_replanning(
+        previous=updated,
+        domain="inventory",
+        question="查询库存",
+        policy=policy,
+        refresh=True,
+    )
+    assert refreshed.action is ReplanAction.REFRESH_WITH_FRESH_EVIDENCE
+    assert refreshed.next_version == 2
+    assert refreshed.must_execute
+    with pytest.raises(ValueError, match="scope"):
+        decide_replanning(
+            previous=updated,
+            domain="learning",
+            question="查询学习进度",
+            policy=policy,
+            refresh=True,
+        )

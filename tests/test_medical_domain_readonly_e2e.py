@@ -53,7 +53,13 @@ DOMAINS = (
 )
 
 
-def _medical_package(root: Path, domain: str, *, differentiated: bool = False):
+def _medical_package(
+    root: Path,
+    domain: str,
+    *,
+    differentiated: bool = False,
+    completion_override: str | None = None,
+):
     """Reissue fixture as a distinct verified medical package, including knowledge."""
     # Distinct package-owned workflows, without altering the generic Agent Core.
     step_count = 2 if not differentiated or domain == DOMAINS[0][0] else 1
@@ -75,7 +81,11 @@ def _medical_package(root: Path, domain: str, *, differentiated: bool = False):
             "required_knowledge": (
                 "bp-metric-guide" if is_chronic else "wellbeing-checkin-guide"
             ),
-            "completion_after": "verify" if step_count == 2 else "collect",
+            "completion_after": (
+                completion_override
+                if completion_override is not None
+                else ("verify" if step_count == 2 else "collect")
+            ),
         },
         "prompt": {
             "focus": (

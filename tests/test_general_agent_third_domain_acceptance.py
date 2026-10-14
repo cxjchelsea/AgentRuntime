@@ -176,9 +176,22 @@ def test_third_domain_real_qwen_with_multiple_first_turn_candidates(
         step._planner, step._validator, step._rechecker = _planner(
             package, StructuredStrategyTransportAdapter(choose)
         )
+        def all_steps_verified(run_id: str, observations: tuple) -> bool:
+            required = {"step-1", "step-2"}
+            return (
+                len(observations) == 2
+                and {item.workflow_step_id for item in observations} == required
+                and all(
+                    item.run_id == run_id
+                    and item.domain_fingerprint == step.binding.binding_fingerprint
+                    for item in observations
+                )
+            )
+
         outcome = await AgentRunCoordinator(
             step,
             LoopBudget(max_iterations=4, max_executions=3, max_decision_seconds=70.0),
+            completion_check=all_steps_verified,
         ).run(initial, step.binding)
         print(
             "THIRD_DOMAIN_LIVE_DIAG "

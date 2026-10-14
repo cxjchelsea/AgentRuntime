@@ -69,6 +69,9 @@ def test_failure_preserves_verified_goal_and_scoping() -> None:
         await session.send("库存情况")
         with pytest.raises(ValueError, match="outside"):
             await session.send("学习进度")
+        with pytest.raises(ValueError, match="goal amendment"):
+            await session.send("刚才结果如果目标改成20件呢")
+        assert len(runner.calls) == 1
         runner.fail = True
         with pytest.raises(RuntimeError, match="provider unavailable"):
             await session.send("再查一次")

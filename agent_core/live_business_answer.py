@@ -33,7 +33,9 @@ _UNSUPPORTED = (
 
 def _expected_metrics(baseline: BusinessAnswer, operation: str) -> tuple[str, ...]:
     if operation == "inventory_replenishment":
-        metrics = re.search(r"可用库存为 (\d+) 件.*?(?:建议补货 (\d+) 件|暂不需要补货)", baseline.text)
+        metrics = re.search(
+            r"可用库存为 (\d+) 件.*?(?:建议补货 (\d+) 件|暂不需要补货)", baseline.text
+        )
         if metrics is None:
             raise RunBoundaryError("invalid inventory answer baseline")
         available, reorder = metrics.group(1), metrics.group(2) or "0"

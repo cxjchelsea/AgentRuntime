@@ -109,7 +109,7 @@ def test_cross_medical_knowledge_rejected_in_both_directions(
         external = _scope(tmp_path / f"foreign-{index}", foreign.domain)
         foreign_doc = _record(external, foreign)
         cap = DomainKnowledgeCapability(
-            current, lambda _scope, _query, _limit: (foreign_doc,)
+            current, lambda _scope, _query, _limit, item=foreign_doc: (item,)
         )
         admitted = cap.retrieve_and_admit(active.topic)
         assert admitted.reason == "UNVERIFIED_EVIDENCE"
@@ -156,9 +156,7 @@ def test_known_prompt_injection_is_rejected_before_model_context(
         hashlib.sha256(attack.encode("utf-8")).hexdigest(),
         attack,
     )
-    cap = DomainKnowledgeCapability(
-        scope, lambda _scope, _query, _limit: (injected,)
-    )
+    cap = DomainKnowledgeCapability(scope, lambda _scope, _query, _limit: (injected,))
     result = cap.retrieve_and_admit(scenario.topic)
     assert result.reason == "SUSPECT_INSTRUCTION"
     assert not result.accepted

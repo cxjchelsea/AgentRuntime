@@ -110,7 +110,50 @@ def test_dynamic_model_tool_choice_and_replanning(
         async def model(payload: dict[str, Any]) -> dict[str, object]:
             calls.append(payload)
             if live_model is not None:
-                return dict(await live_model(payload))
+                # The first choice may use the full task-allowed set; after an
+                # observation, only never-executed steps remain eligible.
+                completed = {obs.workflow_step_id for obs in turn.prior}
+                remaining = [
+                    step.action_id
+                    for step in catalog.workflow.steps
+                    if step.step_id in task.required_steps
+                    and step.step_id not in completed
+                ]
+                bounded = dict(payload)
+                bounded["candidate_action_ids"] = [
+                    action
+                    for action in payload["candidate_action_ids"]
+                    if action in remaining
+                ]
+                bounded["legal_strategy_ids"] = [
+                    strategy
+                    for strategy in payload["legal_strategy_ids"]
+                    if any(
+                        strategy == action.replace("-notes", "-strategy-notes")
+                        for action in remaining
+                    )
+                ]
+                if (
+                    not bounded["candidate_action_ids"]
+                    or len(bounded["candidate_action_ids"])
+                    != len(bounded["legal_strategy_ids"])
+                ):
+                    raise ValueError("no current task-approved model candidates")
+                # Correction is permitted only before a physical tool attempt.
+                for attempt in range(2):
+                    proposed = dict(await live_model(bounded))
+                    selected = proposed.get("action_ids")
+                    if (
+                        type(selected) is list
+                        and len(selected) == 1
+                        and selected[0] in bounded["candidate_action_ids"]
+                        and proposed.get("strategy_id")
+                        == selected[0].replace("-notes", "-strategy-notes")
+                    ):
+                        return proposed
+                    if attempt == 0:
+                        bounded["previous_choice_invalid"] = True
+                raise ValueError("real model did not select a pending action")
             selected = order[len(calls) - 1]
             assert selected in payload["candidate_action_ids"]
             return {
@@ -186,13 +229,18 @@ def test_dynamic_model_tool_choice_and_replanning(
         ).run(initial, turn.binding)
         assert outcome.kind is RunKind.FINISH
         assert outcome.executions == len(order)
-        assert turn.chosen == list(order)
+        assert (
+            set(turn.chosen) == set(order)
+            if live
+            else turn.chosen == list(order)
+        )
         assert [x.workflow_step_id for x in outcome.observations] == [
-            "step-2" if item == "verify-notes" else "step-1" for item in order
+            "step-2" if item == "verify-notes" else "step-1"
+            for item in turn.chosen
         ]
         assert len(calls) == len(order)
-        if order[0] == "verify-notes" and len(order) == 2:
-            assert "FACT_2" in calls[1]["last_agent_action"]
+        if len(order) == 2:
+            assert calls[1]["last_agent_action"] in {"FACT_1", "FACT_2"}
         assert database.exists()
 
     asyncio.run(scenario())

@@ -42,6 +42,23 @@ It does **not** prove medical guideline quality, clinical safety enforcement,
 clinical triage, or model performance. Policy rule identifiers in model
 contexts are illustrative; no production policy engine is switched by this test.
 
+## Rule-driven Agent decision E2E (synthetic)
+
+`tests/test_medical_rule_decision_e2e.py` uses the existing compatible GA03
+verified medical content-package assembly, M4 and AgentRunCoordinator.
+A *synthetic* chronic package sets `completion_after=verify` and performs two
+approved mock steps; a *synthetic* wellbeing package sets
+`completion_after=collect` and performs one approved mock step. Missing
+package-required knowledge produces WAIT without invoking M4 or a tool.
+These are intentionally different artificial completion rules used solely to
+show the same Core follows selected domain-owned rule/knowledge gates.
+The test transport deterministically selects actions: this does NOT establish
+that a real LLM can autonomously choose correct medical workflow, and neither
+rule represents appropriate clinical practice. The GA03 adapter supports
+content-only packages; it is distinct from the mixed tool-workflow package
+used by the SQLite test. Combining both representations into a deployable
+medical business package still requires an integration contract.
+
 ## Required gates before claiming a usable medical Agent
 
 | Gate | Required evidence | Phase 1 |

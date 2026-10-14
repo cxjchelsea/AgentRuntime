@@ -26,6 +26,19 @@ from agent_core.runner import LoopBudget, RunBoundaryError, RunKind
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.sqlite_business_intake import load_sqlite_business_snapshot
 from runtime.contracts import InputSource, InputTriggerType, RuntimeInput
+from runtime.understanding import (
+    ConfiguredTextRule,
+    DeepUnderstandingRequestBuilder,
+    DefaultModelContextSelector,
+    DeterministicRuleDefinition,
+    DeterministicRuleParser,
+    ModelUnderstandingOutputValidator,
+    RuntimeUnderstandingEngine,
+    TextMatchMode,
+    UnderstandingPathRouter,
+    UnderstandingPostprocessor,
+    UnderstandingStateAssembler,
+)
 from examples.readonly_application_step import ReadOnlyApplicationStep
 
 DEFAULT_QUESTIONS = {
@@ -155,8 +168,32 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
     planner, validator, rechecker = app.m4(
         StructuredStrategyTransportAdapter(selected),
     )
+    # Domain patterns are application-owned M3 configuration, not Core enums.
+    # No deep M3 model is used: unsupported inputs fail closed in this sandbox.
+    patterns = (
+        (r"库存|补货|stock|inventory|reorder",)
+        if domain == "inventory"
+        else (r"学习|进度|任务|study|progress|lesson",)
+    )
+    m3 = RuntimeUnderstandingEngine(
+        rule_parser=DeterministicRuleParser((
+            ConfiguredTextRule(DeterministicRuleDefinition(
+                rule_id="ga20-" + domain,
+                version="1.0.0",
+                patterns=patterns,
+                match_mode=TextMatchMode.SEARCH,
+                confidence=1.0,
+                intent_id="ga20." + domain + ".read",
+            )),
+        )),
+        path_router=UnderstandingPathRouter(),
+        request_builder=DeepUnderstandingRequestBuilder(DefaultModelContextSelector()),
+        output_validator=ModelUnderstandingOutputValidator(),
+        postprocessor=UnderstandingPostprocessor(),
+        assembler=UnderstandingStateAssembler(),
+    )
     turn = ReadOnlyApplicationStep(
-        initial, run_id, app, dispatcher, planner, validator, rechecker,
+        initial, run_id, app, dispatcher, planner, validator, rechecker, m3,
     )
 
     outcome = await app.run(

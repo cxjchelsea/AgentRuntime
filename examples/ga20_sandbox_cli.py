@@ -94,7 +94,10 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
     snapshot, lookup = load_operator_source(operator_config, domain)
     app = bootstrap_domain_application(snapshot)
     catalog = app.execution_catalog(snapshot)
-    if catalog.binding_fingerprint != lookup.catalog.binding_fingerprint or len(catalog.workflow.steps) != steps:
+    if (
+        catalog.binding_fingerprint != lookup.catalog.binding_fingerprint
+        or len(catalog.workflow.steps) != steps
+    ):
         raise ValueError("operator package not compatible with selected demo domain")
     dispatcher = SandboxToolDispatcher(
         catalog,
@@ -197,29 +200,29 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
 
 
 def main() -> int:
-parser = argparse.ArgumentParser(description="GA-20 experimental Linux-only Agent sandbox")
-parser.add_argument("--domain", choices=tuple(OPERATIONS), required=True)
-parser.add_argument("--question", help="One natural-language request (or interactive prompt)")
-parser.add_argument("--operator-config", type=Path, help="Required pinned external package and SQLite data (sandbox only)")
-args = parser.parse_args()
-try:
-    question = args.question if args.question is not None else input("用户任务: ")
-    question = validated_question(args.domain, question)
-    config = ChatCompletionsConfig(
-        endpoint=os.environ.get("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions"),
-        model=os.environ.get("GA01C_LLM_MODEL", "qwen2.5:3b"),
-        api_key=os.environ.get("GA01C_LLM_API_KEY", ""),
-        timeout_seconds=45.0,
-        max_tokens=200,
-    )
-    result = asyncio.run(ask_once(args.domain, question, config, args.operator_config))
-except (ValueError, RuntimeError, OSError, EOFError) as exc:
-    print(f"GA-20 sandbox declined: {exc}", file=sys.stderr)
-    return 1
-print(result["answer"])
-print(f"[read-only sandbox; {result['executions']} verified tool observation(s); {result['answer_mode']}; fixture_data={result['fixture_data']}]")
-return 0
+    parser = argparse.ArgumentParser(description="GA-20 experimental Linux-only Agent sandbox")
+    parser.add_argument("--domain", choices=tuple(OPERATIONS), required=True)
+    parser.add_argument("--question", help="One natural-language request (or interactive prompt)")
+    parser.add_argument("--operator-config", type=Path, help="Pinned external package and SQLite data (sandbox only)")
+    args = parser.parse_args()
+    try:
+        question = args.question if args.question is not None else input("用户任务: ")
+        question = validated_question(args.domain, question)
+        config = ChatCompletionsConfig(
+            endpoint=os.environ.get("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions"),
+            model=os.environ.get("GA01C_LLM_MODEL", "qwen2.5:3b"),
+            api_key=os.environ.get("GA01C_LLM_API_KEY", ""),
+            timeout_seconds=45.0,
+            max_tokens=200,
+        )
+        result = asyncio.run(ask_once(args.domain, question, config, args.operator_config))
+    except (ValueError, RuntimeError, OSError, EOFError) as exc:
+        print(f"GA-20 sandbox declined: {exc}", file=sys.stderr)
+        return 1
+    print(result["answer"])
+    print(f"[read-only sandbox; {result['executions']} verified tool observation(s); {result['answer_mode']}; fixture_data={result['fixture_data']}]")
+    return 0
 
 
 if __name__ == "__main__":
-raise SystemExit(main())
+    raise SystemExit(main())

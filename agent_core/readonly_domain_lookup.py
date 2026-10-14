@@ -21,6 +21,7 @@ ReadOnlyToolHandler = Callable[[str, str], Awaitable[tuple[str, ...]]]
 @dataclass(frozen=True, slots=True)
 class ReadOnlyRecord:
     domain_id: str
+    binding_fingerprint: str
     key: str
     value: str
     sha256: str
@@ -29,6 +30,8 @@ class ReadOnlyRecord:
         if (
             type(self.domain_id) is not str
             or not self.domain_id
+            or type(self.binding_fingerprint) is not str
+            or len(self.binding_fingerprint) != 64
             or type(self.key) is not str
             or not 1 <= len(self.key) <= 96
             or type(self.value) is not str
@@ -63,6 +66,7 @@ class ReadOnlyDomainLookup:
                 or type(rec) is not ReadOnlyRecord
                 or key != rec.key
                 or rec.domain_id != self.catalog.domain_id
+                or rec.binding_fingerprint != self.catalog.binding_fingerprint
                 for key, rec in self.records.items()
             )
             or any(key not in self.records for key in self.step_keys.values())
@@ -98,9 +102,10 @@ class ReadOnlyDomainLookup:
                     != record.sha256
                 ):
                     raise RunBoundaryError("read-only record integrity mismatch")
+                digest_fact = "RECORD_SHA256_" + record.sha256
                 if selected == self.catalog.workflow.steps[-1]:
-                    return (selected.completion_fact, "GOAL_SATISFIED")
-                return (selected.completion_fact,)
+                    return (digest_fact, selected.completion_fact, "GOAL_SATISFIED")
+                return (digest_fact, selected.completion_fact)
 
             handlers[step.tool_id] = handle
         object.__setattr__(self, "_handlers", MappingProxyType(handlers))

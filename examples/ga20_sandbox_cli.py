@@ -11,7 +11,6 @@ import asyncio
 import json
 import os
 import sys
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,8 +27,6 @@ from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.sqlite_business_intake import load_sqlite_business_snapshot
 from runtime.contracts import InputSource, InputTriggerType, RuntimeInput
 from agent_core.readonly_application_step import ReadOnlyApplicationStep
-from tests.test_ga08_execution_catalog import _snapshot
-from tests.test_ga13_sqlite_business_intake import _database, _row
 
 DEFAULT_QUESTIONS = {
     "inventory": "请查询库存并计算需要补货多少件",
@@ -92,162 +89,137 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
     question = validated_question(domain, question)
     steps = 1 if domain == "inventory" else 2
     operation = OPERATIONS[domain]
-    with tempfile.TemporaryDirectory(prefix="ga20-sandbox-") as temp:
-        root = Path(temp)
-        if operator_config is None:
-            snapshot = _snapshot(root / "package", steps=steps)
-            app = bootstrap_domain_application(snapshot)
-            catalog = app.execution_catalog(snapshot)
-            step_keys = {
-                step.step_id: f"business-{index}"
-                for index, step in enumerate(catalog.workflow.steps, 1)
-            }
-            data = (
-                ({"on_hand": 8, "reserved": 3, "target": 12},)
-                if steps == 1 else
-                ({"completed": 2, "total": 5}, {"completed": 2, "total": 5})
-            )
-            database = root / "business.sqlite"
-            _database(
-                database,
-                [
-                    _row(catalog, step_keys[step.step_id], values)
-                    for step, values in zip(catalog.workflow.steps, data, strict=True)
-                ],
-            )
-            lookup = load_sqlite_business_snapshot(
-                catalog=catalog, database_file=database, step_keys=step_keys,
-            )
-        else:
-            snapshot, lookup = load_operator_source(operator_config, domain)
-        app = bootstrap_domain_application(snapshot)
-        catalog = app.execution_catalog(snapshot)
-        if catalog.binding_fingerprint != lookup.catalog.binding_fingerprint or len(catalog.workflow.steps) != steps:
-            raise ValueError("operator package not compatible with selected demo domain")
-        dispatcher = SandboxToolDispatcher(
-            catalog,
-            ReadOnlyBusinessTools(
-                lookup, {step.step_id: operation for step in catalog.workflow.steps},
-            ).handlers(),
-        )
+    if operator_config is None:
+        raise ValueError("--operator-config is required for the application CLI")
+    snapshot, lookup = load_operator_source(operator_config, domain)
+    app = bootstrap_domain_application(snapshot)
+    catalog = app.execution_catalog(snapshot)
+    if catalog.binding_fingerprint != lookup.catalog.binding_fingerprint or len(catalog.workflow.steps) != steps:
+        raise ValueError("operator package not compatible with selected demo domain")
+    dispatcher = SandboxToolDispatcher(
+        catalog,
+        ReadOnlyBusinessTools(
+            lookup, {step.step_id: operation for step in catalog.workflow.steps},
+        ).handlers(),
+    )
 
-        async def selected(payload: dict[str, Any]) -> dict[str, object]:
-            stage = "verify-" if payload.get("last_agent_action") == "FACT_1" else "collect-"
-            bounded = dict(payload)
-            bounded["candidate_action_ids"] = [
-                value for value in payload["candidate_action_ids"]
-                if value.startswith(stage)
-            ]
-            bounded["legal_strategy_ids"] = [
-                value for value in payload["legal_strategy_ids"]
-                if value.startswith(stage.removesuffix("-") + "-strategy-")
-            ]
-            if len(bounded["candidate_action_ids"]) != 1 or len(bounded["legal_strategy_ids"]) != 1:
-                raise ValueError("no uniquely admitted business action")
-            action = bounded["candidate_action_ids"][0]
-            strategy = bounded["legal_strategy_ids"][0]
-            instruction = (
-                "You are a read-only business Agent. Return JSON with precisely "
-                "strategy_id, action_ids, reason_code. Choose only strategy "
-                f"{strategy!r} and action [{action!r}]. "
-                "Set reason_code to BUSINESS_READ_ONLY_QUERY. "
-                "Never claim any purchase, inventory update, or study completion."
-            )
-            transport = ChatCompletionsStrategyTransport(
-                config, system_instruction=instruction,
-            )
-            for attempt in range(2):
-                response = dict(await transport(bounded))
-                if response.get("strategy_id") == strategy and response.get("action_ids") == [action]:
-                    return response
-                if attempt == 0:
-                    bounded["previous_selection_invalid"] = True
-            raise ValueError("model did not choose a legal action")
+    async def selected(payload: dict[str, Any]) -> dict[str, object]:
+        stage = "verify-" if payload.get("last_agent_action") == "FACT_1" else "collect-"
+        bounded = dict(payload)
+        bounded["candidate_action_ids"] = [
+            value for value in payload["candidate_action_ids"]
+            if value.startswith(stage)
+        ]
+        bounded["legal_strategy_ids"] = [
+            value for value in payload["legal_strategy_ids"]
+            if value.startswith(stage.removesuffix("-") + "-strategy-")
+        ]
+        if len(bounded["candidate_action_ids"]) != 1 or len(bounded["legal_strategy_ids"]) != 1:
+            raise ValueError("no uniquely admitted business action")
+        action = bounded["candidate_action_ids"][0]
+        strategy = bounded["legal_strategy_ids"][0]
+        instruction = (
+            "You are a read-only business Agent. Return JSON with precisely "
+            "strategy_id, action_ids, reason_code. Choose only strategy "
+            f"{strategy!r} and action [{action!r}]. "
+            "Set reason_code to BUSINESS_READ_ONLY_QUERY. "
+            "Never claim any purchase, inventory update, or study completion."
+        )
+        transport = ChatCompletionsStrategyTransport(
+            config, system_instruction=instruction,
+        )
+        for attempt in range(2):
+            response = dict(await transport(bounded))
+            if response.get("strategy_id") == strategy and response.get("action_ids") == [action]:
+                return response
+            if attempt == 0:
+                bounded["previous_selection_invalid"] = True
+        raise ValueError("model did not choose a legal action")
 
-        initial = RuntimeInput(
-            request_id="request-001",
-            trace_id="trace-001",
-            session_id="session-001",
-            subject_id="subject-001",
-            identity_scope="scope-001",
-            source=InputSource.USER,
-            trigger_type=InputTriggerType.USER_TEXT,
-            timestamp=datetime.now(UTC),
-            text=question,
-        )
-        run_id = "ga20-sandbox-run"
+    initial = RuntimeInput(
+        request_id="request-001",
+        trace_id="trace-001",
+        session_id="session-001",
+        subject_id="subject-001",
+        identity_scope="scope-001",
+        source=InputSource.USER,
+        trigger_type=InputTriggerType.USER_TEXT,
+        timestamp=datetime.now(UTC),
+        text=question,
+    )
+    run_id = "ga20-sandbox-run"
 
-        planner, validator, rechecker = app.m4(
-            StructuredStrategyTransportAdapter(selected),
-        )
-        turn = ReadOnlyApplicationStep(
-            initial, run_id, app, dispatcher, planner, validator, rechecker,
-        )
+    planner, validator, rechecker = app.m4(
+        StructuredStrategyTransportAdapter(selected),
+    )
+    turn = ReadOnlyApplicationStep(
+        initial, run_id, app, dispatcher, planner, validator, rechecker,
+    )
 
-        outcome = await app.run(
-            initial,
-            run_id=run_id,
-            step=turn,
-            budget=LoopBudget(
-                max_iterations=steps + 2,
-                max_executions=steps + 1,
-                max_decision_seconds=55.0,
-                max_execution_seconds=5.0,
-            ),
-            execution_catalog=catalog,
+    outcome = await app.run(
+        initial,
+        run_id=run_id,
+        step=turn,
+        budget=LoopBudget(
+            max_iterations=steps + 2,
+            max_executions=steps + 1,
+            max_decision_seconds=55.0,
+            max_execution_seconds=5.0,
+        ),
+        execution_catalog=catalog,
+    )
+    if outcome.kind is not RunKind.FINISH:
+        raise RuntimeError(f"Agent did not finish: {outcome.kind.value}")
+    baseline = render_business_answer(
+        question=question, outcome=outcome, lookup=lookup, operation=operation,
+    )
+    # Fail closed on ungrounded model paraphrase. A verified deterministic
+    # answer is safer and more available than accepting an invalid LLM claim.
+    # No tool call or external side effect is retried by this fallback.
+    answer_mode = "verified_model"
+    try:
+        answer = await generate_live_business_answer(
+            baseline=baseline, operation=operation, config=config,
         )
-        if outcome.kind is not RunKind.FINISH:
-            raise RuntimeError(f"Agent did not finish: {outcome.kind.value}")
-        baseline = render_business_answer(
-            question=question, outcome=outcome, lookup=lookup, operation=operation,
-        )
-        # Fail closed on ungrounded model paraphrase. A verified deterministic
-        # answer is safer and more available than accepting an invalid LLM claim.
-        # No tool call or external side effect is retried by this fallback.
-        answer_mode = "verified_model"
-        try:
-            answer = await generate_live_business_answer(
-                baseline=baseline, operation=operation, config=config,
-            )
-        except RunBoundaryError:
-            answer = baseline
-            answer_mode = "verified_deterministic_fallback"
-        return {
-            "domain": domain,
-            "question": question,
-            "answer": answer.text,
-            "answer_mode": answer_mode,
-            "executions": outcome.executions,
-            "evidence_digests": list(answer.source_digests),
-            "read_only": True,
-            "fixture_data": operator_config is None,
-        }
+    except RunBoundaryError:
+        answer = baseline
+        answer_mode = "verified_deterministic_fallback"
+    return {
+        "domain": domain,
+        "question": question,
+        "answer": answer.text,
+        "answer_mode": answer_mode,
+        "executions": outcome.executions,
+        "evidence_digests": list(answer.source_digests),
+        "read_only": True,
+        "fixture_data": False,
+    }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="GA-20 experimental Linux-only Agent sandbox")
-    parser.add_argument("--domain", choices=tuple(OPERATIONS), required=True)
-    parser.add_argument("--question", help="One natural-language request (or interactive prompt)")
-    parser.add_argument("--operator-config", type=Path, help="Pinned external package and SQLite data (sandbox only)")
-    args = parser.parse_args()
-    try:
-        question = args.question if args.question is not None else input("用户任务: ")
-        question = validated_question(args.domain, question)
-        config = ChatCompletionsConfig(
-            endpoint=os.environ.get("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions"),
-            model=os.environ.get("GA01C_LLM_MODEL", "qwen2.5:3b"),
-            api_key=os.environ.get("GA01C_LLM_API_KEY", ""),
-            timeout_seconds=45.0,
-            max_tokens=200,
-        )
-        result = asyncio.run(ask_once(args.domain, question, config, args.operator_config))
-    except (ValueError, RuntimeError, OSError, EOFError) as exc:
-        print(f"GA-20 sandbox declined: {exc}", file=sys.stderr)
-        return 1
-    print(result["answer"])
-    print(f"[read-only sandbox; {result['executions']} verified tool observation(s); {result['answer_mode']}; fixture_data={result['fixture_data']}]")
-    return 0
+parser = argparse.ArgumentParser(description="GA-20 experimental Linux-only Agent sandbox")
+parser.add_argument("--domain", choices=tuple(OPERATIONS), required=True)
+parser.add_argument("--question", help="One natural-language request (or interactive prompt)")
+parser.add_argument("--operator-config", type=Path, help="Required pinned external package and SQLite data (sandbox only)")
+args = parser.parse_args()
+try:
+    question = args.question if args.question is not None else input("用户任务: ")
+    question = validated_question(args.domain, question)
+    config = ChatCompletionsConfig(
+        endpoint=os.environ.get("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions"),
+        model=os.environ.get("GA01C_LLM_MODEL", "qwen2.5:3b"),
+        api_key=os.environ.get("GA01C_LLM_API_KEY", ""),
+        timeout_seconds=45.0,
+        max_tokens=200,
+    )
+    result = asyncio.run(ask_once(args.domain, question, config, args.operator_config))
+except (ValueError, RuntimeError, OSError, EOFError) as exc:
+    print(f"GA-20 sandbox declined: {exc}", file=sys.stderr)
+    return 1
+print(result["answer"])
+print(f"[read-only sandbox; {result['executions']} verified tool observation(s); {result['answer_mode']}; fixture_data={result['fixture_data']}]")
+return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+raise SystemExit(main())

@@ -40,18 +40,22 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.mark.parametrize(("domain_id", "topic", "values"), DOMAINS)
 @pytest.mark.parametrize("live", [False, True])
+@pytest.mark.parametrize("differentiated", [False, True])
 def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
     tmp_path: Path,
     domain_id: str,
     topic: str,
     values: dict[str, int],
     live: bool,
+    differentiated: bool,
 ) -> None:
     if live and os.getenv("MEDICAL_LIVE_OPT_IN") != "1":
         pytest.skip("Medical live Qwen acceptance requires explicit opt-in")
 
     async def scenario() -> None:
-        snapshot = _medical_package(tmp_path / "package", domain_id)
+        snapshot = _medical_package(
+            tmp_path / "package", domain_id, differentiated=differentiated
+        )
         # The same package snapshot must drive knowledge, model, M4 and execution.
         assets = {
             asset.ref.kind: json.loads(asset.content_bytes)
@@ -130,6 +134,11 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
         dispatcher = SandboxToolDispatcher(catalog, lookup.handlers())
         model_calls: list[dict[str, Any]] = []
 
+        strategy_for_action = {
+            action: strategy
+            for strategy, action in app.extension.strategy_actions
+        }
+
         async def choose(payload: dict[str, Any]) -> dict[str, object]:
             model_calls.append(dict(payload))
             assert admitted.accepted
@@ -149,10 +158,11 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
             )
             assert messages[2]["role"] == "user"
             assert "UNTRUSTED_RETRIEVAL_DATA" in messages[2]["content"]
-            role = "verify" if payload["last_agent_action"] == "FACT_1" else "collect"
+            ordinal = 1 if payload["last_agent_action"] == "FACT_1" else 0
+            current_action = catalog.workflow.steps[ordinal].action_id
             return {
-                "strategy_id": f"{role}-strategy-notes",
-                "action_ids": [f"{role}-notes"],
+                "strategy_id": strategy_for_action[current_action],
+                "action_ids": [current_action],
                 "reason_code": "MEDICAL_UNIFIED_SYNTHETIC_DECISION",
             }
 
@@ -199,16 +209,21 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
             **({} if live else {"execution_catalog": catalog}),
         )
         assert result.kind is RunKind.FINISH
-        assert result.executions == 2
+        expected_steps = catalog.workflow.steps
+        assert result.executions == len(expected_steps)
         assert [item.workflow_step_id for item in result.observations] == [
-            "step-1",
-            "step-2",
+            step.step_id for step in expected_steps
         ]
-        assert len(model_calls) == (0 if live else 2)
+        assert len(model_calls) == (0 if live else len(expected_steps))
+        if differentiated:
+            assert len(expected_steps) == (
+                2 if domain_id == "medical.chronic-management" else 1
+            )
         assert db.read_bytes() == original_bytes
         print(
             f"MEDICAL_UNIFIED_PASS domain={domain_id} "
-            f"live={live} observations={len(result.observations)}",
+            f"live={live} differentiated={differentiated} "
+            f"observations={len(result.observations)}",
             flush=True,
         )
 

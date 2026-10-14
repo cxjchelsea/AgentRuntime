@@ -173,3 +173,79 @@ def test_third_domain_real_qwen_with_multiple_first_turn_candidates(
         )
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("task_text", "expected_action"),
+    [
+        ("First collect evidence for a new claim", "collect-sources"),
+        ("First verify an existing list of references", "verify-sources"),
+    ],
+)
+def test_third_domain_semantic_first_action_live(
+    tmp_path: Path, task_text: str, expected_action: str
+) -> None:
+    """Predeclared competing choices; no first-action answer in instruction."""
+    if os.environ.get("GENERAL_AGENT_LIVE_OPT_IN") != "1":
+        pytest.skip("Requires actual Qwen provider")
+
+    async def scenario() -> None:
+        package = _load(tmp_path, DOMAIN, NOUN)
+        initial = build_runtime_input(text=task_text)
+        step = DomainDrivenTurn(initial, package)
+        model = ChatCompletionsStrategyTransport(
+            ChatCompletionsConfig(
+                endpoint=os.environ["GA01C_LLM_URL"],
+                model=os.environ["GA01C_LLM_MODEL"],
+                api_key=os.environ.get("GA01C_LLM_API_KEY", ""),
+                timeout_seconds=45.0,
+                max_tokens=200,
+            ),
+            system_instruction=(
+                "You are a research assistant choosing the next permitted "
+                "read-only action. Return only JSON fields strategy_id, "
+                "action_ids and reason_code. Available research tools are "
+                "collect-sources / collect-strategy-sources for gathering new "
+                "material, and verify-sources / verify-strategy-sources for "
+                "checking already assembled references. Infer which comes "
+                "first from the user's task. No invented tool or real source."
+            ),
+            message_builder=lambda payload: (
+                {
+                    "role": "system",
+                    "content": "Select one legal strategy and action as JSON.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"User task: {task_text}. "
+                        f"Legal strategies: {payload['legal_strategy_ids']}. "
+                        f"Legal actions: {payload['candidate_action_ids']}."
+                    ),
+                },
+            ),
+        )
+        async def select(payload: dict[str, object]) -> dict[str, object]:
+            assert len(payload["candidate_action_ids"]) == 2
+            return dict(await model(payload))
+
+        step._planner, step._validator, step._rechecker = _planner(
+            package, StructuredStrategyTransportAdapter(select)
+        )
+        current = step.binding.iteration_input(initial, ordinal=0)
+        iteration = IterationRef.from_input(step.binding, current, ordinal=0)
+        decision = await step.decide(current, iteration, ())
+        selected = (
+            decision.approved.steps[0].action
+            if decision.approved is not None else None
+        )
+        print(
+            f"RESEARCH_SEMANTIC_ACTION task={task_text!r} "
+            f"selected={selected!r} expected={expected_action!r}",
+            flush=True,
+        )
+        assert decision.kind == "ACT"
+        assert selected == expected_action
+        assert step.mock_calls == 0
+
+    asyncio.run(scenario())

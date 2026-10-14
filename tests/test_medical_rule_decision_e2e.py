@@ -9,14 +9,12 @@ from pathlib import Path
 import pytest
 
 from agent_core.runner import AgentRunCoordinator, LoopBudget, RunKind
-from agent_core.sandbox_domain_assembly import assemble_sandbox_domain
-from tests.ga03_domain_content_assembly import assemble_ga03_domain
 from tests.orchestration_stubs import build_runtime_input
-from tests.test_ga03_domain_prompt_rule_knowledge_e2e import GA03Turn
-from tests.test_medical_domain_readonly_e2e import _medical_package
+from tests.test_ga03_domain_prompt_rule_knowledge_e2e import GA03Turn, _load_case
 
 pytestmark = pytest.mark.skipif(
-    not sys.platform.startswith("linux"), reason="verified fixture loader requires Linux"
+    not sys.platform.startswith("linux"),
+    reason="verified fixture loader requires Linux",
 )
 
 
@@ -31,13 +29,20 @@ def test_medical_package_rule_changes_approved_agent_execution(
     tmp_path: Path, domain_id: str, expected_actions: int, expected_rule: str
 ) -> None:
     async def scenario() -> None:
-        snapshot = _medical_package(tmp_path / "package", domain_id)
-        domain = assemble_ga03_domain(assemble_sandbox_domain(snapshot))
+        domain = _load_case(
+            tmp_path,
+            (
+                domain_id,
+                "monitoring" if expected_actions == 2 else "wellbeing",
+                "Review synthetic medical information without giving advice",
+                "metric-guide" if expected_actions == 2 else "wellbeing-guide",
+                "Synthetic domain guidance only, not clinical recommendations",
+                expected_rule,
+            ),
+        )
         assert domain.completion_after == expected_rule
         initial = build_runtime_input(text="synthetic domain-specific task")
-        turn = GA03Turn(
-            initial, domain, available=frozenset({domain.knowledge_key})
-        )
+        turn = GA03Turn(initial, domain, available=frozenset({domain.knowledge_key}))
         outcome = await AgentRunCoordinator(
             turn, LoopBudget(max_iterations=4, max_executions=3)
         ).run(initial, turn.binding)
@@ -63,8 +68,18 @@ def test_missing_own_medical_knowledge_blocks_action_before_m4(
     tmp_path: Path, domain_id: str
 ) -> None:
     async def scenario() -> None:
-        snapshot = _medical_package(tmp_path / "package", domain_id)
-        domain = assemble_ga03_domain(assemble_sandbox_domain(snapshot))
+        chronic = domain_id == "medical.chronic-management"
+        domain = _load_case(
+            tmp_path,
+            (
+                domain_id,
+                "monitoring" if chronic else "wellbeing",
+                "Review synthetic medical information without giving advice",
+                "metric-guide" if chronic else "wellbeing-guide",
+                "Synthetic domain guidance only, not clinical recommendations",
+                "verify" if chronic else "collect",
+            ),
+        )
         initial = build_runtime_input(text="synthetic task with unavailable knowledge")
         turn = GA03Turn(initial, domain, available=frozenset({"foreign.topic"}))
         outcome = await AgentRunCoordinator(

@@ -176,6 +176,7 @@ def test_third_domain_real_qwen_with_multiple_first_turn_candidates(
         step._planner, step._validator, step._rechecker = _planner(
             package, StructuredStrategyTransportAdapter(choose)
         )
+
         def all_steps_verified(run_id: str, observations: tuple) -> bool:
             required = {"step-1", "step-2"}
             return (

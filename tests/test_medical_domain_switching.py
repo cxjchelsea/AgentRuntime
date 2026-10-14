@@ -24,8 +24,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 DOMAINS = (
-    ("medical.chronic_management", "monitoring"),
-    ("medical.mental_wellbeing", "wellbeing"),
+    ("medical.chronic-management", "monitoring"),
+    ("medical.mental-wellbeing", "wellbeing"),
 )
 
 
@@ -34,6 +34,7 @@ def test_medical_domain_uses_same_unchanged_core_and_approved_loop(
     tmp_path: Path, domain_id: str, noun: str
 ) -> None:
     """Each synthetic domain binds distinct assets; real M4 and Agent loop run."""
+
     async def scenario() -> None:
         package = _load(tmp_path, domain_id, noun)
         initial = build_runtime_input(text=f"collect and verify synthetic {noun} data")
@@ -45,7 +46,8 @@ def test_medical_domain_uses_same_unchanged_core_and_approved_loop(
         assert result.executions == 2
         assert turn.selected_actions == [f"collect-{noun}", f"verify-{noun}"]
         assert set(turn.transport.calls[0]["candidate_action_ids"]) == {
-            f"collect-{noun}", f"verify-{noun}"
+            f"collect-{noun}",
+            f"verify-{noun}",
         }
         assert all(
             item.domain_fingerprint == turn.binding.binding_fingerprint
@@ -77,6 +79,7 @@ def test_medical_domain_denies_foreign_action_before_execution(
     tmp_path: Path, selected: int, foreign: int
 ) -> None:
     """Both directions block the other domain's action at M4 validation."""
+
     async def scenario() -> None:
         selected_id, noun = DOMAINS[selected]
         _, foreign_noun = DOMAINS[foreign]

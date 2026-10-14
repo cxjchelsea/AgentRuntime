@@ -48,9 +48,7 @@ def test_natural_language_business_answer_from_sqlite_agent_e2e(
             if steps == 1
             else "帮我看看学习任务完成进度，还有多少项？"
         )
-        operation = (
-            "inventory_replenishment" if steps == 1 else "learning_progress"
-        )
+        operation = "inventory_replenishment" if steps == 1 else "learning_progress"
         payloads = (
             ({"on_hand": 8, "reserved": 3, "target": 12},)
             if steps == 1
@@ -110,9 +108,7 @@ def test_natural_language_business_answer_from_sqlite_agent_e2e(
             initial,
             run_id="ga14-run",
             step=QuestionTurn(initial),
-            budget=LoopBudget(
-                max_iterations=steps + 2, max_executions=steps + 1
-            ),
+            budget=LoopBudget(max_iterations=steps + 2, max_executions=steps + 1),
             execution_catalog=catalog,
         )
         answer = render_business_answer(

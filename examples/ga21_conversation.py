@@ -13,6 +13,7 @@ from enum import Enum
 
 from examples.ga20_sandbox_cli import validated_question
 from examples.ga22_goal_policy import DomainGoalPolicy, GoalUpdate, inventory_goal_policy
+from examples.ga22_replanning import GoalState, ReplanAction, decide_replanning
 
 RunReadOnly = Callable[[str, str, int | None], Awaitable[dict[str, object]]]
 
@@ -83,6 +84,7 @@ class ReadOnlyConversation:
         if self._goal_policy is not None and self._goal_policy.domain != domain:
             raise ValueError("goal policy domain mismatch")
         self._last: VerifiedTurn | None = None
+        self._goal_state: GoalState | None = None
         self._turns = 0
         self._closed = False
         self._turn_lock = asyncio.Lock()
@@ -90,6 +92,9 @@ class ReadOnlyConversation:
     @property
     def last_verified(self) -> VerifiedTurn | None:
         return self._last
+
+    def goal_state(self) -> GoalState | None:
+        return self._goal_state
 
     def _classify(self, message: str) -> TurnKind:
         if not isinstance(message, str) or not 1 <= len(message.strip()) <= 1000:
@@ -124,6 +129,7 @@ class ReadOnlyConversation:
         if kind is TurnKind.CANCEL:
             self._closed = True
             self._last = None
+            self._goal_state = None
             self._turns += 1
             return ConversationReply(kind, "当前会话任务已结束。", self._turns, False, 0)
         if kind is TurnKind.RECALL:
@@ -159,6 +165,26 @@ class ReadOnlyConversation:
             # explicitly specify supported domain terms and cannot silently
             # inherit permissions from the preceding turn.
             question = validated_question(self.domain, message)
+        decision = decide_replanning(
+            previous=self._goal_state,
+            domain=self.domain,
+            question=question,
+            policy=self._goal_policy,
+            update_text=message if kind is TurnKind.GOAL_UPDATE else None,
+            refresh=kind is TurnKind.REFRESH,
+        )
+        if (
+            decision.update is None and target_update is not None
+            or decision.update is not None
+            and decision.update.value != target_update
+            or not decision.must_execute
+        ):
+            raise ValueError("replanning target mismatch")
+        if kind is TurnKind.GOAL_UPDATE and decision.action not in (
+            ReplanAction.REPLAN_WITH_FRESH_EVIDENCE,
+            ReplanAction.REFRESH_WITH_FRESH_EVIDENCE,
+        ):
+            raise ValueError("goal update did not require new execution")
         result = await self._runner(self.domain, question, target_update)
         if result.get("domain") != self.domain or result.get("read_only") is not True:
             raise ValueError("untrusted runner result")
@@ -196,6 +222,10 @@ class ReadOnlyConversation:
         self._last = VerifiedTurn(
             self.domain, question, answer, tuple(digests), executions,
             available=available, target=target_update,
+        )
+        self._goal_state = GoalState(
+            self.domain, question, decision.next_version,
+            decision.update, tuple(digests),
         )
         self._turns += 1
         return ConversationReply(kind, answer, self._turns, False, executions)

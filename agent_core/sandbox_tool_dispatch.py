@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from agent_core.domain_execution_catalog import DomainExecutionCatalog
 from agent_core.runner import Decision, ObservedFact, RunBoundaryError
@@ -30,6 +31,8 @@ class SandboxToolDispatcher:
             or not all(callable(handler) for handler in self.handlers.values())
         ):
             raise RunBoundaryError("sandbox tool handler registry mismatch")
+        # Prevent caller mutations after registration from redirecting dispatch.
+        object.__setattr__(self, "handlers", MappingProxyType(dict(self.handlers)))
 
     async def observe(
         self,
@@ -59,7 +62,11 @@ class SandboxToolDispatcher:
             raise RunBoundaryError("sandbox tool action not in approved workflow")
         workflow_step = self.catalog.workflow.steps[step_index]
         handler = self.handlers[workflow_step.tool_id]
-        facts = await handler(workflow_step.step_id, workflow_step.tool_id)
+        try:
+            facts = await handler(workflow_step.step_id, workflow_step.tool_id)
+        except Exception as exc:
+            # Preserve cancellation (BaseException) and never leak handler details.
+            raise RunBoundaryError("sandbox tool handler failed") from exc
         if (
             type(facts) is not tuple
             or not 1 <= len(facts) <= 8

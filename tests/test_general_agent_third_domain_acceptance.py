@@ -13,7 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from agent_core.chat_transport import ChatCompletionsConfig, ChatCompletionsStrategyTransport
+from agent_core.chat_transport import (
+    ChatCompletionsConfig,
+    ChatCompletionsStrategyTransport,
+)
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import AgentRunCoordinator, LoopBudget, RunKind
 from runtime.planning.errors import StrategyModelOutputError
@@ -147,9 +150,7 @@ def test_third_domain_real_qwen_with_multiple_first_turn_candidates(
         )
         outcome = await AgentRunCoordinator(
             step,
-            LoopBudget(
-                max_iterations=4, max_executions=3, max_decision_seconds=70.0
-            ),
+            LoopBudget(max_iterations=4, max_executions=3, max_decision_seconds=70.0),
         ).run(initial, step.binding)
         assert outcome.kind is RunKind.FINISH
         assert step.selected_actions == ["collect-sources", "verify-sources"]

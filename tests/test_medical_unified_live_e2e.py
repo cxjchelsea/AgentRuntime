@@ -108,13 +108,23 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
                     timeout_seconds=45.0,
                     max_tokens=180,
                 ),
-                system_instruction=(
-                    "Choose exactly one permitted read-only synthetic medical action. "
-                    "Return JSON strategy_id, action_ids, reason_code. "
-                    "Do not provide clinical advice. "
-                    "Select collect-notes when no tool observation exists; "
-                    "select verify-notes once FACT_1 is observed. "
-                    "Never invent sources, permissions, or action identifiers."
+                message_builder=lambda payload: build_domain_model_messages(
+                    scope=scope,
+                    system_instruction=(
+                        "Choose only the provided legal read-only synthetic medical "
+                        "strategy and action. Return JSON strategy_id, action_ids, "
+                        "reason_code. No clinical advice. Collect first, verify "
+                        "after observation FACT_1. Never invent source facts."
+                    ),
+                    task_payload={
+                        "domain": scope.domain_id,
+                        "rule": rule,
+                        "focus": prompt["focus"],
+                        "legal_strategy_ids": payload["legal_strategy_ids"],
+                        "candidate_action_ids": payload["candidate_action_ids"],
+                        "last_agent_action": payload["last_agent_action"],
+                    },
+                    admission=admitted,
                 ),
             )
             if live

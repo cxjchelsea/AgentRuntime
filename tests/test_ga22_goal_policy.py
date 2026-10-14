@@ -18,6 +18,7 @@ from examples.ga22_replanning import (
     StepRevision,
     decide_replanning,
     revise_step_plan,
+    authorize_revision_selection,
 )
 
 
@@ -193,4 +194,50 @@ def test_revision_retains_unchanged_definition_and_replans_affected_step() -> No
             steps=steps,
             changed_keys=frozenset({"target"}),
             domain_fingerprint_matches=False,
+        )
+
+
+def test_new_m4_approval_and_fresh_digest_gate_selective_continuation() -> None:
+    previous = GoalState("inventory", "查询库存", 1, None, ("d1",))
+    decision = decide_replanning(
+        previous=previous,
+        domain="inventory",
+        question="查询库存",
+        policy=inventory_goal_policy(),
+        update_text="目标改成20件",
+    )
+    steps = (
+        StepRevision("read", "read-action", frozenset({"source"}), "sha-read"),
+        StepRevision("compute", "compute-action", frozenset({"target"}), "sha-result"),
+    )
+    revision = revise_step_plan(
+        previous=previous,
+        decision=decision,
+        steps=steps,
+        changed_keys=frozenset({"target"}),
+        domain_fingerprint_matches=True,
+    )
+    approved = {"read": "read-action", "compute": "compute-action"}
+    chosen = authorize_revision_selection(
+        revision=revision,
+        steps=steps,
+        approved_actions=approved,
+        freshly_verified_digests={"read": "sha-read"},
+    )
+    assert [step.disposition for step in chosen] == [
+        "REVALIDATED_NO_TOOL", "EXECUTE_APPROVED"
+    ]
+    changed = authorize_revision_selection(
+        revision=revision,
+        steps=steps,
+        approved_actions=approved,
+        freshly_verified_digests={"read": "changed-source"},
+    )
+    assert all(step.disposition == "EXECUTE_APPROVED" for step in changed)
+    with pytest.raises(ValueError, match="approved"):
+        authorize_revision_selection(
+            revision=revision,
+            steps=steps,
+            approved_actions={"read": "read-action"},
+            freshly_verified_digests={"read": "sha-read"},
         )

@@ -52,7 +52,6 @@ def test_real_model_drives_business_actions_and_grounded_answer(
         snapshot = _snapshot(tmp_path / "domain", steps=steps)
         app = bootstrap_domain_application(snapshot)
         catalog = app.execution_catalog(snapshot)
-        noun = "stock" if steps == 1 else "notes"
         question = (
             "请帮我查库存，并算出现在需要补货多少件"
             if steps == 1

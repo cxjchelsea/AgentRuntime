@@ -59,7 +59,9 @@ def test_failure_preserves_verified_goal_and_scoping() -> None:
     async def scenario() -> None:
         runner = FakeRunner()
         session = ReadOnlyConversation(
-            domain="inventory", session_id="s1", subject_id="u1",
+            domain="inventory",
+            session_id="s1",
+            subject_id="u1",
             run_read_only=runner,
         )
         with pytest.raises(ValueError, match="no verified"):
@@ -74,6 +76,7 @@ def test_failure_preserves_verified_goal_and_scoping() -> None:
         assert recall.reused_evidence
         assert session.last_verified is not None
         assert session.last_verified.goal == "库存情况"
+
     asyncio.run(scenario())
 
 
@@ -97,6 +100,7 @@ def test_unverified_runner_result_rejected() -> None:
         with pytest.raises(ValueError, match="unverified"):
             await session.send("库存")
         assert session.last_verified is None
+
     asyncio.run(scenario())
 
 
@@ -114,4 +118,5 @@ def test_turn_budget_and_cross_domain_denial() -> None:
         await session.send("学习进度")
         with pytest.raises(ValueError, match="budget"):
             await session.send("刚才结果")
+
     asyncio.run(scenario())

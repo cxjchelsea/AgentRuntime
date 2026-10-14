@@ -23,7 +23,12 @@ async def converse(domain: str, operator_config: Path) -> None:
     )
 
     async def run(selected: str, question: str, target: int | None) -> dict[str, object]:
-        return await ask_once(selected, question, config, operator_config, goal_target=target)
+        return await ask_once(
+            selected, question, config, operator_config,
+            goal_target=target,
+            session_id="ga21-local-session",
+            subject_id="ga21-local-subject",
+        )
 
     async def continue_run(
         selected: str, question: str, target: int | None,
@@ -32,6 +37,8 @@ async def converse(domain: str, operator_config: Path) -> None:
         return await ask_once(
             selected, question, config, operator_config,
             goal_target=target, continuation=previous,
+            session_id="ga21-local-session",
+            subject_id="ga21-local-subject",
         )
 
     conversation = ReadOnlyConversation(

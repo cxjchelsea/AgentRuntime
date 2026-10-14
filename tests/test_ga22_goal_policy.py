@@ -17,8 +17,8 @@ from examples.ga22_replanning import (
     ReplanAction,
     StepRevision,
     decide_replanning,
-    revise_step_plan,
     authorize_revision_selection,
+    revise_step_plan,
 )
 
 
@@ -225,7 +225,8 @@ def test_new_m4_approval_and_fresh_digest_gate_selective_continuation() -> None:
         freshly_verified_digests={"read": "sha-read"},
     )
     assert [step.disposition for step in chosen] == [
-        "REVALIDATED_NO_TOOL", "EXECUTE_APPROVED"
+        "REVALIDATED_NO_TOOL",
+        "EXECUTE_APPROVED",
     ]
     changed = authorize_revision_selection(
         revision=revision,

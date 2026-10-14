@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import sys
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -122,6 +123,4 @@ def test_readonly_lookup_rejects_foreign_tampered_or_missing_records(
     with pytest.raises(RunBoundaryError, match="invalid read-only record"):
         ReadOnlyRecord(catalog.domain_id, "record-1", "tampered", "0" * 64)
     with pytest.raises(RunBoundaryError, match="explicit snapshots"):
-        ReadOnlyDomainLookup(catalog, records, {}) if False else ReadOnlyDomainLookup(
-            catalog, records, type("NotDict", (), {})()
-        )
+        ReadOnlyDomainLookup(catalog, records, MappingProxyType(key_map))

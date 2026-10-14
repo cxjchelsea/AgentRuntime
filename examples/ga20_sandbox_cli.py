@@ -61,7 +61,7 @@ def load_operator_source(config_file: Path, domain: str):
         raise ValueError("operator config must be a regular file")
     raw = json.loads(config_file.read_text(encoding="utf-8"))
     fields = {"domain", "package_root", "generation_id", "domain_version", "runtime_profile", "manifest_digest", "database_file", "step_keys"}
-    if type(raw) is not dict or set(raw) != fields or raw["domain"] != domain:
+    if type(raw) is not dict or set(raw) != fields or raw["domain"] != {"inventory": "inventory.reconcile", "learning": "learning.plan"}.get(domain):
         raise ValueError("operator source configuration mismatch")
     if any(type(raw[key]) is not str or not raw[key] for key in fields - {"step_keys"}):
         raise ValueError("operator source values invalid")
@@ -71,7 +71,7 @@ def load_operator_source(config_file: Path, domain: str):
     root, database = Path(raw["package_root"]), Path(raw["database_file"])
     if not root.is_absolute() or not database.is_absolute() or root.is_symlink() or database.is_symlink():
         raise ValueError("operator sources require absolute non-symlink paths")
-    identity = TrustedPackageIdentity(raw["generation_id"], domain, raw["domain_version"], raw["runtime_profile"], raw["manifest_digest"])
+    identity = TrustedPackageIdentity(raw["generation_id"], raw["domain"], raw["domain_version"], raw["runtime_profile"], raw["manifest_digest"])
     record = HostPublishedGeneration(identity, str(root), True)
     # This is only an operator-controlled local demo verifier, not an independent host attestation.
     issuer = HostPackageRootIssuer((record,), publication_verifier=lambda candidate: candidate == record)

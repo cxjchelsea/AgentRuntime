@@ -68,7 +68,9 @@ def test_medical_workflow_candidates_are_scoped_and_model_is_not_rewritten(
         assert result["action_ids"] == [all_actions[1]]
         assert calls[-1]["required_workflow_step"] == catalog.workflow.steps[1].step_id
 
-        with pytest.raises(DomainExtensionError, match="ambiguous workflow observation"):
+        with pytest.raises(
+            DomainExtensionError, match="ambiguous workflow observation"
+        ):
             await scoped(dict(payload, last_agent_action="FOREIGN_FACT"))
         with pytest.raises(DomainExtensionError, match="not legally available"):
             await scoped(dict(payload, candidate_action_ids=[all_actions[1]]))

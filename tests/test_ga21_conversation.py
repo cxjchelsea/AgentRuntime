@@ -11,11 +11,11 @@ from examples.ga21_conversation import ReadOnlyConversation, TurnKind
 
 class FakeRunner:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, int | None]] = []
         self.fail = False
 
-    async def __call__(self, domain: str, question: str) -> dict[str, object]:
-        self.calls.append((domain, question))
+    async def __call__(self, domain: str, question: str, target: int | None) -> dict[str, object]:
+        self.calls.append((domain, question, target))
         if self.fail:
             raise RuntimeError("provider unavailable")
         return {
@@ -24,6 +24,7 @@ class FakeRunner:
             "answer": "库存尚有 5 件",
             "evidence_digests": ["sha256-evidence"],
             "executions": 1,
+            "admitted_goal_target": target,
             "verified_metrics": {"available": 5},
         }
 
@@ -47,7 +48,7 @@ def test_goal_recall_refresh_and_cancel() -> None:
         refreshed = await conversation.send("再查一次")
         assert refreshed.kind is TurnKind.REFRESH
         assert refreshed.tool_executions == 1
-        assert runner.calls == [("inventory", "请查询库存")] * 2
+        assert runner.calls == [("inventory", "请查询库存", None)] * 2
         cancelled = await conversation.send("取消")
         assert cancelled.kind is TurnKind.CANCEL
         with pytest.raises(ValueError, match="closed"):
@@ -93,7 +94,7 @@ def test_failure_preserves_verified_goal_and_scoping() -> None:
 
 
 def test_unverified_runner_result_rejected() -> None:
-    async def invalid(_domain: str, _question: str) -> dict[str, object]:
+    async def invalid(_domain: str, _question: str, _target: int | None) -> dict[str, object]:
         return {
             "domain": "inventory",
             "read_only": True,

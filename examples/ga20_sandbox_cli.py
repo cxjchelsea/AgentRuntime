@@ -193,7 +193,8 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         assembler=UnderstandingStateAssembler(),
     )
     turn = ReadOnlyApplicationStep(
-        initial, run_id, app, dispatcher, planner, validator, rechecker, m3,
+        initial, run_id, app, dispatcher, planner, validator, rechecker,
+        m3, "ga20." + domain + ".read", "GA20_READ_ONLY_" + domain.upper(),
     )
 
     outcome = await app.run(

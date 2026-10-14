@@ -159,6 +159,19 @@ def bootstrap_unified_domain_application(
         strategy_by_action = {
             action: strategy for strategy, action in app.extension.strategy_actions
         }
+        # A declared Collect/Verify completion rule must refer to the final
+        # package-owned workflow action; never silently ignore a conflicting rule.
+        if content.completion_after in {"collect", "verify"}:
+            final_action = catalog.workflow.steps[-1].action_id
+            final_strategy = strategy_by_action.get(final_action)
+            final_roles = []
+            for asset in snapshot.assets:
+                if asset.ref.kind != "strategy" or asset.ref.id != final_strategy:
+                    continue
+                raw = json.loads(asset.content_bytes)
+                final_roles.append(raw.get("role"))
+            if final_roles != [content.completion_after]:
+                raise DomainExtensionError("domain completion rule/workflow mismatch")
         instructions = []
         for entry in catalog.workflow.steps:
             strategy = strategy_by_action.get(entry.action_id)

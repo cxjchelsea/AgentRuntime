@@ -26,6 +26,15 @@ jobs:
         run: python -m pip install -e '.[test]' mypy ruff
       - name: Full pytest (historical opt-in diagnostics retain their original tests)
         run: python -m pytest tests -q
+      - name: GA-19 offline cross-scenario scorecard
+        run: python tests/ga19_evaluate.py --tier offline --out-dir ga19-reports
+      - name: Upload GA-19 offline evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ga19-offline-${{ github.run_id }}
+          path: ga19-reports/
+          if-no-files-found: warn
       - name: Mypy
         run: python -m mypy runtime agent_core tests
       - name: Ruff lint
@@ -75,6 +84,7 @@ jobs:
           GA16_LIVE_OPT_IN=1 python -m pytest tests/test_ga16_dynamic_business_task.py -q -s -rs
           GA17_LIVE_OPT_IN=1 python -m pytest tests/test_ga17_goal_driven_plan.py -q -s -rs
           GA18_LIVE_OPT_IN=1 python -m pytest tests/test_ga18_adaptive_goal.py -q -s -rs
+          GA15_LIVE_OPT_IN=1 GA16_LIVE_OPT_IN=1 GA17_LIVE_OPT_IN=1 GA18_LIVE_OPT_IN=1 python tests/ga19_evaluate.py --tier live --out-dir ga19-reports
       - name: Repeat final DIAG-03 E2E three independent executions
         shell: bash
         env:
@@ -97,6 +107,13 @@ jobs:
             echo "::endgroup::"
           done
           exit "$failed"
+      - name: Upload GA-19 real-model evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ga19-live-${{ github.run_id }}
+          path: ga19-reports/
+          if-no-files-found: warn
       - name: Report Ollama logs on failure
         if: failure()
         run: docker logs --tail 100 ga01c-integration-qwen || true

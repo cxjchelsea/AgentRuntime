@@ -93,6 +93,7 @@ class ReadOnlyConversation:
     def last_verified(self) -> VerifiedTurn | None:
         return self._last
 
+    @property
     def goal_state(self) -> GoalState | None:
         return self._goal_state
 

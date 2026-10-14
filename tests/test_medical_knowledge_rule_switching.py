@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -163,3 +164,24 @@ def test_known_prompt_injection_is_rejected_before_model_context(
     result = cap.retrieve_and_admit(scenario.topic)
     assert result.reason == "SUSPECT_INSTRUCTION"
     assert not result.accepted
+
+
+def test_package_owned_knowledge_prompt_and_rule_are_distinct(
+    tmp_path: Path,
+) -> None:
+    snapshots = []
+    for index, case in enumerate(SCENARIOS):
+        snapshot = _medical_package(tmp_path / f"domain-{index}", case.domain)
+        assets = {
+            item.ref.kind: json.loads(item.content_bytes)
+            for item in snapshot.assets
+            if item.ref.kind in {"knowledge", "prompt", "rule"}
+        }
+        assert set(assets) == {"knowledge", "prompt", "rule"}
+        assert assets["rule"]["required_knowledge"] == assets["knowledge"]["key"]
+        assert assets["rule"]["completion_after"] == "verify"
+        assert assets["prompt"]["focus"]
+        snapshots.append(assets)
+    assert snapshots[0]["knowledge"] != snapshots[1]["knowledge"]
+    assert snapshots[0]["rule"] != snapshots[1]["rule"]
+    assert snapshots[0]["prompt"] != snapshots[1]["prompt"]

@@ -33,7 +33,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _business_lookup(catalog: Any, payloads: tuple[dict[str, int], ...]) -> ReadOnlyDomainLookup:
+def _business_lookup(
+    catalog: Any, payloads: tuple[dict[str, int], ...]
+) -> ReadOnlyDomainLookup:
     records: dict[str, ReadOnlyRecord] = {}
     step_keys: dict[str, str] = {}
     for index, (step, payload) in enumerate(
@@ -68,9 +70,7 @@ def test_real_business_tasks_share_agent_loop(tmp_path: Path, steps: int) -> Non
             )
         )
         lookup = _business_lookup(catalog, payloads)
-        operation = (
-            "inventory_replenishment" if steps == 1 else "learning_progress"
-        )
+        operation = "inventory_replenishment" if steps == 1 else "learning_progress"
         tools = ReadOnlyBusinessTools(
             lookup, {step.step_id: operation for step in catalog.workflow.steps}
         )
@@ -177,7 +177,9 @@ def test_invalid_business_records_fail_closed(
         snapshot = _snapshot(tmp_path / "domain", steps=domain)
         catalog = bootstrap_domain_application(snapshot).execution_catalog(snapshot)
         first = catalog.workflow.steps[0]
-        payloads = (payload,) if domain == 1 else (payload, {"completed": 5, "total": 5})
+        payloads = (
+            (payload,) if domain == 1 else (payload, {"completed": 5, "total": 5})
+        )
         lookup = _business_lookup(catalog, payloads)
         op = "inventory_replenishment" if domain == 1 else "learning_progress"
         tools = ReadOnlyBusinessTools(

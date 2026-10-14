@@ -91,7 +91,10 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
         db = tmp_path / "synthetic-medical.sqlite"
         _database(
             db,
-            [_row(catalog, keys[step.step_id], values) for step in catalog.workflow.steps],
+            [
+                _row(catalog, keys[step.step_id], values)
+                for step in catalog.workflow.steps
+            ],
         )
         original_bytes = db.read_bytes()
         lookup = load_sqlite_business_snapshot(
@@ -171,7 +174,9 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
                 self, current_input, iteration, observations: tuple[ObservedFact, ...]
             ) -> Decision:
                 if not admitted.accepted:
-                    return Decision(iteration, "WAIT", reason="REQUIRED_KNOWLEDGE_MISSING")
+                    return Decision(
+                        iteration, "WAIT", reason="REQUIRED_KNOWLEDGE_MISSING"
+                    )
                 return await super().decide(current_input, iteration, observations)
 
             async def execute_and_observe(self, decision: Decision) -> ObservedFact:

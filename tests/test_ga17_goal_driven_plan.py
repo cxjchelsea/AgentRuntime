@@ -43,10 +43,7 @@ pytestmark = pytest.mark.skipif(
 def _proposal(*items: tuple[str, tuple[str, ...]]) -> dict[str, object]:
     return {
         "goal_id": "study-status",
-        "steps": [
-            {"step_id": step, "depends_on": list(deps)}
-            for step, deps in items
-        ],
+        "steps": [{"step_id": step, "depends_on": list(deps)} for step, deps in items],
     }
 
 
@@ -66,7 +63,10 @@ def _admitted(tmp_path: Path) -> AdmittedGoal:
         _proposal(("step-2", ("foreign",))),
         _proposal(("step-2", ()), ("step-2", ())),
         {"goal_id": "foreign", "steps": [{"step_id": "step-2", "depends_on": []}]},
-        {"goal_id": "study-status", "steps": [{"step_id": "step-2", "depends_on": [], "tool_id": "evil"}]},
+        {
+            "goal_id": "study-status",
+            "steps": [{"step_id": "step-2", "depends_on": [], "tool_id": "evil"}],
+        },
     ],
 )
 def test_goal_model_plan_rejects_unsafe_proposals(tmp_path: Path, bad: Any) -> None:
@@ -81,8 +81,14 @@ def test_goal_replanning_preserves_executed_evidence(tmp_path: Path) -> None:
     )
     assert [step.step_id for step in original.eligible("run", ())] == ["step-1"]
     evidence = ObservedFact(
-        "run", "req", "plan-1", "exec-1", goal.catalog.binding_fingerprint,
-        ("FACT_1",), "step-1", goal.catalog.workflow.steps[0].tool_id,
+        "run",
+        "req",
+        "plan-1",
+        "exec-1",
+        goal.catalog.binding_fingerprint,
+        ("FACT_1",),
+        "step-1",
+        goal.catalog.workflow.steps[0].tool_id,
     )
     assert [step.step_id for step in original.eligible("run", (evidence,))] == [
         "step-2"
@@ -93,9 +99,7 @@ def test_goal_replanning_preserves_executed_evidence(tmp_path: Path) -> None:
     )
     with pytest.raises(RunBoundaryError, match="rewrote"):
         original.revise(altered, "run", (evidence,))
-    replacement = GoalPlan.from_model(
-        goal, _proposal(("step-1", ()), ("step-2", ()))
-    )
+    replacement = GoalPlan.from_model(goal, _proposal(("step-1", ()), ("step-2", ())))
     assert original.revise(replacement, "run", (evidence,)) == replacement
     forged = replace(evidence, tool_id="wrong")
     assert not original.completed("run", (forged,))
@@ -104,9 +108,7 @@ def test_goal_replanning_preserves_executed_evidence(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("live", [False, True])
-def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(
-    tmp_path: Path, live: bool
-) -> None:
+def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(tmp_path: Path, live: bool) -> None:
     if live and os.getenv("GA17_LIVE_OPT_IN") != "1":
         pytest.skip("GA-17 live goal planning requires explicit opt-in")
 
@@ -142,7 +144,8 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(
                     {
                         "role": "user",
                         "content": (
-                            "Goal: study-status; user asks: " + task_text
+                            "Goal: study-status; user asks: "
+                            + task_text
                             + ". Only admitted step IDs: step-1, step-2; "
                             "step-1 produces FACT_1, step-2 produces FACT_2."
                         ),
@@ -173,10 +176,8 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(
         dispatcher = SandboxToolDispatcher(
             catalog,
             ReadOnlyBusinessTools(
-                lookup, {
-                    step.step_id: "learning_progress"
-                    for step in catalog.workflow.steps
-                }
+                lookup,
+                {step.step_id: "learning_progress" for step in catalog.workflow.steps},
             ).handlers(),
         )
         calls: list[dict[str, Any]] = []
@@ -208,7 +209,9 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(
                 self.prior = observations
                 if plan.completed(self.binding.run_id, observations):
                     return Decision(
-                        iteration, "FINISH", reason="GA17_GOAL_EVIDENCE_VERIFIED",
+                        iteration,
+                        "FINISH",
+                        reason="GA17_GOAL_EVIDENCE_VERIFIED",
                         completion_fact="FACT_2",
                     )
                 visible = tuple(
@@ -235,7 +238,8 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(
                     raise RunBoundaryError("goal plan action not executable")
                 index, _ = matches[0]
                 observed = await dispatcher.observe(
-                    decision=decision, step_index=index,
+                    decision=decision,
+                    step_index=index,
                     run_id=self.binding.run_id,
                     execution_id=f"goal-execution-{self.actions + 1}",
                 )
@@ -245,12 +249,15 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(
         initial = build_runtime_input(text=task_text)
         turn = GoalTurn(initial)
 
-        def guard(decision: Decision, observation: ObservedFact | None, index: int) -> bool:
+        def guard(
+            decision: Decision, observation: ObservedFact | None, index: int
+        ) -> bool:
             if index != len(turn.prior) or decision.approved is None:
                 return False
             eligible = plan.eligible(turn.binding.run_id, turn.prior)
             candidate = [
-                step for step in eligible
+                step
+                for step in eligible
                 if step.action_id == decision.approved.steps[0].action
             ]
             return len(candidate) == 1 and (
@@ -262,7 +269,8 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(
             )
 
         result = await AgentRunCoordinator(
-            turn, LoopBudget(
+            turn,
+            LoopBudget(
                 max_iterations=4,
                 max_executions=3,
                 max_decision_seconds=10.0,

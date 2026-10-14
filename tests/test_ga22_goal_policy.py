@@ -7,12 +7,12 @@ import asyncio
 import pytest
 
 from examples.ga21_conversation import ReadOnlyConversation, TurnKind
-from examples.ga22_replanning import GoalState, ReplanAction, decide_replanning
 from examples.ga22_goal_policy import (
     DomainGoalPolicy,
     GoalUpdate,
     inventory_goal_policy,
 )
+from examples.ga22_replanning import GoalState, ReplanAction, decide_replanning
 
 
 def test_inventory_policy_parses_and_renders() -> None:

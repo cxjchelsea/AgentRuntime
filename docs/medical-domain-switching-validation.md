@@ -36,9 +36,9 @@ The deterministic model test double is NOT a real LLM test.
 | --- | --- | --- |
 | Package switch and Core reuse | Two different medical packages without Core changes | Implemented synthetic test |
 | Cross-domain isolation | Both illegal action directions denied before execution | Implemented synthetic test |
-| Real medical knowledge retrieval | Pinned sources, citations, freshness, contradiction handling | Not implemented |
+| Real medical knowledge retrieval | Pinned sources, citations, freshness, contradiction handling | Not implemented; inert knowledge assets only |
 | Clinical policies | Red-flag triage, human escalation, no unsafe automated advice | Not implemented |
-| Domain state, consent and identity | Authorized per-person isolation and explicit cross-domain data access | Not implemented |
+| Domain state, consent and identity | Authorized per-person isolation and explicit cross-domain data access | Domain/fingerprint isolation tested; actual patient identity and consent NOT implemented |
 | Multi-turn medical goal change | Verified medical domain context, state changes, and reapproval | Not implemented |
 | Predictive model | Validated input schema, model version and clinical calibration | Not implemented |
 | Actual model and realistic E2E | Frozen mixed-domain scenario matrix and independent grading | Not implemented |

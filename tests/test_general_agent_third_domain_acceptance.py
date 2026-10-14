@@ -152,6 +152,14 @@ def test_third_domain_real_qwen_with_multiple_first_turn_candidates(
             step,
             LoopBudget(max_iterations=4, max_executions=3, max_decision_seconds=70.0),
         ).run(initial, step.binding)
+        print(
+            "THIRD_DOMAIN_LIVE_DIAG "
+            f"kind={outcome.kind.value} "
+            f"reason={outcome.reason} "
+            f"selected={step.selected_actions} "
+            f"candidates={calls}",
+            flush=True,
+        )
         assert outcome.kind is RunKind.FINISH
         assert step.selected_actions == ["collect-sources", "verify-sources"]
         assert len(calls) == 2

@@ -44,6 +44,7 @@ class ConversationReply:
 _RECALL = ("刚才", "上次", "之前", "结果", "还剩", "还有多少", "多少件", "再说", "复述", "继续", "what was", "previous", "recap")
 _REFRESH = ("重新查询", "再查", "刷新", "更新数据", "最新", "查一次", "refresh", "query again", "recheck")
 _CANCEL = ("取消", "结束任务", "停止任务", "cancel", "stop task")
+_AMEND = ("改成", "改为", "调整为", "目标设", "条件改", "假设", "如果", "instead", "change to", "what if")
 
 
 class ReadOnlyConversation:
@@ -83,6 +84,10 @@ class ReadOnlyConversation:
         if not isinstance(message, str) or not 1 <= len(message.strip()) <= 1000:
             raise ValueError("message must be 1..1000 characters")
         value = message.strip().casefold()
+        # A goal change needs re-understanding and fresh evidence. Never
+        # classify it as RECALL, even if it mentions previous results.
+        if any(phrase in value for phrase in _AMEND):
+            raise ValueError("goal amendment requires re-understanding; not supported by bounded GA-21")
         if value in _CANCEL:
             return TurnKind.CANCEL
         if any(word in value for word in _REFRESH):

@@ -256,7 +256,11 @@ def test_adaptive_replan_from_business_observation_to_verified_goal(
 
         result = await AgentRunCoordinator(
             turn,
-            LoopBudget(max_iterations=4, max_executions=3),
+            LoopBudget(
+                max_iterations=4,
+                max_executions=3,
+                max_decision_seconds=70.0 if live else 5.0,
+            ),
             completion_check=completed,
             execution_guard=guard,
         ).run(initial_input, turn.binding)

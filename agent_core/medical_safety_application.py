@@ -74,4 +74,6 @@ class MedicalSafetyApplication:
             return RunOutcome(
                 run_id, RunKind.BLOCK, "MEDICAL_HUMAN_REVIEW_REQUIRED", 0, 0, ()
             )
-        return await self.unified.run(initial, run_id=run_id, step=step, budget=budget)
+        return await self.unified._run_checked(
+            initial, run_id=run_id, step=step, budget=budget
+        )

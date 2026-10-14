@@ -51,7 +51,10 @@ def test_dynamic_model_tool_choice_and_replanning(
         app = bootstrap_domain_application(snapshot)
         catalog = app.execution_catalog(snapshot)
         task = DynamicBusinessTask(catalog, required)
-        keys = {step.step_id: f"learning-{i}" for i, step in enumerate(catalog.workflow.steps)}
+        keys = {
+            step.step_id: f"learning-{i}"
+            for i, step in enumerate(catalog.workflow.steps)
+        }
         database = tmp_path / "learning.sqlite"
         _database(
             database,
@@ -66,7 +69,8 @@ def test_dynamic_model_tool_choice_and_replanning(
         dispatcher = SandboxToolDispatcher(
             catalog,
             ReadOnlyBusinessTools(
-                lookup, {step.step_id: "learning_progress" for step in catalog.workflow.steps}
+                lookup,
+                {step.step_id: "learning_progress" for step in catalog.workflow.steps},
             ).handlers(),
         )
         calls: list[dict[str, Any]] = []
@@ -98,10 +102,14 @@ def test_dynamic_model_tool_choice_and_replanning(
                     # not a model's premature GOAL_SATISFIED claim.
                     last_id = observations[-1].workflow_step_id
                     step = next(
-                        step for step in catalog.workflow.steps if step.step_id == last_id
+                        step
+                        for step in catalog.workflow.steps
+                        if step.step_id == last_id
                     )
                     return Decision(
-                        iteration, "FINISH", reason="GA16_TASK_GOAL_VERIFIED",
+                        iteration,
+                        "FINISH",
+                        reason="GA16_TASK_GOAL_VERIFIED",
                         completion_fact=step.completion_fact,
                     )
                 # Catalogue GOAL_SATISFIED means only a catalogue last step;
@@ -161,9 +169,30 @@ def test_dynamic_task_rejects_foreign_and_replayed_steps(tmp_path: Path) -> None
         DynamicBusinessTask(catalog, frozenset())
     task = DynamicBusinessTask(catalog, frozenset({"step-1"}))
     assert not task.completed(
-        "ga16-run", (ObservedFact("ga16-run", "req", "plan", "exec", catalog.binding_fingerprint, ("FACT_1",)),)
+        "ga16-run",
+        (
+            ObservedFact(
+                "ga16-run",
+                "req",
+                "plan",
+                "exec",
+                catalog.binding_fingerprint,
+                ("FACT_1",),
+            ),
+        ),
     )
     assert not task.completed(
         "ga16-run",
-        (ObservedFact("another-run", "req", "plan", "exec", catalog.binding_fingerprint, ("FACT_1",), "step-1", catalog.workflow.steps[0].tool_id),),
+        (
+            ObservedFact(
+                "another-run",
+                "req",
+                "plan",
+                "exec",
+                catalog.binding_fingerprint,
+                ("FACT_1",),
+                "step-1",
+                catalog.workflow.steps[0].tool_id,
+            ),
+        ),
     )

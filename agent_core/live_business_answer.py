@@ -60,10 +60,15 @@ async def generate_live_business_answer(
     values = _expected_metrics(baseline, operation)
     if len(baseline.question) > 1000 or len(baseline.text) > 1000:
         raise RunBoundaryError("business response prompt too large")
+    required_disclaimer = (
+        "尚未执行采购或库存修改" if operation == "inventory_replenishment"
+        else "没有替你完成任何学习任务"
+    )
     instruction = (
         "你是业务信息播报助手，仅允许报告提供的已验证事实。"
         "不可声称实际执行过采购、补货、库存更新或学习任务。"
         "不得添加任何新数字。必须保持数据含义和未执行声明。"
+        "必须原样包含用户数据中的 required_disclaimer 字段原文，不得删减。"
         "仅返回一个 JSON 对象，唯一字段是 answer（字符串），不加 Markdown。"
     )
     user = json.dumps(
@@ -72,6 +77,7 @@ async def generate_live_business_answer(
             "verified_answer": baseline.text,
             "allowed_metrics": list(values),
             "read_only": True,
+            "required_disclaimer": required_disclaimer,
         },
         ensure_ascii=False,
     )

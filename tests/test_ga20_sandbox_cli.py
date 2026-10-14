@@ -42,6 +42,7 @@ def test_out_of_scope_fails_closed(domain: str, question: str) -> None:
     with pytest.raises(ValueError):
         validated_question(domain, question)
 
+
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="FD loader Linux-only")
 def test_operator_external_package_and_sqlite_source(tmp_path: Path) -> None:
     package = tmp_path / "package"

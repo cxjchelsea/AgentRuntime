@@ -14,6 +14,7 @@ from types import MappingProxyType
 
 from agent_core.domain_execution_catalog import DomainExecutionCatalog
 from agent_core.runner import RunBoundaryError
+
 ReadOnlyToolHandler = Callable[[str, str], Awaitable[tuple[str, ...]]]
 
 

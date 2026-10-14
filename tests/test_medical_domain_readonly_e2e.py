@@ -65,8 +65,8 @@ def _medical_package(root: Path, domain: str):
             "key": "bp-metric-guide" if is_chronic else "wellbeing-checkin-guide",
             "fact": (
                 "Synthetic blood pressure trend evidence; no clinical classification"
-                if is_chronic else
-                "Synthetic mood and sleep checkin evidence; no mental health diagnosis"
+                if is_chronic
+                else                 "Synthetic mood and sleep checkin evidence; no mental health diagnosis"
             ),
         },
         "rule": {

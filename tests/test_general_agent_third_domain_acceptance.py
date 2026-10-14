@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
-from agent_core.runner import AgentRunCoordinator, LoopBudget, RunBoundaryError, RunKind
+from agent_core.runner import AgentRunCoordinator, LoopBudget, RunKind
+from runtime.planning.errors import StrategyModelOutputError
 from tests.orchestration_stubs import build_runtime_input
 from tests.test_ga02_d4_two_domain_m4_e2e import (
     DomainDrivenTurn,
@@ -78,7 +79,7 @@ def test_third_domain_rejects_foreign_action_and_invalid_evidence(
         step._planner, step._validator, step._rechecker = _planner(
             package, StructuredStrategyTransportAdapter(foreign)
         )
-        with pytest.raises((RunBoundaryError, ValueError)):
+        with pytest.raises(StrategyModelOutputError, match="outside the legal"):
             await AgentRunCoordinator(
                 step, LoopBudget(max_iterations=4, max_executions=3)
             ).run(initial, step.binding)

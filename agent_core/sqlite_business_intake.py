@@ -83,6 +83,8 @@ def load_sqlite_business_snapshot(
                     raise RunBoundaryError("SQLite business source integrity mismatch")
                 records[key] = record
             connection.rollback()
+    except RunBoundaryError:
+        raise
     except (sqlite3.Error, OSError, ValueError) as exc:
         raise RunBoundaryError("SQLite business intake failed") from exc
 

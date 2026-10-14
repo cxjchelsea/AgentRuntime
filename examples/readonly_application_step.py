@@ -8,7 +8,6 @@ read-only GA-09 dispatcher can execute steps. No tests imports.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 
 from agent_core.domain_application import DomainApplication
 from agent_core.domain_execution_catalog import WorkflowStepEvidence
@@ -17,26 +16,19 @@ from agent_core.runner import Decision, ObservedFact, RunBoundaryError
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from runtime.constraint_management import RuntimeConstraintEvaluator
 from runtime.contracts import (
-    CoreControlIntent,
     DomainExtensions,
     IdentityContext,
     IdentityStatus,
-    IntentEvidenceSource,
-    IntentResult,
-    QualityAssessment,
     RuntimeContext,
     RuntimeControlState,
     RuntimeInput,
     RuntimeStateContext,
     SessionContext,
-    UnderstandingMetadata,
-    UnderstandingState,
 )
 from runtime.contracts.context import InteractionContext, ToolContext
-from runtime.contracts.enums import ProcessingPath
-from runtime.contracts.understanding import GoalUnderstanding, UncertaintyAssessment
 from runtime.input_processing import DefaultInputProcessor
 from runtime.interfaces.planning import Planner, PlanValidator, PolicyRechecker
+from runtime.interfaces.understanding import UnderstandingEngine
 from runtime.orchestration.m2_admission import assert_admission_allows_flow
 from runtime.policy_management import DefaultPolicyEngine
 from runtime.priority_management import PreemptionEngine, PrioritySubject
@@ -52,6 +44,7 @@ class ReadOnlyApplicationStep:
     planner: Planner
     validator: PlanValidator
     rechecker: PolicyRechecker
+    understanding_engine: UnderstandingEngine
     executed: int = 0
     binding: AgentRunBinding = field(init=False)
 
@@ -105,24 +98,23 @@ class ReadOnlyApplicationStep:
                 last_agent_action=observations[-1].facts[-1] if observations else None,
             ),
         )
-        understanding = UnderstandingState(
-            metadata=UnderstandingMetadata(
-                understanding_id="ga20-understanding-" + iteration.request_id,
-                request_id=normalized.request_id,
-                timestamp=datetime.now(UTC),
-                processing_path=ProcessingPath.FAST_PATH,
-            ),
-            intents=[
-                IntentResult(
-                    intent_id=CoreControlIntent.UNKNOWN.value,
-                    confidence=0.0,
-                    source=IntentEvidenceSource.RULE,
-                )
-            ],
-            uncertainty=UncertaintyAssessment(),
-            quality=QualityAssessment(),
-            goal=GoalUnderstanding(explicit_goal="DOMAIN_GOAL", confidence=1.0),
+        # Subsequent Agent iterations are SYSTEM events without user text.
+        # M3 interprets the original user task without forging a new user event.
+        interpretation_input = self.initial.model_copy(
+            update={
+                "request_id": normalized.request_id,
+                "trace_id": normalized.trace_id,
+            },
         )
+        understanding = await self.understanding_engine.understand(
+            interpretation_input, context
+        )
+        if (
+            understanding.metadata.request_id != normalized.request_id
+            or not understanding.intents
+            or understanding.uncertainty.needs_clarification is True
+        ):
+            raise RunBoundaryError("application M3 understanding not admitted")
         deep = await self._safety.evaluate_deep(
             normalized, context, understanding, early
         )

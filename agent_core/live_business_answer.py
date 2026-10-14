@@ -61,7 +61,8 @@ async def generate_live_business_answer(
     if len(baseline.question) > 1000 or len(baseline.text) > 1000:
         raise RunBoundaryError("business response prompt too large")
     required_disclaimer = (
-        "尚未执行采购或库存修改" if operation == "inventory_replenishment"
+        "尚未执行采购或库存修改"
+        if operation == "inventory_replenishment"
         else "没有替你完成任何学习任务"
     )
     instruction = (

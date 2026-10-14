@@ -231,10 +231,14 @@ class PreviousStepSources:
     goal_version: int
     goal_key: str
     step_sources: tuple[tuple[str, str], ...]
+    session_id: str
+    subject_id: str
 
     def __post_init__(self) -> None:
         if (
             not self.domain
+            or not self.session_id
+            or not self.subject_id
             or len(self.binding_fingerprint) != 64
             or self.goal_version < 1
             or not self.goal_key

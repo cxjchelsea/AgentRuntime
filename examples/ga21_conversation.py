@@ -140,8 +140,8 @@ class ReadOnlyConversation:
             )
         target_update: int | None = None
         if kind is TurnKind.GOAL_UPDATE:
-            if self._last is None or self._last.domain != "inventory":
-                raise ValueError("goal update requires a prior verified inventory goal")
+            if self._last is None or self._last.domain != self.domain:
+                raise ValueError("goal update requires a prior verified domain goal")
             policy = self._goal_policy
             if policy is None:
                 raise ValueError("no admitted domain goal policy")
@@ -183,15 +183,14 @@ class ReadOnlyConversation:
             policy = self._goal_policy
             if policy is None:
                 raise ValueError("no admitted domain goal policy")
-            if target_update is not None:
-                answer = policy.render(
-                    GoalUpdate(self.domain, policy.goal_key, target_update),
-                    metrics,
-                )
-                if type(metrics) is dict:
-                    value = metrics.get(policy.metric_key)
-                    if type(value) is int:
-                        available = value
+            answer = policy.render(
+                GoalUpdate(self.domain, policy.goal_key, target_update),
+                metrics,
+            )
+            if type(metrics) is dict:
+                value = metrics.get(policy.metric_key)
+                if type(value) is int:
+                    available = value
         # Commit conversational state only after the entire read-only run
         # succeeds. Previous verified answer survives any denied request.
         self._last = VerifiedTurn(

@@ -216,6 +216,8 @@ class ReadOnlyConversation:
                 goal_version=goal_state.version,
                 goal_key=self._goal_policy.goal_key,
                 step_sources=prior.step_sources,
+                session_id=self.session_id,
+                subject_id=self.subject_id,
             )
             result = await self._run_continuation(
                 self.domain, question, target_update, evidence

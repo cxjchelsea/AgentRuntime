@@ -62,7 +62,12 @@ class AdaptiveGoalSession:
         )
         if trigger is not None and self.trigger_fact in trigger.facts:
             if self.verification_step_id not in done:
-                return GoalVerdict.NEEDS_REPLAN
+                planned = {step.step_id for step in self.plan.steps}
+                return (
+                    GoalVerdict.CONTINUE
+                    if self.verification_step_id in planned
+                    else GoalVerdict.NEEDS_REPLAN
+                )
             # Both original goal evidence and added independent verifier must
             # be present: model output alone never marks a goal successful.
             if self.plan.completed(run_id, observations):

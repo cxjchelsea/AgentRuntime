@@ -12,7 +12,10 @@ from typing import Any
 import pytest
 
 from agent_core.adaptive_goal import AdaptiveGoalSession, GoalVerdict
-from agent_core.chat_transport import ChatCompletionsConfig, ChatCompletionsStrategyTransport
+from agent_core.chat_transport import (
+    ChatCompletionsConfig,
+    ChatCompletionsStrategyTransport,
+)
 from agent_core.domain_application import bootstrap_domain_application
 from agent_core.goal_driven_plan import AdmittedGoal, GoalPlan
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
@@ -41,9 +44,7 @@ pytestmark = pytest.mark.skipif(
 def _proposal(*steps: tuple[str, tuple[str, ...]]) -> dict[str, object]:
     return {
         "goal_id": "study-check",
-        "steps": [
-            {"step_id": key, "depends_on": list(deps)} for key, deps in steps
-        ],
+        "steps": [{"step_id": key, "depends_on": list(deps)} for key, deps in steps],
     }
 
 
@@ -82,10 +83,7 @@ def test_adaptive_replan_from_business_observation_to_verified_goal(
             catalog,
             ReadOnlyBusinessTools(
                 lookup,
-                {
-                    step.step_id: "learning_progress"
-                    for step in catalog.workflow.steps
-                },
+                {step.step_id: "learning_progress" for step in catalog.workflow.steps},
             ).handlers(),
         )
         replan_calls = 0
@@ -239,7 +237,8 @@ def test_adaptive_replan_from_business_observation_to_verified_goal(
                 return False
             eligible = session.plan.eligible(turn.binding.run_id, turn.prior)
             matches = [
-                step for step in eligible
+                step
+                for step in eligible
                 if step.action_id == decision.approved.steps[0].action
             ]
             return len(matches) == 1 and (
@@ -268,9 +267,10 @@ def test_adaptive_replan_from_business_observation_to_verified_goal(
         assert replan_calls == 1
         assert result.executions == 2
         assert decisions == ["verify-notes", "collect-notes"]
-        assert [
-            observed.workflow_step_id for observed in result.observations
-        ] == ["step-2", "step-1"]
+        assert [observed.workflow_step_id for observed in result.observations] == [
+            "step-2",
+            "step-1",
+        ]
         assert completed(result.run_id, result.observations)
         assert session.replan_count == 1
         assert database.exists()
@@ -285,13 +285,17 @@ def test_replan_requires_trigger_preserves_evidence_and_has_budget(
     catalog = bootstrap_domain_application(snapshot).execution_catalog(snapshot)
     goal = AdmittedGoal(catalog, "study-check", frozenset({"FACT_2"}))
     original = GoalPlan.from_model(goal, _proposal(("step-2", ())))
-    session = AdaptiveGoalSession(
-        original, "step-2", "LEARNING_INCOMPLETE", "step-1"
-    )
+    session = AdaptiveGoalSession(original, "step-2", "LEARNING_INCOMPLETE", "step-1")
     step = catalog.workflow.steps[1]
     evidence = ObservedFact(
-        "run", "request", "plan", "execution", catalog.binding_fingerprint,
-        ("FACT_2", "LEARNING_INCOMPLETE"), "step-2", step.tool_id,
+        "run",
+        "request",
+        "plan",
+        "execution",
+        catalog.binding_fingerprint,
+        ("FACT_2", "LEARNING_INCOMPLETE"),
+        "step-2",
+        step.tool_id,
     )
     assert session.assess("run", ()) is GoalVerdict.CONTINUE
     assert session.assess("run", (evidence,)) is GoalVerdict.NEEDS_REPLAN
@@ -302,9 +306,7 @@ def test_replan_requires_trigger_preserves_evidence_and_has_budget(
         goal, _proposal(("step-2", ()), ("step-1", ("step-2",)))
     )
     assert session.revised(changed, "run", (evidence,)).replan_count == 1
-    replacement = GoalPlan.from_model(
-        goal, _proposal(("step-2", ()), ("step-1", ()))
-    )
+    replacement = GoalPlan.from_model(goal, _proposal(("step-2", ()), ("step-1", ())))
     revised = session.revised(replacement, "run", (evidence,))
     assert revised.replan_count == 1
     with pytest.raises(RunBoundaryError, match="no authorized replan"):

@@ -31,9 +31,7 @@ class DynamicBusinessTask:
         ):
             raise RunBoundaryError("dynamic task outside approved catalog")
 
-    def completed(
-        self, run_id: str, observations: tuple[ObservedFact, ...]
-    ) -> bool:
+    def completed(self, run_id: str, observations: tuple[ObservedFact, ...]) -> bool:
         if type(run_id) is not str or not run_id:
             return False
         if len(observations) != len(self.required_steps):
@@ -74,11 +72,7 @@ class DynamicBusinessTask:
     ) -> tuple[int, DomainStep]:
         """Exact approved action maps to one not-yet-used task tool."""
         approved = decision.approved
-        if (
-            approved is None
-            or len(approved.steps) != 1
-            or decision.kind != "ACT"
-        ):
+        if approved is None or len(approved.steps) != 1 or decision.kind != "ACT":
             raise RunBoundaryError("dynamic task requires one approved action")
         done = {obs.workflow_step_id for obs in observations}
         matches = [
@@ -93,7 +87,10 @@ class DynamicBusinessTask:
         return matches[0]
 
     def guard(
-        self, decision: Decision, observation: ObservedFact | None, index: int,
+        self,
+        decision: Decision,
+        observation: ObservedFact | None,
+        index: int,
         observations: tuple[ObservedFact, ...],
     ) -> bool:
         if type(index) is not int or index != len(observations):

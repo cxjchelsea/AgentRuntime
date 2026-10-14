@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from contextlib import closing
 from collections.abc import Mapping
+from contextlib import closing
 from pathlib import Path
 
 from agent_core.domain_execution_catalog import DomainExecutionCatalog

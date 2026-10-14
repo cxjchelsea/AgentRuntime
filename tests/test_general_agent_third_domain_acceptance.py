@@ -30,7 +30,7 @@ NOUN = "sources"
 
 
 @pytest.mark.parametrize(
-    "request",
+    "task_text",
     [
         "Collect research sources and independently verify the references",
         "Prepare a research note with source verification before summarizing",
@@ -38,11 +38,11 @@ NOUN = "sources"
     ],
 )
 def test_third_domain_runs_real_core_m4_and_two_package_tools(
-    tmp_path: Path, request: str
+    tmp_path: Path, task_text: str
 ) -> None:
     async def scenario() -> None:
         package = _load(tmp_path, DOMAIN, NOUN)
-        initial = build_runtime_input(text=request)
+        initial = build_runtime_input(text=task_text)
         step = DomainDrivenTurn(initial, package)
         outcome = await AgentRunCoordinator(
             step, LoopBudget(max_iterations=4, max_executions=3)

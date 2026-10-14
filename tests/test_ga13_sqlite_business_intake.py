@@ -15,7 +15,13 @@ import pytest
 from agent_core.domain_application import bootstrap_domain_application
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.readonly_business_tools import ReadOnlyBusinessTools
-from agent_core.runner import Decision, LoopBudget, ObservedFact, RunBoundaryError, RunKind
+from agent_core.runner import (
+    Decision,
+    LoopBudget,
+    ObservedFact,
+    RunBoundaryError,
+    RunKind,
+)
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.sqlite_business_intake import load_sqlite_business_snapshot
 from tests.orchestration_stubs import build_runtime_input

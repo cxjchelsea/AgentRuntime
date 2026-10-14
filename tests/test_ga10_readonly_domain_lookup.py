@@ -32,9 +32,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _records(
-    domain: str, fingerprint: str, count: int
-) -> dict[str, ReadOnlyRecord]:
+def _records(domain: str, fingerprint: str, count: int) -> dict[str, ReadOnlyRecord]:
     result = {}
     for index in range(1, count + 1):
         key = f"record-{index}"
@@ -128,14 +126,16 @@ def test_readonly_lookup_rejects_foreign_tampered_or_missing_records(
     foreign = _records("other-domain", catalog.binding_fingerprint, 1)
     with pytest.raises(RunBoundaryError, match="scope mismatch"):
         ReadOnlyDomainLookup(catalog, foreign, key_map)
-    mismatched_generation = _records(
-        catalog.domain_id, "0" * 64, 1
-    )
+    mismatched_generation = _records(catalog.domain_id, "0" * 64, 1)
     with pytest.raises(RunBoundaryError, match="scope mismatch"):
         ReadOnlyDomainLookup(catalog, mismatched_generation, key_map)
     with pytest.raises(RunBoundaryError, match="invalid read-only record"):
         ReadOnlyRecord(
-            catalog.domain_id, catalog.binding_fingerprint, "record-1", "tampered", "0" * 64
+            catalog.domain_id,
+            catalog.binding_fingerprint,
+            "record-1",
+            "tampered",
+            "0" * 64,
         )
     with pytest.raises(RunBoundaryError, match="explicit snapshots"):
         ReadOnlyDomainLookup(catalog, records, MappingProxyType(key_map))

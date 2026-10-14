@@ -117,7 +117,9 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
                         "Choose only the provided legal read-only synthetic medical "
                         "strategy and action. Return JSON strategy_id, action_ids, "
                         "reason_code. No clinical advice. Collect first, verify "
-                        "after observation FACT_1. Never invent source facts."
+                        "after observation FACT_1. The required_workflow_step in "
+                        "TASK_JSON is enforced by the application workflow; "
+                        "follow it exactly. Never invent source facts."
                     ),
                     task_payload={
                         "domain": scope.domain_id,
@@ -126,6 +128,11 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
                         "legal_strategy_ids": payload["legal_strategy_ids"],
                         "candidate_action_ids": payload["candidate_action_ids"],
                         "last_agent_action": payload["last_agent_action"],
+                        "required_workflow_step": (
+                            "collect-notes"
+                            if payload["last_agent_action"] is None
+                            else "verify-notes"
+                        ),
                     },
                     admission=admitted,
                 ),

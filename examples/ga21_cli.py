@@ -20,8 +20,8 @@ async def converse(domain: str, operator_config: Path) -> None:
         max_tokens=200,
     )
 
-    async def run(selected: str, question: str) -> dict[str, object]:
-        return await ask_once(selected, question, config, operator_config)
+    async def run(selected: str, question: str, target: int | None) -> dict[str, object]:
+        return await ask_once(selected, question, config, operator_config, goal_target=target)
 
     conversation = ReadOnlyConversation(
         domain=domain,

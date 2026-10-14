@@ -31,9 +31,15 @@ class BusinessAnswer:
 def _question_scope(question: str, operation: str) -> bool:
     normalized = question.lower()
     if operation == "inventory_replenishment":
-        return any(term in normalized for term in ("库存", "补货", "采购", "stock", "reorder", "inventory"))
+        return any(
+            term in normalized
+            for term in ("库存", "补货", "采购", "stock", "reorder", "inventory")
+        )
     if operation == "learning_progress":
-        return any(term in normalized for term in ("学习", "进度", "任务", "完成", "study", "progress", "lesson"))
+        return any(
+            term in normalized
+            for term in ("学习", "进度", "任务", "完成", "study", "progress", "lesson")
+        )
     return False
 
 
@@ -103,7 +109,9 @@ def render_business_answer(
     final_record = lookup.records[lookup.step_keys[catalog.workflow.steps[-1].step_id]]
     last_facts = _business_facts(operation, final_record.value)
     if operation == "inventory_replenishment":
-        available = next(f.split("_")[-1] for f in last_facts if f.startswith("AVAILABLE_"))
+        available = next(
+            f.split("_")[-1] for f in last_facts if f.startswith("AVAILABLE_")
+        )
         quantity = next(
             f.removeprefix("REPLENISH_QTY_")
             for f in last_facts

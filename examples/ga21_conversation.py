@@ -140,7 +140,7 @@ class ReadOnlyConversation:
             if self._last is None or self._last.domain != "inventory":
                 raise ValueError("goal update requires a prior verified inventory goal")
             found = _TARGET_UPDATE.findall(message)
-            if len(found) != 1 or len(re.findall(r"\\d+", message)) != 1:
+            if len(found) != 1 or len(re.findall(r"\d+", message)) != 1:
                 raise ValueError("ambiguous inventory target update")
             target_update = int(found[0])
             if target_update > 100_000:

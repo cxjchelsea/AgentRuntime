@@ -8,7 +8,7 @@ import json
 import sys
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -199,7 +199,7 @@ def test_distinct_domain_execution_catalogs_and_ordered_completion(
         run_id="run-1",
         observations=(
             *evidence[:-1],
-            replace(evidence[-1], observation=None),
+            replace(evidence[-1], observation=cast(ObservedFact, None)),
         ),
     )
     invalid_observations = (

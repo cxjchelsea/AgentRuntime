@@ -156,3 +156,67 @@ def revise_step_plan(
         previous.version, decision.next_version,
         tuple(retained), tuple(replanned),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class StepContinuation:
+    """Explicitly chosen next-run step work; never a tool grant."""
+
+    step_id: str
+    disposition: str
+    approved_action_id: str
+    evidence_digest: str
+
+
+def authorize_revision_selection(
+    *,
+    revision: PlanRevision,
+    steps: tuple[StepRevision, ...],
+    approved_actions: dict[str, str],
+    freshly_verified_digests: dict[str, str],
+) -> tuple[StepContinuation, ...]:
+    """Require a new M4-approved action for EVERY retained or revised step.
+
+    Skipping an unaffected read step is permitted only when a fresh independent
+    source read has reverified the EXACT digest for the step. Otherwise, the
+    caller must execute the newly approved action; previous-run observations
+    are never injected into AgentRunCoordinator.
+    """
+    known = {item.step_id: item for item in steps}
+    expected = set(revision.retained_step_ids) | set(revision.replanned_step_ids)
+    if (
+        len(known) != len(steps)
+        or set(known) != expected
+        or type(approved_actions) is not dict
+        or set(approved_actions) != expected
+        or type(freshly_verified_digests) is not dict
+        or not set(freshly_verified_digests).issubset(expected)
+        or any(
+            type(action) is not str
+            or not action
+            or action != known[step_id].action_id
+            for step_id, action in approved_actions.items()
+        )
+    ):
+        raise ValueError("plan revision not approved for every step")
+    result: list[StepContinuation] = []
+    for item in steps:
+        fresh = freshly_verified_digests.get(item.step_id)
+        if fresh is not None and (
+            type(fresh) is not str or not fresh
+        ):
+            raise ValueError("invalid fresh observation digest")
+        reusable = (
+            item.step_id in revision.retained_step_ids
+            and fresh is not None
+            and fresh == item.source_digest
+        )
+        result.append(
+            StepContinuation(
+                item.step_id,
+                "REVALIDATED_NO_TOOL" if reusable else "EXECUTE_APPROVED",
+                approved_actions[item.step_id],
+                fresh if reusable and fresh is not None else "",
+            )
+        )
+    return tuple(result)

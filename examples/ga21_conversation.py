@@ -145,6 +145,7 @@ class ReadOnlyConversation:
             if self._last is None:
                 raise ValueError("cannot refresh without a prior goal")
             question = self._last.goal
+            target_update = self._last.target
         else:
             # GA-20 scope validation remains authoritative. A new task must
             # explicitly specify supported domain terms and cannot silently

@@ -94,6 +94,11 @@ jobs:
           grep -q '没有重新读取数据' /tmp/ga21-live-session.log
           grep -q '建议补货 15 件' /tmp/ga21-live-session.log
           grep -q '当前会话任务已结束' /tmp/ga21-live-session.log
+          # GA-22: real Qwen/M4 two-step learning goal change. Source for
+          # step-1 is freshly revalidated; only step-2 invokes its tool.
+          printf '请查询学习进度\n学习目标改成8项\n取消\n' | python -m examples.ga21_cli --domain learning --operator-config /tmp/ga20-business-fixtures/learning.json | tee /tmp/ga22-live-session.log
+          grep -q '还需完成 6 项' /tmp/ga22-live-session.log
+          grep -q 'GA22_STEP_CONTINUATION revalidated=step-1 tool_calls=1' /tmp/ga22-live-session.log
       - name: Repeat final DIAG-03 E2E three independent executions
         shell: bash
         env:

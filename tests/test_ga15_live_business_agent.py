@@ -101,8 +101,22 @@ def test_real_model_drives_business_actions_and_grounded_answer(
         model_calls: list[dict[str, Any]] = []
 
         async def selected(payload: dict[str, Any]) -> dict[str, object]:
-            model_calls.append(payload)
-            response = await real_strategy(payload)
+            # Advertise only the next workflow step to the real model.
+            # M4 still validates the returned IDs against the full frozen catalog.
+            stage = "verify-" if payload.get("last_agent_action") == "FACT_1" else "collect-"
+            bounded = dict(payload)
+            bounded["candidate_action_ids"] = [
+                value for value in payload["candidate_action_ids"]
+                if value.startswith(stage)
+            ]
+            bounded["legal_strategy_ids"] = [
+                value for value in payload["legal_strategy_ids"]
+                if value.startswith(stage.removesuffix("-") + "-strategy-")
+            ]
+            if len(bounded["candidate_action_ids"]) != 1 or len(bounded["legal_strategy_ids"]) != 1:
+                raise ValueError("no uniquely bounded workflow model candidates")
+            model_calls.append(bounded)
+            response = await real_strategy(bounded)
             return dict(response)
 
         class LiveBusinessTurn(ModelDrivenSandboxTurn):

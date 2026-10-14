@@ -26,6 +26,7 @@ from runtime.contracts import (
     SessionContext,
 )
 from runtime.contracts.context import InteractionContext, ToolContext
+from runtime.contracts.understanding import GoalUnderstanding
 from runtime.input_processing import DefaultInputProcessor
 from runtime.interfaces.planning import Planner, PlanValidator, PolicyRechecker
 from runtime.interfaces.understanding import UnderstandingEngine
@@ -45,6 +46,8 @@ class ReadOnlyApplicationStep:
     validator: PlanValidator
     rechecker: PolicyRechecker
     understanding_engine: UnderstandingEngine
+    admitted_intent_id: str
+    domain_goal: str
     executed: int = 0
     binding: AgentRunBinding = field(init=False)
 
@@ -109,12 +112,29 @@ class ReadOnlyApplicationStep:
         understanding = await self.understanding_engine.understand(
             interpretation_input, context
         )
+        recognized = [
+            intent for intent in understanding.intents
+            if intent.intent_id == self.admitted_intent_id
+            and intent.confidence >= 0.9
+        ]
         if (
             understanding.metadata.request_id != normalized.request_id
-            or not understanding.intents
+            or len(recognized) != 1
             or understanding.uncertainty.needs_clarification is True
+            or understanding.goal is not None
         ):
             raise RunBoundaryError("application M3 understanding not admitted")
+        # M3 emits an interpreted domain intent; the application binds that
+        # recognized intent to the configured, read-only business goal.
+        # This does not give the model execution or policy authority.
+        understanding = understanding.model_copy(
+            update={
+                "goal": GoalUnderstanding(
+                    explicit_goal=self.domain_goal,
+                    confidence=recognized[0].confidence,
+                ),
+            }
+        )
         deep = await self._safety.evaluate_deep(
             normalized, context, understanding, early
         )

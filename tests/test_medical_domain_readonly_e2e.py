@@ -66,7 +66,7 @@ def _medical_package(root: Path, domain: str):
             "fact": (
                 "Synthetic blood pressure trend evidence; no clinical classification"
                 if is_chronic
-                else                 "Synthetic mood and sleep checkin evidence; no mental health diagnosis"
+                else "Synthetic mood and sleep checkin evidence; no mental health diagnosis"
             ),
         },
         "rule": {
@@ -78,8 +78,8 @@ def _medical_package(root: Path, domain: str):
         "prompt": {
             "focus": (
                 "Review synthetic longitudinal metrics without clinical advice"
-                if is_chronic else
-                "Summarize synthetic wellbeing checkin without diagnosis"
+                if is_chronic
+                else "Summarize synthetic wellbeing checkin without diagnosis"
             ),
         },
     }

@@ -28,8 +28,10 @@ class MedicalPreflightPolicy:
             or not self.escalation_phrases
             or len(self.escalation_phrases) > 16
             or any(
-                type(term) is not str or not 3 <= len(term) <= 100
-                or term != term.strip() or term != term.casefold()
+                type(term) is not str
+                or not 3 <= len(term) <= 100
+                or term != term.strip()
+                or term != term.casefold()
                 for term in self.escalation_phrases
             )
             or len(set(self.escalation_phrases)) != len(self.escalation_phrases)
@@ -65,11 +67,11 @@ class MedicalSafetyApplication:
         # No provider, M4, knowledge retrieval, or tools before this branch.
         # Missing/unsupported input is not treated as safe.
         if type(initial) is not RuntimeInput or not initial.text:
-            return RunOutcome(run_id, RunKind.BLOCK, "MEDICAL_SAFETY_INPUT_UNAVAILABLE", 0, 0, ())
+            return RunOutcome(
+                run_id, RunKind.BLOCK, "MEDICAL_SAFETY_INPUT_UNAVAILABLE", 0, 0, ()
+            )
         if self.preflight.requires_human(initial.text):
             return RunOutcome(
                 run_id, RunKind.BLOCK, "MEDICAL_HUMAN_REVIEW_REQUIRED", 0, 0, ()
             )
-        return await self.unified.run(
-            initial, run_id=run_id, step=step, budget=budget
-        )
+        return await self.unified.run(initial, run_id=run_id, step=step, budget=budget)

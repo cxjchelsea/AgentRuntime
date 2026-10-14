@@ -18,6 +18,7 @@ from agent_core.domain_knowledge import (
     KnowledgeDocument,
     build_domain_model_messages,
 )
+from tests.ga05_fts_retrieval import IndexedDocument, SandboxFTSIndex
 from tests.test_medical_domain_readonly_e2e import _medical_package
 
 pytestmark = pytest.mark.skipif(
@@ -189,3 +190,48 @@ def test_package_owned_knowledge_prompt_and_rule_are_distinct(
     assert snapshots[0]["knowledge"] != snapshots[1]["knowledge"]
     assert snapshots[0]["rule"] != snapshots[1]["rule"]
     assert snapshots[0]["prompt"] != snapshots[1]["prompt"]
+
+
+def test_two_medical_subdomains_use_real_fts5_scoped_retrieval(
+    tmp_path: Path,
+) -> None:
+    index = SandboxFTSIndex()
+    bindings = []
+    for i, scenario in enumerate(SCENARIOS):
+        package = _medical_package(tmp_path / f"index-domain-{i}", scenario.domain)
+        binding = bootstrap_domain_application(package).extension.binding
+        bindings.append(binding)
+        index.add(
+            binding,
+            IndexedDocument(
+                scenario.domain,
+                f"medical-synthetic-{i}",
+                f"synthetic://medical-source/{i}",
+                scenario.text,
+            ),
+        )
+    for i, scenario in enumerate(SCENARIOS):
+        binding = bindings[i]
+        scope = DomainScope(binding.domain_id, binding.binding_fingerprint)
+
+        def indexed_provider(
+            requested: DomainScope, query: str, limit: int
+        ) -> tuple[KnowledgeDocument, ...]:
+            if requested != scope:
+                return ()
+            return tuple(
+                KnowledgeDocument(
+                    hit.domain_id, hit.binding_fingerprint, hit.document_id,
+                    hit.source_ref, hit.sha256, hit.snippet,
+                )
+                for hit in index.retrieve(binding, query, limit=limit)
+            )
+
+        capability = DomainKnowledgeCapability(scope, indexed_provider)
+        result = capability.retrieve_and_admit(scenario.topic)
+        assert result.reason == "ADMITTED"
+        assert len(result.documents) == 1
+        assert result.documents[0].domain_id == scenario.domain
+        foreign_result = capability.retrieve_and_admit(SCENARIOS[1 - i].topic)
+        assert not foreign_result.accepted
+        assert foreign_result.reason == "NO_EVIDENCE"

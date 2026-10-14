@@ -24,6 +24,7 @@ class FakeRunner:
             "answer": "库存尚有 5 件",
             "evidence_digests": ["sha256-evidence"],
             "executions": 1,
+            "verified_metrics": {"available": 5},
         }
 
 
@@ -69,9 +70,16 @@ def test_failure_preserves_verified_goal_and_scoping() -> None:
         await session.send("库存情况")
         with pytest.raises(ValueError, match="outside"):
             await session.send("学习进度")
-        with pytest.raises(ValueError, match="goal amendment"):
-            await session.send("刚才结果如果目标改成20件呢")
-        assert len(runner.calls) == 1
+        updated = await session.send("刚才结果如果目标改成20件呢")
+        assert updated.kind is TurnKind.GOAL_UPDATE
+        assert "建议补货 15 件" in updated.text
+        assert len(runner.calls) == 2
+        assert session.last_verified is not None
+        assert session.last_verified.target == 20
+        with pytest.raises(ValueError, match="unsupported or ambiguous"):
+            await session.send("如果库存目标随便变呢")
+        with pytest.raises(ValueError, match="safe bounds"):
+            await session.send("目标改成100001件")
         runner.fail = True
         with pytest.raises(RuntimeError, match="provider unavailable"):
             await session.send("再查一次")
@@ -79,6 +87,7 @@ def test_failure_preserves_verified_goal_and_scoping() -> None:
         assert recall.reused_evidence
         assert session.last_verified is not None
         assert session.last_verified.goal == "库存情况"
+        assert session.last_verified.target == 20
 
     asyncio.run(scenario())
 
@@ -121,5 +130,26 @@ def test_turn_budget_and_cross_domain_denial() -> None:
         await session.send("学习进度")
         with pytest.raises(ValueError, match="budget"):
             await session.send("刚才结果")
+
+    asyncio.run(scenario())
+
+
+def test_updated_goal_refresh_uses_new_evidence_and_preserves_target() -> None:
+    async def scenario() -> None:
+        runner = FakeRunner()
+        session = ReadOnlyConversation(
+            domain="inventory",
+            session_id="s",
+            subject_id="u",
+            run_read_only=runner,
+        )
+        await session.send("查询库存")
+        await session.send("目标改成20件")
+        refreshed = await session.send("再查一次")
+        assert refreshed.kind is TurnKind.REFRESH
+        assert "建议补货 15 件" in refreshed.text
+        assert len(runner.calls) == 3
+        assert session.last_verified is not None
+        assert session.last_verified.target == 20
 
     asyncio.run(scenario())

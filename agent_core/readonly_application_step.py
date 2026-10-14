@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from agent_core.domain_application import DomainApplication
+from agent_core.domain_execution_catalog import WorkflowStepEvidence
 from agent_core.iteration import AgentRunBinding, IterationRef
 from agent_core.runner import Decision, ObservedFact, RunBoundaryError
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
@@ -34,6 +35,7 @@ from runtime.contracts.context import InteractionContext, ToolContext
 from runtime.contracts.enums import ProcessingPath
 from runtime.contracts.understanding import GoalUnderstanding, UncertaintyAssessment
 from runtime.input_processing import DefaultInputProcessor
+from runtime.interfaces.planning import Planner, PlanValidator, PolicyRechecker
 from runtime.orchestration.m2_admission import assert_admission_allows_flow
 from runtime.policy_management import DefaultPolicyEngine
 from runtime.priority_management import PreemptionEngine, PrioritySubject
@@ -46,9 +48,9 @@ class ReadOnlyApplicationStep:
     run_id: str
     app: DomainApplication
     dispatcher: SandboxToolDispatcher
-    planner: object
-    validator: object
-    rechecker: object
+    planner: Planner
+    validator: PlanValidator
+    rechecker: PolicyRechecker
     executed: int = 0
     binding: AgentRunBinding = field(init=False)
 
@@ -141,7 +143,7 @@ class ReadOnlyApplicationStep:
             if not self.dispatcher.catalog.completion_from_observations(
                 run_id=self.run_id,
                 observations=tuple(
-                    __import__("agent_core.domain_execution_catalog", fromlist=["WorkflowStepEvidence"]).WorkflowStepEvidence(
+                    WorkflowStepEvidence(
                         observed.workflow_step_id, observed
                     )
                     for observed in observations

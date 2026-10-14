@@ -95,11 +95,16 @@ def load_operator_source(config_file: Path, domain: str):
     return snapshot, lookup
 
 
-async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, operator_config: Path | None = None) -> dict[str, object]:
+async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, operator_config: Path | None = None, *, goal_target: int | None = None) -> dict[str, object]:
     """Run the existing real-model/M4/SQLite read-only path, not a canned answer."""
     if not sys.platform.startswith("linux"):
         raise RuntimeError("GA-20 fixture-backed sandbox is Linux-only")
     question = validated_question(domain, question)
+    if goal_target is not None and (
+        domain != "inventory" or type(goal_target) is not int
+        or not 0 <= goal_target <= 100_000
+    ):
+        raise ValueError("invalid bounded goal target")
     steps = 1 if domain == "inventory" else 2
     operation = OPERATIONS[domain]
     if operator_config is None:
@@ -194,7 +199,9 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
     )
     turn = ReadOnlyApplicationStep(
         initial, run_id, app, dispatcher, planner, validator, rechecker,
-        m3, "ga20." + domain + ".read", "GA20_READ_ONLY_" + domain.upper(),
+        m3, "ga20." + domain + ".read",
+        ("GA20_READ_ONLY_" + domain.upper() if goal_target is None
+         else f"GA21_READ_ONLY_INVENTORY_TARGET_{goal_target}"),
     )
 
     outcome = await app.run(
@@ -250,6 +257,7 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         "read_only": True,
         "fixture_data": False,
         "verified_metrics": verified_metrics,
+        "admitted_goal_target": goal_target,
     }
 
 

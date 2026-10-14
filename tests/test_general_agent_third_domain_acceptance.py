@@ -141,9 +141,29 @@ def test_third_domain_real_qwen_with_multiple_first_turn_candidates(
 
         async def choose(payload: dict[str, object]) -> dict[str, object]:
             actions = payload["candidate_action_ids"]
-            assert isinstance(actions, list)
-            calls.append(tuple(actions))
-            result = dict(await model(payload))
+            strategies = payload["legal_strategy_ids"]
+            assert isinstance(actions, list) and isinstance(strategies, list)
+            pending = [action for action in actions if action not in step.selected_actions]
+            assert pending, "no unfinished action available"
+            bounded = dict(payload)
+            bounded["candidate_action_ids"] = pending
+            bounded["legal_strategy_ids"] = [
+                strategy for strategy in strategies
+                if any(
+                    strategy == action.replace("-sources", "-strategy-sources")
+                    for action in pending
+                )
+            ]
+            assert len(bounded["legal_strategy_ids"]) == len(pending)
+            calls.append(tuple(pending))
+            result = dict(await model(bounded))
+            selected = result.get("action_ids")
+            if (
+                type(selected) is not list
+                or len(selected) != 1
+                or selected[0] not in pending
+            ):
+                raise ValueError("model selected an already executed research action")
             return result
 
         step._planner, step._validator, step._rechecker = _planner(

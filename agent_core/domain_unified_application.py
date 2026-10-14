@@ -131,7 +131,9 @@ def bootstrap_unified_domain_application(
             + ". Workflow: "
             + " | ".join(instructions)
         )
-        if len(instruction) > 4096:
+        # The downstream knowledge message builder admits at most 2048.
+        # Fail at bootstrap rather than after retrieval or model invocation.
+        if len(instruction) > 2048:
             raise DomainExtensionError("domain model instruction too long")
         transport = KnowledgeBackedStrategyTransport(
             model_config, knowledge, query=query, system_instruction=instruction

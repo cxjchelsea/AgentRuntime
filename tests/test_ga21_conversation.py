@@ -14,7 +14,9 @@ class FakeRunner:
         self.calls: list[tuple[str, str, int | None]] = []
         self.fail = False
 
-    async def __call__(self, domain: str, question: str, target: int | None) -> dict[str, object]:
+    async def __call__(
+        self, domain: str, question: str, target: int | None
+    ) -> dict[str, object]:
         self.calls.append((domain, question, target))
         if self.fail:
             raise RuntimeError("provider unavailable")
@@ -94,7 +96,9 @@ def test_failure_preserves_verified_goal_and_scoping() -> None:
 
 
 def test_unverified_runner_result_rejected() -> None:
-    async def invalid(_domain: str, _question: str, _target: int | None) -> dict[str, object]:
+    async def invalid(
+        _domain: str, _question: str, _target: int | None
+    ) -> dict[str, object]:
         return {
             "domain": "inventory",
             "read_only": True,

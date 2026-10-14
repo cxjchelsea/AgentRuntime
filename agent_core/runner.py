@@ -7,6 +7,7 @@ This module does not import SandboxObservation, M6 Grant or any Tool adapter.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
@@ -52,6 +53,8 @@ class ObservedFact:
     execution_id: str
     domain_fingerprint: str
     facts: tuple[str, ...]
+    workflow_step_id: str | None = None
+    tool_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,9 +99,19 @@ class AgentRunCoordinator:
     successful or safe to replay. This is NOT a production Composition Root.
     """
 
-    def __init__(self, step: StepPort, budget: LoopBudget) -> None:
+    def __init__(
+        self,
+        step: StepPort,
+        budget: LoopBudget,
+        *,
+        completion_check: Callable[[str, tuple[ObservedFact, ...]], bool] | None = None,
+        execution_guard: Callable[[Decision, ObservedFact | None, int], bool]
+        | None = None,
+    ) -> None:
         self._step = step
         self._budget = budget
+        self._completion_check = completion_check
+        self._execution_guard = execution_guard
 
     async def run(
         self, original_input: RuntimeInput, binding: AgentRunBinding
@@ -134,6 +147,10 @@ class AgentRunCoordinator:
                     )
                 ):
                     raise RunBoundaryError("unsupported completion claim")
+                if self._completion_check is not None and not self._completion_check(
+                    binding.run_id, tuple(observations)
+                ):
+                    raise RunBoundaryError("domain completion contract not satisfied")
                 return RunOutcome(
                     binding.run_id,
                     RunKind.FINISH,
@@ -179,6 +196,10 @@ class AgentRunCoordinator:
                 or ctx.domain_extensions.domain_id != binding.domain_id
             ):
                 raise RunBoundaryError("context scope mismatch")
+            if self._execution_guard is not None and not self._execution_guard(
+                decision, None, executions
+            ):
+                raise RunBoundaryError("action is outside domain workflow")
             # Claim identity before any physical attempt; failed attempts must not replay.
             used_plan_ids.add(plan.plan_id)
             # Charge before await: timeout/cancel is UNKNOWN, never replay.
@@ -200,6 +221,10 @@ class AgentRunCoordinator:
                 or not observation.execution_id
             ):
                 raise RunBoundaryError("observation provenance mismatch")
+            if self._execution_guard is not None and not self._execution_guard(
+                decision, observation, executions - 1
+            ):
+                raise RunBoundaryError("observation does not match workflow execution")
             if not observation.facts:
                 return RunOutcome(
                     binding.run_id,

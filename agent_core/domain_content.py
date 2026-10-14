@@ -53,7 +53,10 @@ def _asset_object(raw: bytes, fields: frozenset[str]) -> dict[str, str]:
 
 
 def assemble_domain_content(
-    snapshot: VerifiedPackageSnapshotV1, extension: DomainExtension
+    snapshot: VerifiedPackageSnapshotV1,
+    extension: DomainExtension,
+    *,
+    generalized_workflow: bool = False,
 ) -> DomainContent:
     """Bind all three content assets to precisely one assembled package."""
     if (
@@ -92,7 +95,10 @@ def assemble_domain_content(
     prompt, rule, knowledge = present["prompt"], present["rule"], present["knowledge"]
     if rule["required_knowledge"] != knowledge["key"]:
         raise DomainExtensionError("rule requires different knowledge key")
-    if rule["completion_after"] not in {"collect", "verify"}:
+    if not generalized_workflow and rule["completion_after"] not in {
+        "collect",
+        "verify",
+    }:
         raise DomainExtensionError("unsupported sandbox completion rule")
     return DomainContent(
         focus=prompt["focus"],

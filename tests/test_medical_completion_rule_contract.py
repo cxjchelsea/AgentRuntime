@@ -34,6 +34,7 @@ def test_medical_completion_rule_matches_signed_workflow(
         endpoint="http://127.0.0.1:11434/v1/chat/completions",
         model="qwen2.5:3b",
     )
+
     def retrieve(scope, query, limit):
         del scope, query, limit
         return ()

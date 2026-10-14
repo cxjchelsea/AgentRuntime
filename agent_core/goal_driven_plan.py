@@ -117,9 +117,7 @@ class GoalPlan:
         if type(run_id) is not str or not run_id:
             raise RunBoundaryError("invalid goal run")
         listed = {step.step_id: step for step in self.steps}
-        declared = {
-            step.step_id: step for step in self.goal.catalog.workflow.steps
-        }
+        declared = {step.step_id: step for step in self.goal.catalog.workflow.steps}
         seen: set[str] = set()
         plans: set[str] = set()
         executions: set[str] = set()
@@ -153,14 +151,11 @@ class GoalPlan:
         self, run_id: str, observations: tuple[ObservedFact, ...]
     ) -> tuple[DomainStep, ...]:
         done = self._verified_done(run_id, observations)
-        declared = {
-            step.step_id: step for step in self.goal.catalog.workflow.steps
-        }
+        declared = {step.step_id: step for step in self.goal.catalog.workflow.steps}
         return tuple(
             declared[step.step_id]
             for step in self.steps
-            if step.step_id not in done
-            and set(step.depends_on).issubset(done)
+            if step.step_id not in done and set(step.depends_on).issubset(done)
         )
 
     def completed(self, run_id: str, observations: tuple[ObservedFact, ...]) -> bool:
@@ -168,16 +163,16 @@ class GoalPlan:
             done = self._verified_done(run_id, observations)
         except RunBoundaryError:
             return False
-        catalog = {
-            step.step_id: step for step in self.goal.catalog.workflow.steps
-        }
+        catalog = {step.step_id: step for step in self.goal.catalog.workflow.steps}
         return done == {step.step_id for step in self.steps} and (
             self.goal.required_facts
             <= {catalog[step_id].completion_fact for step_id in done}
         )
 
     def revise(
-        self, replacement: GoalPlan, run_id: str,
+        self,
+        replacement: GoalPlan,
+        run_id: str,
         observations: tuple[ObservedFact, ...],
     ) -> GoalPlan:
         """A replan may change pending work, never erase executed evidence."""
@@ -186,8 +181,10 @@ class GoalPlan:
         done = self._verified_done(run_id, observations)
         prior = {step.step_id: step for step in self.steps}
         updated = {step.step_id: step for step in replacement.steps}
-        if any(step_id not in updated or updated[step_id] != prior[step_id]
-               for step_id in done):
+        if any(
+            step_id not in updated or updated[step_id] != prior[step_id]
+            for step_id in done
+        ):
             raise RunBoundaryError("replan rewrote executed step")
         # Validate dependency eligibility for the preserved observation prefix.
         replacement._verified_done(run_id, observations)

@@ -13,7 +13,6 @@ import os
 import sys
 import tempfile
 from datetime import UTC, datetime
-from uuid import uuid4
 from pathlib import Path
 from typing import Any
 
@@ -166,17 +165,17 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
             raise ValueError("model did not choose a legal action")
 
         initial = RuntimeInput(
-            request_id="ga20-" + uuid4().hex,
-            trace_id="ga20-" + uuid4().hex,
-            session_id="ga20-session-" + uuid4().hex,
-            subject_id="ga20-local-subject",
-            identity_scope="ga20-local-sandbox",
+            request_id="request-001",
+            trace_id="trace-001",
+            session_id="session-001",
+            subject_id="subject-001",
+            identity_scope="scope-001",
             source=InputSource.USER,
             trigger_type=InputTriggerType.USER_TEXT,
             timestamp=datetime.now(UTC),
             text=question,
         )
-        run_id = "ga20-" + uuid4().hex
+        run_id = "ga20-sandbox-run"
 
         class InteractiveTurn(ModelDrivenSandboxTurn):
             def __post_init__(self) -> None:

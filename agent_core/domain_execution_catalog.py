@@ -211,8 +211,12 @@ def assemble_execution_catalog(
     for entry in steps:
         if type(entry) is not dict or not (
             entry.keys() == {"step_id", "tool_id", "completion_fact", "action_id"}
-            or entry.keys() == {
-                "step_id", "tool_id", "completion_fact", "action_id",
+            or entry.keys()
+            == {
+                "step_id",
+                "tool_id",
+                "completion_fact",
+                "action_id",
                 "goal_effect_keys",
             }
         ):
@@ -234,7 +238,9 @@ def assemble_execution_catalog(
         elif (
             type(raw_effects) is not list
             or not 1 <= len(raw_effects) <= 8
-            or any(type(key) is not str or not 1 <= len(key) <= 96 for key in raw_effects)
+            or any(
+                type(key) is not str or not 1 <= len(key) <= 96 for key in raw_effects
+            )
             or len(set(raw_effects)) != len(raw_effects)
         ):
             raise DomainExtensionError("invalid workflow goal effect keys")

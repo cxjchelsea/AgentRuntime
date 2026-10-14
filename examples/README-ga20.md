@@ -2,13 +2,12 @@
 
 The executable CLI uses the **application-owned** `ReadOnlyApplicationStep`
 with the existing M1 input normalizer, M2 safety/policy/constraint evaluation,
-M3 understanding contract, M4 plan/validate/recheck, GA-09 read-only dispatcher,
+the composed M3 RuntimeUnderstandingEngine with injected deterministic domain rules, M4 plan/validate/recheck, GA-09 read-only dispatcher,
 and evidence-bound business answer. The executable has **no imports from
 `tests/`**.
 
-This is a local sandbox integration, not a production M6 grant. The current
-M3 understanding is a limited explicit domain-goal declaration rather than
-general intent understanding. The local host configuration is self-pinned,
+This is a local sandbox integration, not a production M6 grant. M3 uses only domain-owned deterministic text rules for this bounded demo.
+Requests with no supported deterministic interpretation have no deep-model fallback. The local host configuration is self-pinned,
 not independently authenticated as a production publisher. Only previously
 existing SQLite business data are read; no purchase, stock modification,
 or task mutation is performed.
@@ -56,3 +55,12 @@ The CLI will reject missing operator configuration and unsupported questions.
 Each invocation is independent; GA-21 will address multi-turn state/continuation.
 Run IDs and local identities are intentionally fixed to the isolated sandbox
 profile and **must not** be reused as production tenant/session identity.
+
+## GA-20 trust and deployment boundary
+
+The operator JSON pins bytes and domain identities, but its in-process equality
+verifier **does not prove independent publisher identity**. This application is
+restricted to a trusted local operator, read-only data, and sandbox tool handlers.
+A production host must supply independently authenticated publication evidence,
+permissioned execution, and durable identity/session management separately.
+Do not classify this integration as production security authorization.

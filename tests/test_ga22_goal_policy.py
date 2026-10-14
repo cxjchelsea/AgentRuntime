@@ -107,9 +107,12 @@ def test_injected_learning_goal_policy_updates_same_session_controller() -> None
         assert seen == [None, 8, 8]
         assert session.goal_state is not None
         assert session.goal_state.version == 2
-        assert session.goal_state.update == GoalUpdate("learning", "completion_target", 8)
+        assert session.goal_state.update == GoalUpdate(
+            "learning", "completion_target", 8
+        )
 
     asyncio.run(scenario())
+
 
 def test_versioned_replan_requires_fresh_execution_and_scope() -> None:
     policy = inventory_goal_policy()

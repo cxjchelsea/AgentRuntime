@@ -62,7 +62,8 @@ def test_m4_approved_two_step_continuation_and_digest_invalidation(
 
     async def read(domain: str, question: str, target: int | None) -> dict[str, object]:
         return await ga20_sandbox_cli.ask_once(
-            domain, question, config, operator_config, goal_target=target
+            domain, question, config, operator_config, goal_target=target,
+            session_id="learning-s", subject_id="learning-u",
         )
 
     async def continue_run(
@@ -78,6 +79,8 @@ def test_m4_approved_two_step_continuation_and_digest_invalidation(
             operator_config,
             goal_target=target,
             continuation=previous,
+            session_id="learning-s",
+            subject_id="learning-u",
         )
 
     async def scenario() -> None:

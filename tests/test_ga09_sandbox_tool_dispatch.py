@@ -109,8 +109,11 @@ def test_handler_registry_rejects_missing_or_foreign_tools(tmp_path: Path) -> No
     catalog = bootstrap_domain_application(snapshot).execution_catalog(snapshot)
     with pytest.raises(RunBoundaryError, match="registry mismatch"):
         SandboxToolDispatcher(catalog, {})
+    async def foreign(step_id: str, tool_id: str) -> tuple[str, ...]:
+        return (step_id, tool_id)
+
     with pytest.raises(RunBoundaryError, match="registry mismatch"):
-        SandboxToolDispatcher(catalog, {"foreign-tool": lambda *_: None})
+        SandboxToolDispatcher(catalog, {"foreign-tool": foreign})
 
 
 def test_handler_fails_closed_on_incomplete_evidence(tmp_path: Path) -> None:
@@ -125,10 +128,9 @@ def test_handler_fails_closed_on_incomplete_evidence(tmp_path: Path) -> None:
             calls += 1
             return ("UNRELATED",)
 
-        dispatcher = SandboxToolDispatcher(
-            catalog, {catalog.tool_ids[0]: incomplete}
-        )
+        dispatcher = SandboxToolDispatcher(catalog, {catalog.tool_ids[0]: incomplete})
         initial = build_runtime_input(text="validate incomplete tool")
+
         async def model(payload: dict[str, Any]) -> dict[str, object]:
             del payload
             return {

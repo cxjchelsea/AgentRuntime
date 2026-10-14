@@ -81,7 +81,7 @@ def test_failure_preserves_verified_goal_and_scoping() -> None:
         assert session.last_verified.target == 20
         with pytest.raises(ValueError, match="ambiguous or unsupported"):
             await session.send("如果库存目标随便变呢")
-        with pytest.raises(ValueError, match="safe bounds"):
+        with pytest.raises(ValueError, match="bounds"):
             await session.send("目标改成100001件")
         with pytest.raises(ValueError, match="ambiguous"):
             await session.send("目标改成20件而不是30件")

@@ -14,7 +14,7 @@ from typing import Any
 
 from examples.ga20_sandbox_cli import validated_question
 
-RunReadOnly = Callable[[str, str], Awaitable[dict[str, object]]]
+RunReadOnly = Callable[[str, str, int | None], Awaitable[dict[str, object]]]
 
 
 class TurnKind(str, Enum):
@@ -151,9 +151,11 @@ class ReadOnlyConversation:
             # explicitly specify supported domain terms and cannot silently
             # inherit permissions from the preceding turn.
             question = validated_question(self.domain, message)
-        result = await self._runner(self.domain, question)
+        result = await self._runner(self.domain, question, target_update)
         if result.get("domain") != self.domain or result.get("read_only") is not True:
             raise ValueError("untrusted runner result")
+        if result.get("admitted_goal_target") != target_update:
+            raise ValueError("runner goal target admission mismatch")
         answer = result.get("answer")
         digests = result.get("evidence_digests")
         executions = result.get("executions")

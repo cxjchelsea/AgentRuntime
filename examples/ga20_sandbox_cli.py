@@ -23,11 +23,11 @@ from agent_core.domain_package_loader import HostPackageRootIssuer, HostPublishe
 from agent_core.live_business_answer import generate_live_business_answer
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.readonly_business_tools import ReadOnlyBusinessTools
-from agent_core.runner import Decision, LoopBudget, ObservedFact, RunBoundaryError, RunKind
+from agent_core.runner import LoopBudget, RunBoundaryError, RunKind
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.sqlite_business_intake import load_sqlite_business_snapshot
 from runtime.contracts import InputSource, InputTriggerType, RuntimeInput
-from tests.test_ga01_slice2_loop import ModelDrivenSandboxTurn
+from agent_core.readonly_application_step import ReadOnlyApplicationStep
 from tests.test_ga08_execution_catalog import _snapshot
 from tests.test_ga13_sqlite_business_intake import _database, _row
 
@@ -177,28 +177,17 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         )
         run_id = "ga20-sandbox-run"
 
-        class InteractiveTurn(ModelDrivenSandboxTurn):
-            def __post_init__(self) -> None:
-                super().__post_init__()
-                self.binding = app.prepare(self.initial, run_id=run_id)
-                self._planner, self._validator, self._rechecker = app.m4(
-                    StructuredStrategyTransportAdapter(selected),
-                )
-
-            async def execute_and_observe(self, decision: Decision) -> ObservedFact:
-                evidence = await dispatcher.observe(
-                    decision=decision,
-                    step_index=self.actions,
-                    run_id=self.binding.run_id,
-                    execution_id=f"ga20-exec-{self.actions + 1}",
-                )
-                self.actions += 1
-                return evidence
+        planner, validator, rechecker = app.m4(
+            StructuredStrategyTransportAdapter(selected),
+        )
+        turn = ReadOnlyApplicationStep(
+            initial, run_id, app, dispatcher, planner, validator, rechecker,
+        )
 
         outcome = await app.run(
             initial,
             run_id=run_id,
-            step=InteractiveTurn(initial),
+            step=turn,
             budget=LoopBudget(
                 max_iterations=steps + 2,
                 max_executions=steps + 1,

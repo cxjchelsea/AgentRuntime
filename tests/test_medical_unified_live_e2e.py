@@ -17,13 +17,13 @@ import pytest
 
 from agent_core.chat_transport import ChatCompletionsConfig
 from agent_core.domain_application import bootstrap_domain_application
-from agent_core.domain_unified_application import bootstrap_unified_domain_application
 from agent_core.domain_knowledge import (
     DomainKnowledgeCapability,
     DomainScope,
     KnowledgeDocument,
     build_domain_model_messages,
 )
+from agent_core.domain_unified_application import bootstrap_unified_domain_application
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import Decision, LoopBudget, ObservedFact, RunKind
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
@@ -82,6 +82,7 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
         )
         # Domain-specific, explicit matching terms, not generic model guesswork.
         query = "blood pressure" if "chronic" in domain_id else "mood sleep"
+
         # Reuse the production-facing composition instead of hand-building M4.
         def retrieve(requested: DomainScope, lookup: str, limit: int):
             if requested != scope or lookup != query or limit < 1:

@@ -169,7 +169,9 @@ def test_handler_fails_closed_on_incomplete_evidence(tmp_path: Path) -> None:
         isolated = SandboxToolDispatcher(catalog, registered)
         registered.clear()
         assert catalog.tool_ids[0] in isolated.handlers
-        with pytest.raises(RunBoundaryError, match="sandbox tool handler failed") as error:
+        with pytest.raises(
+            RunBoundaryError, match="sandbox tool handler failed"
+        ) as error:
             await isolated.observe(
                 decision=decision,
                 step_index=0,

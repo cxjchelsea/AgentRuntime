@@ -1,4 +1,5 @@
 """GA-21 conversation goal continuation and read-only replay boundaries."""
+
 from __future__ import annotations
 
 import asyncio
@@ -30,7 +31,9 @@ def test_goal_recall_refresh_and_cancel() -> None:
     async def scenario() -> None:
         runner = FakeRunner()
         conversation = ReadOnlyConversation(
-            domain="inventory", session_id="s1", subject_id="u1",
+            domain="inventory",
+            session_id="s1",
+            subject_id="u1",
             run_read_only=runner,
         )
         first = await conversation.send("请查询库存")
@@ -48,6 +51,7 @@ def test_goal_recall_refresh_and_cancel() -> None:
         assert cancelled.kind is TurnKind.CANCEL
         with pytest.raises(ValueError, match="closed"):
             await conversation.send("刚才结果")
+
     asyncio.run(scenario())
 
 
@@ -75,10 +79,19 @@ def test_failure_preserves_verified_goal_and_scoping() -> None:
 
 def test_unverified_runner_result_rejected() -> None:
     async def invalid(_domain: str, _question: str) -> dict[str, object]:
-        return {"domain": "inventory", "read_only": True, "answer": "ok", "executions": 1, "evidence_digests": []}
+        return {
+            "domain": "inventory",
+            "read_only": True,
+            "answer": "ok",
+            "executions": 1,
+            "evidence_digests": [],
+        }
+
     async def scenario() -> None:
         session = ReadOnlyConversation(
-            domain="inventory", session_id="s", subject_id="u",
+            domain="inventory",
+            session_id="s",
+            subject_id="u",
             run_read_only=invalid,
         )
         with pytest.raises(ValueError, match="unverified"):
@@ -90,8 +103,11 @@ def test_unverified_runner_result_rejected() -> None:
 def test_turn_budget_and_cross_domain_denial() -> None:
     async def scenario() -> None:
         session = ReadOnlyConversation(
-            domain="learning", session_id="s", subject_id="u",
-            run_read_only=FakeRunner(), max_turns=1,
+            domain="learning",
+            session_id="s",
+            subject_id="u",
+            run_read_only=FakeRunner(),
+            max_turns=1,
         )
         with pytest.raises(ValueError, match="outside"):
             await session.send("库存")

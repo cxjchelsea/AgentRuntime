@@ -73,7 +73,7 @@ def _medical_package(root: Path, domain: str):
             "required_knowledge": (
                 "bp-metric-guide" if is_chronic else "wellbeing-checkin-guide"
             ),
-            "completion_after": "verify",
+            "completion_after": "verify" if is_chronic else "collect",
         },
         "prompt": {
             "focus": (

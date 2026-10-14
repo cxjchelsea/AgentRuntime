@@ -225,7 +225,7 @@ def test_third_domain_semantic_first_action_live(
                     ),
                 },
             ),
-)
+        )
 
         async def select(payload: dict[str, object]) -> dict[str, object]:
             assert isinstance(payload["candidate_action_ids"], list)

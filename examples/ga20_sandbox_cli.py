@@ -14,6 +14,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from agent_core.business_answer import render_business_answer
 from agent_core.chat_transport import ChatCompletionsConfig, ChatCompletionsStrategyTransport
@@ -21,7 +22,7 @@ from agent_core.domain_application import bootstrap_domain_application
 from agent_core.domain_package_loader import HostPackageRootIssuer, HostPublishedGeneration, LocalPackageLoader, TrustedPackageIdentity
 from agent_core.live_business_answer import generate_live_business_answer
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
-from agent_core.readonly_business_tools import ReadOnlyBusinessTools
+from agent_core.readonly_business_tools import ReadOnlyBusinessTools, _business_facts, _strict_json
 from agent_core.runner import LoopBudget, RunBoundaryError, RunKind
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.sqlite_business_intake import load_sqlite_business_snapshot
@@ -40,6 +41,14 @@ from runtime.understanding import (
     UnderstandingStateAssembler,
 )
 from examples.readonly_application_step import ReadOnlyApplicationStep
+from examples.ga22_replanning import (
+    GoalState,
+    PreviousStepSources,
+    ReplanAction,
+    ReplanDecision,
+    StepRevision,
+    revise_step_plan,
+)
 
 DEFAULT_QUESTIONS = {
     "inventory": "请查询库存并计算需要补货多少件",
@@ -95,13 +104,13 @@ def load_operator_source(config_file: Path, domain: str):
     return snapshot, lookup
 
 
-async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, operator_config: Path | None = None, *, goal_target: int | None = None) -> dict[str, object]:
+async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, operator_config: Path | None = None, *, goal_target: int | None = None, continuation: PreviousStepSources | None = None) -> dict[str, object]:
     """Run the existing real-model/M4/SQLite read-only path, not a canned answer."""
     if not sys.platform.startswith("linux"):
         raise RuntimeError("GA-20 fixture-backed sandbox is Linux-only")
     question = validated_question(domain, question)
     if goal_target is not None and (
-        domain != "inventory" or type(goal_target) is not int
+        type(goal_target) is not int
         or not 0 <= goal_target <= 100_000
     ):
         raise ValueError("invalid bounded goal target")
@@ -117,6 +126,63 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         or len(catalog.workflow.steps) != steps
     ):
         raise ValueError("operator package not compatible with selected demo domain")
+    revalidated_facts: dict[str, tuple[str, ...]] = {}
+    if continuation is not None:
+        # Host-approved demo step effects; NOT yet sourced from a signed package.
+        step_list = catalog.workflow.steps
+        old_sources = dict(continuation.step_sources)
+        expected_key = "target" if domain == "inventory" else "completion_target"
+        if (
+            continuation.domain == domain
+            and continuation.binding_fingerprint == catalog.binding_fingerprint
+            and continuation.goal_key == expected_key
+            and set(old_sources) == {step.step_id for step in step_list}
+            and goal_target is not None
+        ):
+            prior = GoalState(
+                domain, question, continuation.goal_version, None,
+                tuple(old_sources[step.step_id] for step in step_list),
+            )
+            decision = ReplanDecision(
+                ReplanAction.REPLAN_WITH_FRESH_EVIDENCE,
+                continuation.goal_version,
+                continuation.goal_version + 1,
+                None,
+            )
+            planned = tuple(
+                StepRevision(
+                    step.step_id, step.action_id,
+                    frozenset({"source", expected_key})
+                    if len(step_list) == 1 or idx == len(step_list) - 1
+                    else frozenset({"source"}),
+                    old_sources[step.step_id],
+                )
+                for idx, step in enumerate(step_list)
+            )
+            revision = revise_step_plan(
+                previous=prior,
+                decision=decision,
+                steps=planned,
+                changed_keys=frozenset({expected_key}),
+                domain_fingerprint_matches=True,
+            )
+            for step in step_list:
+                if step.step_id not in revision.retained_step_ids:
+                    continue
+                record = lookup.records[lookup.step_keys[step.step_id]]
+                if record.sha256 != old_sources[step.step_id]:
+                    continue
+                fresh_facts = _business_facts(operation, record.value)
+                revalidated_facts[step.step_id] = (
+                    "RECORD_SHA256_" + record.sha256,
+                    *fresh_facts,
+                    step.completion_fact,
+                    *(
+                        ("GOAL_SATISFIED",)
+                        if step == step_list[-1]
+                        else ()
+                    ),
+                )
     dispatcher = SandboxToolDispatcher(
         catalog,
         ReadOnlyBusinessTools(
@@ -168,7 +234,7 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         timestamp=datetime.now(UTC),
         text=question,
     )
-    run_id = "ga20-sandbox-run"
+    run_id = "ga20-sandbox-run" if continuation is None else "ga22-" + uuid4().hex
 
     planner, validator, rechecker = app.m4(
         StructuredStrategyTransportAdapter(selected),
@@ -201,7 +267,8 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         initial, run_id, app, dispatcher, planner, validator, rechecker,
         m3, "ga20." + domain + ".read",
         ("GA20_READ_ONLY_" + domain.upper() if goal_target is None
-         else f"GA21_READ_ONLY_INVENTORY_TARGET_{goal_target}"),
+         else f"GA22_READ_ONLY_{domain.upper()}_TARGET_{goal_target}"),
+        revalidated_facts=revalidated_facts,
     )
 
     outcome = await app.run(
@@ -247,12 +314,26 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         ):
             raise RunBoundaryError("missing verified inventory availability")
         verified_metrics["available"] = int(available_facts[0])
+    if domain == "learning":
+        final_step = catalog.workflow.steps[-1]
+        record = lookup.records[lookup.step_keys[final_step.step_id]]
+        completed = _strict_json(
+            record.value, expected=frozenset({"completed", "total"})
+        )["completed"]
+        verified_metrics["completed"] = completed
     return {
         "domain": domain,
         "question": question,
         "answer": answer.text,
         "answer_mode": answer_mode,
         "executions": outcome.executions,
+        "tool_executions": turn.physical_tool_calls,
+        "revalidated_step_ids": list(turn.revalidated_step_ids),
+        "step_source_digests": [
+            [step.step_id, lookup.records[lookup.step_keys[step.step_id]].sha256]
+            for step in catalog.workflow.steps
+        ],
+        "binding_fingerprint": catalog.binding_fingerprint,
         "evidence_digests": list(answer.source_digests),
         "read_only": True,
         "fixture_data": False,

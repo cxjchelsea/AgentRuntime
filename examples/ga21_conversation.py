@@ -13,9 +13,17 @@ from enum import Enum
 
 from examples.ga20_sandbox_cli import validated_question
 from examples.ga22_goal_policy import DomainGoalPolicy, GoalUpdate, inventory_goal_policy
-from examples.ga22_replanning import GoalState, ReplanAction, decide_replanning
+from examples.ga22_replanning import (
+    GoalState,
+    PreviousStepSources,
+    ReplanAction,
+    decide_replanning,
+)
 
 RunReadOnly = Callable[[str, str, int | None], Awaitable[dict[str, object]]]
+RunContinuation = Callable[
+    [str, str, int | None, PreviousStepSources], Awaitable[dict[str, object]]
+]
 
 
 class TurnKind(str, Enum):
@@ -35,6 +43,8 @@ class VerifiedTurn:
     executions: int
     available: int | None = None
     target: int | None = None
+    binding_fingerprint: str | None = None
+    step_sources: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -44,6 +54,7 @@ class ConversationReply:
     turn_number: int
     reused_evidence: bool
     tool_executions: int
+    revalidated_steps: tuple[str, ...] = ()
 
 
 _RECALL = ("刚才", "上次", "之前", "结果", "还剩", "还有多少", "多少件", "再说", "复述", "继续", "what was", "previous", "recap")
@@ -68,6 +79,7 @@ class ReadOnlyConversation:
         run_read_only: RunReadOnly,
         max_turns: int = 20,
         goal_policy: DomainGoalPolicy | None = None,
+        run_continuation: RunContinuation | None = None,
     ) -> None:
         if domain not in ("inventory", "learning"):
             raise ValueError("unsupported domain")
@@ -78,6 +90,7 @@ class ReadOnlyConversation:
         self.subject_id = subject_id
         self.max_turns = max_turns
         self._runner = run_read_only
+        self._run_continuation = run_continuation
         self._goal_policy = goal_policy if goal_policy is not None else (
             inventory_goal_policy() if domain == "inventory" else None
         )

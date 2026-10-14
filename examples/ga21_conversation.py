@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
+import re
 from typing import Any
 
 from examples.ga20_sandbox_cli import validated_question
@@ -21,6 +22,7 @@ class TurnKind(str, Enum):
     RECALL = "RECALL"
     REFRESH = "REFRESH"
     CANCEL = "CANCEL"
+    GOAL_UPDATE = "GOAL_UPDATE"
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,8 @@ class VerifiedTurn:
     answer: str
     evidence_digests: tuple[str, ...]
     executions: int
+    available: int | None = None
+    target: int | None = None
 
 
 @dataclass(frozen=True)
@@ -39,6 +43,9 @@ class ConversationReply:
     turn_number: int
     reused_evidence: bool
     tool_executions: int
+
+
+_TARGET_UPDATE = re.compile(r"(?:库存)?目标(?:改成|改为|调整为|设为|设成|设置为|是)\s*(\d{1,6})\s*件?")
 
 
 _RECALL = ("刚才", "上次", "之前", "结果", "还剩", "还有多少", "多少件", "再说", "复述", "继续", "what was", "previous", "recap")
@@ -87,7 +94,9 @@ class ReadOnlyConversation:
         # A goal change needs re-understanding and fresh evidence. Never
         # classify it as RECALL, even if it mentions previous results.
         if any(phrase in value for phrase in _AMEND):
-            raise ValueError("goal amendment requires re-understanding; not supported by bounded GA-21")
+            if self.domain == "inventory" and _TARGET_UPDATE.search(value):
+                return TurnKind.GOAL_UPDATE
+            raise ValueError("unsupported or ambiguous goal amendment")
         if value in _CANCEL:
             return TurnKind.CANCEL
         if any(word in value for word in _REFRESH):
@@ -119,7 +128,20 @@ class ReadOnlyConversation:
                 True,
                 0,
             )
-        if kind is TurnKind.REFRESH:
+        target_update: int | None = None
+        if kind is TurnKind.GOAL_UPDATE:
+            if self._last is None or self._last.domain != "inventory":
+                raise ValueError("goal update requires a prior verified inventory goal")
+            found = _TARGET_UPDATE.findall(message)
+            if len(found) != 1:
+                raise ValueError("ambiguous inventory target update")
+            target_update = int(found[0])
+            if target_update > 100_000:
+                raise ValueError("inventory target exceeds safe bounds")
+            # New read-only workflow is required; cached measurements cannot
+            # be treated as current evidence for the modified goal.
+            question = self._last.goal
+        elif kind is TurnKind.REFRESH:
             if self._last is None:
                 raise ValueError("cannot refresh without a prior goal")
             question = self._last.goal
@@ -144,10 +166,29 @@ class ReadOnlyConversation:
             or executions < 1
         ):
             raise ValueError("unverified or incomplete business result")
+        available: int | None = None
+        if self.domain == "inventory":
+            metrics = result.get("verified_metrics")
+            if target_update is not None:
+                if (
+                    not isinstance(metrics, dict)
+                    or set(metrics) != {"available"}
+                    or type(metrics["available"]) is not int
+                    or not 0 <= metrics["available"] <= 100_000
+                ):
+                    raise ValueError("goal update requires verified fresh stock evidence")
+                available = metrics["available"]
+                deficit = max(0, target_update - available)
+                answer = (
+                    f"重新查询验证可用库存为 {available} 件；按新目标 "
+                    f"{target_update} 件，建议补货 {deficit} 件。"
+                    "只进行了只读查询与重新计算，没有执行采购或库存变更。"
+                )
         # Commit conversational state only after the entire read-only run
         # succeeds. Previous verified answer survives any denied request.
         self._last = VerifiedTurn(
-            self.domain, question, answer, tuple(digests), executions
+            self.domain, question, answer, tuple(digests), executions,
+            available=available, target=target_update,
         )
         self._turns += 1
         return ConversationReply(kind, answer, self._turns, False, executions)

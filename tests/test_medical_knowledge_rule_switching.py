@@ -180,7 +180,9 @@ def test_package_owned_knowledge_prompt_and_rule_are_distinct(
 ) -> None:
     snapshots = []
     for index, case in enumerate(SCENARIOS):
-        snapshot = _medical_package(tmp_path / f"domain-{index}", case.domain)
+        snapshot = _medical_package(
+            tmp_path / f"domain-{index}", case.domain, differentiated=True
+        )
         assets = {
             item.ref.kind: json.loads(item.content_bytes)
             for item in snapshot.assets

@@ -148,7 +148,7 @@ def revise_step_plan(
     retained: list[str] = []
     replanned: list[str] = []
     for step in steps:
-        if step.effect_keys.isdisjoint(changed_keys):
+        if "*" not in step.effect_keys and step.effect_keys.isdisjoint(changed_keys):
             retained.append(step.step_id)
         else:
             replanned.append(step.step_id)

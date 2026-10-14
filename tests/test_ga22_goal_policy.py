@@ -16,8 +16,8 @@ from examples.ga22_replanning import (
     GoalState,
     ReplanAction,
     StepRevision,
-    decide_replanning,
     authorize_revision_selection,
+    decide_replanning,
     revise_step_plan,
 )
 

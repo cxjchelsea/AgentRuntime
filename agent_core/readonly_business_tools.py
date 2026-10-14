@@ -38,7 +38,9 @@ def _strict_json(raw: str, *, expected: frozenset[str]) -> dict[str, int]:
         raise RunBoundaryError("invalid business record") from exc
     if type(parsed) is not dict or parsed.keys() != expected:
         raise RunBoundaryError("business record schema mismatch")
-    if any(type(value) is not int or not 0 <= value <= 100_000 for value in parsed.values()):
+    if any(
+        type(value) is not int or not 0 <= value <= 100_000 for value in parsed.values()
+    ):
         raise RunBoundaryError("invalid business quantity")
     return parsed
 
@@ -58,9 +60,7 @@ def _business_facts(operation: str, value: str) -> tuple[str, ...]:
             "REPLENISH_REQUIRED" if deficit else "REPLENISH_NOT_REQUIRED",
         )
     if operation == "learning_progress":
-        data = _strict_json(
-            value, expected=frozenset({"completed", "total"})
-        )
+        data = _strict_json(value, expected=frozenset({"completed", "total"}))
         if not 1 <= data["total"] or data["completed"] > data["total"]:
             raise RunBoundaryError("invalid learning progress")
         percent = 100 * data["completed"] // data["total"]

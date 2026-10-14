@@ -90,7 +90,7 @@ jobs:
           python -m examples.ga20_sandbox_cli --operator-config /tmp/ga20-business-fixtures/learning.json --domain learning --question '请查询学习进度与剩余学习任务'
           # GA-21: first turn uses real model/tool, second recalls verified
           # evidence with no re-execution; cancellation closes the session.
-          printf '请查询库存\\n刚才结果\\n取消\\n' | python -m examples.ga21_cli --domain inventory --operator-config /tmp/ga20-business-fixtures/inventory.json | tee /tmp/ga21-live-session.log
+          printf '请查询库存\n刚才结果\n取消\n' | python -m examples.ga21_cli --domain inventory --operator-config /tmp/ga20-business-fixtures/inventory.json | tee /tmp/ga21-live-session.log
           grep -q '没有重新读取数据' /tmp/ga21-live-session.log
           grep -q '当前会话任务已结束' /tmp/ga21-live-session.log
       - name: Repeat final DIAG-03 E2E three independent executions

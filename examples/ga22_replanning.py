@@ -88,3 +88,71 @@ def decide_replanning(
     return ReplanDecision(
         ReplanAction.NEW_RUN, previous.version, previous.version + 1, None
     )
+
+
+@dataclass(frozen=True, slots=True)
+class StepRevision:
+    step_id: str
+    action_id: str
+    effect_keys: frozenset[str]
+    source_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class PlanRevision:
+    previous_version: int
+    next_version: int
+    retained_step_ids: tuple[str, ...]
+    replanned_step_ids: tuple[str, ...]
+    requires_m4_reapproval: bool = True
+
+    def __post_init__(self) -> None:
+        if (
+            self.next_version < self.previous_version
+            or set(self.retained_step_ids) & set(self.replanned_step_ids)
+            or not self.requires_m4_reapproval
+        ):
+            raise ValueError("invalid plan revision")
+
+
+def revise_step_plan(
+    *,
+    previous: GoalState,
+    decision: ReplanDecision,
+    steps: tuple[StepRevision, ...],
+    changed_keys: frozenset[str],
+    domain_fingerprint_matches: bool,
+) -> PlanRevision:
+    """Classify steps, but never transfer old execution evidence to a new run.
+
+    Retained means only immutable *step definitions* remain eligible for the
+    new M4 approval. Replanned means the action/plan must be regenerated and
+    approved. Neither category grants tool execution nor skips GA-09.
+    """
+    if (
+        previous.version != decision.expected_version
+        or decision.action is ReplanAction.NEW_RUN
+        or not domain_fingerprint_matches
+        or not steps
+        or any(
+            type(step) is not StepRevision
+            or not step.step_id
+            or not step.action_id
+            or not step.source_digest
+            for step in steps
+        )
+        or len({step.step_id for step in steps}) != len(steps)
+        or not changed_keys
+    ):
+        raise ValueError("step revision provenance or request mismatch")
+    retained: list[str] = []
+    replanned: list[str] = []
+    for step in steps:
+        if step.effect_keys.isdisjoint(changed_keys):
+            retained.append(step.step_id)
+        else:
+            replanned.append(step.step_id)
+    return PlanRevision(
+        previous.version, decision.next_version,
+        tuple(retained), tuple(replanned),
+    )

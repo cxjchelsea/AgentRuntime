@@ -239,6 +239,37 @@ class ReadOnlyConversation:
             or executions < 1
         ):
             raise ValueError("unverified or incomplete business result")
+        fingerprint = result.get("binding_fingerprint")
+        source_pairs = result.get("step_source_digests")
+        sources: tuple[tuple[str, str], ...] = ()
+        if fingerprint is not None or source_pairs is not None:
+            if (
+                type(fingerprint) is not str
+                or len(fingerprint) != 64
+                or type(source_pairs) is not list
+                or not source_pairs
+                or any(
+                    type(pair) is not list
+                    or len(pair) != 2
+                    or any(type(item) is not str or not item for item in pair)
+                    or len(pair[1]) != 64
+                    for pair in source_pairs
+                )
+            ):
+                raise ValueError("incomplete or untrusted step source provenance")
+            sources = tuple((pair[0], pair[1]) for pair in source_pairs)
+            if len({step for step, _ in sources}) != len(sources):
+                raise ValueError("duplicate verified step source")
+        revalidated = result.get("revalidated_step_ids", [])
+        actual_calls = result.get("tool_executions", executions)
+        if (
+            type(revalidated) is not list
+            or any(type(step) is not str or not step for step in revalidated)
+            or type(actual_calls) is not int
+            or not 0 <= actual_calls <= executions
+            or len(revalidated) + actual_calls != executions
+        ):
+            raise ValueError("invalid step execution accounting")
         available: int | None = None
         if target_update is not None:
             metrics = result.get("verified_metrics")
@@ -258,10 +289,14 @@ class ReadOnlyConversation:
         self._last = VerifiedTurn(
             self.domain, question, answer, tuple(digests), executions,
             available=available, target=target_update,
+            binding_fingerprint=fingerprint if type(fingerprint) is str else None,
+            step_sources=sources,
         )
         self._goal_state = GoalState(
             self.domain, question, decision.next_version,
             decision.update, tuple(digests),
         )
         self._turns += 1
-        return ConversationReply(kind, answer, self._turns, False, executions)
+        return ConversationReply(
+            kind, answer, self._turns, False, actual_calls, tuple(revalidated)
+        )

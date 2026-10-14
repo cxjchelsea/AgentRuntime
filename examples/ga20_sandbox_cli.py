@@ -12,6 +12,8 @@ import json
 import os
 import sys
 import tempfile
+from datetime import UTC, datetime
+from uuid import uuid4
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +27,7 @@ from agent_core.readonly_business_tools import ReadOnlyBusinessTools
 from agent_core.runner import Decision, LoopBudget, ObservedFact, RunBoundaryError, RunKind
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
 from agent_core.sqlite_business_intake import load_sqlite_business_snapshot
-from tests.orchestration_stubs import build_runtime_input
+from runtime.contracts import InputSource, InputTriggerType, RuntimeInput
 from tests.test_ga01_slice2_loop import ModelDrivenSandboxTurn
 from tests.test_ga08_execution_catalog import _snapshot
 from tests.test_ga13_sqlite_business_intake import _database, _row
@@ -163,8 +165,18 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
                     bounded["previous_selection_invalid"] = True
             raise ValueError("model did not choose a legal action")
 
-        initial = build_runtime_input(text=question)
-        run_id = "ga20-sandbox-run"
+        initial = RuntimeInput(
+            request_id="ga20-" + uuid4().hex,
+            trace_id="ga20-" + uuid4().hex,
+            session_id="ga20-session-" + uuid4().hex,
+            subject_id="ga20-local-subject",
+            identity_scope="ga20-local-sandbox",
+            source=InputSource.USER,
+            trigger_type=InputTriggerType.USER_TEXT,
+            timestamp=datetime.now(UTC),
+            text=question,
+        )
+        run_id = "ga20-" + uuid4().hex
 
         class InteractiveTurn(ModelDrivenSandboxTurn):
             def __post_init__(self) -> None:

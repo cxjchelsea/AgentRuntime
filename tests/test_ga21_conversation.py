@@ -83,6 +83,9 @@ def test_failure_preserves_verified_goal_and_scoping() -> None:
             await session.send("如果库存目标随便变呢")
         with pytest.raises(ValueError, match="safe bounds"):
             await session.send("目标改成100001件")
+        with pytest.raises(ValueError, match="ambiguous"):
+            await session.send("目标改成20件而不是30件")
+        assert len(runner.calls) == 2
         runner.fail = True
         with pytest.raises(RuntimeError, match="provider unavailable"):
             await session.send("再查一次")
@@ -156,5 +159,24 @@ def test_updated_goal_refresh_uses_new_evidence_and_preserves_target() -> None:
         assert len(runner.calls) == 3
         assert session.last_verified is not None
         assert session.last_verified.target == 20
+
+    asyncio.run(scenario())
+
+
+def test_concurrent_turns_are_serialized() -> None:
+    async def scenario() -> None:
+        runner = FakeRunner()
+        session = ReadOnlyConversation(
+            domain="inventory",
+            session_id="s",
+            subject_id="u",
+            run_read_only=runner,
+        )
+        await asyncio.gather(
+            session.send("查询库存"),
+            session.send("查询库存"),
+        )
+        assert len(runner.calls) == 2
+        assert session.last_verified is not None
 
     asyncio.run(scenario())

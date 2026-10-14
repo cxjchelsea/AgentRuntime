@@ -181,6 +181,7 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(tmp_path: Path, live: bool) ->
         else:
             proposed = _proposal(("step-1", ()), ("step-2", ("step-1",)))
             plan = GoalPlan.from_model(goal, proposed)
+        validated_plan: GoalPlan = plan
         keys = {
             step.step_id: f"note-{i}"
             for i, step in enumerate(catalog.workflow.steps, 1)
@@ -207,7 +208,7 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(tmp_path: Path, live: bool) ->
 
         async def strategy(payload: dict[str, Any]) -> dict[str, object]:
             calls.append(payload)
-            eligible = plan.eligible("goal-run", turn.prior)
+            eligible = validated_plan.eligible("goal-run", turn.prior)
             if len(eligible) != 1:
                 raise RunBoundaryError("goal plan has non-unique ready action")
             action = eligible[0].action_id
@@ -230,7 +231,7 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(tmp_path: Path, live: bool) ->
 
             async def decide(self, current_input, iteration, observations):
                 self.prior = observations
-                if plan.completed(self.binding.run_id, observations):
+                if validated_plan.completed(self.binding.run_id, observations):
                     return Decision(
                         iteration,
                         "FINISH",
@@ -249,7 +250,7 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(tmp_path: Path, live: bool) ->
                 return await super().decide(current_input, iteration, visible)
 
             async def execute_and_observe(self, decision: Decision) -> ObservedFact:
-                eligible = plan.eligible(self.binding.run_id, self.prior)
+                eligible = validated_plan.eligible(self.binding.run_id, self.prior)
                 matches = [
                     (i, step)
                     for i, step in enumerate(catalog.workflow.steps)
@@ -277,7 +278,7 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(tmp_path: Path, live: bool) ->
         ) -> bool:
             if index != len(turn.prior) or decision.approved is None:
                 return False
-            eligible = plan.eligible(turn.binding.run_id, turn.prior)
+            eligible = validated_plan.eligible(turn.binding.run_id, turn.prior)
             candidate = [
                 step
                 for step in eligible
@@ -302,8 +303,8 @@ def test_goal_plan_to_m4_dynamic_sqlite_agent_e2e(tmp_path: Path, live: bool) ->
             execution_guard=guard,
         ).run(initial, turn.binding)
         assert result.kind is RunKind.FINISH
-        assert result.executions == len(plan.steps)
-        assert plan.completed(result.run_id, result.observations)
+        assert result.executions == len(validated_plan.steps)
+        assert validated_plan.completed(result.run_id, result.observations)
         assert len(calls) == result.executions
         assert database.exists()
 

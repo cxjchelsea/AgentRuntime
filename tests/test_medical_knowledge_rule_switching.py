@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from agent_core.domain_application import bootstrap_domain_application
-from agent_core.sandbox_domain_assembly import assemble_sandbox_domain
 from agent_core.domain_knowledge import (
     DomainKnowledgeCapability,
     DomainScope,
@@ -19,6 +18,7 @@ from agent_core.domain_knowledge import (
     KnowledgeDocument,
     build_domain_model_messages,
 )
+from agent_core.sandbox_domain_assembly import SandboxDomainBinding, assemble_sandbox_domain
 from tests.ga05_fts_retrieval import IndexedDocument, SandboxFTSIndex
 from tests.test_medical_domain_readonly_e2e import _medical_package
 
@@ -219,8 +219,8 @@ def test_two_medical_subdomains_use_real_fts5_scoped_retrieval(
             requested: DomainScope,
             query: str,
             limit: int,
-            active_binding=binding,
-            active_scope=scope,
+            active_binding: SandboxDomainBinding = binding,
+            active_scope: DomainScope = scope,
         ) -> tuple[KnowledgeDocument, ...]:
             if requested != active_scope:
                 return ()

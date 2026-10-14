@@ -8,8 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from examples.ga20_sandbox_cli import DEFAULT_QUESTIONS, OPERATIONS, load_operator_source, validated_question
 from agent_core.domain_application import bootstrap_domain_application
+from examples.ga20_sandbox_cli import (
+    DEFAULT_QUESTIONS,
+    OPERATIONS,
+    load_operator_source,
+    validated_question,
+)
 from tests.test_ga08_execution_catalog import _snapshot
 from tests.test_ga13_sqlite_business_intake import _database, _row
 
@@ -43,7 +48,9 @@ def test_operator_external_package_and_sqlite_source(tmp_path: Path) -> None:
     snapshot = _snapshot(package, steps=1)
     catalog = bootstrap_domain_application(snapshot).execution_catalog(snapshot)
     database = tmp_path / "business.sqlite"
-    _database(database, [_row(catalog, "sku", {"on_hand": 8, "reserved": 3, "target": 12})])
+    _database(
+        database, [_row(catalog, "sku", {"on_hand": 8, "reserved": 3, "target": 12})]
+    )
     settings = {
         "domain": catalog.domain_id,
         "package_root": str(package),

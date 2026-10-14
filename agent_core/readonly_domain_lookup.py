@@ -19,13 +19,16 @@ from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher, SandboxToolH
 
 @dataclass(frozen=True, slots=True)
 class ReadOnlyRecord:
+    domain_id: str
     key: str
     value: str
     sha256: str
 
     def __post_init__(self) -> None:
         if (
-            type(self.key) is not str
+            type(self.domain_id) is not str
+            or not self.domain_id
+            or type(self.key) is not str
             or not 1 <= len(self.key) <= 96
             or type(self.value) is not str
             or not 1 <= len(self.value) <= 2048
@@ -56,7 +59,8 @@ class ReadOnlyDomainLookup:
             not 1 <= len(self.records) <= 32
             or set(self.step_keys) != {step.step_id for step in steps}
             or any(type(key) is not str or type(rec) is not ReadOnlyRecord
-                   or key != rec.key for key, rec in self.records.items())
+                   or key != rec.key or rec.domain_id != self.catalog.domain_id
+                   for key, rec in self.records.items())
             or any(key not in self.records for key in self.step_keys.values())
         ):
             raise RunBoundaryError("read-only lookup scope mismatch")
@@ -90,6 +94,8 @@ class ReadOnlyDomainLookup:
                     != record.sha256
                 ):
                     raise RunBoundaryError("read-only record integrity mismatch")
+                if selected == self.catalog.workflow.steps[-1]:
+                    return (selected.completion_fact, "GOAL_SATISFIED")
                 return (selected.completion_fact,)
 
             handlers[step.tool_id] = handle

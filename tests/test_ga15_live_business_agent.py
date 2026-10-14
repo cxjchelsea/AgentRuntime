@@ -129,10 +129,9 @@ def test_real_model_drives_business_actions_and_grounded_answer(
             # of an unknown external tool attempt is ever authorized.
             for attempt in range(2):
                 response = dict(await live_transport(bounded))
-                if (
-                    response.get("strategy_id") == strategy
-                    and response.get("action_ids") == [action]
-                ):
+                if response.get("strategy_id") == strategy and response.get(
+                    "action_ids"
+                ) == [action]:
                     return response
                 if attempt == 0:
                     bounded["previous_selection_invalid"] = True

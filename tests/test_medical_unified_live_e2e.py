@@ -17,8 +17,8 @@ import pytest
 
 from agent_core.chat_transport import (
     ChatCompletionsConfig,
-    ChatCompletionsStrategyTransport,
 )
+from agent_core.domain_unified_application import bootstrap_unified_domain_application
 from agent_core.domain_application import bootstrap_domain_application
 from agent_core.domain_knowledge import (
     DomainKnowledgeCapability,
@@ -54,8 +54,7 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
 
     async def scenario() -> None:
         snapshot = _medical_package(tmp_path / "package", domain_id)
-        app = bootstrap_domain_application(snapshot)
-        catalog = app.execution_catalog(snapshot)
+        # The same package snapshot must drive knowledge, model, M4 and execution.
         assets = {
             asset.ref.kind: json.loads(asset.content_bytes)
             for asset in snapshot.assets
@@ -66,7 +65,11 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
         prompt = assets["prompt"]
         assert rule["required_knowledge"] == knowledge["key"]
         assert isinstance(knowledge["fact"], str)
-        scope = DomainScope(catalog.domain_id, catalog.binding_fingerprint)
+        pinned_app = bootstrap_domain_application(snapshot)
+        scope = DomainScope(
+            pinned_app.extension.binding.domain_id,
+            pinned_app.extension.binding.binding_fingerprint,
+        )
         content = knowledge["fact"]
         document = KnowledgeDocument(
             scope.domain_id,
@@ -81,6 +84,29 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
         )
         # Domain-specific, explicit matching terms, not generic model guesswork.
         query = "blood pressure" if "chronic" in domain_id else "mood sleep"
+        # Reuse the production-facing composition instead of hand-building M4.
+        def retrieve(requested: DomainScope, lookup: str, limit: int):
+            if requested != scope or lookup != query or limit < 1:
+                return ()
+            return (document,)
+
+        unified = bootstrap_unified_domain_application(
+            snapshot,
+            retriever=retrieve,
+            query=query,
+            model_config=ChatCompletionsConfig(
+                endpoint=os.getenv("GA01C_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions"),
+                model=os.getenv("GA01C_LLM_MODEL", "qwen2.5:3b"),
+                api_key=os.getenv("GA01C_LLM_API_KEY", ""),
+                timeout_seconds=45.0,
+                max_tokens=180,
+            ),
+        )
+        app = unified.app
+        catalog = unified.execution_catalog
+        assert catalog is not None
+        assert unified.content.knowledge_key == rule["required_knowledge"]
+        assert unified.knowledge.retrieve_and_admit(query).accepted
         admitted = capability.retrieve_and_admit(query)
         assert admitted.accepted
         assert admitted.documents[0].source_ref == "synthetic://medical-source"
@@ -102,44 +128,7 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
         )
         dispatcher = SandboxToolDispatcher(catalog, lookup.handlers())
         model_calls: list[dict[str, Any]] = []
-        live_transport = (
-            ChatCompletionsStrategyTransport(
-                ChatCompletionsConfig(
-                    endpoint=os.environ["GA01C_LLM_URL"],
-                    model=os.environ["GA01C_LLM_MODEL"],
-                    api_key=os.getenv("GA01C_LLM_API_KEY", ""),
-                    timeout_seconds=45.0,
-                    max_tokens=180,
-                ),
-                message_builder=lambda payload: build_domain_model_messages(
-                    scope=scope,
-                    system_instruction=(
-                        "Choose only the provided legal read-only synthetic medical "
-                        "strategy and action. Return JSON strategy_id, action_ids, "
-                        "reason_code. No clinical advice. Collect first, verify "
-                        "after observation FACT_1. The required_workflow_step in "
-                        "TASK_JSON is enforced by the application workflow; "
-                        "follow it exactly. Never invent source facts."
-                    ),
-                    task_payload={
-                        "domain": scope.domain_id,
-                        "rule": rule,
-                        "focus": prompt["focus"],
-                        "legal_strategy_ids": payload["legal_strategy_ids"],
-                        "candidate_action_ids": payload["candidate_action_ids"],
-                        "last_agent_action": payload["last_agent_action"],
-                        "required_workflow_step": (
-                            "collect-notes"
-                            if payload["last_agent_action"] is None
-                            else "verify-notes"
-                        ),
-                    },
-                    admission=admitted,
-                ),
-            )
-            if live
-            else None
-        )
+        live_transport = None
 
         async def choose(payload: dict[str, Any]) -> dict[str, object]:
             model_calls.append(dict(payload))
@@ -173,9 +162,14 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
             def __post_init__(self) -> None:
                 super().__post_init__()
                 self.binding = app.prepare(self.initial, run_id="medical-unified-run")
-                self._planner, self._validator, self._rechecker = app.m4(
-                    StructuredStrategyTransportAdapter(choose)
-                )
+                if live:
+                    self._planner = unified.planner
+                    self._validator = unified.validator
+                    self._rechecker = unified.rechecker
+                else:
+                    self._planner, self._validator, self._rechecker = app.m4(
+                        StructuredStrategyTransportAdapter(choose)
+                    )
 
             async def decide(
                 self, current_input, iteration, observations: tuple[ObservedFact, ...]
@@ -197,14 +191,14 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
                 return observation
 
         initial = build_runtime_input(text=f"Review synthetic {topic} records")
-        result = await app.run(
+        result = await (unified.run if live else app.run)(
             initial,
             run_id="medical-unified-run",
             step=UnifiedMedicalTurn(initial),
             budget=LoopBudget(
                 max_iterations=4, max_executions=3, max_decision_seconds=60.0
             ),
-            execution_catalog=catalog,
+            **({} if live else {"execution_catalog": catalog}),
         )
         assert result.kind is RunKind.FINISH
         assert result.executions == 2
@@ -212,7 +206,7 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
             "step-1",
             "step-2",
         ]
-        assert len(model_calls) == 2
+        assert len(model_calls) == (0 if live else 2)
         assert db.read_bytes() == original_bytes
         print(
             f"MEDICAL_UNIFIED_PASS domain={domain_id} "

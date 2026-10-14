@@ -104,3 +104,31 @@ def test_medical_preflight_rejects_foreign_domain_policy(tmp_path: Path) -> None
     )
     with pytest.raises(DomainExtensionError, match="binding mismatch"):
         MedicalSafetyApplication(unified, foreign)
+
+
+@pytest.mark.parametrize(("domain", "topic", "values"), DOMAINS)
+def test_direct_unified_medical_run_rejected_before_step(
+    tmp_path: Path, domain: str, topic: str, values: dict[str, int]
+) -> None:
+    del topic, values
+    snapshot = _medical_package(tmp_path / "direct", domain, differentiated=True)
+    unified = bootstrap_unified_domain_application(
+        snapshot,
+        retriever=lambda scope, query, limit: (),
+        query="blood pressure",
+        model_config=ChatCompletionsConfig(
+            endpoint="http://127.0.0.1:11434/v1/chat/completions",
+            model="qwen2.5:3b",
+        ),
+    )
+
+    async def scenario() -> None:
+        with pytest.raises(DomainExtensionError, match="requires safety preflight"):
+            await unified.run(
+                build_runtime_input(text="routine synthetic request"),
+                run_id="unguarded-medical",
+                step=object(),
+                budget=LoopBudget(),
+            )
+
+    asyncio.run(scenario())

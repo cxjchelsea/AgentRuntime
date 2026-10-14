@@ -112,14 +112,14 @@ class UnifiedDomainApplication:
         Binding equality alone cannot prove the injected StepPort uses the
         package's model, validator and policy rechecker.
         """
+        if self.app.extension.binding.domain_id.startswith("medical."):
+            raise DomainExtensionError("medical execution requires safety preflight")
         if (
             getattr(step, "_planner", None) is not self.planner
             or getattr(step, "_validator", None) is not self.validator
             or getattr(step, "_rechecker", None) is not self.rechecker
         ):
             raise DomainExtensionError("unified application M4 binding mismatch")
-        if self.app.extension.binding.domain_id.startswith("medical."):
-            raise DomainExtensionError("medical execution requires safety preflight")
         return await self._run_checked(initial, run_id=run_id, step=step, budget=budget)
 
     async def _run_checked(

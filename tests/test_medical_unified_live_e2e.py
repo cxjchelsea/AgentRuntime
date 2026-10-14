@@ -24,6 +24,10 @@ from agent_core.domain_knowledge import (
     build_domain_model_messages,
 )
 from agent_core.domain_unified_application import bootstrap_unified_domain_application
+from agent_core.medical_safety_application import (
+    MedicalPreflightPolicy,
+    MedicalSafetyApplication,
+)
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import Decision, LoopBudget, ObservedFact, RunKind
 from agent_core.sandbox_tool_dispatch import SandboxToolDispatcher
@@ -108,6 +112,14 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
             ),
         )
         app = unified.app
+        safety = MedicalSafetyApplication(
+            unified,
+            MedicalPreflightPolicy(
+                app.extension.binding.domain_id,
+                app.extension.binding.binding_fingerprint,
+                ("explicit urgent handoff simulation",),
+            ),
+        )
         catalog = unified.execution_catalog
         assert catalog is not None
         assert unified.content.knowledge_key == rule["required_knowledge"]
@@ -198,7 +210,7 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
                 return observation
 
         initial = build_runtime_input(text=f"Review synthetic {topic} records")
-        result = await (unified.run if live else app.run)(
+        result = await (safety.run if live else app.run)(
             initial,
             run_id="medical-unified-run",
             step=UnifiedMedicalTurn(initial),

@@ -53,9 +53,11 @@ DOMAINS = (
 )
 
 
-def _medical_package(root: Path, domain: str):
+def _medical_package(root: Path, domain: str, *, differentiated: bool = False):
     """Reissue fixture as a distinct verified medical package, including knowledge."""
-    _snapshot(root, steps=2, with_content=True)
+    # Distinct package-owned workflows, without altering the generic Agent Core.
+    step_count = 2 if not differentiated or domain == DOMAINS[0][0] else 1
+    _snapshot(root, steps=step_count, with_content=True)
     manifest_path = root / "package.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["domain_id"] = domain

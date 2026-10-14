@@ -72,20 +72,18 @@ class _WorkflowScopedModelTransport:
             index = matches[0]
         step = steps[index]
         strategy = self._strategies[step.action_id]
-        if (
-            step.action_id not in payload.get("candidate_action_ids", ())
-            or strategy not in payload.get("legal_strategy_ids", ())
-        ):
+        if step.action_id not in payload.get(
+            "candidate_action_ids", ()
+        ) or strategy not in payload.get("legal_strategy_ids", ()):
             raise DomainExtensionError("next workflow step is not legally available")
         narrowed = dict(payload)
         narrowed["candidate_action_ids"] = [step.action_id]
         narrowed["legal_strategy_ids"] = [strategy]
         narrowed["required_workflow_step"] = step.step_id
         response = await self._transport(narrowed)
-        if (
-            response.get("strategy_id") != strategy
-            or response.get("action_ids") != [step.action_id]
-        ):
+        if response.get("strategy_id") != strategy or response.get("action_ids") != [
+            step.action_id
+        ]:
             raise DomainExtensionError("model selection violates workflow step")
         return response
 

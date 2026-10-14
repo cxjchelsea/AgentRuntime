@@ -96,7 +96,11 @@ async def generate_live_business_answer(
         if (
             f"{available}" not in answer
             or ("补货" not in answer and "库存" not in answer)
-            or ("未执行" not in answer and "没有执行" not in answer and "尚未" not in answer)
+            or (
+                "未执行" not in answer
+                and "没有执行" not in answer
+                and "尚未" not in answer
+            )
             or (quantity != "0" and f"{quantity}" not in answer)
         ):
             raise RunBoundaryError("model inventory answer not grounded")

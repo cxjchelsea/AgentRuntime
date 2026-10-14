@@ -143,18 +143,23 @@ def test_third_domain_real_qwen_with_multiple_first_turn_candidates(
             actions = payload["candidate_action_ids"]
             strategies = payload["legal_strategy_ids"]
             assert isinstance(actions, list) and isinstance(strategies, list)
-            pending = [action for action in actions if action not in step.selected_actions]
+            pending = [
+                action for action in actions if action not in step.selected_actions
+            ]
             assert pending, "no unfinished action available"
             bounded = dict(payload)
             bounded["candidate_action_ids"] = pending
             bounded["legal_strategy_ids"] = [
-                strategy for strategy in strategies
+                strategy
+                for strategy in strategies
                 if any(
                     strategy == action.replace("-sources", "-strategy-sources")
                     for action in pending
                 )
             ]
-            assert len(bounded["legal_strategy_ids"]) == len(pending)
+            filtered_strategies = bounded["legal_strategy_ids"]
+            assert isinstance(filtered_strategies, list)
+            assert len(filtered_strategies) == len(pending)
             calls.append(tuple(pending))
             result = dict(await model(bounded))
             selected = result.get("action_ids")

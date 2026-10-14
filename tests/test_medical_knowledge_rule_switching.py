@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from agent_core.domain_application import bootstrap_domain_application
+from agent_core.sandbox_domain_assembly import assemble_sandbox_domain
 from agent_core.domain_knowledge import (
     DomainKnowledgeCapability,
     DomainScope,
@@ -199,7 +200,7 @@ def test_two_medical_subdomains_use_real_fts5_scoped_retrieval(
     bindings = []
     for i, scenario in enumerate(SCENARIOS):
         package = _medical_package(tmp_path / f"index-domain-{i}", scenario.domain)
-        binding = bootstrap_domain_application(package).extension.binding
+        binding = assemble_sandbox_domain(package)
         bindings.append(binding)
         index.add(
             binding,
@@ -215,16 +216,24 @@ def test_two_medical_subdomains_use_real_fts5_scoped_retrieval(
         scope = DomainScope(binding.domain_id, binding.binding_fingerprint)
 
         def indexed_provider(
-            requested: DomainScope, query: str, limit: int
+            requested: DomainScope,
+            query: str,
+            limit: int,
+            active_binding=binding,
+            active_scope=scope,
         ) -> tuple[KnowledgeDocument, ...]:
-            if requested != scope:
+            if requested != active_scope:
                 return ()
             return tuple(
                 KnowledgeDocument(
-                    hit.domain_id, hit.binding_fingerprint, hit.document_id,
-                    hit.source_ref, hit.sha256, hit.snippet,
+                    hit.domain_id,
+                    hit.binding_fingerprint,
+                    hit.document_id,
+                    hit.source_ref,
+                    hit.sha256,
+                    hit.snippet,
                 )
-                for hit in index.retrieve(binding, query, limit=limit)
+                for hit in index.retrieve(active_binding, query, limit=limit)
             )
 
         capability = DomainKnowledgeCapability(scope, indexed_provider)

@@ -7,11 +7,13 @@ Acceptance is a predeclared, bounded test of domain substitution and authorizati
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
+from agent_core.chat_transport import ChatCompletionsConfig, ChatCompletionsStrategyTransport
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import AgentRunCoordinator, LoopBudget, RunKind
 from runtime.planning.errors import StrategyModelOutputError
@@ -96,3 +98,69 @@ def test_third_domain_has_distinct_package_binding(tmp_path: Path) -> None:
     assert research.binding.domain_id != inventory.binding.domain_id
     assert research.binding.binding_fingerprint != inventory.binding.binding_fingerprint
     assert research.collect_action != inventory.collect_action
+
+
+def test_third_domain_real_qwen_with_multiple_first_turn_candidates(
+    tmp_path: Path,
+) -> None:
+    """Live model chooses from both actions; no canned transport replacement."""
+    if os.environ.get("GENERAL_AGENT_LIVE_OPT_IN") != "1":
+        pytest.skip("Third-domain real Qwen evaluation requires opt-in")
+
+    async def scenario() -> None:
+        package = _load(tmp_path, DOMAIN, NOUN)
+        initial = build_runtime_input(
+            text="Collect source evidence first, then independently verify references"
+        )
+        step = DomainDrivenTurn(initial, package)
+        model = ChatCompletionsStrategyTransport(
+            ChatCompletionsConfig(
+                endpoint=os.environ["GA01C_LLM_URL"],
+                model=os.environ["GA01C_LLM_MODEL"],
+                api_key=os.environ.get("GA01C_LLM_API_KEY", ""),
+                timeout_seconds=45.0,
+                max_tokens=200,
+            ),
+            system_instruction=(
+                "You choose one action for a sandbox research evidence workflow. "
+                "Return a JSON object with exactly strategy_id, action_ids and "
+                "reason_code. The two legal tasks are collect-sources using "
+                "collect-strategy-sources and verify-sources using "
+                "verify-strategy-sources. Choose collect-sources first to gather "
+                "the source evidence. When last_agent_action is "
+                "MOCK_FOUND_NEEDS_VERIFICATION, choose verify-sources. "
+                "Use reason_code RESEARCH_EVIDENCE_WORKFLOW. "
+                "Never claim retrieval of real literature."
+            ),
+        )
+        calls: list[tuple[str, ...]] = []
+
+        async def choose(payload: dict[str, object]) -> dict[str, object]:
+            actions = payload["candidate_action_ids"]
+            assert isinstance(actions, list)
+            calls.append(tuple(actions))
+            result = dict(await model(payload))
+            return result
+
+        step._planner, step._validator, step._rechecker = _planner(
+            package, StructuredStrategyTransportAdapter(choose)
+        )
+        outcome = await AgentRunCoordinator(
+            step,
+            LoopBudget(
+                max_iterations=4, max_executions=3, max_decision_seconds=70.0
+            ),
+        ).run(initial, step.binding)
+        assert outcome.kind is RunKind.FINISH
+        assert step.selected_actions == ["collect-sources", "verify-sources"]
+        assert len(calls) == 2
+        assert len(calls[0]) == 2
+        assert outcome.executions == 2
+        print(
+            "THIRD_DOMAIN_LIVE_PASS actions="
+            + ",".join(step.selected_actions)
+            + " first_candidates="
+            + str(len(calls[0]))
+        )
+
+    asyncio.run(scenario())

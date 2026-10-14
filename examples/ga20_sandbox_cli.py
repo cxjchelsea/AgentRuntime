@@ -225,6 +225,21 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
     except RunBoundaryError:
         answer = baseline
         answer_mode = "verified_deterministic_fallback"
+    # Structured measurements are emitted only after render_business_answer has
+    # verified every observed business fact against pinned SQLite records.
+    verified_metrics: dict[str, int] = {}
+    if domain == "inventory":
+        available_facts = [
+            value.removeprefix("AVAILABLE_")
+            for value in outcome.observations[-1].facts
+            if value.startswith("AVAILABLE_")
+        ]
+        if (
+            len(available_facts) != 1
+            or not available_facts[0].isdecimal()
+        ):
+            raise RunBoundaryError("missing verified inventory availability")
+        verified_metrics["available"] = int(available_facts[0])
     return {
         "domain": domain,
         "question": question,
@@ -234,6 +249,7 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         "evidence_digests": list(answer.source_digests),
         "read_only": True,
         "fixture_data": False,
+        "verified_metrics": verified_metrics,
     }
 
 

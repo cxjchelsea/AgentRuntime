@@ -77,7 +77,8 @@ class ReadOnlyDomainLookup:
                 # The same tool is allowed for distinct steps; one handler must
                 # explicitly resolve the actual step, not capture a prior step.
                 continue
-\n            async def handle(step_id: str, tool_id: str) -> tuple[str, ...]:
+
+            async def handle(step_id: str, tool_id: str) -> tuple[str, ...]:
                 selected = next(
                     (
                         entry

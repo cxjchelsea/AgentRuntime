@@ -12,8 +12,8 @@ privileges and user-data access are enforced separately and must not be inferred
 from a domain package or LLM recommendation alone.
 
 Initial domains:
-- `medical.chronic_management`: longitudinal metrics and follow-up workflows.
-- `medical.mental_wellbeing`: wellbeing conversations and separately governed
+- `medical.chronic-management`: longitudinal metrics and follow-up workflows.
+- `medical.mental-wellbeing`: wellbeing conversations and separately governed
   risk triage. No autonomous crisis evaluation is asserted here.
 - Later: `medical.risk_prediction`: independently validated predictive model
   adapters and versioned input/output contracts, not free-form LLM diagnosis.

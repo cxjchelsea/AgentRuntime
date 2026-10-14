@@ -61,6 +61,7 @@ def _snapshot(root: Path, *, steps: int = 1, with_content: bool = False):
             "tool_id": tool_id,
             "action_id": ("collect-" if number == 1 else "verify-") + noun,
             "completion_fact": "FACT_" + str(number),
+            "goal_effect_keys": (["source"] if number == 1 and steps > 1 else ["source", "target" if steps == 1 else "completion_target"]),
         }
         for number, tool_id in enumerate(tool_names, 1)
     ]

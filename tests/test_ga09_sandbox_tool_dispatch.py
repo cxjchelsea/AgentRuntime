@@ -162,4 +162,34 @@ def test_handler_fails_closed_on_incomplete_evidence(tmp_path: Path) -> None:
             )
         assert calls == 1
 
+        async def broken(step_id: str, tool_id: str) -> tuple[str, ...]:
+            raise ValueError("sensitive handler detail")
+
+        registered = {catalog.tool_ids[0]: broken}
+        isolated = SandboxToolDispatcher(catalog, registered)
+        registered.clear()
+        assert catalog.tool_ids[0] in isolated.handlers
+        with pytest.raises(RunBoundaryError, match="sandbox tool handler failed") as error:
+            await isolated.observe(
+                decision=decision,
+                step_index=0,
+                run_id="ga09-incomplete",
+                execution_id="execution-2",
+            )
+        assert "sensitive handler detail" not in str(error.value)
+
+        async def cancelled(step_id: str, tool_id: str) -> tuple[str, ...]:
+            raise asyncio.CancelledError()
+
+        cancellation_dispatch = SandboxToolDispatcher(
+            catalog, {catalog.tool_ids[0]: cancelled}
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await cancellation_dispatch.observe(
+                decision=decision,
+                step_index=0,
+                run_id="ga09-incomplete",
+                execution_id="execution-3",
+            )
+
     asyncio.run(scenario())

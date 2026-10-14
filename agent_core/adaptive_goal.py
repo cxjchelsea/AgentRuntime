@@ -30,9 +30,7 @@ class AdaptiveGoalSession:
     max_replans: int = 1
 
     def __post_init__(self) -> None:
-        steps = {
-            step.step_id for step in self.plan.goal.catalog.workflow.steps
-        }
+        steps = {step.step_id for step in self.plan.goal.catalog.workflow.steps}
         if (
             type(self.plan) is not GoalPlan
             or type(self.trigger_step_id) is not str
@@ -55,7 +53,8 @@ class AdaptiveGoalSession:
         done = self.plan._verified_done(run_id, observations)
         trigger = next(
             (
-                obs for obs in observations
+                obs
+                for obs in observations
                 if obs.workflow_step_id == self.trigger_step_id
             ),
             None,
@@ -89,9 +88,7 @@ class AdaptiveGoalSession:
             raise RunBoundaryError("goal replan budget exhausted")
         if proposal.goal != self.plan.goal:
             raise RunBoundaryError("goal changed during replan")
-        required = {
-            step.step_id for step in proposal.steps
-        }
+        required = {step.step_id for step in proposal.steps}
         if self.verification_step_id not in required:
             raise RunBoundaryError("replan omits required verifier")
         replacement = self.plan.revise(proposal, run_id, observations)

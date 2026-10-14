@@ -170,9 +170,7 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
             planned = tuple(
                 StepRevision(
                     step.step_id, step.action_id,
-                    frozenset({"source", expected_key})
-                    if len(step_list) == 1 or idx == len(step_list) - 1
-                    else frozenset({"source"}),
+                    step.goal_effect_keys,
                     old_sources[step.step_id],
                 )
                 for idx, step in enumerate(step_list)

@@ -133,11 +133,9 @@ def test_dynamic_model_tool_choice_and_replanning(
                         for action in remaining
                     )
                 ]
-                if (
-                    not bounded["candidate_action_ids"]
-                    or len(bounded["candidate_action_ids"])
-                    != len(bounded["legal_strategy_ids"])
-                ):
+                if not bounded["candidate_action_ids"] or len(
+                    bounded["candidate_action_ids"]
+                ) != len(bounded["legal_strategy_ids"]):
                     raise ValueError("no current task-approved model candidates")
                 # Correction is permitted only before a physical tool attempt.
                 for attempt in range(2):
@@ -229,14 +227,9 @@ def test_dynamic_model_tool_choice_and_replanning(
         ).run(initial, turn.binding)
         assert outcome.kind is RunKind.FINISH
         assert outcome.executions == len(order)
-        assert (
-            set(turn.chosen) == set(order)
-            if live
-            else turn.chosen == list(order)
-        )
+        assert set(turn.chosen) == set(order) if live else turn.chosen == list(order)
         assert [x.workflow_step_id for x in outcome.observations] == [
-            "step-2" if item == "verify-notes" else "step-1"
-            for item in turn.chosen
+            "step-2" if item == "verify-notes" else "step-1" for item in turn.chosen
         ]
         assert len(calls) == len(order)
         if len(order) == 2:

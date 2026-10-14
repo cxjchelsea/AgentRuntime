@@ -32,13 +32,15 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _records(domain: str, count: int) -> dict[str, ReadOnlyRecord]:
+def _records(
+    domain: str, fingerprint: str, count: int
+) -> dict[str, ReadOnlyRecord]:
     result = {}
     for index in range(1, count + 1):
         key = f"record-{index}"
         value = f"{domain}: verified read-only value {index}"
         result[key] = ReadOnlyRecord(
-            domain, key, value, hashlib.sha256(value.encode()).hexdigest()
+            domain, fingerprint, key, value, hashlib.sha256(value.encode()).hexdigest()
         )
     return result
 
@@ -50,7 +52,7 @@ def test_readonly_lookup_runs_complete_two_domains(tmp_path: Path, steps: int) -
         app = bootstrap_domain_application(snapshot)
         catalog = app.execution_catalog(snapshot)
         noun = "stock" if steps == 1 else "notes"
-        records = _records(catalog.domain_id, steps)
+        records = _records(catalog.domain_id, catalog.binding_fingerprint, steps)
         keys = {
             step.step_id: f"record-{i}"
             for i, step in enumerate(catalog.workflow.steps, 1)
@@ -98,6 +100,11 @@ def test_readonly_lookup_runs_complete_two_domains(tmp_path: Path, steps: int) -
         assert result.kind is RunKind.FINISH
         assert result.executions == steps
         assert result.observations[-1].facts[-1] == "GOAL_SATISFIED"
+        for step, observation in zip(
+            catalog.workflow.steps, result.observations, strict=True
+        ):
+            record = lookup.records[lookup.step_keys[step.step_id]]
+            assert "RECORD_SHA256_" + record.sha256 in observation.facts
         assert all(
             step.completion_fact in fact.facts
             for step, fact in zip(
@@ -114,14 +121,21 @@ def test_readonly_lookup_rejects_foreign_tampered_or_missing_records(
     snapshot = _snapshot(tmp_path / "stock", steps=1)
     catalog = bootstrap_domain_application(snapshot).execution_catalog(snapshot)
     step = catalog.workflow.steps[0]
-    records = _records(catalog.domain_id, 1)
+    records = _records(catalog.domain_id, catalog.binding_fingerprint, 1)
     key_map = {step.step_id: "record-1"}
     with pytest.raises(RunBoundaryError, match="scope mismatch"):
         ReadOnlyDomainLookup(catalog, records, {step.step_id: "not-found"})
-    foreign = _records("other-domain", 1)
+    foreign = _records("other-domain", catalog.binding_fingerprint, 1)
     with pytest.raises(RunBoundaryError, match="scope mismatch"):
         ReadOnlyDomainLookup(catalog, foreign, key_map)
+    mismatched_generation = _records(
+        catalog.domain_id, "0" * 64, 1
+    )
+    with pytest.raises(RunBoundaryError, match="scope mismatch"):
+        ReadOnlyDomainLookup(catalog, mismatched_generation, key_map)
     with pytest.raises(RunBoundaryError, match="invalid read-only record"):
-        ReadOnlyRecord(catalog.domain_id, "record-1", "tampered", "0" * 64)
+        ReadOnlyRecord(
+            catalog.domain_id, catalog.binding_fingerprint, "record-1", "tampered", "0" * 64
+        )
     with pytest.raises(RunBoundaryError, match="explicit snapshots"):
         ReadOnlyDomainLookup(catalog, records, MappingProxyType(key_map))

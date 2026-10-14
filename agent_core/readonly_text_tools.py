@@ -60,19 +60,18 @@ class ReadOnlyTextTools:
             evidence = await source_handlers[tool_id](step_id, tool_id)
             record = self.lookup.records[self.lookup.step_keys[step_id]]
             digest_fact = "RECORD_SHA256_" + record.sha256
-            if (
-                digest_fact not in evidence
-                or step.completion_fact not in evidence
-            ):
+            if digest_fact not in evidence or step.completion_fact not in evidence:
                 raise RunBoundaryError("text tool record evidence mismatch")
             operation = self.step_operations[step_id]
             if operation == "word_count":
                 metric = f"WORD_COUNT_{len(record.value.split())}"
             else:
                 metric = f"CHARACTER_COUNT_{len(record.value)}"
-            return (digest_fact, metric, *tuple(
-                fact for fact in evidence if fact != digest_fact
-            ))
+            return (
+                digest_fact,
+                metric,
+                *tuple(fact for fact in evidence if fact != digest_fact),
+            )
 
         handlers = {tool_id: evaluate for tool_id in self.lookup.catalog.tool_ids}
         object.__setattr__(self, "_handlers", MappingProxyType(handlers))

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Any
 
 from agent_core.chat_transport import ChatCompletionsConfig
 from agent_core.domain_application import (
@@ -38,6 +39,55 @@ from runtime.planning import (
 )
 
 
+class _WorkflowScopedModelTransport:
+    """Limit model candidates to the next package step; never rewrite its answer.
+
+    This sandbox projection uses the verified preceding completion fact. The
+    execution catalog independently checks actual observations before tools run.
+    """
+
+    def __init__(
+        self,
+        transport: KnowledgeBackedStrategyTransport,
+        catalog: DomainExecutionCatalog,
+        strategy_by_action: dict[str, str],
+    ) -> None:
+        self._transport = transport
+        self._catalog = catalog
+        self._strategies = strategy_by_action
+
+    async def __call__(self, payload: dict[str, Any]):
+        steps = self._catalog.workflow.steps
+        preceding = payload.get("last_agent_action")
+        if preceding is None:
+            index = 0
+        else:
+            matches = [
+                i + 1
+                for i, step in enumerate(steps[:-1])
+                if step.completion_fact == preceding
+            ]
+            if len(matches) != 1:
+                raise DomainExtensionError("ambiguous workflow observation")
+            index = matches[0]
+        step = steps[index]
+        strategy = self._strategies[step.action_id]
+        if step.action_id not in payload.get(
+            "candidate_action_ids", ()
+        ) or strategy not in payload.get("legal_strategy_ids", ()):
+            raise DomainExtensionError("next workflow step is not legally available")
+        narrowed = dict(payload)
+        narrowed["candidate_action_ids"] = [step.action_id]
+        narrowed["legal_strategy_ids"] = [strategy]
+        narrowed["required_workflow_step"] = step.step_id
+        response = await self._transport(narrowed)
+        if response.get("strategy_id") != strategy or response.get("action_ids") != [
+            step.action_id
+        ]:
+            raise DomainExtensionError("model selection violates workflow step")
+        return response
+
+
 @dataclass(frozen=True, slots=True)
 class UnifiedDomainApplication:
     app: DomainApplication
@@ -62,6 +112,24 @@ class UnifiedDomainApplication:
         Binding equality alone cannot prove the injected StepPort uses the
         package's model, validator and policy rechecker.
         """
+        if self.app.extension.binding.domain_id.startswith("medical."):
+            raise DomainExtensionError("medical execution requires safety preflight")
+        if (
+            getattr(step, "_planner", None) is not self.planner
+            or getattr(step, "_validator", None) is not self.validator
+            or getattr(step, "_rechecker", None) is not self.rechecker
+        ):
+            raise DomainExtensionError("unified application M4 binding mismatch")
+        return await self._run_checked(initial, run_id=run_id, step=step, budget=budget)
+
+    async def _run_checked(
+        self,
+        initial: RuntimeInput,
+        *,
+        run_id: str,
+        step: StepPort,
+        budget: LoopBudget,
+    ) -> RunOutcome:
         if (
             getattr(step, "_planner", None) is not self.planner
             or getattr(step, "_validator", None) is not self.validator
@@ -109,6 +177,19 @@ def bootstrap_unified_domain_application(
         strategy_by_action = {
             action: strategy for strategy, action in app.extension.strategy_actions
         }
+        # A declared Collect/Verify completion rule must refer to the final
+        # package-owned workflow action; never silently ignore a conflicting rule.
+        if content.completion_after in {"collect", "verify"}:
+            final_action = catalog.workflow.steps[-1].action_id
+            final_strategy = strategy_by_action.get(final_action)
+            final_roles = []
+            for asset in snapshot.assets:
+                if asset.ref.kind != "strategy" or asset.ref.id != final_strategy:
+                    continue
+                raw = json.loads(asset.content_bytes)
+                final_roles.append(raw.get("role"))
+            if final_roles != [content.completion_after]:
+                raise DomainExtensionError("domain completion rule/workflow mismatch")
         instructions = []
         for entry in catalog.workflow.steps:
             strategy = strategy_by_action.get(entry.action_id)
@@ -139,7 +220,9 @@ def bootstrap_unified_domain_application(
             model_config, knowledge, query=query, system_instruction=instruction
         )
         planner, validator, rechecker = app.m4(
-            StructuredStrategyTransportAdapter(transport)
+            StructuredStrategyTransportAdapter(
+                _WorkflowScopedModelTransport(transport, catalog, strategy_by_action)
+            )
         )
         return UnifiedDomainApplication(
             app, content, knowledge, transport, planner, validator, rechecker, catalog

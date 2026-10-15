@@ -71,9 +71,14 @@ class SQLiteMedicalPermitStore:
                 )
             return True
         except sqlite3.IntegrityError as exc:
-            if getattr(exc, "sqlite_errorcode", None) == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY:
+            if (
+                getattr(exc, "sqlite_errorcode", None)
+                == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY
+            ):
                 return False
-            raise DomainExtensionError("medical permit storage integrity failure") from exc
+            raise DomainExtensionError(
+                "medical permit storage integrity failure"
+            ) from exc
         except sqlite3.Error as exc:
             raise DomainExtensionError("medical permit storage unavailable") from exc
 
@@ -179,7 +184,9 @@ class MedicalExecutionAuthority:
         try:
             decision = json.loads(clearance.payload)
         except (ValueError, TypeError) as exc:
-            raise DomainExtensionError("invalid medical safety decision claims") from exc
+            raise DomainExtensionError(
+                "invalid medical safety decision claims"
+            ) from exc
         if type(decision) is not dict or decision != {
             "decision": "ALLOW",
             "request_id": initial.request_id,

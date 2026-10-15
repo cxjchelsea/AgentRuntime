@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,7 @@ from agent_core.domain_extension import DomainExtensionError
 from agent_core.medical_execution_authority import (
     MedicalExecutionAuthority,
     InMemoryMedicalPermitStore,
+    SQLiteMedicalPermitStore,
 )
 from tests.orchestration_stubs import build_runtime_input
 
@@ -125,3 +127,18 @@ def test_medical_permit_denies_when_atomic_store_cannot_admit():
     initial = build_runtime_input()
     with pytest.raises(DomainExtensionError, match="replay"):
         _consume(authority, _scope(authority, initial), initial)
+
+
+def test_durable_sqlite_permit_prevents_replay_after_restart(tmp_path: Path):
+    file = tmp_path / "medical-permits.sqlite"
+    initial = build_runtime_input()
+    first = MedicalExecutionAuthority(
+        SECRET, clock=lambda: 100.0, store=SQLiteMedicalPermitStore(file)
+    )
+    permit = _scope(first, initial)
+    _consume(first, permit, initial)
+    reopened = MedicalExecutionAuthority(
+        SECRET, clock=lambda: 100.0, store=SQLiteMedicalPermitStore(file)
+    )
+    with pytest.raises(DomainExtensionError, match="replay"):
+        _consume(reopened, permit, initial)

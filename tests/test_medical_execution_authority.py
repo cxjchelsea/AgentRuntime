@@ -174,3 +174,47 @@ def test_durable_sqlite_permit_prevents_replay_after_restart(tmp_path: Path):
     )
     with pytest.raises(DomainExtensionError, match="replay"):
         _consume(reopened, permit, initial)
+
+
+def test_medical_permit_requires_trusted_allow_clearance():
+    authority = MedicalExecutionAuthority(
+        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
+    )
+    initial = build_runtime_input(text="ordinary synthetic followup")
+    with pytest.raises(DomainExtensionError, match="clearance required"):
+        authority.issue(
+            initial=initial,
+            run_id="test-run",
+            domain_id=DOMAIN,
+            binding_fingerprint=FINGERPRINT,
+            policy_version=POLICY,
+        )
+
+
+def test_medical_permit_rejects_mismatched_or_forged_safety_decision():
+    authority = MedicalExecutionAuthority(
+        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
+    )
+    initial = build_runtime_input(text="ordinary synthetic followup")
+    signer = MedicalSafetyDecisionSigner(DECISION_KEY)
+    clearance = signer.approve(
+        initial=initial,
+        run_id="test-run",
+        domain_id=DOMAIN,
+        binding_fingerprint=FINGERPRINT,
+        policy_version=POLICY,
+    )
+    scope = dict(
+        initial=initial,
+        run_id="test-run",
+        domain_id=DOMAIN,
+        binding_fingerprint=FINGERPRINT,
+        policy_version=POLICY,
+    )
+    with pytest.raises(DomainExtensionError, match="decision signature"):
+        authority.issue(**scope, clearance=replace(clearance, signature="0" * 64))
+    with pytest.raises(DomainExtensionError, match="decision scope mismatch"):
+        authority.issue(
+            **{**scope, "initial": build_runtime_input(text="changed medical request")},
+            clearance=clearance,
+        )

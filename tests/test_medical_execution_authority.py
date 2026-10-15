@@ -7,7 +7,10 @@ from dataclasses import replace
 import pytest
 
 from agent_core.domain_extension import DomainExtensionError
-from agent_core.medical_execution_authority import MedicalExecutionAuthority
+from agent_core.medical_execution_authority import (
+    MedicalExecutionAuthority,
+    InMemoryMedicalPermitStore,
+)
 from tests.orchestration_stubs import build_runtime_input
 
 SECRET = b"synthetic-host-fixture-key-32-bytes-long"
@@ -96,3 +99,29 @@ def test_medical_permit_rejects_wrong_host_key():
     initial = build_runtime_input()
     with pytest.raises(DomainExtensionError, match="signature"):
         _consume(other, _scope(issuer, initial), initial)
+
+
+def test_medical_permit_shared_store_rejects_cross_instance_replay():
+    store = InMemoryMedicalPermitStore()
+    issuer = MedicalExecutionAuthority(SECRET, clock=lambda: 100.0, store=store)
+    verifier = MedicalExecutionAuthority(SECRET, clock=lambda: 100.0, store=store)
+    initial = build_runtime_input()
+    permit = _scope(issuer, initial)
+    _consume(verifier, permit, initial)
+    with pytest.raises(DomainExtensionError, match="replay"):
+        _consume(issuer, permit, initial)
+
+
+class _RejectAllStore:
+    def consume_once(self, nonce: str, expires_at: int) -> bool:
+        del nonce, expires_at
+        return False
+
+
+def test_medical_permit_denies_when_atomic_store_cannot_admit():
+    authority = MedicalExecutionAuthority(
+        SECRET, clock=lambda: 100.0, store=_RejectAllStore()
+    )
+    initial = build_runtime_input()
+    with pytest.raises(DomainExtensionError, match="replay"):
+        _consume(authority, _scope(authority, initial), initial)

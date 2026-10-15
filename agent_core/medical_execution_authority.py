@@ -12,8 +12,8 @@ import hmac
 import json
 import secrets
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from agent_core.domain_extension import DomainExtensionError
 from runtime.contracts import RuntimeInput

@@ -82,7 +82,7 @@ class MedicalExecutionAuthority:
 
     def consume(
         self,
-        permit: MedicalExecutionPermit,
+        permit: MedicalExecutionPermit | None,
         *,
         initial: RuntimeInput,
         run_id: str,

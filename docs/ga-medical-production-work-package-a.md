@@ -26,3 +26,14 @@ This in-process HMAC issuer is an **integration prototype**, not a production tr
 ## Admission decision
 
 Code may be accepted as **GA-A scoped application integration/evidence**, conditional on passing full CI and independent review. Never interpret it as authorization to launch a real medical production workload. The release gate remains **BLOCKED** until all P0 items are addressed and independently tested.
+
+## R2 targeted remediation evidence
+
+- Linux `PosixPath` is accepted by the SQLite store using `isinstance(Path)`.
+- SQLite uniqueness violations are identified by the explicit primary-key SQLite error code; unrelated integrity failures fail closed.
+- Adversarial tests cover 16 concurrent attempts against two independent SQLite connections (one admission), storage unavailability, trigger-induced non-unique integrity error, and reopening the persistent database to reject replay.
+- These integration checks do not attest PostgreSQL/MySQL production CAS, transaction ownership, multi-host isolation, or crash-recovery of a clinical external side effect.
+
+## R1 and R3 acceptance limitations
+
+A signed ALLOW clearance is currently created by an injected Host-designated signer after the synthetic preflight. The signer method does **not** independently implement a clinically approved policy decision; trusted process/key ownership is mandatory and not verified by this PR. The medical tool execution boundary / M6 permission is not wrapped by this permit, so external effects remain unavailable for production admission. Treat these as P0 blockers, not silently passed controls.

@@ -262,3 +262,18 @@ def test_sqlite_store_non_unique_integrity_error_fails_closed(
         )
     with pytest.raises(DomainExtensionError, match="storage integrity failure"):
         store.consume_once("new-nonce", 1000)
+
+
+def test_host_safety_signer_does_not_sign_known_red_flag():
+    signer = MedicalSafetyDecisionSigner(
+        DECISION_KEY, rejected_phrases=("critical synthetic red flag",)
+    )
+    initial = build_runtime_input(text="critical synthetic red flag")
+    with pytest.raises(DomainExtensionError, match="decision denied"):
+        signer.approve(
+            initial=initial,
+            run_id="test-run",
+            domain_id=DOMAIN,
+            binding_fingerprint=FINGERPRINT,
+            policy_version=POLICY,
+        )

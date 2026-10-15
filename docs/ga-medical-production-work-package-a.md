@@ -37,3 +37,9 @@ Code may be accepted as **GA-A scoped application integration/evidence**, condit
 ## R1 and R3 acceptance limitations
 
 A signed ALLOW clearance is currently created by an injected Host-designated signer after the synthetic preflight. The signer method does **not** independently implement a clinically approved policy decision; trusted process/key ownership is mandatory and not verified by this PR. The medical tool execution boundary / M6 permission is not wrapped by this permit, so external effects remain unavailable for production admission. Treat these as P0 blockers, not silently passed controls.
+
+## R1/R3 application-level targeted remediation
+
+- The Host-designated safety signer now checks its own configured synthetic rejection policy before minting ALLOW. The medical application rejects a signer whose rejection phrases differ from its bound preflight configuration. This is defense in depth, not an authoritative clinical safety service.
+- The checked medical composition wraps the physical sandbox StepPort in `MedicalAuthorizedStep` after the signed permit is successfully consumed. Its tool call entry rejects an unarmed wrapper and a missing approved action. The underlying delegate must remain private to the trusted application composition root; direct access to that delegate or M6 tools is not ruled out by this application-level adapter.
+- Acceptance requires tests and real Qwen CI on the exact PR HEAD. Independent Host/M6 authorization, approved clinical policy governance, and deployable distributed durable authority remain P0 production release blockers.

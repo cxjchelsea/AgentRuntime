@@ -9,10 +9,10 @@ import pytest
 
 from agent_core.domain_extension import DomainExtensionError
 from agent_core.medical_execution_authority import (
-    MedicalExecutionAuthority,
     InMemoryMedicalPermitStore,
-    SQLiteMedicalPermitStore,
+    MedicalExecutionAuthority,
     MedicalSafetyDecisionSigner,
+    SQLiteMedicalPermitStore,
 )
 from tests.orchestration_stubs import build_runtime_input
 
@@ -53,7 +53,9 @@ def _consume(authority, permit, initial, **changes):
 
 
 def test_medical_permit_valid_once_and_replay_denied():
-    authority = MedicalExecutionAuthority(SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0)
+    authority = MedicalExecutionAuthority(
+        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
+    )
     initial = build_runtime_input()
     permit = _scope(authority, initial)
     _consume(authority, permit, initial)
@@ -71,7 +73,9 @@ def test_medical_permit_valid_once_and_replay_denied():
     ],
 )
 def test_medical_permit_rejects_foreign_scope(overrides, message):
-    authority = MedicalExecutionAuthority(SECRET, clock=lambda: 100.0)
+    authority = MedicalExecutionAuthority(
+        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
+    )
     initial = build_runtime_input()
     permit = _scope(authority, initial)
     with pytest.raises(DomainExtensionError, match=message):
@@ -79,7 +83,9 @@ def test_medical_permit_rejects_foreign_scope(overrides, message):
 
 
 def test_medical_permit_rejects_foreign_request_and_identity():
-    authority = MedicalExecutionAuthority(SECRET, clock=lambda: 100.0)
+    authority = MedicalExecutionAuthority(
+        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
+    )
     initial = build_runtime_input()
     permit = _scope(authority, initial)
     with pytest.raises(DomainExtensionError, match="scope mismatch"):
@@ -91,7 +97,10 @@ def test_medical_permit_rejects_foreign_request_and_identity():
 def test_medical_permit_rejects_expiration_and_forgery():
     current = [100.0]
     authority = MedicalExecutionAuthority(
-        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: current[0], ttl_seconds=2
+        SECRET,
+        decision_verifier_key=DECISION_KEY,
+        clock=lambda: current[0],
+        ttl_seconds=2,
     )
     initial = build_runtime_input()
     original = _scope(authority, initial)
@@ -103,9 +112,13 @@ def test_medical_permit_rejects_expiration_and_forgery():
 
 
 def test_medical_permit_rejects_wrong_host_key():
-    issuer = MedicalExecutionAuthority(SECRET, clock=lambda: 100.0)
+    issuer = MedicalExecutionAuthority(
+        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
+    )
     other = MedicalExecutionAuthority(
-        b"different-synthetic-host-key-32-bytes", decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
+        b"different-synthetic-host-key-32-bytes",
+        decision_verifier_key=DECISION_KEY,
+        clock=lambda: 100.0,
     )
     initial = build_runtime_input()
     with pytest.raises(DomainExtensionError, match="signature"):
@@ -114,8 +127,12 @@ def test_medical_permit_rejects_wrong_host_key():
 
 def test_medical_permit_shared_store_rejects_cross_instance_replay():
     store = InMemoryMedicalPermitStore()
-    issuer = MedicalExecutionAuthority(SECRET, clock=lambda: 100.0, store=store)
-    verifier = MedicalExecutionAuthority(SECRET, clock=lambda: 100.0, store=store)
+    issuer = MedicalExecutionAuthority(
+        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0, store=store
+    )
+    verifier = MedicalExecutionAuthority(
+        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0, store=store
+    )
     initial = build_runtime_input()
     permit = _scope(issuer, initial)
     _consume(verifier, permit, initial)
@@ -131,7 +148,7 @@ class _RejectAllStore:
 
 def test_medical_permit_denies_when_atomic_store_cannot_admit():
     authority = MedicalExecutionAuthority(
-        SECRET, clock=lambda: 100.0, store=_RejectAllStore()
+        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0, store=_RejectAllStore()
     )
     initial = build_runtime_input()
     with pytest.raises(DomainExtensionError, match="replay"):
@@ -142,12 +159,18 @@ def test_durable_sqlite_permit_prevents_replay_after_restart(tmp_path: Path):
     file = tmp_path / "medical-permits.sqlite"
     initial = build_runtime_input()
     first = MedicalExecutionAuthority(
-        SECRET, clock=lambda: 100.0, store=SQLiteMedicalPermitStore(file)
+        SECRET,
+        decision_verifier_key=DECISION_KEY,
+        clock=lambda: 100.0,
+        store=SQLiteMedicalPermitStore(file),
     )
     permit = _scope(first, initial)
     _consume(first, permit, initial)
     reopened = MedicalExecutionAuthority(
-        SECRET, clock=lambda: 100.0, store=SQLiteMedicalPermitStore(file)
+        SECRET,
+        decision_verifier_key=DECISION_KEY,
+        clock=lambda: 100.0,
+        store=SQLiteMedicalPermitStore(file),
     )
     with pytest.raises(DomainExtensionError, match="replay"):
         _consume(reopened, permit, initial)

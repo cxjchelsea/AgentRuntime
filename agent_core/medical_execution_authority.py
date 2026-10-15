@@ -97,7 +97,7 @@ class MedicalSafetyDecisionSigner:
     def __init__(self, secret: bytes, *, rejected_phrases: tuple[str, ...]) -> None:
         if not rejected_phrases or any(not phrase for phrase in rejected_phrases):
             raise DomainExtensionError("medical safety policy unavailable")
-        self._rejected_phrases = rejected_phrases
+        self.rejected_phrases = rejected_phrases
         if type(secret) is not bytes or len(secret) < 32:
             raise DomainExtensionError("invalid medical safety decision key")
         self._secret = secret
@@ -114,7 +114,7 @@ class MedicalSafetyDecisionSigner:
         if type(initial) is not RuntimeInput or not initial.text:
             raise DomainExtensionError("medical safety input unavailable")
         normalized = " ".join(initial.text.casefold().split())
-        if any(phrase in normalized for phrase in self._rejected_phrases):
+        if any(phrase in normalized for phrase in self.rejected_phrases):
             raise DomainExtensionError("medical safety decision denied")
         claims = {
             "decision": "ALLOW",

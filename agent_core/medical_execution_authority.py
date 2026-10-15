@@ -13,10 +13,10 @@ import json
 import secrets
 import sqlite3
 import time
-from pathlib import Path
 from collections.abc import Callable
-from typing import Protocol
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
 
 from agent_core.domain_extension import DomainExtensionError
 from runtime.contracts import RuntimeInput
@@ -48,12 +48,11 @@ class InMemoryMedicalPermitStore:
         return True
 
 
-
 class SQLiteMedicalPermitStore:
     """Durable SQLite uniqueness fence for local integration, not a production DB."""
 
     def __init__(self, path: Path) -> None:
-        if type(path) is not Path:
+        if not isinstance(path, Path):
             raise DomainExtensionError("invalid medical permit store path")
         self._path = path
         with sqlite3.connect(self._path, timeout=5.0) as db:
@@ -71,8 +70,10 @@ class SQLiteMedicalPermitStore:
                     (nonce, expires_at),
                 )
             return True
-        except sqlite3.IntegrityError:
-            return False
+        except sqlite3.IntegrityError as exc:
+            if getattr(exc, "sqlite_errorcode", None) == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY:
+                return False
+            raise DomainExtensionError("medical permit storage integrity failure") from exc
         except sqlite3.Error as exc:
             raise DomainExtensionError("medical permit storage unavailable") from exc
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -17,7 +18,7 @@ from agent_core.medical_physical_host import (
 
 SECRET = b"synthetic-physical-host-signing-key-at-least-32"
 INPUT = {"synthetic": "data"}
-SCOPE = {
+SCOPE: Any = {
     "run_id": "r1",
     "request_id": "q1",
     "domain_fingerprint": "a" * 64,
@@ -33,6 +34,10 @@ SCOPE = {
 }
 
 
+def _kwargs(args: Any, **changes: Any) -> Any:
+    return {**args, **changes}
+
+
 def test_host_gate_denies_unscoped_forged_and_replayed_attempt() -> None:
     async def scenario() -> None:
         executor = AsyncMock()
@@ -44,20 +49,18 @@ def test_host_gate_denies_unscoped_forged_and_replayed_attempt() -> None:
             claims=InMemoryOperationClaimStore(),
             clock=clock,
         )
-        args = {**SCOPE, "idempotency_key": "idem1"}
+        args: Any = {**SCOPE, "idempotency_key": "idem1"}
         with pytest.raises(DomainExtensionError, match="required"):
             await host.execute(grant=None, **args)
         assert executor.execute_physical_attempt.await_count == 0
         grant = issuer.grant(**SCOPE)
         with pytest.raises(DomainExtensionError, match="signature"):
-            await host.execute(
-                grant=replace(grant, signature="0" * 64), **args
-            )
+            await host.execute(grant=replace(grant, signature="0" * 64), **args)
         with pytest.raises(DomainExtensionError, match="scope mismatch"):
-            await host.execute(grant=grant, **{**args, "tool_id": "foreign"})
+            await host.execute(grant=grant, **_kwargs(args, tool_id="foreign"))
         with pytest.raises(DomainExtensionError, match="scope mismatch"):
             await host.execute(
-                grant=grant, **{**args, "input_payload": {"synthetic": "tampered"}}
+                grant=grant, **_kwargs(args, input_payload={"synthetic": "tampered"})
             )
         assert executor.execute_physical_attempt.await_count == 0
         await host.execute(grant=grant, **args)
@@ -80,11 +83,11 @@ def test_host_gate_rejects_expired_and_foreign_identity() -> None:
             claims=InMemoryOperationClaimStore(),
             clock=lambda: now[0],
         )
-        args = {**SCOPE, "idempotency_key": None}
+        args: Any = {**SCOPE, "idempotency_key": None}
         grant = issuer.grant(**SCOPE, ttl_seconds=1)
         with pytest.raises(DomainExtensionError, match="scope mismatch"):
             await host.execute(
-                grant=grant, **{**args, "identity_scope": "tenant2/patient2"}
+                grant=grant, **_kwargs(args, identity_scope="tenant2/patient2")
             )
         now[0] = 101.0
         with pytest.raises(DomainExtensionError, match="expired"):

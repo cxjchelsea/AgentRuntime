@@ -76,7 +76,9 @@ def test_medical_permit_rejects_foreign_request_and_identity():
 
 def test_medical_permit_rejects_expiration_and_forgery():
     current = [100.0]
-    authority = MedicalExecutionAuthority(SECRET, clock=lambda: current[0], ttl_seconds=2)
+    authority = MedicalExecutionAuthority(
+        SECRET, clock=lambda: current[0], ttl_seconds=2
+    )
     initial = build_runtime_input()
     original = _scope(authority, initial)
     with pytest.raises(DomainExtensionError, match="signature"):
@@ -88,7 +90,9 @@ def test_medical_permit_rejects_expiration_and_forgery():
 
 def test_medical_permit_rejects_wrong_host_key():
     issuer = MedicalExecutionAuthority(SECRET, clock=lambda: 100.0)
-    other = MedicalExecutionAuthority(b"different-synthetic-host-key-32-bytes", clock=lambda: 100.0)
+    other = MedicalExecutionAuthority(
+        b"different-synthetic-host-key-32-bytes", clock=lambda: 100.0
+    )
     initial = build_runtime_input()
     with pytest.raises(DomainExtensionError, match="signature"):
         _consume(other, _scope(issuer, initial), initial)

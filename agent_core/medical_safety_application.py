@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from agent_core.domain_extension import DomainExtensionError
 from agent_core.domain_unified_application import UnifiedDomainApplication
+from agent_core.medical_execution_authority import MedicalExecutionAuthority
 from agent_core.runner import LoopBudget, RunKind, RunOutcome, StepPort
 from runtime.contracts import RuntimeInput
 
@@ -20,10 +21,12 @@ class MedicalPreflightPolicy:
     domain_id: str
     binding_fingerprint: str
     escalation_phrases: tuple[str, ...]
+    policy_version: str = "synthetic-v1"
 
     def __post_init__(self) -> None:
         if (
             not self.domain_id.startswith("medical.")
+            or not self.policy_version
             or not re.fullmatch(r"[0-9a-f]{64}", self.binding_fingerprint)
             or not self.escalation_phrases
             or len(self.escalation_phrases) > 16
@@ -47,6 +50,7 @@ class MedicalPreflightPolicy:
 class MedicalSafetyApplication:
     unified: UnifiedDomainApplication
     preflight: MedicalPreflightPolicy
+    authority: MedicalExecutionAuthority | None = None
 
     def __post_init__(self) -> None:
         binding = self.unified.app.extension.binding
@@ -74,6 +78,23 @@ class MedicalSafetyApplication:
             return RunOutcome(
                 run_id, RunKind.BLOCK, "MEDICAL_HUMAN_REVIEW_REQUIRED", 0, 0, ()
             )
+        if self.authority is None:
+            raise DomainExtensionError("medical execution authority unavailable")
+        permit = self.authority.issue(
+            initial=initial,
+            run_id=run_id,
+            domain_id=self.preflight.domain_id,
+            binding_fingerprint=self.preflight.binding_fingerprint,
+            policy_version=self.preflight.policy_version,
+        )
+        self.authority.consume(
+            permit,
+            initial=initial,
+            run_id=run_id,
+            domain_id=self.preflight.domain_id,
+            binding_fingerprint=self.preflight.binding_fingerprint,
+            policy_version=self.preflight.policy_version,
+        )
         return await self.unified._run_checked(
             initial, run_id=run_id, step=step, budget=budget
         )

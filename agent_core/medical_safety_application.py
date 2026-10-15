@@ -87,14 +87,12 @@ class MedicalSafetyApplication:
             binding_fingerprint=self.preflight.binding_fingerprint,
             policy_version=self.preflight.policy_version,
         )
-        self.authority.consume(
-            permit,
-            initial=initial,
-            run_id=run_id,
-            domain_id=self.preflight.domain_id,
-            binding_fingerprint=self.preflight.binding_fingerprint,
-            policy_version=self.preflight.policy_version,
-        )
         return await self.unified._run_checked(
-            initial, run_id=run_id, step=step, budget=budget
+            initial,
+            run_id=run_id,
+            step=step,
+            budget=budget,
+            medical_authority=self.authority,
+            medical_permit=permit,
+            medical_policy_version=self.preflight.policy_version,
         )

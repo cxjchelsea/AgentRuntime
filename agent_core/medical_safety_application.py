@@ -63,7 +63,8 @@ class MedicalSafetyApplication:
             or binding.binding_fingerprint != self.preflight.binding_fingerprint
             or (
                 self.decision_signer is not None
-                and self.decision_signer.rejected_phrases != self.preflight.escalation_phrases
+                and self.decision_signer.rejected_phrases
+                != self.preflight.escalation_phrases
             )
         ):
             raise DomainExtensionError("medical safety policy binding mismatch")

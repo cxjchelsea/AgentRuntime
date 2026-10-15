@@ -32,7 +32,7 @@ def _scope(authority, initial, run_id="test-run"):
         domain_id=DOMAIN,
         binding_fingerprint=FINGERPRINT,
         policy_version=POLICY,
-        clearance=MedicalSafetyDecisionSigner(DECISION_KEY).approve(
+        clearance=MedicalSafetyDecisionSigner(DECISION_KEY, rejected_phrases=("urgent escalation",)).approve(
             initial=initial,
             run_id=run_id,
             domain_id=DOMAIN,
@@ -201,7 +201,7 @@ def test_medical_permit_rejects_mismatched_or_forged_safety_decision():
         SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
     )
     initial = build_runtime_input(text="ordinary synthetic followup")
-    signer = MedicalSafetyDecisionSigner(DECISION_KEY)
+    signer = MedicalSafetyDecisionSigner(DECISION_KEY, rejected_phrases=("urgent escalation",))
     clearance = signer.approve(
         initial=initial,
         run_id="test-run",

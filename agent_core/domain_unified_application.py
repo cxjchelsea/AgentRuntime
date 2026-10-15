@@ -139,7 +139,9 @@ class UnifiedDomainApplication:
     ) -> RunOutcome:
         if self.app.extension.binding.domain_id.startswith("medical."):
             if medical_authority is None or medical_policy_version is None:
-                raise DomainExtensionError("medical execution requires Host authorization")
+                raise DomainExtensionError(
+                    "medical execution requires Host authorization"
+                )
             medical_authority.consume(
                 medical_permit,
                 initial=initial,

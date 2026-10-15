@@ -15,8 +15,10 @@ from agent_core.runner import Decision
 def test_medical_physical_step_rejects_bypass_before_tool() -> None:
     delegate = AsyncMock()
     untrusted = MedicalAuthorizedStep(delegate)
+
     async def scenario() -> None:
         with pytest.raises(DomainExtensionError, match="not authorized"):
             await untrusted.execute_and_observe(Decision.__new__(Decision))
         delegate.execute_and_observe.assert_not_awaited()
+
     asyncio.run(scenario())

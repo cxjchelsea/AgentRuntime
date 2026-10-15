@@ -148,7 +148,10 @@ class _RejectAllStore:
 
 def test_medical_permit_denies_when_atomic_store_cannot_admit():
     authority = MedicalExecutionAuthority(
-        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0, store=_RejectAllStore()
+        SECRET,
+        decision_verifier_key=DECISION_KEY,
+        clock=lambda: 100.0,
+        store=_RejectAllStore(),
     )
     initial = build_runtime_input()
     with pytest.raises(DomainExtensionError, match="replay"):

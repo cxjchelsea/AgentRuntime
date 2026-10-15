@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
@@ -221,3 +223,42 @@ def test_medical_permit_rejects_mismatched_or_forged_safety_decision():
             **{**scope, "initial": build_runtime_input(text="changed medical request")},
             clearance=clearance,
         )
+
+
+def test_sqlite_store_atomic_competing_consumers(tmp_path: Path):
+    database = tmp_path / "competing.sqlite"
+    one = SQLiteMedicalPermitStore(database)
+    other = SQLiteMedicalPermitStore(database)
+
+    def attempt(index: int) -> bool:
+        store = one if index % 2 == 0 else other
+        return store.consume_once("same-nonce", 1000)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(attempt, range(16)))
+    assert results.count(True) == 1
+    assert results.count(False) == 15
+
+
+def test_sqlite_store_storage_unavailable_fails_closed(tmp_path: Path):
+    database = tmp_path / "unavailable.sqlite"
+    store = SQLiteMedicalPermitStore(database)
+    database.unlink()
+    database.mkdir()
+    with pytest.raises(DomainExtensionError, match="storage unavailable"):
+        store.consume_once("new-nonce", 1000)
+
+
+def test_sqlite_store_non_unique_integrity_error_fails_closed(
+    tmp_path: Path,
+):
+    database = tmp_path / "integrity.sqlite"
+    store = SQLiteMedicalPermitStore(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TRIGGER deny_insert BEFORE INSERT "
+            "ON medical_permit_consumption "
+            "BEGIN SELECT RAISE(ABORT, 'other constraint'); END"
+        )
+    with pytest.raises(DomainExtensionError, match="storage integrity failure"):
+        store.consume_once("new-nonce", 1000)

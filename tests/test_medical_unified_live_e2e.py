@@ -24,6 +24,10 @@ from agent_core.domain_knowledge import (
     build_domain_model_messages,
 )
 from agent_core.domain_unified_application import bootstrap_unified_domain_application
+from agent_core.medical_execution_authority import (
+    MedicalExecutionAuthority,
+    MedicalSafetyDecisionSigner,
+)
 from agent_core.medical_safety_application import (
     MedicalPreflightPolicy,
     MedicalSafetyApplication,
@@ -118,6 +122,14 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
                 app.extension.binding.domain_id,
                 app.extension.binding.binding_fingerprint,
                 ("explicit urgent handoff simulation",),
+            ),
+            MedicalExecutionAuthority(
+                b"synthetic-host-fixture-key-32-bytes-long",
+                decision_verifier_key=b"synthetic-safety-decision-key-32-bytes-long",
+            ),
+            MedicalSafetyDecisionSigner(
+                b"synthetic-safety-decision-key-32-bytes-long",
+                rejected_phrases=("explicit urgent handoff simulation",),
             ),
         )
         catalog = unified.execution_catalog

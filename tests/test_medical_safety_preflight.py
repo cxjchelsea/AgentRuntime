@@ -16,6 +16,10 @@ from agent_core.domain_unified_application import (
     UnifiedDomainApplication,
     bootstrap_unified_domain_application,
 )
+from agent_core.medical_execution_authority import (
+    MedicalExecutionAuthority,
+    MedicalSafetyDecisionSigner,
+)
 from agent_core.medical_safety_application import (
     MedicalPreflightPolicy,
     MedicalSafetyApplication,
@@ -59,7 +63,18 @@ def test_medical_high_risk_preflight_never_calls_knowledge_model_or_tools(
         binding_fingerprint=unified.app.extension.binding.binding_fingerprint,
         escalation_phrases=RISK_PHRASES[domain],
     )
-    safety = MedicalSafetyApplication(unified, policy)
+    safety = MedicalSafetyApplication(
+        unified,
+        policy,
+        MedicalExecutionAuthority(
+            b"synthetic-host-fixture-key-32-bytes-long",
+            decision_verifier_key=b"synthetic-safety-decision-key-32-bytes-long",
+        ),
+        MedicalSafetyDecisionSigner(
+            b"synthetic-safety-decision-key-32-bytes-long",
+            rejected_phrases=RISK_PHRASES[domain],
+        ),
+    )
 
     class ForbiddenStep:
         async def decide(self, *args):
@@ -161,11 +176,32 @@ def test_medical_safety_entry_routes_routine_only_after_preflight(
             unified.app.extension.binding.binding_fingerprint,
             RISK_PHRASES[domain],
         ),
+        MedicalExecutionAuthority(
+            b"synthetic-host-fixture-key-32-bytes-long",
+            decision_verifier_key=b"synthetic-safety-decision-key-32-bytes-long",
+        ),
+        MedicalSafetyDecisionSigner(
+            b"synthetic-safety-decision-key-32-bytes-long",
+            rejected_phrases=RISK_PHRASES[domain],
+        ),
     )
     calls: list[str] = []
 
-    async def checked_execution(self, initial, *, run_id, step, budget):
+    async def checked_execution(
+        self,
+        initial,
+        *,
+        run_id,
+        step,
+        budget,
+        medical_authority=None,
+        medical_permit=None,
+        medical_policy_version=None,
+    ):
         del self, step, budget
+        assert medical_authority is not None
+        assert medical_permit is not None
+        assert medical_policy_version is not None
         calls.append(initial.text)
         return RunOutcome(run_id, RunKind.WAIT, "ROUTED_TO_CHECKED_AGENT", 1, 0, ())
 
@@ -196,5 +232,33 @@ def test_medical_safety_entry_routes_routine_only_after_preflight(
             )
             assert missing.reason == "MEDICAL_SAFETY_INPUT_UNAVAILABLE"
         assert calls == ["routine synthetic checkin"]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(("domain", "topic", "values"), DOMAINS)
+def test_medical_checked_execution_requires_a_host_permit(
+    tmp_path: Path, domain: str, topic: str, values: dict[str, int]
+) -> None:
+    del topic, values
+    snapshot = _medical_package(tmp_path / "no-permit", domain, differentiated=True)
+    unified = bootstrap_unified_domain_application(
+        snapshot,
+        retriever=lambda scope, query, limit: (),
+        query="synthetic checkin",
+        model_config=ChatCompletionsConfig(
+            endpoint="http://127.0.0.1:11434/v1/chat/completions",
+            model="qwen2.5:3b",
+        ),
+    )
+
+    async def scenario() -> None:
+        with pytest.raises(DomainExtensionError, match="requires Host authorization"):
+            await unified._run_checked(
+                build_runtime_input(text="ordinary synthetic followup"),
+                run_id="untrusted-run",
+                step=cast(StepPort, object()),
+                budget=LoopBudget(),
+            )
 
     asyncio.run(scenario())

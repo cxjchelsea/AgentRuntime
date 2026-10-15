@@ -11,6 +11,10 @@ from dataclasses import dataclass
 
 from agent_core.domain_extension import DomainExtensionError
 from agent_core.domain_unified_application import UnifiedDomainApplication
+from agent_core.medical_execution_authority import (
+    MedicalExecutionAuthority,
+    MedicalSafetyDecisionSigner,
+)
 from agent_core.runner import LoopBudget, RunKind, RunOutcome, StepPort
 from runtime.contracts import RuntimeInput
 
@@ -20,10 +24,12 @@ class MedicalPreflightPolicy:
     domain_id: str
     binding_fingerprint: str
     escalation_phrases: tuple[str, ...]
+    policy_version: str = "synthetic-v1"
 
     def __post_init__(self) -> None:
         if (
             not self.domain_id.startswith("medical.")
+            or not self.policy_version
             or not re.fullmatch(r"[0-9a-f]{64}", self.binding_fingerprint)
             or not self.escalation_phrases
             or len(self.escalation_phrases) > 16
@@ -47,12 +53,19 @@ class MedicalPreflightPolicy:
 class MedicalSafetyApplication:
     unified: UnifiedDomainApplication
     preflight: MedicalPreflightPolicy
+    authority: MedicalExecutionAuthority | None = None
+    decision_signer: MedicalSafetyDecisionSigner | None = None
 
     def __post_init__(self) -> None:
         binding = self.unified.app.extension.binding
         if (
             binding.domain_id != self.preflight.domain_id
             or binding.binding_fingerprint != self.preflight.binding_fingerprint
+            or (
+                self.decision_signer is not None
+                and self.decision_signer.rejected_phrases
+                != self.preflight.escalation_phrases
+            )
         ):
             raise DomainExtensionError("medical safety policy binding mismatch")
 
@@ -74,6 +87,29 @@ class MedicalSafetyApplication:
             return RunOutcome(
                 run_id, RunKind.BLOCK, "MEDICAL_HUMAN_REVIEW_REQUIRED", 0, 0, ()
             )
+        if self.authority is None or self.decision_signer is None:
+            raise DomainExtensionError("medical execution authority unavailable")
+        clearance = self.decision_signer.approve(
+            initial=initial,
+            run_id=run_id,
+            domain_id=self.preflight.domain_id,
+            binding_fingerprint=self.preflight.binding_fingerprint,
+            policy_version=self.preflight.policy_version,
+        )
+        permit = self.authority.issue(
+            initial=initial,
+            run_id=run_id,
+            domain_id=self.preflight.domain_id,
+            binding_fingerprint=self.preflight.binding_fingerprint,
+            policy_version=self.preflight.policy_version,
+            clearance=clearance,
+        )
         return await self.unified._run_checked(
-            initial, run_id=run_id, step=step, budget=budget
+            initial,
+            run_id=run_id,
+            step=step,
+            budget=budget,
+            medical_authority=self.authority,
+            medical_permit=permit,
+            medical_policy_version=self.preflight.policy_version,
         )

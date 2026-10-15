@@ -168,8 +168,14 @@ def test_medical_safety_entry_routes_routine_only_after_preflight(
     )
     calls: list[str] = []
 
-    async def checked_execution(self, initial, *, run_id, step, budget):
+    async def checked_execution(
+        self, initial, *, run_id, step, budget,
+        medical_authority=None, medical_permit=None, medical_policy_version=None,
+    ):
         del self, step, budget
+        assert medical_authority is not None
+        assert medical_permit is not None
+        assert medical_policy_version is not None
         calls.append(initial.text)
         return RunOutcome(run_id, RunKind.WAIT, "ROUTED_TO_CHECKED_AGENT", 1, 0, ())
 

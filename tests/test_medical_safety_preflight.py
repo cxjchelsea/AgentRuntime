@@ -61,7 +61,9 @@ def test_medical_high_risk_preflight_never_calls_knowledge_model_or_tools(
         escalation_phrases=RISK_PHRASES[domain],
     )
     safety = MedicalSafetyApplication(
-        unified, policy, MedicalExecutionAuthority(b"synthetic-host-fixture-key-32-bytes-long")
+        unified,
+        policy,
+        MedicalExecutionAuthority(b"synthetic-host-fixture-key-32-bytes-long"),
     )
 
     class ForbiddenStep:
@@ -169,8 +171,15 @@ def test_medical_safety_entry_routes_routine_only_after_preflight(
     calls: list[str] = []
 
     async def checked_execution(
-        self, initial, *, run_id, step, budget,
-        medical_authority=None, medical_permit=None, medical_policy_version=None,
+        self,
+        initial,
+        *,
+        run_id,
+        step,
+        budget,
+        medical_authority=None,
+        medical_permit=None,
+        medical_policy_version=None,
     ):
         del self, step, budget
         assert medical_authority is not None

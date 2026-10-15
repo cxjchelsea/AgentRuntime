@@ -11,7 +11,10 @@ from dataclasses import dataclass
 
 from agent_core.domain_extension import DomainExtensionError
 from agent_core.domain_unified_application import UnifiedDomainApplication
-from agent_core.medical_execution_authority import MedicalExecutionAuthority
+from agent_core.medical_execution_authority import (
+    MedicalExecutionAuthority,
+    MedicalSafetyDecisionSigner,
+)
 from agent_core.runner import LoopBudget, RunKind, RunOutcome, StepPort
 from runtime.contracts import RuntimeInput
 
@@ -51,6 +54,7 @@ class MedicalSafetyApplication:
     unified: UnifiedDomainApplication
     preflight: MedicalPreflightPolicy
     authority: MedicalExecutionAuthority | None = None
+    decision_signer: MedicalSafetyDecisionSigner | None = None
 
     def __post_init__(self) -> None:
         binding = self.unified.app.extension.binding
@@ -78,14 +82,22 @@ class MedicalSafetyApplication:
             return RunOutcome(
                 run_id, RunKind.BLOCK, "MEDICAL_HUMAN_REVIEW_REQUIRED", 0, 0, ()
             )
-        if self.authority is None:
+        if self.authority is None or self.decision_signer is None:
             raise DomainExtensionError("medical execution authority unavailable")
+        clearance = self.decision_signer.approve(
+            initial=initial,
+            run_id=run_id,
+            domain_id=self.preflight.domain_id,
+            binding_fingerprint=self.preflight.binding_fingerprint,
+            policy_version=self.preflight.policy_version,
+        )
         permit = self.authority.issue(
             initial=initial,
             run_id=run_id,
             domain_id=self.preflight.domain_id,
             binding_fingerprint=self.preflight.binding_fingerprint,
             policy_version=self.preflight.policy_version,
+            clearance=clearance,
         )
         return await self.unified._run_checked(
             initial,

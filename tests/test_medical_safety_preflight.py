@@ -174,9 +174,10 @@ def test_medical_safety_entry_routes_routine_only_after_preflight(
             RISK_PHRASES[domain],
         ),
         MedicalExecutionAuthority(
-                b"synthetic-host-fixture-key-32-bytes-long",
-                decision_verifier_key=b"synthetic-safety-decision-key-32-bytes-long",
-            ),
+            b"synthetic-host-fixture-key-32-bytes-long",
+            decision_verifier_key=b"synthetic-safety-decision-key-32-bytes-long",
+        ),
+        MedicalSafetyDecisionSigner(b"synthetic-safety-decision-key-32-bytes-long"),
     )
     calls: list[str] = []
 

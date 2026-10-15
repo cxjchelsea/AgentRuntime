@@ -16,7 +16,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from agent_core.domain_extension import DomainExtensionError
-from runtime.execution.invocation import PhysicalToolAttemptExecutor, ToolAttemptObservation
+from runtime.execution.invocation import (
+    PhysicalToolAttemptExecutor,
+    ToolAttemptObservation,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,9 +74,16 @@ class TrustedMedicalOperationIssuer:
         ttl_seconds: int = 30,
     ) -> MedicalPhysicalGrant:
         fields = (
-            run_id, request_id, domain_fingerprint, identity_scope,
-            approved_plan_id, step_execution_id, tool_id,
-            logical_tool_call_id, operation_key, operation_fingerprint,
+            run_id,
+            request_id,
+            domain_fingerprint,
+            identity_scope,
+            approved_plan_id,
+            step_execution_id,
+            tool_id,
+            logical_tool_call_id,
+            operation_key,
+            operation_fingerprint,
         )
         if (
             any(type(field) is not str or not field for field in fields)
@@ -108,7 +118,9 @@ class TrustedMedicalOperationIssuer:
 
 def _digest(payload: dict[str, object]) -> str:
     try:
-        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        raw = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
     except (ValueError, TypeError) as exc:
         raise DomainExtensionError("unserializable medical physical input") from exc
     return hashlib.sha256(raw.encode()).hexdigest()

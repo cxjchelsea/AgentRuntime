@@ -8,8 +8,8 @@ root. This does not substitute for independent M6/tool-host enforcement.
 from __future__ import annotations
 
 from agent_core.domain_extension import DomainExtensionError
-from agent_core.runner import Decision, ObservedFact, StepPort
 from agent_core.iteration import IterationRef
+from agent_core.runner import Decision, ObservedFact, StepPort
 from runtime.contracts import RuntimeInput
 
 

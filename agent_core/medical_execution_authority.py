@@ -13,6 +13,7 @@ import json
 import secrets
 import time
 from collections.abc import Callable
+from typing import Protocol
 from dataclasses import dataclass
 
 from agent_core.domain_extension import DomainExtensionError
@@ -25,6 +26,26 @@ class MedicalExecutionPermit:
     signature: str
 
 
+class MedicalPermitConsumptionStore(Protocol):
+    """Host-owned atomic, durable compare-and-set consumption boundary."""
+
+    def consume_once(self, nonce: str, expires_at: int) -> bool: ...
+
+
+class InMemoryMedicalPermitStore:
+    """Single-process testing only; NOT production durable or cross-worker."""
+
+    def __init__(self) -> None:
+        self._consumed: set[str] = set()
+
+    def consume_once(self, nonce: str, expires_at: int) -> bool:
+        del expires_at
+        if nonce in self._consumed:
+            return False
+        self._consumed.add(nonce)
+        return True
+
+
 class MedicalExecutionAuthority:
     """Mint and consume exactly once a run/request/domain/subject-bound permit."""
 
@@ -34,6 +55,7 @@ class MedicalExecutionAuthority:
         *,
         clock: Callable[[], float] = time.time,
         ttl_seconds: int = 60,
+        store: MedicalPermitConsumptionStore | None = None,
     ) -> None:
         if type(secret) is not bytes or len(secret) < 32:
             raise DomainExtensionError("medical issuer requires a trusted key")
@@ -42,7 +64,7 @@ class MedicalExecutionAuthority:
         self._secret = secret
         self._clock = clock
         self._ttl = ttl_seconds
-        self._consumed: set[str] = set()
+        self._store = store if store is not None else InMemoryMedicalPermitStore()
 
     def issue(
         self,
@@ -123,6 +145,5 @@ class MedicalExecutionAuthority:
             or int(self._clock()) >= expiry
         ):
             raise DomainExtensionError("expired or invalid medical authorization")
-        if nonce in self._consumed:
+        if not self._store.consume_once(nonce, expiry):
             raise DomainExtensionError("medical authorization replay")
-        self._consumed.add(nonce)

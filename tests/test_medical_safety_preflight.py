@@ -16,7 +16,10 @@ from agent_core.domain_unified_application import (
     UnifiedDomainApplication,
     bootstrap_unified_domain_application,
 )
-from agent_core.medical_execution_authority import MedicalExecutionAuthority
+from agent_core.medical_execution_authority import (
+    MedicalExecutionAuthority,
+    MedicalSafetyDecisionSigner,
+)
 from agent_core.medical_safety_application import (
     MedicalPreflightPolicy,
     MedicalSafetyApplication,
@@ -63,7 +66,11 @@ def test_medical_high_risk_preflight_never_calls_knowledge_model_or_tools(
     safety = MedicalSafetyApplication(
         unified,
         policy,
-        MedicalExecutionAuthority(b"synthetic-host-fixture-key-32-bytes-long"),
+        MedicalExecutionAuthority(
+            b"synthetic-host-fixture-key-32-bytes-long",
+            decision_verifier_key=b"synthetic-safety-decision-key-32-bytes-long",
+        ),
+        MedicalSafetyDecisionSigner(b"synthetic-safety-decision-key-32-bytes-long"),
     )
 
     class ForbiddenStep:
@@ -166,7 +173,10 @@ def test_medical_safety_entry_routes_routine_only_after_preflight(
             unified.app.extension.binding.binding_fingerprint,
             RISK_PHRASES[domain],
         ),
-        MedicalExecutionAuthority(b"synthetic-host-fixture-key-32-bytes-long"),
+        MedicalExecutionAuthority(
+                b"synthetic-host-fixture-key-32-bytes-long",
+                decision_verifier_key=b"synthetic-safety-decision-key-32-bytes-long",
+            ),
     )
     calls: list[str] = []
 

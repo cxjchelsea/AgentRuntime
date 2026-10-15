@@ -70,7 +70,10 @@ def test_medical_high_risk_preflight_never_calls_knowledge_model_or_tools(
             b"synthetic-host-fixture-key-32-bytes-long",
             decision_verifier_key=b"synthetic-safety-decision-key-32-bytes-long",
         ),
-        MedicalSafetyDecisionSigner(b"synthetic-safety-decision-key-32-bytes-long"),
+        MedicalSafetyDecisionSigner(
+            b"synthetic-safety-decision-key-32-bytes-long",
+            rejected_phrases=RISK_PHRASES[domain],
+        ),
     )
 
     class ForbiddenStep:
@@ -177,7 +180,10 @@ def test_medical_safety_entry_routes_routine_only_after_preflight(
             b"synthetic-host-fixture-key-32-bytes-long",
             decision_verifier_key=b"synthetic-safety-decision-key-32-bytes-long",
         ),
-        MedicalSafetyDecisionSigner(b"synthetic-safety-decision-key-32-bytes-long"),
+        MedicalSafetyDecisionSigner(
+            b"synthetic-safety-decision-key-32-bytes-long",
+            rejected_phrases=RISK_PHRASES[domain],
+        ),
     )
     calls: list[str] = []
 

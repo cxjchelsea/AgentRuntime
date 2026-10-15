@@ -208,3 +208,31 @@ def test_medical_safety_entry_routes_routine_only_after_preflight(
         assert calls == ["routine synthetic checkin"]
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(("domain", "topic", "values"), DOMAINS)
+def test_medical_checked_execution_requires_a_host_permit(
+    tmp_path: Path, domain: str, topic: str, values: dict[str, int]
+) -> None:
+    del topic, values
+    snapshot = _medical_package(tmp_path / "no-permit", domain, differentiated=True)
+    unified = bootstrap_unified_domain_application(
+        snapshot,
+        retriever=lambda scope, query, limit: (),
+        query="synthetic checkin",
+        model_config=ChatCompletionsConfig(
+            endpoint="http://127.0.0.1:11434/v1/chat/completions",
+            model="qwen2.5:3b",
+        ),
+    )
+
+    async def scenario() -> None:
+        with pytest.raises(DomainExtensionError, match="requires Host authorization"):
+            await unified._run_checked(
+                build_runtime_input(text="ordinary synthetic followup"),
+                run_id="untrusted-run",
+                step=cast(StepPort, object()),
+                budget=LoopBudget(),
+            )
+
+    asyncio.run(scenario())

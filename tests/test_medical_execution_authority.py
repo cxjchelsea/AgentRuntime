@@ -12,6 +12,7 @@ from agent_core.medical_execution_authority import (
     MedicalExecutionAuthority,
     InMemoryMedicalPermitStore,
     SQLiteMedicalPermitStore,
+    MedicalSafetyDecisionSigner,
 )
 from tests.orchestration_stubs import build_runtime_input
 
@@ -19,6 +20,7 @@ SECRET = b"synthetic-host-fixture-key-32-bytes-long"
 DOMAIN = "medical.chronic-management"
 FINGERPRINT = "a" * 64
 POLICY = "reviewed-fixture-v1"
+DECISION_KEY = b"synthetic-safety-decision-key-32-bytes-long"
 
 
 def _scope(authority, initial, run_id="test-run"):
@@ -28,6 +30,13 @@ def _scope(authority, initial, run_id="test-run"):
         domain_id=DOMAIN,
         binding_fingerprint=FINGERPRINT,
         policy_version=POLICY,
+        clearance=MedicalSafetyDecisionSigner(DECISION_KEY).approve(
+            initial=initial,
+            run_id=run_id,
+            domain_id=DOMAIN,
+            binding_fingerprint=FINGERPRINT,
+            policy_version=POLICY,
+        ),
     )
 
 
@@ -44,7 +53,7 @@ def _consume(authority, permit, initial, **changes):
 
 
 def test_medical_permit_valid_once_and_replay_denied():
-    authority = MedicalExecutionAuthority(SECRET, clock=lambda: 100.0)
+    authority = MedicalExecutionAuthority(SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0)
     initial = build_runtime_input()
     permit = _scope(authority, initial)
     _consume(authority, permit, initial)
@@ -82,7 +91,7 @@ def test_medical_permit_rejects_foreign_request_and_identity():
 def test_medical_permit_rejects_expiration_and_forgery():
     current = [100.0]
     authority = MedicalExecutionAuthority(
-        SECRET, clock=lambda: current[0], ttl_seconds=2
+        SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: current[0], ttl_seconds=2
     )
     initial = build_runtime_input()
     original = _scope(authority, initial)
@@ -96,7 +105,7 @@ def test_medical_permit_rejects_expiration_and_forgery():
 def test_medical_permit_rejects_wrong_host_key():
     issuer = MedicalExecutionAuthority(SECRET, clock=lambda: 100.0)
     other = MedicalExecutionAuthority(
-        b"different-synthetic-host-key-32-bytes", clock=lambda: 100.0
+        b"different-synthetic-host-key-32-bytes", decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
     )
     initial = build_runtime_input()
     with pytest.raises(DomainExtensionError, match="signature"):

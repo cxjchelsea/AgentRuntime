@@ -32,7 +32,9 @@ def _scope(authority, initial, run_id="test-run"):
         domain_id=DOMAIN,
         binding_fingerprint=FINGERPRINT,
         policy_version=POLICY,
-        clearance=MedicalSafetyDecisionSigner(DECISION_KEY, rejected_phrases=("urgent escalation",)).approve(
+        clearance=MedicalSafetyDecisionSigner(
+            DECISION_KEY, rejected_phrases=("urgent escalation",)
+        ).approve(
             initial=initial,
             run_id=run_id,
             domain_id=DOMAIN,
@@ -58,7 +60,7 @@ def test_medical_permit_valid_once_and_replay_denied():
     authority = MedicalExecutionAuthority(
         SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
     )
-    initial = build_runtime_input()
+    initial = build_runtime_input(text="ordinary synthetic followup")
     permit = _scope(authority, initial)
     _consume(authority, permit, initial)
     with pytest.raises(DomainExtensionError, match="replay"):
@@ -78,7 +80,7 @@ def test_medical_permit_rejects_foreign_scope(overrides, message):
     authority = MedicalExecutionAuthority(
         SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
     )
-    initial = build_runtime_input()
+    initial = build_runtime_input(text="ordinary synthetic followup")
     permit = _scope(authority, initial)
     with pytest.raises(DomainExtensionError, match=message):
         _consume(authority, permit, initial, **overrides)
@@ -88,7 +90,7 @@ def test_medical_permit_rejects_foreign_request_and_identity():
     authority = MedicalExecutionAuthority(
         SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
     )
-    initial = build_runtime_input()
+    initial = build_runtime_input(text="ordinary synthetic followup")
     permit = _scope(authority, initial)
     with pytest.raises(DomainExtensionError, match="scope mismatch"):
         _consume(authority, permit, build_runtime_input(request_id="foreign"))
@@ -104,7 +106,7 @@ def test_medical_permit_rejects_expiration_and_forgery():
         clock=lambda: current[0],
         ttl_seconds=2,
     )
-    initial = build_runtime_input()
+    initial = build_runtime_input(text="ordinary synthetic followup")
     original = _scope(authority, initial)
     with pytest.raises(DomainExtensionError, match="signature"):
         _consume(authority, replace(original, signature="0" * 64), initial)
@@ -122,7 +124,7 @@ def test_medical_permit_rejects_wrong_host_key():
         decision_verifier_key=DECISION_KEY,
         clock=lambda: 100.0,
     )
-    initial = build_runtime_input()
+    initial = build_runtime_input(text="ordinary synthetic followup")
     with pytest.raises(DomainExtensionError, match="signature"):
         _consume(other, _scope(issuer, initial), initial)
 
@@ -135,7 +137,7 @@ def test_medical_permit_shared_store_rejects_cross_instance_replay():
     verifier = MedicalExecutionAuthority(
         SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0, store=store
     )
-    initial = build_runtime_input()
+    initial = build_runtime_input(text="ordinary synthetic followup")
     permit = _scope(issuer, initial)
     _consume(verifier, permit, initial)
     with pytest.raises(DomainExtensionError, match="replay"):
@@ -155,14 +157,14 @@ def test_medical_permit_denies_when_atomic_store_cannot_admit():
         clock=lambda: 100.0,
         store=_RejectAllStore(),
     )
-    initial = build_runtime_input()
+    initial = build_runtime_input(text="ordinary synthetic followup")
     with pytest.raises(DomainExtensionError, match="replay"):
         _consume(authority, _scope(authority, initial), initial)
 
 
 def test_durable_sqlite_permit_prevents_replay_after_restart(tmp_path: Path):
     file = tmp_path / "medical-permits.sqlite"
-    initial = build_runtime_input()
+    initial = build_runtime_input(text="ordinary synthetic followup")
     first = MedicalExecutionAuthority(
         SECRET,
         decision_verifier_key=DECISION_KEY,
@@ -201,7 +203,9 @@ def test_medical_permit_rejects_mismatched_or_forged_safety_decision():
         SECRET, decision_verifier_key=DECISION_KEY, clock=lambda: 100.0
     )
     initial = build_runtime_input(text="ordinary synthetic followup")
-    signer = MedicalSafetyDecisionSigner(DECISION_KEY, rejected_phrases=("urgent escalation",))
+    signer = MedicalSafetyDecisionSigner(
+        DECISION_KEY, rejected_phrases=("urgent escalation",)
+    )
     clearance = signer.approve(
         initial=initial,
         run_id="test-run",
@@ -209,13 +213,13 @@ def test_medical_permit_rejects_mismatched_or_forged_safety_decision():
         binding_fingerprint=FINGERPRINT,
         policy_version=POLICY,
     )
-    scope = dict(
-        initial=initial,
-        run_id="test-run",
-        domain_id=DOMAIN,
-        binding_fingerprint=FINGERPRINT,
-        policy_version=POLICY,
-    )
+    scope = {
+        "initial": initial,
+        "run_id": "test-run",
+        "domain_id": DOMAIN,
+        "binding_fingerprint": FINGERPRINT,
+        "policy_version": POLICY,
+    }
     with pytest.raises(DomainExtensionError, match="decision signature"):
         authority.issue(**scope, clearance=replace(clearance, signature="0" * 64))
     with pytest.raises(DomainExtensionError, match="decision scope mismatch"):

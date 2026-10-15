@@ -33,6 +33,7 @@ from agent_core.medical_execution_authority import (
     MedicalExecutionAuthority,
     MedicalExecutionPermit,
 )
+from agent_core.medical_tool_execution_gate import MedicalAuthorizedStep
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import LoopBudget, RunOutcome, StepPort
 from runtime.contracts import RuntimeInput
@@ -137,7 +138,8 @@ class UnifiedDomainApplication:
         medical_permit: MedicalExecutionPermit | None = None,
         medical_policy_version: str | None = None,
     ) -> RunOutcome:
-        if self.app.extension.binding.domain_id.startswith("medical."):
+        is_medical = self.app.extension.binding.domain_id.startswith("medical.")
+        if is_medical:
             if medical_authority is None or medical_policy_version is None:
                 raise DomainExtensionError(
                     "medical execution requires Host authorization"
@@ -159,7 +161,7 @@ class UnifiedDomainApplication:
         return await self.app.run(
             initial,
             run_id=run_id,
-            step=step,
+            step=MedicalAuthorizedStep(step, authorized=True) if is_medical else step,
             budget=budget,
             execution_catalog=self.execution_catalog,
         )

@@ -11,7 +11,9 @@ import hashlib
 import hmac
 import json
 import secrets
+import sqlite3
 import time
+from pathlib import Path
 from collections.abc import Callable
 from typing import Protocol
 from dataclasses import dataclass
@@ -44,6 +46,35 @@ class InMemoryMedicalPermitStore:
             return False
         self._consumed.add(nonce)
         return True
+
+
+
+class SQLiteMedicalPermitStore:
+    """Durable SQLite uniqueness fence for local integration, not a production DB."""
+
+    def __init__(self, path: Path) -> None:
+        if type(path) is not Path:
+            raise DomainExtensionError("invalid medical permit store path")
+        self._path = path
+        with sqlite3.connect(self._path, timeout=5.0) as db:
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS medical_permit_consumption "
+                "(nonce TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)"
+            )
+
+    def consume_once(self, nonce: str, expires_at: int) -> bool:
+        try:
+            with sqlite3.connect(self._path, timeout=5.0) as db:
+                db.execute(
+                    "INSERT INTO medical_permit_consumption(nonce, expires_at) "
+                    "VALUES (?, ?)",
+                    (nonce, expires_at),
+                )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+        except sqlite3.Error as exc:
+            raise DomainExtensionError("medical permit storage unavailable") from exc
 
 
 class MedicalExecutionAuthority:

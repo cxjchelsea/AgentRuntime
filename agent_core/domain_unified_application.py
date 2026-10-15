@@ -29,6 +29,10 @@ from agent_core.domain_knowledge import (
 )
 from agent_core.domain_package_loader import VerifiedPackageSnapshotV1
 from agent_core.knowledge_model_transport import KnowledgeBackedStrategyTransport
+from agent_core.medical_execution_authority import (
+    MedicalExecutionAuthority,
+    MedicalExecutionPermit,
+)
 from agent_core.model_adapter import StructuredStrategyTransportAdapter
 from agent_core.runner import LoopBudget, RunOutcome, StepPort
 from runtime.contracts import RuntimeInput
@@ -129,7 +133,21 @@ class UnifiedDomainApplication:
         run_id: str,
         step: StepPort,
         budget: LoopBudget,
+        medical_authority: MedicalExecutionAuthority | None = None,
+        medical_permit: MedicalExecutionPermit | None = None,
+        medical_policy_version: str | None = None,
     ) -> RunOutcome:
+        if self.app.extension.binding.domain_id.startswith("medical."):
+            if medical_authority is None or medical_policy_version is None:
+                raise DomainExtensionError("medical execution requires Host authorization")
+            medical_authority.consume(
+                medical_permit,
+                initial=initial,
+                run_id=run_id,
+                domain_id=self.app.extension.binding.domain_id,
+                binding_fingerprint=self.app.extension.binding.binding_fingerprint,
+                policy_version=medical_policy_version,
+            )
         if (
             getattr(step, "_planner", None) is not self.planner
             or getattr(step, "_validator", None) is not self.validator

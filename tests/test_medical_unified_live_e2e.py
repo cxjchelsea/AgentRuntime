@@ -127,7 +127,10 @@ def test_unified_medical_package_knowledge_policy_model_and_readonly_tools(
                 b"synthetic-host-fixture-key-32-bytes-long",
                 decision_verifier_key=b"synthetic-safety-decision-key-32-bytes-long",
             ),
-            MedicalSafetyDecisionSigner(b"synthetic-safety-decision-key-32-bytes-long"),
+            MedicalSafetyDecisionSigner(
+                b"synthetic-safety-decision-key-32-bytes-long",
+                rejected_phrases=("explicit urgent handoff simulation",),
+            ),
         )
         catalog = unified.execution_catalog
         assert catalog is not None

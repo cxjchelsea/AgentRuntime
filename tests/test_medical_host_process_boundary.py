@@ -101,9 +101,7 @@ def test_separate_host_process_rejects_bypass_and_preserves_claim(
                 **SCOPE
             )
             altered = {**request, "tool_id": "foreign-tool"}
-            denied = await request_medical_host(
-                socket, grant=signed, operation=altered
-            )
+            denied = await request_medical_host(socket, grant=signed, operation=altered)
             assert denied["ok"] is False
             assert not effects.exists()
             allowed = await request_medical_host(
@@ -111,9 +109,7 @@ def test_separate_host_process_rejects_bypass_and_preserves_claim(
             )
             assert allowed["ok"] is True
             assert effects.read_text(encoding="utf-8").splitlines() == ["attempt"]
-            replay = await request_medical_host(
-                socket, grant=signed, operation=request
-            )
+            replay = await request_medical_host(socket, grant=signed, operation=request)
             assert replay["ok"] is False
             assert effects.read_text(encoding="utf-8").splitlines() == ["attempt"]
         finally:

@@ -1,4 +1,5 @@
 """Passive acceptance tracing must observe, never alter, Agent decisions."""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,9 +18,14 @@ def test_trace_records_decision_observation_and_finish_without_reexecution() -> 
     action = Decision(iteration, "ACT", reason="approved")
     finished = Decision(iteration, "FINISH", reason="evidence verified")
     observation = ObservedFact(
-        "run-1", "request-1", "plan-1", "execution-1",
-        "fingerprint-1", ("SYNTHETIC_TEST_FACT",),
-        workflow_step_id="step-1", tool_id="tool-1",
+        "run-1",
+        "request-1",
+        "plan-1",
+        "execution-1",
+        "fingerprint-1",
+        ("SYNTHETIC_TEST_FACT",),
+        workflow_step_id="step-1",
+        tool_id="tool-1",
     )
 
     class SyntheticStep:
@@ -38,7 +44,9 @@ def test_trace_records_decision_observation_and_finish_without_reexecution() -> 
 
     asyncio.run(exercise())
     assert [event["type"] for event in tracing.events] == [
-        "decision", "observation", "decision",
+        "decision",
+        "observation",
+        "decision",
     ]
     assert tracing.events[2]["seen_observations"] == 1
     assert tracing.events[1]["workflow_step_id"] == "step-1"

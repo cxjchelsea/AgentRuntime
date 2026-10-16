@@ -171,6 +171,10 @@ def test_physical_operation_issuer_requires_signed_scoped_medical_run_permit() -
     bound = PermitBoundMedicalOperationIssuer(
         operation_issuer=TrustedMedicalOperationIssuer(SECRET, clock=lambda: 100.0),
         medical_permit_verifier_key=medical_key,
+        approved_plan_verifier=lambda run, plan, step, tool: (
+            run == "scoped-run" and plan == "p1"
+            and step == "s1" and tool == "synthetic.readonly"
+        ),
     )
 
     def request(signed: Any, **changes: Any) -> Any:
@@ -193,6 +197,8 @@ def test_physical_operation_issuer_requires_signed_scoped_medical_run_permit() -
         bound.grant_from_permit(**request(permit, identity_scope="another-tenant"))
     with pytest.raises(DomainExtensionError, match="scope mismatch"):
         bound.grant_from_permit(**request(permit, domain_id="medical.foreign"))
+    with pytest.raises(DomainExtensionError, match="plan authorization denied"):
+        bound.grant_from_permit(**request(permit, approved_plan_id="foreign-plan"))
 
 
 def test_host_crash_unknown_outcome_never_replays_external_attempt(

@@ -12,8 +12,14 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agent_core.domain_extension import DomainExtensionError
+from tests.orchestration_stubs import build_runtime_input
+from agent_core.medical_execution_authority import (
+    MedicalExecutionAuthority,
+    MedicalSafetyDecisionSigner,
+)
 from agent_core.medical_physical_host import (
     InMemoryOperationClaimStore,
+    PermitBoundMedicalOperationIssuer,
     SQLiteOperationClaimStore,
     TrustedMedicalOperationIssuer,
     TrustedMedicalPhysicalHost,
@@ -128,3 +134,55 @@ def test_sqlite_host_claim_storage_failure_closed(tmp_path: Path) -> None:
     database.mkdir()
     with pytest.raises(DomainExtensionError, match="storage unavailable"):
         store.claim_once("new-operation")
+
+
+def test_physical_operation_issuer_requires_signed_scoped_medical_run_permit() -> None:
+    from dataclasses import replace as replace_signed
+
+    medical_key = b"synthetic-medical-run-permit-issuer-key-32"
+    decision_key = b"synthetic-medical-safety-decision-key-32"
+    initial = build_runtime_input(text="ordinary synthetic followup")
+    operation = {
+        **SCOPE,
+        "run_id": "scoped-run",
+        "request_id": initial.request_id,
+        "identity_scope": initial.identity_scope,
+    }
+    domain_id = "medical.chronic-management"
+    version = "synthetic-reviewed-policy"
+    clearance = MedicalSafetyDecisionSigner(
+        decision_key, rejected_phrases=("urgent escalation",)
+    ).approve(
+        initial=initial, run_id="scoped-run", domain_id=domain_id,
+        binding_fingerprint=operation["domain_fingerprint"],
+        policy_version=version,
+    )
+    medical = MedicalExecutionAuthority(
+        medical_key, decision_verifier_key=decision_key, clock=lambda: 100.0
+    )
+    permit = medical.issue(
+        initial=initial, run_id="scoped-run", domain_id=domain_id,
+        binding_fingerprint=operation["domain_fingerprint"],
+        policy_version=version, clearance=clearance,
+    )
+    bound = PermitBoundMedicalOperationIssuer(
+        operation_issuer=TrustedMedicalOperationIssuer(SECRET, clock=lambda: 100.0),
+        medical_permit_verifier_key=medical_key,
+    )
+
+    def request(signed: Any, **changes: Any) -> Any:
+        return {
+            "permit": signed, "domain_id": domain_id, "policy_version": version,
+            "subject_id": initial.subject_id, "session_id": initial.session_id,
+            **operation, **changes,
+        }
+
+    assert bound.grant_from_permit(**request(permit)).signature
+    with pytest.raises(DomainExtensionError, match="signature"):
+        bound.grant_from_permit(
+            **request(replace_signed(permit, signature="0" * 64))
+        )
+    with pytest.raises(DomainExtensionError, match="scope mismatch"):
+        bound.grant_from_permit(**request(permit, identity_scope="another-tenant"))
+    with pytest.raises(DomainExtensionError, match="scope mismatch"):
+        bound.grant_from_permit(**request(permit, domain_id="medical.foreign"))

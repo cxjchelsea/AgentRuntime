@@ -16,10 +16,10 @@ from agent_core.medical_host_unix_endpoint import (
 from agent_core.medical_physical_host import (
     SQLiteOperationClaimStore,
     TrustedMedicalOperationIssuer,
+    MedicalPhysicalGrant,
     TrustedMedicalPhysicalHost,
 )
 
-KEY = b"synthetic-spawn-host-isolated-32bytes-long"
 SCOPE: dict[str, Any] = {
     "run_id": "process-run",
     "request_id": "process-request",
@@ -47,16 +47,19 @@ class _HostOnlyPhysicalAdapter:
         return None
 
 
-def _host_process(socket: str, db: str, marker: str, stop: Any) -> None:
+def _host_process(socket: str, db: str, marker: str, stop: Any, grants: Any) -> None:
+    host_secret = b"synthetic-spawn-host-isolated-32bytes-long"
     async def run() -> None:
         physical = _HostOnlyPhysicalAdapter(Path(marker))
         trusted = TrustedMedicalPhysicalHost(
-            secret=KEY,
+            secret=host_secret,
             physical=physical,
             claims=SQLiteOperationClaimStore(Path(db)),
             clock=lambda: 100.0,
         )
         server = await MedicalHostUnixEndpoint(trusted).serve(Path(socket))
+        token = TrustedMedicalOperationIssuer(host_secret, clock=lambda: 100.0).grant(**SCOPE)
+        grants.put((token.payload, token.signature))
         try:
             while not stop.is_set():
                 await asyncio.sleep(0.02)
@@ -79,9 +82,10 @@ def test_separate_host_process_rejects_bypass_and_preserves_claim(
         effects = tmp_path / "private-executor-attempts.txt"
         ctx = multiprocessing.get_context("spawn")
         stop = ctx.Event()
+        grants = ctx.Queue()
         worker = ctx.Process(
             target=_host_process,
-            args=(str(socket), str(database), str(effects), stop),
+            args=(str(socket), str(database), str(effects), stop, grants),
         )
         worker.start()
         try:
@@ -97,9 +101,8 @@ def test_separate_host_process_rejects_bypass_and_preserves_claim(
             denied = await request_medical_host(socket, grant=None, operation=request)
             assert denied["ok"] is False
             assert not effects.exists()
-            signed = TrustedMedicalOperationIssuer(KEY, clock=lambda: 100.0).grant(
-                **SCOPE
-            )
+            payload, signature = grants.get(timeout=5)
+            signed = MedicalPhysicalGrant(payload, signature)
             altered = {**request, "tool_id": "foreign-tool"}
             denied = await request_medical_host(socket, grant=signed, operation=altered)
             assert denied["ok"] is False

@@ -14,9 +14,9 @@ from agent_core.medical_host_unix_endpoint import (
     request_medical_host,
 )
 from agent_core.medical_physical_host import (
+    MedicalPhysicalGrant,
     SQLiteOperationClaimStore,
     TrustedMedicalOperationIssuer,
-    MedicalPhysicalGrant,
     TrustedMedicalPhysicalHost,
 )
 
@@ -49,6 +49,7 @@ class _HostOnlyPhysicalAdapter:
 
 def _host_process(socket: str, db: str, marker: str, stop: Any, grants: Any) -> None:
     host_secret = b"synthetic-spawn-host-isolated-32bytes-long"
+
     async def run() -> None:
         physical = _HostOnlyPhysicalAdapter(Path(marker))
         trusted = TrustedMedicalPhysicalHost(
@@ -58,7 +59,9 @@ def _host_process(socket: str, db: str, marker: str, stop: Any, grants: Any) -> 
             clock=lambda: 100.0,
         )
         server = await MedicalHostUnixEndpoint(trusted).serve(Path(socket))
-        token = TrustedMedicalOperationIssuer(host_secret, clock=lambda: 100.0).grant(**SCOPE)
+        token = TrustedMedicalOperationIssuer(
+            host_secret, clock=lambda: 100.0
+        ).grant(**SCOPE)
         grants.put((token.payload, token.signature))
         try:
             while not stop.is_set():

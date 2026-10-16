@@ -52,7 +52,7 @@ class MedicalHostUnixEndpoint:
         except (DomainExtensionError, TypeError, ValueError):
             # Never expose keys, patient data, or internal rejection details.
             return {"ok": False, "error": "authorization or execution denied"}
-        except Exception:
+        except Exception:  # noqa: BLE001 - boundary must hide unknown side effects
             # Side effect may already have happened: UNKNOWN, never auto-retry.
             return {"ok": False, "error": "unknown external outcome"}
         return {"ok": True}

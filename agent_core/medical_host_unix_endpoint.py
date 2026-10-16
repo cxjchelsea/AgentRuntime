@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 from agent_core.domain_extension import DomainExtensionError
-from agent_core.medical_physical_host import MedicalPhysicalGrant, TrustedMedicalPhysicalHost
+from agent_core.medical_physical_host import (
+    MedicalPhysicalGrant,
+    TrustedMedicalPhysicalHost,
+)
 
 MAX_REQUEST_BYTES = 16384
 

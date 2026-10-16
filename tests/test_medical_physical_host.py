@@ -263,6 +263,7 @@ def test_resigned_same_physical_operation_cannot_bypass_durable_claim(
 
     asyncio.run(scenario())
 
+
 def test_sqlite_claim_records_unknown_and_confirmed(tmp_path: Path) -> None:
     file = tmp_path / "physical-outcome.sqlite"
     store = SQLiteOperationClaimStore(file)

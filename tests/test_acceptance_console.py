@@ -92,3 +92,26 @@ def test_validated_turn_exposes_real_metadata(tmp_path: Path) -> None:
     assert result["answer"] == "合成结果"
     assert result["tool_executions"] == 2
     assert result["revalidated_steps"] == ["step-1"]
+
+
+def test_console_exposes_loop_summary_from_verified_conversation(tmp_path: Path) -> None:
+    state = ConsoleState({"inventory": tmp_path / "inventory.json"})
+    from examples.ga21_conversation import ConversationReply, TurnKind
+
+    class VerifiedRun:
+        async def send(self, message: str) -> ConversationReply:
+            return ConversationReply(
+                TurnKind.NEW, "安全的合成结果", 1, False, 1,
+                goal=message, decision_action="NEW_GOAL",
+                observation_count=1, loop_iterations=2,
+                finish_reason="completion verified",
+            )
+
+    with patch.object(state, "_new_session", return_value=VerifiedRun()):
+        result = state.dispatch({
+            "action": "send", "domain": "inventory", "message": "请查询库存",
+        })
+    assert result["goal"] == "请查询库存"
+    assert result["observation_count"] == 1
+    assert result["loop_iterations"] == 2
+    assert result["finish_reason"] == "completion verified"

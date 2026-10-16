@@ -55,6 +55,11 @@ class ConversationReply:
     reused_evidence: bool
     tool_executions: int
     revalidated_steps: tuple[str, ...] = ()
+    goal: str | None = None
+    decision_action: str | None = None
+    observation_count: int | None = None
+    loop_iterations: int | None = None
+    finish_reason: str | None = None
 
 
 _RECALL = ("刚才", "上次", "之前", "结果", "还剩", "还有多少", "多少件", "再说", "复述", "继续", "what was", "previous", "recap")
@@ -300,5 +305,13 @@ class ReadOnlyConversation:
         )
         self._turns += 1
         return ConversationReply(
-            kind, answer, self._turns, False, actual_calls, tuple(revalidated)
+            kind, answer, self._turns, False, actual_calls, tuple(revalidated),
+            goal=question,
+            decision_action=decision.action.value,
+            observation_count=(result.get("observation_count")
+                               if type(result.get("observation_count")) is int else None),
+            loop_iterations=(result.get("loop_iterations")
+                             if type(result.get("loop_iterations")) is int else None),
+            finish_reason=(result.get("finish_reason")
+                           if type(result.get("finish_reason")) is str else None),
         )

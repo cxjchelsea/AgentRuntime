@@ -60,6 +60,7 @@ class ConversationReply:
     observation_count: int | None = None
     loop_iterations: int | None = None
     finish_reason: str | None = None
+    acceptance_trace: tuple[dict[str, object], ...] = ()
 
 
 _RECALL = ("刚才", "上次", "之前", "结果", "还剩", "还有多少", "多少件", "再说", "复述", "继续", "what was", "previous", "recap")
@@ -307,6 +308,13 @@ class ReadOnlyConversation:
         observation_count = result.get("observation_count")
         loop_iterations = result.get("loop_iterations")
         finish_reason = result.get("finish_reason")
+        trace = result.get("acceptance_trace")
+        safe_trace: tuple[dict[str, object], ...] = ()
+        if type(trace) is list and len(trace) <= 16 and all(
+            type(item) is dict and item.get("type") in ("decision", "observation")
+            for item in trace
+        ):
+            safe_trace = tuple(trace)
         return ConversationReply(
             kind,
             answer,
@@ -323,4 +331,5 @@ class ReadOnlyConversation:
                 loop_iterations if isinstance(loop_iterations, int) else None
             ),
             finish_reason=finish_reason if isinstance(finish_reason, str) else None,
+            acceptance_trace=safe_trace,
         )

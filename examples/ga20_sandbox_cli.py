@@ -343,6 +343,9 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         "answer": answer.text,
         "answer_mode": answer_mode,
         "executions": outcome.executions,
+        "observation_count": len(outcome.observations),
+        "loop_iterations": outcome.iterations,
+        "finish_reason": outcome.reason,
         "tool_executions": turn.physical_tool_calls,
         "revalidated_step_ids": list(turn.revalidated_step_ids),
         "step_source_digests": [

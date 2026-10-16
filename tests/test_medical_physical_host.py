@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from dataclasses import replace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -12,6 +14,7 @@ import pytest
 from agent_core.domain_extension import DomainExtensionError
 from agent_core.medical_physical_host import (
     InMemoryOperationClaimStore,
+    SQLiteOperationClaimStore,
     TrustedMedicalOperationIssuer,
     TrustedMedicalPhysicalHost,
 )
@@ -95,3 +98,33 @@ def test_host_gate_rejects_expired_and_foreign_identity() -> None:
         executor.execute_physical_attempt.assert_not_awaited()
 
     asyncio.run(scenario())
+
+
+def test_sqlite_host_claim_persists_across_restart(tmp_path: Path) -> None:
+    database = tmp_path / "physical-claims.sqlite"
+    first = SQLiteOperationClaimStore(database)
+    assert first.claim_once("nonce-one")
+    reopened = SQLiteOperationClaimStore(database)
+    assert not reopened.claim_once("nonce-one")
+
+
+def test_sqlite_host_claim_competing_workers(tmp_path: Path) -> None:
+    database = tmp_path / "physical-claims.sqlite"
+    stores = [SQLiteOperationClaimStore(database) for _ in range(2)]
+
+    def claim(index: int) -> bool:
+        return stores[index % 2].claim_once("same-operation")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        result = list(pool.map(claim, range(16)))
+    assert result.count(True) == 1
+    assert result.count(False) == 15
+
+
+def test_sqlite_host_claim_storage_failure_closed(tmp_path: Path) -> None:
+    database = tmp_path / "physical-claims.sqlite"
+    store = SQLiteOperationClaimStore(database)
+    database.unlink()
+    database.mkdir()
+    with pytest.raises(DomainExtensionError, match="storage unavailable"):
+        store.claim_once("new-operation")

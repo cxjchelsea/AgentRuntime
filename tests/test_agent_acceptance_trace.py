@@ -5,7 +5,7 @@ import asyncio
 from typing import cast
 from unittest.mock import AsyncMock
 
-from agent_core.iteration import IterationRef
+from agent_core.iteration import AgentRunBinding, IterationRef
 from agent_core.runner import Decision, ObservedFact, StepPort
 from examples.agent_acceptance_trace import AcceptanceTraceStep
 from runtime.contracts import RuntimeInput
@@ -24,6 +24,7 @@ def test_trace_records_decision_observation_and_finish_without_reexecution() -> 
 
     class SyntheticStep:
         def __init__(self) -> None:
+            self.binding = object.__new__(AgentRunBinding)
             self.decide = AsyncMock(side_effect=[action, finished])
             self.execute_and_observe = AsyncMock(return_value=observation)
 

@@ -269,6 +269,46 @@ class PermitBoundMedicalOperationIssuer:
         return self._issuer.grant(**operation)  # type: ignore[arg-type]
 
 
+class HostApprovedOperationAuthority:
+    """Trusted Host composition: require permit and plan proof before signing.
+
+    The injected plan verifier must be backed by independently trusted M4
+    evidence in deployment; never pass a caller-supplied permissive callback.
+    """
+
+    def __init__(
+        self,
+        *,
+        issuer: TrustedMedicalOperationIssuer,
+        permit_verifier_key: bytes,
+        plan_verifier: Callable[[str, str, str, str], bool],
+    ) -> None:
+        self._bound = PermitBoundMedicalOperationIssuer(
+            operation_issuer=issuer,
+            medical_permit_verifier_key=permit_verifier_key,
+            approved_plan_verifier=plan_verifier,
+        )
+
+    def authorize(
+        self,
+        *,
+        permit: MedicalExecutionPermit,
+        domain_id: str,
+        policy_version: str,
+        subject_id: str,
+        session_id: str,
+        **operation: object,
+    ) -> MedicalPhysicalGrant:
+        return self._bound.grant_from_permit(
+            permit=permit,
+            domain_id=domain_id,
+            policy_version=policy_version,
+            subject_id=subject_id,
+            session_id=session_id,
+            **operation,
+        )
+
+
 def _digest(payload: dict[str, object]) -> str:
     try:
         raw = json.dumps(

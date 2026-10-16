@@ -52,14 +52,10 @@ def test_unix_endpoint_rejects_unauthorized_tool_before_raw_executor(
         server = await endpoint.serve(path)
         try:
             assert stat.S_IMODE(path.stat().st_mode) == 0o600
-            denied = await request_medical_host(
-                path, grant=None, operation=OPERATION
-            )
+            denied = await request_medical_host(path, grant=None, operation=OPERATION)
             assert denied["ok"] is False
             raw.execute_physical_attempt.assert_not_awaited()
-            signed = TrustedMedicalOperationIssuer(
-                KEY, clock=lambda: 100.0
-            ).grant(
+            signed = TrustedMedicalOperationIssuer(KEY, clock=lambda: 100.0).grant(
                 **{
                     key: value
                     for key, value in OPERATION.items()
@@ -67,9 +63,7 @@ def test_unix_endpoint_rejects_unauthorized_tool_before_raw_executor(
                 }
             )
             altered = {**OPERATION, "tool_id": "other-tool"}
-            denied = await request_medical_host(
-                path, grant=signed, operation=altered
-            )
+            denied = await request_medical_host(path, grant=signed, operation=altered)
             assert denied["ok"] is False
             raw.execute_physical_attempt.assert_not_awaited()
             allowed = await request_medical_host(
@@ -77,9 +71,7 @@ def test_unix_endpoint_rejects_unauthorized_tool_before_raw_executor(
             )
             assert allowed == {"ok": True}
             assert raw.execute_physical_attempt.await_count == 1
-            replay = await request_medical_host(
-                path, grant=signed, operation=OPERATION
-            )
+            replay = await request_medical_host(path, grant=signed, operation=OPERATION)
             assert replay["ok"] is False
             assert raw.execute_physical_attempt.await_count == 1
         finally:

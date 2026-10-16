@@ -232,3 +232,33 @@ def test_host_crash_unknown_outcome_never_replays_external_attempt(
         assert executor.execute_physical_attempt.await_count == 1
 
     asyncio.run(scenario())
+
+
+def test_resigned_same_physical_operation_cannot_bypass_durable_claim(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        database = tmp_path / "resigned-operation.sqlite"
+        executor = AsyncMock()
+        issuer = TrustedMedicalOperationIssuer(SECRET, clock=lambda: 100.0)
+        arguments: Any = {**SCOPE, "idempotency_key": "same-external-operation"}
+        first_grant = issuer.grant(**SCOPE)
+        first_host = TrustedMedicalPhysicalHost(
+            secret=SECRET,
+            physical=executor,
+            claims=SQLiteOperationClaimStore(database),
+            clock=lambda: 100.0,
+        )
+        await first_host.execute(grant=first_grant, **arguments)
+        second_grant = issuer.grant(**SCOPE)
+        restarted = TrustedMedicalPhysicalHost(
+            secret=SECRET,
+            physical=executor,
+            claims=SQLiteOperationClaimStore(database),
+            clock=lambda: 100.0,
+        )
+        with pytest.raises(DomainExtensionError, match="replay"):
+            await restarted.execute(grant=second_grant, **arguments)
+        assert executor.execute_physical_attempt.await_count == 1
+
+    asyncio.run(scenario())

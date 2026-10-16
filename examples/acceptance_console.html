@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentRuntime 人工验收台</title>
+<style>
+:root{font-family:system-ui,"Microsoft YaHei",sans-serif;color:#182335;background:#f5f7fa}
+body{max-width:1050px;margin:24px auto;padding:0 18px}h1{font-size:26px;margin-bottom:5px}
+small,.muted{color:#64748b} .layout{display:grid;grid-template-columns:240px 1fr;gap:18px;margin-top:20px}
+aside,main{border:1px solid #dbe3ec;background:white;border-radius:12px;padding:20px}
+button,select,textarea{font:inherit;border-radius:8px;border:1px solid #cbd5e1;padding:10px}
+button{background:#164b8b;color:white;cursor:pointer}button:disabled{opacity:.55;cursor:not-allowed}
+select{width:100%}textarea{width:100%;min-height:76px;box-sizing:border-box;resize:vertical}
+fieldset{border:0;margin:0;padding:0}.chat{height:360px;overflow:auto;border:1px solid #e1e7ef;padding:14px;border-radius:8px;background:#fbfcfe}
+.entry{margin:0 0 14px;white-space:pre-wrap;overflow-wrap:anywhere}.entry b{display:block;margin-bottom:4px}
+.agent{border-left:3px solid #276eac;padding-left:10px}.user{border-left:3px solid #8f9eb4;padding-left:10px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}.meta{font-size:12px;color:#4b6079;margin-top:6px}
+.notice{padding:11px;border-radius:8px;background:#fff7e7;font-size:13px;line-height:1.6}
+@media(max-width:700px){.layout{grid-template-columns:1fr}.chat{height:300px}}
+</style></head><body>
+<h1>AgentRuntime · 人工验收台</h1>
+<small>本机只读测试 · 真实 GA-21 Agent 链路 · 合成业务数据 · 非医疗产品</small>
+<div class="layout"><aside>
+<h3>领域选择</h3><label for="domain">当前业务领域</label>
+<select id="domain"></select><p class="muted" id="domain-hint"></p>
+<button id="reset">重置当前领域会话</button>
+<h3>医疗领域</h3>
+<div class="notice">慢病管理、心理健康、疾病预测目前仅有合成领域验证资产，尚未接入这套可交互应用。此页面不会模拟或伪造医疗 Agent 的回答。</div>
+<h3>验收提示</h3>
+<small>查询 → 查看工具调用次数 → “刚才结果” → “再查一次” → “取消”。切换领域后，聊天记录分开显示，服务端会话也按领域隔离。</small>
+</aside><main>
+<h3 id="conversation-title">会话</h3>
+<div id="chat" class="chat" role="log" aria-live="polite"></div>
+<form id="form"><p><label for="message">输入测试指令</label></p>
+<textarea id="message" maxlength="1000" required placeholder="请查询库存"></textarea>
+<div class="actions"><button id="send" type="submit">发送</button><button type="button" id="recall">刚才结果</button><button type="button" id="refresh">再查一次</button><button type="button" id="cancel">取消</button></div></form>
+<p id="status" class="meta"></p></main></div>
+<script>
+"use strict";
+const TOKEN="__CONSOLE_TOKEN__";
+const AVAILABLE=__AVAILABLE_DOMAINS__;
+const $=id=>document.getElementById(id);
+const domains={inventory:"库存管理（只读）",learning:"学习进度（只读）"};
+const logs={};
+for(const d of AVAILABLE){const o=document.createElement("option");o.value=d;o.textContent=domains[d];$("domain").append(o);logs[d]=[]}
+let busy=false;
+function render(){
+ const d=$("domain").value;$("conversation-title").textContent=domains[d]+" · 独立会话";
+ $("domain-hint").textContent="只能执行已发布、已绑定的测试数据查询。";
+ const box=$("chat");box.replaceChildren();
+ for(const e of logs[d]){
+   const p=document.createElement("div");p.className="entry "+e.role;
+   const label=document.createElement("b");label.textContent=e.role==="user"?"用户":"Agent";p.append(label);
+   const t=document.createElement("span");t.textContent=e.text;p.append(t);
+   if(e.meta){const m=document.createElement("div");m.className="meta";m.textContent=e.meta;p.append(m)}
+   box.append(p);
+ }box.scrollTop=box.scrollHeight;
+}
+function setBusy(v){busy=v;for(const id of ["send","reset","recall","refresh","cancel","domain"])$(id).disabled=v;$("status").textContent=v?"Agent 执行中…":""}
+async function request(action,message=""){
+ if(busy)return;
+ const domain=$("domain").value;setBusy(true);
+ try{
+   const response=await fetch("/api/turn",{method:"POST",headers:{"Content-Type":"application/json","X-Console-Token":TOKEN},body:JSON.stringify({action,domain,message})});
+   const result=await response.json();
+   if(!response.ok||!result.ok)throw new Error(result.error||"执行失败");
+   if(action==="reset"){logs[domain]=[];render();return}
+   logs[domain].push({role:"user",text:message});
+   logs[domain].push({role:"agent",text:result.answer,meta:"类型: "+result.kind+" · 轮次: "+result.turn+" · 工具执行: "+result.tool_executions+" · 复用旧证据: "+(result.cached?"是":"否")+" · 重验证步骤: "+(result.revalidated_steps.join(", ")||"无")});
+   render();
+ }catch(e){$("status").textContent="执行失败："+e.message}
+ finally{setBusy(false)}
+}
+$("form").addEventListener("submit",e=>{e.preventDefault();const m=$("message").value.trim();if(m){$("message").value="";request("send",m)}});
+for(const [id,text] of [["recall","刚才结果"],["refresh","再查一次"],["cancel","取消"]])$(id).onclick=()=>request("send",text);
+$("reset").onclick=()=>request("reset");
+$("domain").onchange=render;
+render();
+</script></body></html>

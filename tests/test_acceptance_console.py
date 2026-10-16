@@ -31,7 +31,9 @@ def test_console_reset_is_domain_scoped(tmp_path: Path) -> None:
     second = state.dispatch({"action": "reset", "domain": "learning"})
     assert first["domain"] == "inventory"
     assert second["domain"] == "learning"
-    assert state.sessions["inventory"].session_id != state.sessions["learning"].session_id
+    assert (
+        state.sessions["inventory"].session_id != state.sessions["learning"].session_id
+    )
     old = state.sessions["inventory"].session_id
     state.dispatch({"action": "reset", "domain": "learning"})
     assert state.sessions["inventory"].session_id == old
@@ -50,7 +52,9 @@ def test_http_denies_missing_token_and_foreign_origin(tmp_path: Path) -> None:
         assert response.status == 403
         response.read()
         conn.request(
-            "POST", "/api/turn", body,
+            "POST",
+            "/api/turn",
+            body,
             {
                 "Content-Type": "application/json",
                 "X-Console-Token": state.token,
@@ -61,7 +65,9 @@ def test_http_denies_missing_token_and_foreign_origin(tmp_path: Path) -> None:
         assert response.status == 403
         response.read()
         conn.request(
-            "POST", "/api/turn", body,
+            "POST",
+            "/api/turn",
+            body,
             {
                 "Content-Type": "application/json",
                 "X-Console-Token": state.token,
@@ -88,29 +94,43 @@ def test_validated_turn_exposes_real_metadata(tmp_path: Path) -> None:
             return ConversationReply(TurnKind.NEW, "合成结果", 1, False, 2, ("step-1",))
 
     with patch.object(state, "_new_session", return_value=FakeConversation()):
-        result = state.dispatch({"action": "send", "domain": "inventory", "message": "请查询库存"})
+        result = state.dispatch(
+            {"action": "send", "domain": "inventory", "message": "请查询库存"}
+        )
     assert result["answer"] == "合成结果"
     assert result["tool_executions"] == 2
     assert result["revalidated_steps"] == ["step-1"]
 
 
-def test_console_exposes_loop_summary_from_verified_conversation(tmp_path: Path) -> None:
+def test_console_exposes_loop_summary_from_verified_conversation(
+    tmp_path: Path,
+) -> None:
     state = ConsoleState({"inventory": tmp_path / "inventory.json"})
     from examples.ga21_conversation import ConversationReply, TurnKind
 
     class VerifiedRun:
         async def send(self, message: str) -> ConversationReply:
             return ConversationReply(
-                TurnKind.NEW, "安全的合成结果", 1, False, 1,
-                goal=message, decision_action="NEW_GOAL",
-                observation_count=1, loop_iterations=2,
+                TurnKind.NEW,
+                "安全的合成结果",
+                1,
+                False,
+                1,
+                goal=message,
+                decision_action="NEW_GOAL",
+                observation_count=1,
+                loop_iterations=2,
                 finish_reason="completion verified",
             )
 
     with patch.object(state, "_new_session", return_value=VerifiedRun()):
-        result = state.dispatch({
-            "action": "send", "domain": "inventory", "message": "请查询库存",
-        })
+        result = state.dispatch(
+            {
+                "action": "send",
+                "domain": "inventory",
+                "message": "请查询库存",
+            }
+        )
     assert result["goal"] == "请查询库存"
     assert result["observation_count"] == 1
     assert result["loop_iterations"] == 2

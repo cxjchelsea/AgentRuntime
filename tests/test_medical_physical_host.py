@@ -186,3 +186,34 @@ def test_physical_operation_issuer_requires_signed_scoped_medical_run_permit() -
         bound.grant_from_permit(**request(permit, identity_scope="another-tenant"))
     with pytest.raises(DomainExtensionError, match="scope mismatch"):
         bound.grant_from_permit(**request(permit, domain_id="medical.foreign"))
+
+
+def test_host_crash_unknown_outcome_never_replays_external_attempt(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        db = tmp_path / "crash-claims.sqlite"
+        executor = AsyncMock()
+        executor.execute_physical_attempt.side_effect = RuntimeError("unknown")
+        issuer = TrustedMedicalOperationIssuer(SECRET, clock=lambda: 100.0)
+        token = issuer.grant(**SCOPE)
+        arguments: Any = {**SCOPE, "idempotency_key": "idem-crash"}
+        host = TrustedMedicalPhysicalHost(
+            secret=SECRET,
+            physical=executor,
+            claims=SQLiteOperationClaimStore(db),
+            clock=lambda: 100.0,
+        )
+        with pytest.raises(RuntimeError, match="unknown"):
+            await host.execute(grant=token, **arguments)
+        restarted_host = TrustedMedicalPhysicalHost(
+            secret=SECRET,
+            physical=executor,
+            claims=SQLiteOperationClaimStore(db),
+            clock=lambda: 100.0,
+        )
+        with pytest.raises(DomainExtensionError, match="replay"):
+            await restarted_host.execute(grant=token, **arguments)
+        assert executor.execute_physical_attempt.await_count == 1
+
+    asyncio.run(scenario())

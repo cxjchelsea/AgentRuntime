@@ -166,17 +166,27 @@ class PermitBoundMedicalOperationIssuer:
     """
 
     def __init__(
-        self, *, operation_issuer: TrustedMedicalOperationIssuer,
+        self,
+        *,
+        operation_issuer: TrustedMedicalOperationIssuer,
         medical_permit_verifier_key: bytes,
     ) -> None:
-        if type(medical_permit_verifier_key) is not bytes or len(medical_permit_verifier_key) < 32:
+        if (
+            type(medical_permit_verifier_key) is not bytes
+            or len(medical_permit_verifier_key) < 32
+        ):
             raise DomainExtensionError("medical permit verifier unavailable")
         self._issuer = operation_issuer
         self._key = medical_permit_verifier_key
 
     def grant_from_permit(
-        self, *, permit: MedicalExecutionPermit, domain_id: str,
-        policy_version: str, subject_id: str, session_id: str,
+        self,
+        *,
+        permit: MedicalExecutionPermit,
+        domain_id: str,
+        policy_version: str,
+        subject_id: str,
+        session_id: str,
         **operation: object,
     ) -> MedicalPhysicalGrant:
         if type(permit) is not MedicalExecutionPermit:

@@ -23,7 +23,7 @@ fieldset{border:0;margin:0;padding:0}.chat{height:360px;overflow:auto;border:1px
 <select id="domain"></select><p class="muted" id="domain-hint"></p>
 <button id="reset">重置当前领域会话</button>
 <h3>医疗领域</h3>
-<div class="notice">慢病管理、心理健康、疾病预测目前仅有合成领域验证资产，尚未接入这套可交互应用。此页面不会模拟或伪造医疗 Agent 的回答。Plan / Action 的逐步原始内容目前未暴露，不能把工具次数当成完整 Trace。</div>
+<div class="notice">慢病管理、心理健康、疾病预测目前仅有合成领域验证资产，尚未接入这套可交互应用。此页面不会模拟或伪造医疗 Agent 的回答。页面展示经已批准计划提取的行动 ID、Observation 来源和事件顺序；不展示模型内部思维或原始医疗数据。</div>
 <h3>验收提示</h3>
 <small>查询 → 查看工具调用次数 → “刚才结果” → “再查一次” → “取消”。切换领域后，聊天记录分开显示，服务端会话也按领域隔离。</small>
 </aside><main>
@@ -65,7 +65,13 @@ async function request(action,message=""){
    if(action==="reset"){logs[domain]=[];render();return}
    logs[domain].push({role:"user",text:message});
    const details=["类型: "+result.kind,"轮次: "+result.turn,"Goal: "+(result.goal||"本轮为回顾/取消，无新 Goal"),"Replan 决策: "+(result.decision_action||"未执行新决策"),"Loop 决策轮次: "+(result.loop_iterations??"未提供"),"Observation 数量: "+(result.observation_count??"未提供"),"真实工具执行: "+result.tool_executions,"复用旧证据: "+(result.cached?"是":"否"),"重验证步骤: "+(result.revalidated_steps.join(", ")||"无"),"终止原因: "+(result.finish_reason||"未提供")];
-   logs[domain].push({role:"agent",text:result.answer,meta:details.join(" · ")});
+   const trace=Array.isArray(result.acceptance_trace)?result.acceptance_trace:[];
+   const traceLines=trace.map((step,index)=>{
+     if(step.type==="decision")return `#${index+1} DECISION ${step.kind} | 之前Observation=${step.seen_observations} | Plan=${step.plan_id||"无"} | Actions=${JSON.stringify(step.actions||[])} | ${step.reason||""}`;
+     if(step.type==="observation")return `#${index+1} OBSERVATION | Step=${step.workflow_step_id||"未知"} | Tool=${step.tool_id||"未知"} | Fact数量=${step.fact_count} | Execution=${step.execution_id}`;
+     return `#${index+1} 未识别事件`;
+   });
+   logs[domain].push({role:"agent",text:result.answer,meta:details.join(" · ")+(traceLines.length?"\nAgent 真实事件顺序:\n"+traceLines.join("\n"):"\n本轮未产生新的执行事件")});
    render();
  }catch(e){$("status").textContent="执行失败："+e.message}
  finally{setBusy(false)}

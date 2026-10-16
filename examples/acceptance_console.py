@@ -131,7 +131,7 @@ def make_handler(state: ConsoleState) -> type[BaseHTTPRequestHandler]:
             if self.path != "/api/turn":
                 self._json(404, {"ok": False, "error": "not found"})
                 return
-            if self.headers.get("Origin") not in (None, "http://127.0.0.1:" + str(self.server.server_address[1])):
+            if self.headers.get("Origin") not in (None, "http://127.0.0.1:" + str(self.server.server_port)):  # type: ignore[attr-defined]
                 self._json(403, {"ok": False, "error": "origin denied"})
                 return
             if not hmac.compare_digest(self.headers.get("X-Console-Token", ""), state.token):

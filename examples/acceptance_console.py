@@ -85,7 +85,10 @@ class ConsoleState:
         message = payload["message"]
         if not 1 <= len(message.strip()) <= 1000:
             raise ValueError("message must contain 1..1000 characters")
-        session = self.sessions.setdefault(domain, self._new_session(domain))
+        session = self.sessions.get(domain)
+        if session is None:
+            session = self._new_session(domain)
+            self.sessions[domain] = session
         reply = asyncio.run(session.send(message))
         return {
             "ok": True, "domain": domain, "kind": reply.kind.value,
@@ -144,7 +147,7 @@ def make_handler(state: ConsoleState) -> type[BaseHTTPRequestHandler]:
                 self._json(200, result)
             except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
                 self._json(400, {"ok": False, "error": "invalid or unsupported request"})
-            except (OSError, RuntimeError):
+            except Exception:  # noqa: BLE001 - never leak tool/model internals via HTTP
                 self._json(503, {"ok": False, "error": "agent unavailable or execution denied"})
 
         def log_message(self, format: str, *args: object) -> None:

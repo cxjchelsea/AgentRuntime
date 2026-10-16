@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agent_core.domain_extension import DomainExtensionError
-from tests.orchestration_stubs import build_runtime_input
 from agent_core.medical_execution_authority import (
     MedicalExecutionAuthority,
     MedicalSafetyDecisionSigner,
@@ -24,6 +23,7 @@ from agent_core.medical_physical_host import (
     TrustedMedicalOperationIssuer,
     TrustedMedicalPhysicalHost,
 )
+from tests.orchestration_stubs import build_runtime_input
 
 SECRET = b"synthetic-physical-host-signing-key-at-least-32"
 INPUT = {"synthetic": "data"}
@@ -153,7 +153,9 @@ def test_physical_operation_issuer_requires_signed_scoped_medical_run_permit() -
     clearance = MedicalSafetyDecisionSigner(
         decision_key, rejected_phrases=("urgent escalation",)
     ).approve(
-        initial=initial, run_id="scoped-run", domain_id=domain_id,
+        initial=initial,
+        run_id="scoped-run",
+        domain_id=domain_id,
         binding_fingerprint=operation["domain_fingerprint"],
         policy_version=version,
     )
@@ -163,7 +165,8 @@ def test_physical_operation_issuer_requires_signed_scoped_medical_run_permit() -
     permit = medical.issue(
         initial=initial, run_id="scoped-run", domain_id=domain_id,
         binding_fingerprint=operation["domain_fingerprint"],
-        policy_version=version, clearance=clearance,
+        policy_version=version,
+        clearance=clearance,
     )
     bound = PermitBoundMedicalOperationIssuer(
         operation_issuer=TrustedMedicalOperationIssuer(SECRET, clock=lambda: 100.0),
@@ -172,9 +175,13 @@ def test_physical_operation_issuer_requires_signed_scoped_medical_run_permit() -
 
     def request(signed: Any, **changes: Any) -> Any:
         return {
-            "permit": signed, "domain_id": domain_id, "policy_version": version,
-            "subject_id": initial.subject_id, "session_id": initial.session_id,
-            **operation, **changes,
+            "permit": signed,
+            "domain_id": domain_id,
+            "policy_version": version,
+            "subject_id": initial.subject_id,
+            "session_id": initial.session_id,
+            **operation,
+            **changes,
         }
 
     assert bound.grant_from_permit(**request(permit)).signature

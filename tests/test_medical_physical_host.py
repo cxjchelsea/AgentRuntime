@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 

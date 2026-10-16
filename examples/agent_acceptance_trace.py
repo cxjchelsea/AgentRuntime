@@ -5,13 +5,17 @@ alter, retry, or execute any action by itself. Never exposes raw private facts.
 """
 from __future__ import annotations
 
-from agent_core.iteration import IterationRef
+from agent_core.iteration import AgentRunBinding, IterationRef
 from agent_core.runner import Decision, ObservedFact, StepPort
 from runtime.contracts import RuntimeInput
 
 
 class AcceptanceTraceStep:
     def __init__(self, delegate: StepPort) -> None:
+        binding = getattr(delegate, "binding", None)
+        if type(binding) is not AgentRunBinding:
+            raise ValueError("trace requires a run-bound step")
+        self.binding = binding
         self.delegate = delegate
         self.events: list[dict[str, object]] = []
 

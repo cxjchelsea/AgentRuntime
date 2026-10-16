@@ -163,7 +163,9 @@ def test_physical_operation_issuer_requires_signed_scoped_medical_run_permit() -
         medical_key, decision_verifier_key=decision_key, clock=lambda: 100.0
     )
     permit = medical.issue(
-        initial=initial, run_id="scoped-run", domain_id=domain_id,
+        initial=initial,
+        run_id="scoped-run",
+        domain_id=domain_id,
         binding_fingerprint=operation["domain_fingerprint"],
         policy_version=version,
         clearance=clearance,
@@ -172,8 +174,10 @@ def test_physical_operation_issuer_requires_signed_scoped_medical_run_permit() -
         operation_issuer=TrustedMedicalOperationIssuer(SECRET, clock=lambda: 100.0),
         medical_permit_verifier_key=medical_key,
         approved_plan_verifier=lambda run, plan, step, tool: (
-            run == "scoped-run" and plan == "p1"
-            and step == "s1" and tool == "synthetic.readonly"
+            run == "scoped-run"
+            and plan == "p1"
+            and step == "s1"
+            and tool == "synthetic.readonly"
         ),
     )
 
@@ -190,9 +194,7 @@ def test_physical_operation_issuer_requires_signed_scoped_medical_run_permit() -
 
     assert bound.grant_from_permit(**request(permit)).signature
     with pytest.raises(DomainExtensionError, match="signature"):
-        bound.grant_from_permit(
-            **request(replace_signed(permit, signature="0" * 64))
-        )
+        bound.grant_from_permit(**request(replace_signed(permit, signature="0" * 64)))
     with pytest.raises(DomainExtensionError, match="scope mismatch"):
         bound.grant_from_permit(**request(permit, identity_scope="another-tenant"))
     with pytest.raises(DomainExtensionError, match="scope mismatch"):

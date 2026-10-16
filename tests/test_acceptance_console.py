@@ -1,4 +1,5 @@
 """Acceptance console boundary tests: no real model or business side effects."""
+
 from __future__ import annotations
 
 import json

@@ -304,14 +304,19 @@ class ReadOnlyConversation:
             decision.update, tuple(digests),
         )
         self._turns += 1
+        observation_count = result.get("observation_count")
+        loop_iterations = result.get("loop_iterations")
+        finish_reason = result.get("finish_reason")
         return ConversationReply(
-            kind, answer, self._turns, False, actual_calls, tuple(revalidated),
+            kind,
+            answer,
+            self._turns,
+            False,
+            actual_calls,
+            tuple(revalidated),
             goal=question,
             decision_action=decision.action.value,
-            observation_count=(result.get("observation_count")
-                               if type(result.get("observation_count")) is int else None),
-            loop_iterations=(result.get("loop_iterations")
-                             if type(result.get("loop_iterations")) is int else None),
-            finish_reason=(result.get("finish_reason")
-                           if type(result.get("finish_reason")) is str else None),
+            observation_count=observation_count if isinstance(observation_count, int) else None,
+            loop_iterations=loop_iterations if isinstance(loop_iterations, int) else None,
+            finish_reason=finish_reason if isinstance(finish_reason, str) else None,
         )

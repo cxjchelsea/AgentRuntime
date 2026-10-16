@@ -10,9 +10,11 @@ import hashlib
 import hmac
 import json
 import secrets
+import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from agent_core.domain_extension import DomainExtensionError
@@ -42,6 +44,44 @@ class InMemoryOperationClaimStore:
         if operation_nonce in self._nonces:
             return False
         self._nonces.add(operation_nonce)
+        return True
+
+
+class SQLiteOperationClaimStore:
+    """Durable single-use nonce claim; local SQLite integration only.
+
+    A crash after admission consumes the claim permanently. This is not
+    distributed fencing or proof of an external side effect's completion.
+    """
+
+    def __init__(self, path: Path) -> None:
+        if not isinstance(path, Path):
+            raise DomainExtensionError("invalid operation claim path")
+        self._path = path
+        try:
+            with sqlite3.connect(self._path, timeout=5) as connection:
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS medical_physical_claims "
+                    "(nonce TEXT PRIMARY KEY NOT NULL)"
+                )
+        except sqlite3.Error as exc:
+            raise DomainExtensionError("physical claim storage unavailable") from exc
+
+    def claim_once(self, operation_nonce: str) -> bool:
+        if type(operation_nonce) is not str or not operation_nonce:
+            raise DomainExtensionError("invalid physical claim nonce")
+        try:
+            with sqlite3.connect(self._path, timeout=5) as connection:
+                connection.execute(
+                    "INSERT INTO medical_physical_claims(nonce) VALUES (?)",
+                    (operation_nonce,),
+                )
+        except sqlite3.IntegrityError as exc:
+            if "UNIQUE constraint failed" in str(exc):
+                return False
+            raise DomainExtensionError("physical claim integrity failure") from exc
+        except sqlite3.Error as exc:
+            raise DomainExtensionError("physical claim storage unavailable") from exc
         return True
 
 

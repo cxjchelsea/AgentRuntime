@@ -236,7 +236,9 @@ class PermitBoundMedicalOperationIssuer:
         try:
             approved = self._plan_verifier(str(run), str(plan), str(step), str(tool))
         except Exception as exc:
-            raise DomainExtensionError("medical approved plan authority unavailable") from exc
+            raise DomainExtensionError(
+                "medical approved plan authority unavailable"
+            ) from exc
         if approved is not True:
             raise DomainExtensionError("medical physical plan authorization denied")
         return self._issuer.grant(**operation)  # type: ignore[arg-type]

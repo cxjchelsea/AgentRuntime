@@ -63,7 +63,7 @@ class SQLiteOperationClaimStore:
             with sqlite3.connect(self._path, timeout=5) as connection:
                 connection.execute(
                     "CREATE TABLE IF NOT EXISTS medical_physical_claims "
-                    "(nonce TEXT PRIMARY KEY NOT NULL)"
+                    "(nonce TEXT PRIMARY KEY NOT NULL, state TEXT NOT NULL)"
                 )
         except sqlite3.Error as exc:
             raise DomainExtensionError("physical claim storage unavailable") from exc
@@ -74,8 +74,8 @@ class SQLiteOperationClaimStore:
         try:
             with sqlite3.connect(self._path, timeout=5) as connection:
                 connection.execute(
-                    "INSERT INTO medical_physical_claims(nonce) VALUES (?)",
-                    (operation_nonce,),
+                    "INSERT INTO medical_physical_claims(nonce, state) VALUES (?, ?)",
+                    (operation_nonce, "UNKNOWN_EXTERNAL_OUTCOME"),
                 )
         except sqlite3.IntegrityError as exc:
             if "UNIQUE constraint failed" in str(exc):
@@ -84,6 +84,32 @@ class SQLiteOperationClaimStore:
         except sqlite3.Error as exc:
             raise DomainExtensionError("physical claim storage unavailable") from exc
         return True
+
+
+    def state(self, operation_key: str) -> str | None:
+        """Return durable outcome. UNKNOWN must never trigger automatic retry."""
+        try:
+            with sqlite3.connect(self._path, timeout=5) as connection:
+                row = connection.execute(
+                    "SELECT state FROM medical_physical_claims WHERE nonce = ?",
+                    (operation_key,),
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise DomainExtensionError("physical claim storage unavailable") from exc
+        return str(row[0]) if row else None
+
+    def confirm(self, operation_key: str) -> None:
+        try:
+            with sqlite3.connect(self._path, timeout=5) as connection:
+                changed = connection.execute(
+                    "UPDATE medical_physical_claims SET state = ? "
+                    "WHERE nonce = ? AND state = ?",
+                    ("CONFIRMED", operation_key, "UNKNOWN_EXTERNAL_OUTCOME"),
+                ).rowcount
+        except sqlite3.Error as exc:
+            raise DomainExtensionError("physical claim storage unavailable") from exc
+        if changed != 1:
+            raise DomainExtensionError("physical claim cannot be confirmed")
 
 
 class TrustedMedicalOperationIssuer:
@@ -336,7 +362,7 @@ class TrustedMedicalPhysicalHost:
         if not self._claims.claim_once(operation_claim_key):
             raise DomainExtensionError("medical physical replay rejected")
         # Claim BEFORE first external effect. Exception/crash => UNKNOWN, no replay.
-        return await self._physical.execute_physical_attempt(
+        observed = await self._physical.execute_physical_attempt(
             logical_tool_call_id=logical_tool_call_id,
             tool_id=tool_id,
             input_payload=input_payload,
@@ -345,3 +371,6 @@ class TrustedMedicalPhysicalHost:
             operation_key=operation_key,
             operation_fingerprint=operation_fingerprint,
         )
+        if isinstance(self._claims, SQLiteOperationClaimStore):
+            self._claims.confirm(operation_claim_key)
+        return observed

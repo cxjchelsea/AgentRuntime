@@ -262,3 +262,15 @@ def test_resigned_same_physical_operation_cannot_bypass_durable_claim(
         assert executor.execute_physical_attempt.await_count == 1
 
     asyncio.run(scenario())
+
+def test_sqlite_claim_records_unknown_and_confirmed(tmp_path: Path) -> None:
+    file = tmp_path / "physical-outcome.sqlite"
+    store = SQLiteOperationClaimStore(file)
+    assert store.claim_once("unknown-operation")
+    assert store.state("unknown-operation") == "UNKNOWN_EXTERNAL_OUTCOME"
+    assert store.claim_once("confirmed-operation")
+    store.confirm("confirmed-operation")
+    assert SQLiteOperationClaimStore(file).state("confirmed-operation") == "CONFIRMED"
+    assert not SQLiteOperationClaimStore(file).claim_once("confirmed-operation")
+    with pytest.raises(DomainExtensionError, match="cannot be confirmed"):
+        store.confirm("confirmed-operation")

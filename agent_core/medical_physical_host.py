@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Protocol
 
 from agent_core.domain_extension import DomainExtensionError
+from agent_core.medical_execution_authority import MedicalExecutionPermit
 from runtime.execution.invocation import (
     PhysicalToolAttemptExecutor,
     ToolAttemptObservation,
@@ -154,6 +155,65 @@ class TrustedMedicalOperationIssuer:
             payload,
             hmac.new(self._secret, payload.encode(), hashlib.sha256).hexdigest(),
         )
+
+
+class PermitBoundMedicalOperationIssuer:
+    """Issue physical grants only after verifying a signed medical run permit.
+
+    Trust in the medical permit's policy and its clinical safety is governed by
+    the upstream issuer. The approved plan ID remains caller-supplied here;
+    this adapter is not an independently attested M4 plan authority.
+    """
+
+    def __init__(
+        self, *, operation_issuer: TrustedMedicalOperationIssuer,
+        medical_permit_verifier_key: bytes,
+    ) -> None:
+        if type(medical_permit_verifier_key) is not bytes or len(medical_permit_verifier_key) < 32:
+            raise DomainExtensionError("medical permit verifier unavailable")
+        self._issuer = operation_issuer
+        self._key = medical_permit_verifier_key
+
+    def grant_from_permit(
+        self, *, permit: MedicalExecutionPermit, domain_id: str,
+        policy_version: str, subject_id: str, session_id: str,
+        **operation: object,
+    ) -> MedicalPhysicalGrant:
+        if type(permit) is not MedicalExecutionPermit:
+            raise DomainExtensionError("medical run permit required")
+        signature = hmac.new(
+            self._key, permit.payload.encode(), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, permit.signature):
+            raise DomainExtensionError("invalid medical run permit signature")
+        try:
+            claim = json.loads(permit.payload)
+        except (TypeError, ValueError) as exc:
+            raise DomainExtensionError("invalid medical run permit") from exc
+        if type(claim) is not dict or claim != {
+            "domain_id": domain_id,
+            "domain_binding": operation.get("domain_fingerprint"),
+            "policy_version": policy_version,
+            "request_id": operation.get("request_id"),
+            "run_id": operation.get("run_id"),
+            "subject_id": subject_id,
+            "identity_scope": operation.get("identity_scope"),
+            "session_id": session_id,
+            "expires_at": claim.get("expires_at"),
+            "nonce": claim.get("nonce"),
+            "safety_decision_digest": claim.get("safety_decision_digest"),
+        }:
+            raise DomainExtensionError("medical run permit scope mismatch")
+        if (
+            type(claim["expires_at"]) is not int
+            or int(self._issuer._clock()) >= claim["expires_at"]
+            or type(claim["nonce"]) is not str
+            or len(claim["nonce"]) != 32
+            or type(claim["safety_decision_digest"]) is not str
+            or len(claim["safety_decision_digest"]) != 64
+        ):
+            raise DomainExtensionError("expired or invalid medical run permit")
+        return self._issuer.grant(**operation)  # type: ignore[arg-type]
 
 
 def _digest(payload: dict[str, object]) -> str:

@@ -55,6 +55,12 @@ class ConversationReply:
     reused_evidence: bool
     tool_executions: int
     revalidated_steps: tuple[str, ...] = ()
+    goal: str | None = None
+    decision_action: str | None = None
+    observation_count: int | None = None
+    loop_iterations: int | None = None
+    finish_reason: str | None = None
+    acceptance_trace: tuple[dict[str, object], ...] = ()
 
 
 _RECALL = ("刚才", "上次", "之前", "结果", "还剩", "还有多少", "多少件", "再说", "复述", "继续", "what was", "previous", "recap")
@@ -299,6 +305,31 @@ class ReadOnlyConversation:
             decision.update, tuple(digests),
         )
         self._turns += 1
+        observation_count = result.get("observation_count")
+        loop_iterations = result.get("loop_iterations")
+        finish_reason = result.get("finish_reason")
+        trace = result.get("acceptance_trace")
+        safe_trace: tuple[dict[str, object], ...] = ()
+        if type(trace) is list and len(trace) <= 16 and all(
+            type(item) is dict and item.get("type") in ("decision", "observation")
+            for item in trace
+        ):
+            safe_trace = tuple(trace)
         return ConversationReply(
-            kind, answer, self._turns, False, actual_calls, tuple(revalidated)
+            kind,
+            answer,
+            self._turns,
+            False,
+            actual_calls,
+            tuple(revalidated),
+            goal=question,
+            decision_action=decision.action.value,
+            observation_count=(
+                observation_count if isinstance(observation_count, int) else None
+            ),
+            loop_iterations=(
+                loop_iterations if isinstance(loop_iterations, int) else None
+            ),
+            finish_reason=finish_reason if isinstance(finish_reason, str) else None,
+            acceptance_trace=safe_trace,
         )

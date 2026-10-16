@@ -40,6 +40,7 @@ from runtime.understanding import (
     UnderstandingPostprocessor,
     UnderstandingStateAssembler,
 )
+from examples.agent_acceptance_trace import AcceptanceTraceStep
 from examples.readonly_application_step import ReadOnlyApplicationStep
 from examples.ga22_replanning import (
     GoalState,
@@ -287,10 +288,11 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         revalidated_facts=revalidated_facts,
     )
 
+    traced = AcceptanceTraceStep(turn)
     outcome = await app.run(
         initial,
         run_id=run_id,
-        step=turn,
+        step=traced,
         budget=LoopBudget(
             max_iterations=steps + 2,
             max_executions=steps + 1,
@@ -343,6 +345,10 @@ async def ask_once(domain: str, question: str, config: ChatCompletionsConfig, op
         "answer": answer.text,
         "answer_mode": answer_mode,
         "executions": outcome.executions,
+        "observation_count": len(outcome.observations),
+        "acceptance_trace": traced.events,
+        "loop_iterations": outcome.iterations,
+        "finish_reason": outcome.reason,
         "tool_executions": turn.physical_tool_calls,
         "revalidated_step_ids": list(turn.revalidated_step_ids),
         "step_source_digests": [

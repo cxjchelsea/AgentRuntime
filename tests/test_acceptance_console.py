@@ -4,17 +4,19 @@ from __future__ import annotations
 import json
 import threading
 from http.client import HTTPConnection
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
 from examples.acceptance_console import ConsoleState, make_handler
-from http.server import ThreadingHTTPServer
 
 
 def test_console_rejects_unconfigured_medical_domains(tmp_path: Path) -> None:
     state = ConsoleState({"inventory": tmp_path / "inventory.json"})
     try:
-        state.dispatch({"action": "send", "domain": "medical.chronic-management", "message": "hi"})
+        state.dispatch(
+            {"action": "send", "domain": "medical.chronic-management", "message": "hi"}
+        )
     except ValueError as exc:
         assert "not configured" in str(exc)
     else:
@@ -22,7 +24,9 @@ def test_console_rejects_unconfigured_medical_domains(tmp_path: Path) -> None:
 
 
 def test_console_reset_is_domain_scoped(tmp_path: Path) -> None:
-    state = ConsoleState({"inventory": tmp_path / "i.json", "learning": tmp_path / "l.json"})
+    state = ConsoleState(
+        {"inventory": tmp_path / "i.json", "learning": tmp_path / "l.json"}
+    )
     first = state.dispatch({"action": "reset", "domain": "inventory"})
     second = state.dispatch({"action": "reset", "domain": "learning"})
     assert first["domain"] == "inventory"
@@ -45,19 +49,25 @@ def test_http_denies_missing_token_and_foreign_origin(tmp_path: Path) -> None:
         response = conn.getresponse()
         assert response.status == 403
         response.read()
-        conn.request("POST", "/api/turn", body, {
-            "Content-Type": "application/json",
-            "X-Console-Token": state.token,
-            "Origin": "https://attacker.example",
-        })
+        conn.request(
+            "POST", "/api/turn", body,
+            {
+                "Content-Type": "application/json",
+                "X-Console-Token": state.token,
+                "Origin": "https://attacker.example",
+            },
+        )
         response = conn.getresponse()
         assert response.status == 403
         response.read()
-        conn.request("POST", "/api/turn", body, {
-            "Content-Type": "application/json",
-            "X-Console-Token": state.token,
-            "Origin": f"http://127.0.0.1:{server.server_port}",
-        })
+        conn.request(
+            "POST", "/api/turn", body,
+            {
+                "Content-Type": "application/json",
+                "X-Console-Token": state.token,
+                "Origin": f"http://127.0.0.1:{server.server_port}",
+            },
+        )
         response = conn.getresponse()
         assert response.status == 200
         assert json.loads(response.read())["reset"] is True

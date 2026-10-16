@@ -59,9 +59,9 @@ def _host_process(socket: str, db: str, marker: str, stop: Any, grants: Any) -> 
             clock=lambda: 100.0,
         )
         server = await MedicalHostUnixEndpoint(trusted).serve(Path(socket))
-        token = TrustedMedicalOperationIssuer(
-            host_secret, clock=lambda: 100.0
-        ).grant(**SCOPE)
+        token = TrustedMedicalOperationIssuer(host_secret, clock=lambda: 100.0).grant(
+            **SCOPE
+        )
         grants.put((token.payload, token.signature))
         try:
             while not stop.is_set():

@@ -95,6 +95,11 @@ class ConsoleState:
             "answer": reply.text, "turn": reply.turn_number,
             "cached": reply.reused_evidence, "tool_executions": reply.tool_executions,
             "revalidated_steps": list(reply.revalidated_steps),
+            "goal": reply.goal,
+            "decision_action": reply.decision_action,
+            "observation_count": reply.observation_count,
+            "loop_iterations": reply.loop_iterations,
+            "finish_reason": reply.finish_reason,
         }
 
 

@@ -85,7 +85,6 @@ class SQLiteOperationClaimStore:
             raise DomainExtensionError("physical claim storage unavailable") from exc
         return True
 
-
     def state(self, operation_key: str) -> str | None:
         """Return durable outcome. UNKNOWN must never trigger automatic retry."""
         try:

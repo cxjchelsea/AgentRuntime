@@ -170,6 +170,7 @@ class PermitBoundMedicalOperationIssuer:
         *,
         operation_issuer: TrustedMedicalOperationIssuer,
         medical_permit_verifier_key: bytes,
+        approved_plan_verifier: Callable[[str, str, str, str], bool],
     ) -> None:
         if (
             type(medical_permit_verifier_key) is not bytes
@@ -177,6 +178,9 @@ class PermitBoundMedicalOperationIssuer:
         ):
             raise DomainExtensionError("medical permit verifier unavailable")
         self._issuer = operation_issuer
+        if not callable(approved_plan_verifier):
+            raise DomainExtensionError("approved plan verifier required")
+        self._plan_verifier = approved_plan_verifier
         self._key = medical_permit_verifier_key
 
     def grant_from_permit(
@@ -223,6 +227,18 @@ class PermitBoundMedicalOperationIssuer:
             or len(claim["safety_decision_digest"]) != 64
         ):
             raise DomainExtensionError("expired or invalid medical run permit")
+        plan = operation.get("approved_plan_id")
+        step = operation.get("step_execution_id")
+        tool = operation.get("tool_id")
+        run = operation.get("run_id")
+        if not all(type(x) is str and x for x in (plan, step, tool, run)):
+            raise DomainExtensionError("medical approved plan scope missing")
+        try:
+            approved = self._plan_verifier(str(run), str(plan), str(step), str(tool))
+        except Exception as exc:
+            raise DomainExtensionError("medical approved plan authority unavailable") from exc
+        if approved is not True:
+            raise DomainExtensionError("medical physical plan authorization denied")
         return self._issuer.grant(**operation)  # type: ignore[arg-type]
 
 

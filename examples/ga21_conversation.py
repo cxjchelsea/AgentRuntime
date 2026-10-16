@@ -316,7 +316,11 @@ class ReadOnlyConversation:
             tuple(revalidated),
             goal=question,
             decision_action=decision.action.value,
-            observation_count=observation_count if isinstance(observation_count, int) else None,
-            loop_iterations=loop_iterations if isinstance(loop_iterations, int) else None,
+            observation_count=(
+                observation_count if isinstance(observation_count, int) else None
+            ),
+            loop_iterations=(
+                loop_iterations if isinstance(loop_iterations, int) else None
+            ),
             finish_reason=finish_reason if isinstance(finish_reason, str) else None,
         )

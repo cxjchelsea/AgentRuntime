@@ -41,7 +41,8 @@ class MedicalHostUnixEndpoint:
         if type(operation) is not dict:
             return {"ok": False, "error": "invalid request"}
         if token is not None and (
-            type(token) is not dict or set(token) != {"payload", "signature"}
+            type(token) is not dict
+            or set(token) != {"payload", "signature"}
             or not all(type(item) is str for item in token.values())
         ):
             return {"ok": False, "error": "invalid request"}
@@ -90,7 +91,9 @@ async def request_medical_host(
     try:
         raw = json.dumps(
             {
-                "grant": None if grant is None else {
+                "grant": None
+                if grant is None
+                else {
                     "payload": grant.payload,
                     "signature": grant.signature,
                 },

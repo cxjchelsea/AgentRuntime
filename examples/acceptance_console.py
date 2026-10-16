@@ -100,6 +100,7 @@ class ConsoleState:
             "observation_count": reply.observation_count,
             "loop_iterations": reply.loop_iterations,
             "finish_reason": reply.finish_reason,
+            "acceptance_trace": list(reply.acceptance_trace),
         }
 
 

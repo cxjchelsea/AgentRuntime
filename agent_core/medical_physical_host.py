@@ -327,7 +327,13 @@ class TrustedMedicalPhysicalHost:
             or len(nonce) != 32
         ):
             raise DomainExtensionError("medical physical grant expired or invalid")
-        if not self._claims.claim_once(nonce):
+        operation_identity = {
+            key: value
+            for key, value in claims.items()
+            if key not in ("expires_at", "nonce")
+        }
+        operation_claim_key = _digest(operation_identity)
+        if not self._claims.claim_once(operation_claim_key):
             raise DomainExtensionError("medical physical replay rejected")
         # Claim BEFORE first external effect. Exception/crash => UNKNOWN, no replay.
         return await self._physical.execute_physical_attempt(
